@@ -1,0 +1,7 @@
+{
+  "name": "wave-ascii",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "dev"
+}
