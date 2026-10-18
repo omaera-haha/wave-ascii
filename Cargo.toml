@@ -1,0 +1,10 @@
+[package]
+name = "wave-ascii"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+glam = "0.34.1"
+gltf = "1.4.1"
+resvg = "0.48.1"
