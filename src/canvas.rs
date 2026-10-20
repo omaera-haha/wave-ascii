@@ -97,7 +97,7 @@ pub struct Cell {
 }
 
 impl Cell {
-    const BLANK: Self = Self {
+    pub const BLANK: Self = Self {
         glyph: ' ',
         foreground: None,
         background: None,
@@ -209,12 +209,37 @@ pub struct Canvas {
 }
 
 impl Canvas {
+    pub fn blank(columns: usize, rows: usize) -> Self {
+        Self {
+            columns,
+            rows,
+            cells: vec![Cell::BLANK; columns * rows],
+        }
+    }
+
     pub fn columns(&self) -> usize {
         self.columns
     }
 
     pub fn rows(&self) -> usize {
         self.rows
+    }
+
+    /// Replaces one cell. Cells outside the canvas are ignored.
+    pub fn set(&mut self, column: usize, row: usize, cell: Cell) {
+        if column < self.columns && row < self.rows {
+            self.cells[row * self.columns + column] = cell;
+        }
+    }
+
+    /// Copies `other` onto this canvas with its top-left corner at `column`
+    /// and `row`, clipped to this canvas.
+    pub fn paste(&mut self, other: &Canvas, column: usize, row: usize) {
+        for (offset, cells) in other.cells.chunks(other.columns.max(1)).enumerate() {
+            for (index, cell) in cells.iter().enumerate() {
+                self.set(column + index, row + offset, *cell);
+            }
+        }
     }
 
     /// The glyphs alone, one line per row.

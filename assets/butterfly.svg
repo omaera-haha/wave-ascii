@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="320" height="200">
+  <!-- A monarch butterfly: orange wings with dark veins and white-spotted borders. -->
+  <defs>
+    <radialGradient id="orange" gradientUnits="userSpaceOnUse" cx="166" cy="100" r="140">
+      <stop offset="0" stop-color="#e2560c"/>
+      <stop offset="0.45" stop-color="#f7801a"/>
+      <stop offset="1" stop-color="#ffb02e"/>
+    </radialGradient>
+    <path id="forewing" d="M164 76C196 44 246 18 290 16C304 16 312 28 306 42C296 70 280 96 258 112C228 120 192 110 166 98Z"/>
+    <path id="hindwing" d="M166 96C206 94 250 106 262 128C272 150 256 182 224 188C198 192 176 172 168 142C165 126 164 110 166 96Z"/>
+    <g id="wings">
+      <!-- Hindwing. -->
+      <use href="#hindwing" fill="#24252d"/>
+      <path d="M172 102C206 102 238 112 249 130C257 148 245 170 223 175C202 179 184 163 176 140C172 126 171 112 172 102Z" fill="url(#orange)"/>
+      <g fill="none" stroke="#24252d" stroke-width="3.2" stroke-linecap="round">
+        <path d="M174 106C192 108 210 116 222 128C214 136 202 138 192 134C184 128 178 118 174 106Z" stroke-width="2.6"/>
+        <path d="M222 128C234 126 246 127 255 129"/>
+        <path d="M220 131C234 139 246 149 254 158"/>
+        <path d="M212 135C224 148 234 162 240 177"/>
+        <path d="M202 137C209 152 215 166 218 180"/>
+        <path d="M193 134C195 148 197 164 198 178"/>
+        <path d="M186 128C184 140 182 150 181 160"/>
+      </g>
+      <g fill="#fdfbf4">
+        <circle cx="251.6" cy="123.1" r="2.9"/>
+        <circle cx="258.5" cy="133.6" r="2.9"/>
+        <circle cx="259.8" cy="142.1" r="2.9"/>
+        <circle cx="258.5" cy="151.2" r="2.9"/>
+        <circle cx="255" cy="160.1" r="2.9"/>
+        <circle cx="249.1" cy="168.4" r="2.9"/>
+        <circle cx="241.2" cy="175.4" r="2.9"/>
+        <circle cx="231.3" cy="180.6" r="2.9"/>
+        <circle cx="217.8" cy="183.3" r="2.9"/>
+        <circle cx="207.5" cy="181.9" r="2.9"/>
+        <circle cx="198.1" cy="177.7" r="2.9"/>
+        <circle cx="254.2" cy="138.5" r="2"/>
+        <circle cx="254.2" cy="145.9" r="2"/>
+        <circle cx="252.1" cy="153.7" r="2"/>
+        <circle cx="248" cy="161.3" r="2"/>
+        <circle cx="241.9" cy="168.1" r="2"/>
+        <circle cx="234" cy="173.6" r="2"/>
+        <circle cx="222.5" cy="177.6" r="2"/>
+        <circle cx="213.3" cy="177.7" r="2"/>
+        <circle cx="204.8" cy="175.3" r="2"/>
+      </g>
+
+      <!-- Forewing, overlapping the hindwing. -->
+      <use href="#forewing" fill="#24252d"/>
+      <path d="M171 86C198 62 232 40 266 32C278 36 286 42 293 47C285 70 271 88 252 102C226 110 196 104 171 94Z" fill="url(#orange)"/>
+      <g fill="none" stroke="#24252d" stroke-width="3.2" stroke-linecap="round">
+        <path d="M168 86C196 70 220 60 244 54C236 70 222 82 210 88C196 94 180 94 168 90Z" stroke-width="2.6"/>
+        <path d="M244 54C262 46 278 36 294 29"/>
+        <path d="M244 54C262 54 278 52 296 49"/>
+        <path d="M232 70C252 72 272 72 290 67"/>
+        <path d="M222 80C242 88 260 94 276 93"/>
+        <path d="M210 88C226 97 240 104 252 108"/>
+        <path d="M190 94C204 103 218 110 232 114"/>
+      </g>
+      <!-- Dark wing tip with orange and white spots. -->
+      <path d="M262 22C276 18 292 14 302 20C310 26 310 38 304 48C296 46 286 46 276 46C272 38 268 30 262 22Z" fill="#24252d"/>
+      <g fill="#ffb347">
+        <ellipse cx="280" cy="30" rx="5" ry="3.4" transform="rotate(-20 280 30)"/>
+        <ellipse cx="290" cy="38" rx="4.2" ry="3" transform="rotate(-20 290 38)"/>
+        <ellipse cx="270" cy="40" rx="4" ry="2.8" transform="rotate(-20 270 40)"/>
+      </g>
+      <g fill="#fdfbf4">
+        <circle cx="298" cy="48.4" r="2.9"/>
+        <circle cx="292.7" cy="60.2" r="2.9"/>
+        <circle cx="286.6" cy="71.5" r="2.9"/>
+        <circle cx="279.8" cy="82" r="2.9"/>
+        <circle cx="272.2" cy="91.7" r="2.9"/>
+        <circle cx="264" cy="100.3" r="2.9"/>
+        <circle cx="253.3" cy="107.8" r="2.9"/>
+        <circle cx="290.4" cy="52.6" r="2"/>
+        <circle cx="284.9" cy="63.8" r="2"/>
+        <circle cx="278.7" cy="74.3" r="2"/>
+        <circle cx="271.7" cy="84" r="2"/>
+        <circle cx="264.1" cy="92.8" r="2"/>
+        <circle cx="296" cy="26" r="2.6"/>
+        <circle cx="262" cy="34" r="2.2"/>
+        <circle cx="254" cy="28" r="2.2"/>
+      </g>
+    </g>
+  </defs>
+
+  <!-- The right wings, mirrored for the left. -->
+  <use href="#wings"/>
+  <use href="#wings" transform="translate(320 0) scale(-1 1)"/>
+
+  <!-- Antennae, head, thorax, and abdomen. -->
+  <g fill="none" stroke="#2a2b33" stroke-width="2.4" stroke-linecap="round">
+    <path d="M157 70C150 52 142 38 128 26"/>
+    <path d="M163 70C170 52 178 38 192 26"/>
+  </g>
+  <g fill="#2a2b33">
+    <ellipse cx="127" cy="25" rx="3.6" ry="4.2" transform="rotate(-40 127 25)"/>
+    <ellipse cx="193" cy="25" rx="3.6" ry="4.2" transform="rotate(40 193 25)"/>
+    <ellipse cx="160" cy="132" rx="6" ry="30"/>
+    <ellipse cx="160" cy="92" rx="8.5" ry="16"/>
+    <circle cx="160" cy="72" r="7"/>
+  </g>
+  <g fill="#fdfbf4">
+    <circle cx="156" cy="69" r="1.7"/>
+    <circle cx="164" cy="69" r="1.7"/>
+    <circle cx="155" cy="84" r="1.8"/>
+    <circle cx="165" cy="84" r="1.8"/>
+    <circle cx="160" cy="96" r="1.8"/>
+  </g>
+</svg>

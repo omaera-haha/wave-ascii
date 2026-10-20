@@ -3,32 +3,44 @@
 A Rust terminal app that renders animated scenes as text, in truecolor, 256
 colors, or plain ASCII.
 
-It has six built-in scenes: a rotating square with a moving, pulsing circle; a
-shaded 3D cube; a ray-marched sunset ocean; a rainbow torus knot; a wave logo
-drawn from SVG; and a textured duck model. It also plays vector art and 3D
-models made in other tools: SVG drawings from Figma, Illustrator, or Inkscape,
-and glTF, OBJ, or STL models from Blender or any CAD or sculpting app.
+It has 26 built-in scenes in three groups:
+
+- **Generated** in code: a rotating square with a moving, pulsing circle
+  (`2d`); a shaded 3D cube (`3d`); a ray-marched sunset `ocean`; a rainbow
+  torus `knot`; three `lava` lamps on a shelf; and the northern lights over a
+  lake (`aurora`).
+- **Drawings** from SVG: the `wave` logo, a `koi` pond, Mount `fuji`, a
+  `synthwave` sunset, a monarch `butterfly`, a low-poly `fox`, a scarlet
+  `macaw`, a `mandala`, and pixel-art `invaders`.
+- **Models** from glTF: a textured `duck`, a `lighthouse`, a retro `rocket`, a
+  ringed `planet`, a hot-air `balloon`, a flying saucer (`ufo`), a `bonsai`,
+  fly-agaric `mushrooms`, gem `crystals`, a glazed `donut`, and a `chess`
+  set.
+
+It also plays vector art and 3D models made in other tools: SVG drawings from
+Figma, Illustrator, or Inkscape, and glTF, OBJ, or STL models from Blender or
+any CAD or sculpting app.
 
 ## Run
 
 Requires a stable Rust toolchain and a Unix terminal with `stty` available.
 
 ```bash
-cargo run --release -- 2d
-cargo run --release -- 3d
+cargo run --release
 cargo run --release -- ocean
-cargo run --release -- knot
 cargo run --release -- wave --style braille
 cargo run --release -- duck --style blocks
 cargo run --release -- path/to/model.glb path/to/logo.svg
 ```
 
-The first scene or file named is shown first. Files join the built-in scenes,
-so `1` to `6` still switch to those.
+Without a scene name, the app starts with the scene menu open. Otherwise the
+first scene or file named is shown first. Files join the end of the scene list.
 
 | Key                | Action                                        |
 | ------------------ | --------------------------------------------- |
-| `1`-`9`, Tab       | Change scene                                  |
+| Enter              | Open the scene menu                           |
+| Tab, Shift+Tab     | Next or previous scene                        |
+| `1`-`9`            | One of the first nine scenes                  |
 | `m`                | Next style: ascii, blocks, braille            |
 | `c`                | Next color mode: truecolor, 256 colors, plain |
 | Arrows, WASD       | Turn the model, camera, or drawing            |
@@ -36,6 +48,25 @@ so `1` to `6` still switch to those.
 | Space              | Pause                                         |
 | `r`                | Reset the view                                |
 | `q`, Esc, Ctrl+C   | Quit                                          |
+
+### Scene menu
+
+The scene menu lists every scene in a panel at the left, grouped under
+Generated, Drawings, Models, and Files, with no search box to type into. The
+highlighted scene plays beside the panel, so you can look through the scenes
+as you move.
+
+| Key in the menu       | Action                                           |
+| --------------------- | ------------------------------------------------ |
+| Up, Down (`k`, `j`)   | Highlight the previous or next scene             |
+| Tab, Shift+Tab        | Same as Down and Up                              |
+| Home, End, PgUp, PgDn | Jump to the start, end, or by a page             |
+| Enter                 | Show the highlighted scene and close the menu    |
+| `1`-`9`               | Show that scene and close the menu               |
+| Esc                   | Close the menu and go back to the previous scene |
+| `q`, Ctrl+C           | Quit                                             |
+
+Left and Right still turn the preview, and `m`, `c`, and Space work as usual.
 
 The view adapts to terminal resizing and assumes characters are approximately
 twice as tall as they are wide.
@@ -81,21 +112,42 @@ glTF meshes compressed with Draco or meshopt are not supported. If a texture
 can't be decoded, for example because it isn't PNG or JPEG, the model is drawn
 without textures.
 
-The `wave` and `duck` scenes come from `assets/wave.svg` and `assets/duck.glb`,
-which are compiled into the program, so the built app needs no asset files. The
-duck is the Khronos glTF sample model, © 2006 Sony, under the SCEA Shared Source
-License (see `assets/duck.LICENSE.txt`). More sample models are in the
+## Bundled art
+
+The drawings and models are compiled into the program from `assets/`, so the
+built app needs no asset files. The duck is the Khronos glTF sample model,
+© 2006 Sony, under the SCEA Shared Source License (see
+`assets/duck.LICENSE.txt`). More sample models are in the
 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets);
-check each model's license.
+check each model's license. The other art was made for this project.
+
+The other models are generated by Python scripts in `tools/models/`, one per
+model, using the small mesh kit in `tools/models/meshkit.py`. They need only
+the Python 3 standard library. To change a model, edit its script and run it
+from anywhere to rewrite the `.glb`:
+
+```bash
+python3 tools/models/rocket.py
+```
+
+To see how art looks before adding it, render one frame of the file in blocks
+with color, using `--time` to turn a model to other sides:
+
+```bash
+COLUMNS=100 LINES=32 cargo run -q -- assets/rocket.glb --style blocks --color truecolor --time 2.6 < /dev/null | cat
+```
 
 ## Piped output
 
-When stdin or stdout isn't a terminal, the app prints one frame at time 0 and
-exits. Its size defaults to 80 columns by 24 rows, or uses `COLUMNS` and
-`LINES` if set. Output is plain unless a color mode is given:
+When stdin or stdout isn't a terminal, the app prints one frame and exits. The
+frame is at time 0 unless `--time SECONDS` picks another moment, which also
+turns a model to a different side. Its size defaults to 80 columns by 24 rows,
+or uses `COLUMNS` and `LINES` if set. Output is plain unless a color mode is
+given:
 
 ```bash
 COLUMNS=100 LINES=30 cargo run -q -- ocean --style blocks --color truecolor < /dev/null | cat
+COLUMNS=100 LINES=30 cargo run -q -- duck --time 2.5 < /dev/null | cat
 ```
 
 ## Development
@@ -111,5 +163,6 @@ Dependencies: `glam` for vector math, `resvg` for SVG, and `gltf` for glTF.
 
 ## License
 
-MIT; see `LICENSE`. The bundled `assets/duck.glb` is not covered by it: it's
-© 2006 Sony under the SCEA Shared Source License, in `assets/duck.LICENSE.txt`.
+MIT; see `LICENSE`. That covers the bundled art except `assets/duck.glb`,
+which is © 2006 Sony under the SCEA Shared Source License, in
+`assets/duck.LICENSE.txt`.

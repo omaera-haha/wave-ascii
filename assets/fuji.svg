@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" width="320" height="200">
+  <!-- Mount Fuji in the manner of a woodblock print: flat bands of color,
+       a red sun with a crane, banded mist, a pagoda, and cherry blossoms. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a5d9f"/>
+      <stop offset="0.3" stop-color="#6b9cce"/>
+      <stop offset="0.62" stop-color="#f3e3bf"/>
+      <stop offset="1" stop-color="#f6d9a8"/>
+    </linearGradient>
+    <linearGradient id="mountain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.2" stop-color="#25467f"/>
+      <stop offset="0.8" stop-color="#3d6ea8"/>
+    </linearGradient>
+    <clipPath id="print">
+      <rect x="10" y="10" width="300" height="180"/>
+    </clipPath>
+    <!-- A puff of cherry blossoms with its shadow and highlight. -->
+    <g id="blossom">
+      <circle cx="1.5" cy="2.5" r="8" fill="#d9728f"/>
+      <circle r="8" fill="#f6b3c8"/>
+      <circle cx="-2.4" cy="-2.8" r="3.6" fill="#fde3ec"/>
+    </g>
+    <!-- A pine with flat, layered foliage, standing at the origin. -->
+    <g id="pine">
+      <path d="M0 0C3 -12 -4 -21 3 -30" fill="none" stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"/>
+      <g fill="#2d6a4c">
+        <ellipse cx="3" cy="-31" rx="13" ry="4.6"/>
+        <ellipse cx="-6" cy="-19.8" rx="11" ry="4.2"/>
+        <ellipse cx="7" cy="-10.8" rx="10" ry="3.8"/>
+      </g>
+      <g fill="#5a9e6e">
+        <ellipse cx="2" cy="-32.6" rx="10" ry="2.8"/>
+        <ellipse cx="-7" cy="-21.4" rx="8" ry="2.4"/>
+        <ellipse cx="6" cy="-12.4" rx="7" ry="2"/>
+      </g>
+    </g>
+    <clipPath id="slopes">
+      <path id="fuji" d="M10 150C70 138 120 96 138 44L145 40L151 43L158 38L165 42L172 40C190 96 250 138 310 150Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Paper margin and sky. Only the blossoms that cross the print's edge
+       are clipped, since clipping everything would be slower. -->
+  <rect width="320" height="200" rx="5" fill="#f2e4c4"/>
+  <rect x="10" y="10" width="300" height="180" fill="url(#sky)"/>
+
+  <!-- Red sun with a crane flying across it. -->
+  <circle cx="240" cy="54" r="28" fill="#e2412e"/>
+  <g transform="translate(238 58) rotate(-8)">
+    <path d="M-4 -2L-20 -26L-14 -27L-8 -24L-2 -22L4 -2Z" fill="#fffaf0"/>
+    <path d="M2 -2L10 -30L15 -27L18 -22L20 -18L8 0Z" fill="#fffaf0"/>
+    <path d="M-20 -26L-14 -27L-8 -24L-11 -17Z M10 -30L15 -27L18 -22L20 -18L13 -20Z" fill="#3b3f58"/>
+    <ellipse cx="0" cy="0" rx="11" ry="4.5" fill="#fffaf0"/>
+    <path d="M8 -1L22 -6" stroke="#fffaf0" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="23" cy="-6.5" r="2.8" fill="#fffaf0"/>
+    <circle cx="23.5" cy="-7.5" r="1.4" fill="#e2412e"/>
+    <path d="M25 -6L31 -4.5" stroke="#d9b98a" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M-9 1L-28 5" stroke="#3b3f58" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+
+  <!-- The mountain with a snow cap that runs down its gullies. -->
+  <use href="#fuji" fill="url(#mountain)" stroke="#2a3f6e" stroke-width="1.6"/>
+  <g clip-path="url(#slopes)">
+    <path d="M100 30H220L205 70L198 80L192 74L186 91L179 78L173 95L166 80L159 98L152 80L146 99L139 78L133 92L126 76L119 84L110 70Z" fill="#fbf8f0"/>
+    <path d="M163 30H220L205 70L198 80L192 74L186 91L179 78L173 95L166 80Z" fill="#c4d8ee"/>
+  </g>
+
+  <!-- Banded mist across the lower slopes. -->
+  <g fill="#fbf3de" stroke="#d9b98a" stroke-width="1.4">
+    <path d="M10 118H124.5A5.5 5.5 0 0 1 124.5 129H10Z"/>
+    <rect x="70" y="133" width="140" height="11" rx="5.5"/>
+    <path d="M310 114H191.5A5.5 5.5 0 0 0 191.5 125H310Z"/>
+  </g>
+
+  <!-- Layered hills. -->
+  <path d="M10 160C40 150 70 148 102 154C134 160 160 154 190 150C222 145 262 148 310 156V190H10Z" fill="#a6cfc0"/>
+  <path d="M10 172C34 162 62 160 90 167C116 173 138 170 164 165C196 158 232 160 262 166C282 170 298 164 310 160V190H10Z" fill="#5f9e6c"/>
+  <path d="M10 184C40 176 72 176 104 182C130 187 150 184 176 179C214 172 250 175 310 182V190H10Z" fill="#2f5f93"/>
+
+  <!-- Pines on the green hill. -->
+  <use href="#pine" transform="translate(62 172)"/>
+  <use href="#pine" transform="translate(90 168) scale(-0.85 0.85)"/>
+  <use href="#pine" transform="translate(118 173) scale(0.65)"/>
+
+  <!-- Five-storied pagoda among blossoms. -->
+  <g transform="translate(266 0)">
+    <path d="M-1.4 76H1.4V96H-1.4Z" fill="#8a6a50"/>
+    <circle cx="0" cy="83" r="2.4" fill="#8a6a50"/>
+    <circle cx="0" cy="89" r="2.4" fill="#8a6a50"/>
+    <g fill="#e04a2e">
+      <rect x="-10" y="154" width="20" height="30"/>
+      <rect x="-9" y="140" width="18" height="12"/>
+      <rect x="-8" y="127" width="16" height="11"/>
+      <rect x="-7" y="115" width="14" height="10"/>
+      <rect x="-6" y="104" width="12" height="9"/>
+    </g>
+    <g fill="#46506e">
+      <path d="M-26 156C-20 154 -16 150 -14 148H14C16 150 20 154 26 156C20 157 14 155 12 155H-12C-14 155 -20 157 -26 156Z"/>
+      <path d="M-23 142C-18 140 -14 137 -12 135H12C14 137 18 140 23 142C18 143 13 141 10 141H-10C-13 141 -18 143 -23 142Z"/>
+      <path d="M-21 129C-16 127 -13 124 -11 122H11C13 124 16 127 21 129C16 130 12 128 9 128H-9C-12 128 -16 130 -21 129Z"/>
+      <path d="M-19 117C-15 115 -12 112 -10 110H10C12 112 15 115 19 117C15 118 11 116 8 116H-8C-11 116 -15 118 -19 117Z"/>
+      <path d="M-17 105C-13 103 -10 99 -8 97H8C10 99 13 103 17 105C13 106 10 104 7 104H-7C-10 104 -13 106 -17 105Z"/>
+    </g>
+  </g>
+
+  <!-- Cherry branch hanging from the top left. -->
+  <g clip-path="url(#print)">
+    <path d="M10 22C30 26 46 34 60 48M34 30C40 42 42 52 40 64M10 44C20 46 26 50 30 58" fill="none" stroke="#6b3e3a" stroke-width="3.2" stroke-linecap="round"/>
+    <use href="#blossom" transform="translate(14 14) scale(1.12)"/>
+    <use href="#blossom" transform="translate(26 19)"/>
+    <use href="#blossom" transform="translate(55 23) scale(0.75)"/>
+    <use href="#blossom" transform="translate(40 25) scale(1.12)"/>
+    <use href="#blossom" transform="translate(10 30) scale(0.75)"/>
+    <use href="#blossom" transform="translate(24 32) scale(0.75)"/>
+    <use href="#blossom" transform="translate(52 36)"/>
+    <use href="#blossom" transform="translate(16 41)"/>
+    <use href="#blossom" transform="translate(36 43) scale(0.875)"/>
+    <use href="#blossom" transform="translate(62 47) scale(0.875)"/>
+    <use href="#blossom" transform="translate(27 52) scale(0.75)"/>
+    <use href="#blossom" transform="translate(44 56) scale(0.875)"/>
+    <use href="#blossom" transform="translate(66 58) scale(0.562)"/>
+    <use href="#blossom" transform="translate(50 64) scale(0.562)"/>
+    <use href="#blossom" transform="translate(31 64) scale(0.562)"/>
+    <use href="#blossom" transform="translate(40 67) scale(0.625)"/>
+  </g>
+
+  <!-- Blossoms at the pagoda's feet. -->
+  <g clip-path="url(#print)">
+    <use href="#blossom" transform="translate(296 165) scale(1.12)"/>
+    <use href="#blossom" transform="translate(248 172)"/>
+    <use href="#blossom" transform="translate(284 172)"/>
+    <use href="#blossom" transform="translate(306 176)"/>
+    <use href="#blossom" transform="translate(236 178)"/>
+    <use href="#blossom" transform="translate(276 182) scale(0.75)"/>
+    <use href="#blossom" transform="translate(250 184) scale(0.875)"/>
+    <use href="#blossom" transform="translate(292 184) scale(0.875)"/>
+    <use href="#blossom" transform="translate(228 186) scale(0.75)"/>
+  </g>
+
+  <!-- Print border and the publisher's seal. -->
+  <rect x="10" y="10" width="300" height="180" fill="none" stroke="#3a3f5c" stroke-width="2"/>
+  <rect x="18" y="166" width="16" height="16" rx="2" fill="#c8372a"/>
+  <rect x="21" y="169" width="10" height="10" fill="none" stroke="#f6dcc8" stroke-width="1.6"/>
+</svg>

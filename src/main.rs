@@ -1,7 +1,11 @@
+mod app;
+mod aurora;
 mod canvas;
 mod color;
 mod drawing;
 mod frame;
+mod lava;
+mod menu;
 mod mesh;
 mod model;
 mod ocean;
@@ -15,41 +19,50 @@ use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use app::{App, Response};
 use canvas::Style;
 use color::ColorMode;
+use menu::{Entry, Menu};
 use scene::{Scene, View};
-use terminal::{Key, Size, Terminal};
+use terminal::{Size, Terminal};
 
 const HELP: &str = "\
 Usage: wave-ascii [OPTIONS] [SCENE | FILE]...
 
-Scenes: 2d, 3d, ocean, knot, wave, duck
+{scenes}
 Files:  .svg .svgz drawings; .glb .gltf .obj .stl models
 The first scene or file named is shown first; files join the scene list.
+With none named, the scene menu opens at the start.
 
 Options:
   --style ascii|blocks|braille   how pixels become characters (default ascii)
   --color auto|truecolor|256|never
                                  auto follows NO_COLOR and COLORTERM, and is
                                  plain when output is piped
+  --time SECONDS                 moment of the frame printed when piped
+                                 (default 0)
   -h, --help                     show this help
 
 Keys:
-  1-9 or Tab   change scene          m   next style
-  arrows/WASD  turn                  c   next color mode
-  + / -        zoom                  r   reset view
-  space        pause                 q, Esc, Ctrl+C   quit
+  Enter        scene menu            m   next style
+  Tab, S-Tab   next, previous scene  c   next color mode
+  1-9          scene by number       r   reset view
+  arrows/WASD  turn                  space   pause
+  + / -        zoom                  q, Esc, Ctrl+C   quit
 
-Piped output produces one frame at time 0, sized by COLUMNS and LINES.";
+In the scene menu, arrows, Home, End, and Page Up and Down move through the
+list while the highlighted scene plays beside it. Enter shows it, and Esc goes
+back to the scene the menu opened on.
 
-// Radians per arrow key press.
-const TURN: f32 = 0.12;
+Piped output produces one frame, sized by COLUMNS and LINES.";
 
 struct Options {
     scenes: Vec<Scene>,
-    first: usize,
+    /// The first scene named on the command line, if any.
+    first: Option<usize>,
     style: Style,
     color: Option<ColorMode>,
+    time: f32,
 }
 
 fn main() -> ExitCode {
@@ -72,6 +85,7 @@ fn parse_options() -> io::Result<Option<Options>> {
     let mut first = None;
     let mut style = Style::Ascii;
     let mut color = None;
+    let mut time = 0.0;
     let mut arguments = env::args().skip(1);
 
     while let Some(argument) = arguments.next() {
@@ -108,13 +122,23 @@ fn parse_options() -> io::Result<Option<Options>> {
                     })?),
                 };
             }
+            "--time" => {
+                let value = value()?;
+                time = value
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|seconds| seconds.is_finite())
+                    .ok_or_else(|| {
+                        invalid_input(format!("--time needs a number of seconds, not {value:?}"))
+                    })?;
+            }
             flag if flag.starts_with('-') => {
                 return Err(invalid_input(format!(
                     "unknown option {flag:?}; see --help"
                 )));
             }
             scene_name => {
-                let index = match Scene::NAMES.iter().position(|known| *known == scene_name) {
+                let index = match Scene::names().position(|known| known == scene_name) {
                     Some(index) => index,
                     None if Scene::is_loadable(Path::new(scene_name)) => {
                         scenes.push(Scene::load(Path::new(scene_name))?);
@@ -122,8 +146,7 @@ fn parse_options() -> io::Result<Option<Options>> {
                     }
                     None => {
                         return Err(invalid_input(format!(
-                            "unknown scene {scene_name:?}; use {}, or a supported file",
-                            Scene::NAMES.join(", ")
+                            "unknown scene {scene_name:?}; see --help for the scenes, or use a supported file"
                         )));
                     }
                 };
@@ -134,39 +157,88 @@ fn parse_options() -> io::Result<Option<Options>> {
 
     Ok(Some(Options {
         scenes,
-        first: first.unwrap_or(0),
+        first,
         style,
         color,
+        time,
     }))
+}
+
+// The built-in scene names for the help, by group, wrapped to 80 columns.
+fn scene_list() -> String {
+    const INDENT: usize = 13;
+    let mut list = String::from("Scenes:\n");
+    for (group, names) in Scene::groups() {
+        let mut line = format!("  {:<width$}", format!("{group}:"), width = INDENT - 2);
+        for (index, name) in names.iter().enumerate() {
+            let separator = if index + 1 < names.len() { "," } else { "" };
+            if line.len() > INDENT && line.len() + 1 + name.len() + separator.len() > 79 {
+                list.push_str(line.trim_end());
+                list.push('\n');
+                line = " ".repeat(INDENT);
+            } else if index > 0 {
+                line.push(' ');
+            }
+            line.push_str(name);
+            line.push_str(separator);
+        }
+        list.push_str(&line);
+        list.push('\n');
+    }
+    list.trim_end().to_owned()
 }
 
 fn run() -> io::Result<()> {
     let Some(Options {
         scenes,
         first,
-        mut style,
+        style,
         color,
+        mut time,
     }) = parse_options()?
     else {
-        println!("{HELP}");
+        println!("{}", HELP.replace("{scenes}", &scene_list()));
         return Ok(());
     };
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         let size = Size::from_environment();
         let color = color.unwrap_or(ColorMode::Plain);
-        let frame = scenes[first].render(style.grid(size.columns, size.rows), 0.0, View::default());
+        let frame = scenes[first.unwrap_or(0)].render(
+            style.grid(size.columns, size.rows),
+            time,
+            View::default(),
+        );
         io::stdout()
             .lock()
             .write_all(style.canvas(&frame, color).ansi(color).as_bytes())?;
         return Ok(());
     }
 
-    let mut color = color.unwrap_or_else(ColorMode::detect);
-    let mut index = first;
-    let mut view = View::default();
-    let mut paused = false;
-    let mut time = 0.0;
+    // Files named on the command line follow the built-in scenes.
+    let builtin_count = Scene::names().count();
+    let entries = scenes
+        .iter()
+        .enumerate()
+        .map(|(index, scene)| Entry {
+            label: scene.label().to_owned(),
+            group: if index < builtin_count {
+                scene.group()
+            } else {
+                "Files"
+            },
+        })
+        .collect();
+    let mut app = App::new(
+        Menu::new(entries),
+        first.unwrap_or(0),
+        style,
+        color.unwrap_or_else(ColorMode::detect),
+    );
+    // Without a scene to start on, start by showing what there is.
+    if first.is_none() {
+        app.menu.open(0);
+    }
 
     let mut terminal = Terminal::open()?;
     let mut size = terminal.size();
@@ -178,33 +250,10 @@ fn run() -> io::Result<()> {
         let frame_start = Instant::now();
         let mut restyled = false;
         for key in terminal.keys()? {
-            match key {
-                Key::Character(b'q' | b'Q' | 3) | Key::Escape => return Ok(()),
-                Key::Character(digit @ b'1'..=b'9') if usize::from(digit - b'1') < scenes.len() => {
-                    index = usize::from(digit - b'1');
-                    view = View::default();
-                }
-                Key::Character(b'\t' | b'n') => {
-                    index = (index + 1) % scenes.len();
-                    view = View::default();
-                }
-                Key::Character(b'm') => {
-                    style = style.next();
-                    restyled = true;
-                }
-                Key::Character(b'c') => {
-                    color = color.next();
-                    restyled = true;
-                }
-                Key::Left | Key::Character(b'a') => view.yaw -= TURN,
-                Key::Right | Key::Character(b'd') => view.yaw += TURN,
-                Key::Up | Key::Character(b'w') => view.pitch += TURN,
-                Key::Down | Key::Character(b's') => view.pitch -= TURN,
-                Key::Character(b'+' | b'=') => view.zoom = (view.zoom * 1.1).min(8.0),
-                Key::Character(b'-' | b'_') => view.zoom = (view.zoom / 1.1).max(0.25),
-                Key::Character(b'r') => view = View::default(),
-                Key::Character(b' ') => paused = !paused,
-                _ => {}
+            match app.press(key) {
+                Response::Quit => return Ok(()),
+                Response::Restyle => restyled = true,
+                Response::Continue => {}
             }
         }
 
@@ -221,24 +270,24 @@ fn run() -> io::Result<()> {
         }
 
         let now = Instant::now();
-        if !paused {
+        if !app.paused {
             time += (now - last_frame).as_secs_f32();
         }
         last_frame = now;
 
         // Leave a column for wrapping and a row for the status line.
-        let grid = style.grid(size.columns.saturating_sub(1), size.rows.saturating_sub(1));
-        let scene = &scenes[index];
-        let frame = scene.render(grid, time, view);
-        let status = format!(
-            "{} · 1-{} scene · m {} · c {} · arrows turn · +/- zoom · space {} · q quit",
-            scene.label(),
-            scenes.len().min(9),
-            style.label(),
-            color.label(),
-            if paused { "play" } else { "pause" },
-        );
-        terminal.draw(&style.canvas(&frame, color), color, &status)?;
+        let (columns, rows) = (size.columns.saturating_sub(1), size.rows.saturating_sub(1));
+        let (style, color, view) = (app.style, app.color, app.view);
+        let scene = &scenes[app.scene];
+        let draw = |columns, rows| {
+            style.canvas(&scene.render(style.grid(columns, rows), time, view), color)
+        };
+        let canvas = if app.menu.is_open() {
+            app.menu.draw(columns, rows, draw)
+        } else {
+            draw(columns, rows)
+        };
+        terminal.draw(&canvas, color, &app.status(scene.label()))?;
         thread::sleep(frame_duration.saturating_sub(frame_start.elapsed()));
     }
 }

@@ -7,11 +7,55 @@ use crate::color::hsv;
 use crate::drawing::{self, Drawing};
 use crate::frame::{Frame, Grid, Shade};
 use crate::mesh::Mesh;
-use crate::{model, ocean};
+use crate::{aurora, lava, model, ocean};
 
-// Presets compiled into the program, so they work without the asset files.
-const WAVE_SVG: &[u8] = include_bytes!("../assets/wave.svg");
-const DUCK_GLB: &[u8] = include_bytes!("../assets/duck.glb");
+/// A drawing or model compiled into the program, so it works without the
+/// asset file.
+struct Preset {
+    name: &'static str,
+    label: &'static str,
+    data: &'static [u8],
+}
+
+// Reads `assets/<name>.<extension>` at compile time.
+macro_rules! preset {
+    ($name:literal, $label:literal, $extension:literal) => {
+        Preset {
+            name: $name,
+            label: $label,
+            data: include_bytes!(concat!("../assets/", $name, ".", $extension)),
+        }
+    };
+}
+
+// Command-line names of the scenes made in code, in `builtins` order.
+const GENERATED: [&str; 6] = ["2d", "3d", "ocean", "knot", "lava", "aurora"];
+
+const DRAWINGS: &[Preset] = &[
+    preset!("wave", "Wave logo", "svg"),
+    preset!("koi", "Koi pond", "svg"),
+    preset!("fuji", "Mount Fuji", "svg"),
+    preset!("synthwave", "Synthwave", "svg"),
+    preset!("butterfly", "Butterfly", "svg"),
+    preset!("fox", "Fox", "svg"),
+    preset!("macaw", "Macaw", "svg"),
+    preset!("mandala", "Mandala", "svg"),
+    preset!("invaders", "Invaders", "svg"),
+];
+
+const MODELS: &[Preset] = &[
+    preset!("duck", "Duck", "glb"),
+    preset!("lighthouse", "Lighthouse", "glb"),
+    preset!("rocket", "Rocket", "glb"),
+    preset!("planet", "Ringed planet", "glb"),
+    preset!("balloon", "Hot-air balloon", "glb"),
+    preset!("ufo", "UFO", "glb"),
+    preset!("bonsai", "Bonsai", "glb"),
+    preset!("mushrooms", "Mushrooms", "glb"),
+    preset!("crystals", "Crystals", "glb"),
+    preset!("donut", "Donut", "glb"),
+    preset!("chess", "Chess", "glb"),
+];
 
 /// The viewer's adjustments: turning with the arrow keys and zooming.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -42,6 +86,8 @@ pub enum Scene {
     Cube,
     Ocean,
     Knot(Mesh),
+    Lava,
+    Aurora,
     Model {
         label: String,
         mesh: Mesh,
@@ -53,26 +99,44 @@ pub enum Scene {
 }
 
 impl Scene {
+    /// Command-line names of the built-in scenes under their menu groups, in
+    /// `builtins` order.
+    pub fn groups() -> [(&'static str, Vec<&'static str>); 3] {
+        let names = |presets: &[Preset]| presets.iter().map(|preset| preset.name).collect();
+        [
+            ("Generated", GENERATED.to_vec()),
+            ("Drawings", names(DRAWINGS)),
+            ("Models", names(MODELS)),
+        ]
+    }
+
     /// Command-line names of the built-in scenes, in `builtins` order.
-    pub const NAMES: [&str; 6] = ["2d", "3d", "ocean", "knot", "wave", "duck"];
+    pub fn names() -> impl Iterator<Item = &'static str> {
+        Self::groups().into_iter().flat_map(|(_, names)| names)
+    }
 
     pub fn builtins() -> Vec<Self> {
-        vec![
+        let mut scenes = vec![
             Self::Shapes,
             Self::Cube,
             Self::Ocean,
             Self::Knot(Mesh::torus_knot(2, 3)),
-            Self::Drawing {
-                label: "Wave logo".to_owned(),
-                drawing: Box::new(
-                    Drawing::parse(WAVE_SVG, None).expect("the bundled wave.svg is valid"),
-                ),
-            },
-            Self::Model {
-                label: "Duck".to_owned(),
-                mesh: model::parse_gltf(DUCK_GLB).expect("the bundled duck.glb is valid"),
-            },
-        ]
+            Self::Lava,
+            Self::Aurora,
+        ];
+        scenes.extend(DRAWINGS.iter().map(|preset| Self::Drawing {
+            label: preset.label.to_owned(),
+            drawing: Box::new(Drawing::parse(preset.data, None).unwrap_or_else(|error| {
+                panic!("the bundled {}.svg is invalid: {error}", preset.name)
+            })),
+        }));
+        scenes.extend(MODELS.iter().map(|preset| Self::Model {
+            label: preset.label.to_owned(),
+            mesh: model::parse_gltf(preset.data).unwrap_or_else(|error| {
+                panic!("the bundled {}.glb is invalid: {error}", preset.name)
+            }),
+        }));
+        scenes
     }
 
     /// Whether `path` names a file `load` understands.
@@ -114,12 +178,25 @@ impl Scene {
         })
     }
 
+    /// The heading the scene is listed under in the menu.
+    pub fn group(&self) -> &'static str {
+        match self {
+            Self::Shapes | Self::Cube | Self::Ocean | Self::Knot(_) | Self::Lava | Self::Aurora => {
+                "Generated"
+            }
+            Self::Drawing { .. } => "Drawings",
+            Self::Model { .. } => "Models",
+        }
+    }
+
     pub fn label(&self) -> &str {
         match self {
             Self::Shapes => "2D shapes",
             Self::Cube => "3D cube",
             Self::Ocean => "Ocean",
             Self::Knot(_) => "Torus knot",
+            Self::Lava => "Lava lamps",
+            Self::Aurora => "Aurora",
             Self::Model { label, .. } | Self::Drawing { label, .. } => label,
         }
     }
@@ -175,6 +252,8 @@ impl Scene {
                 })
             }
             Self::Ocean => ocean::render(grid, time, view.yaw, view.pitch, view.zoom),
+            Self::Lava => lava::render(grid, time, view.yaw, view.zoom),
+            Self::Aurora => aurora::render(grid, time, view.yaw, view.pitch, view.zoom),
             Self::Knot(mesh) => {
                 let rotation = view.orbit()
                     * Quat::from_rotation_y(time * 0.5)
@@ -192,7 +271,7 @@ impl Scene {
     }
 }
 
-fn coverage(distance: f32, edge: f32) -> f32 {
+pub fn coverage(distance: f32, edge: f32) -> f32 {
     (0.5 - distance / (2.0 * edge)).clamp(0.0, 1.0)
 }
 
@@ -279,7 +358,18 @@ mod tests {
 
     #[test]
     fn scene_names_match_the_builtins() {
-        assert_eq!(Scene::NAMES.len(), Scene::builtins().len());
+        let builtins = Scene::builtins();
+        assert_eq!(Scene::names().count(), builtins.len());
+        for ((group, names), scenes) in Scene::groups()
+            .iter()
+            .zip(builtins.chunk_by(|scene, next| scene.group() == next.group()))
+        {
+            assert_eq!(names.len(), scenes.len(), "{group}");
+            assert!(
+                scenes.iter().all(|scene| scene.group() == *group),
+                "{group}"
+            );
+        }
     }
 
     #[test]

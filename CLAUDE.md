@@ -31,7 +31,7 @@ To exercise the interactive loop, run it under `script` with a pty and feed keys
 
 ## Architecture
 
-The rendering pipeline is: `Scene::render(grid, time, view)` → `Frame` → `Style::canvas` → `Canvas` → `Terminal::draw` (or `Canvas::ansi` when piped).
+The rendering pipeline is: `Scene::render(grid, time, view)` → `Frame` → `Style::canvas` → `Canvas` → `Terminal::draw` (or `Canvas::ansi` when piped). While the scene menu is open, `Menu::draw` renders the scene into the columns beside its panel and returns the combined `Canvas`.
 
 - **`frame.rs`** defines `Grid`, `Shade`, and `Frame`. A `Grid` is the pixel lattice a scene is sampled on. Its y axis runs from -1 to 1 across the height, and `aspect` is a pixel's width divided by its height, so a distance covers the same physical length in both directions. `CELL_ASPECT = 0.5` because a terminal cell is about twice as tall as it is wide, and a test checks this. A `Shade` is a brightness plus a hue at full intensity; `hue * brightness` is the lit color, and glyph density shows brightness. `Frame::sample` evaluates a closure at every pixel center, `Frame::build` does the same by column and row, and both split rows across threads for large frames, so closures must be `Fn + Sync`. Values are clamped to `[0, 1]`. `Grid::refine` and `Frame::downsample` supersample for anti-aliasing.
 - **`canvas.rs`** turns a `Frame` into terminal `Cell`s. `Style::grid` picks the sampling grid for a style: `Ascii` uses one pixel per cell and the ramp `" .:-=+*#%@"`, `Blocks` uses two pixels per cell drawn as `▀` with foreground and background colors, and `Braille` uses 2x4 dots with ordered dithering. `Canvas::redraw` writes only the cells that differ from the previous canvas, positioning the cursor absolutely, and `Pen` writes color escapes only when colors change.
@@ -46,17 +46,27 @@ The rendering pipeline is: `Scene::render(grid, time, view)` → `Frame` → `St
 - **`model.rs`** loads `.glb`/`.gltf` (through the `gltf` crate, walking the node hierarchy and reading base color factors, textures, and vertex colors), `.obj` with `.mtl` diffuse colors, and binary or ASCII `.stl` (rotated from Z-up to Y-up). It works in sRGB, so glTF's linear colors are converted.
 - **`drawing.rs`** parses SVG with `usvg` (loading system fonts only when the file may contain text) and rasterizes it with `resvg` every frame at about 3x3 subpixels per pixel, through an affine transform from `Grid::to_pixels`. Coverage and premultiplied color are averaged per pixel.
 - **`terminal.rs`** opens `/dev/tty` and runs `stty` with stdin set to that tty. It uses `stty` to save the terminal mode, enable raw non-blocking input (`min 0 time 0`), and read the size. `Key::parse` separates arrow-key sequences from a lone Esc. Output uses the alternate screen, hides the cursor, and wraps each frame in synchronized-output markers (`?2026`). `Terminal::clear` forgets the previous canvas so the next draw is complete; call it after resizing or changing the style or color mode. `Drop` restores the saved mode and the screen, so code must let `Terminal` drop normally instead of calling `process::exit`.
-- **`main.rs`** parses options (`--style`, `--color`) and scene names or file paths, picks the one-frame path when not on a TTY, and otherwise runs a 30 fps loop. The loop reads keys (`1`-`9`/Tab switch scenes, `m` style, `c` color mode, arrows/WASD turn, `+`/`-` zoom, space pause, `r` reset; `q`, Esc, or Ctrl+C quit, because raw mode disables SIGINT) and checks the terminal size every 250 ms. It renders at `columns-1` x `rows-1` to leave room for line wrapping and the status line.
+- **`app.rs`** holds what the keys control (scene index, `View`, pause, style, color mode, and the `Menu`). `App::press` gives each key to the open menu first and handles the rest: Enter opens the menu, `1`-`9`/Tab/Shift+Tab switch scenes, `m` style, `c` color mode, arrows/WASD turn, `+`/`-` zoom, space pause, `r` reset, and `q`, Esc, or Ctrl+C quit, because raw mode disables SIGINT. It returns a `Response` telling the loop to continue, redraw completely, or quit. `App::status` builds the status line.
+- **`menu.rs`** is the scene menu: a list without a search box, grouped under headings from `Entry::group`. `Menu::handle` moves the highlight (arrows, `j`/`k`, Tab, Home/End, Page Up/Down, wrapping at the ends for single steps) and reports an `Action`; the app shows the highlighted scene as a live preview, Enter or a digit chooses, and Esc goes back to the scene the menu opened on. Keys the menu doesn't use come back as `Action::Ignored`. `Menu::draw` scrolls to keep the highlight (and its group heading) in view and paints the panel with box-drawing borders and colors, plus a `▸` marker so plain output shows the highlight.
+- **`main.rs`** parses options (`--style`, `--color`, `--time`) and scene names or file paths, picks the one-frame path when not on a TTY (at `--time`, default 0), and otherwise runs a 30 fps loop that passes keys to `App::press` and checks the terminal size every 250 ms. It opens the menu at the start when no scene was named. It renders at `columns-1` x `rows-1` to leave room for line wrapping and the status line.
 
 ### Adding a scene
 
-A new built-in scene touches several places:
-- `Scene` variant, `NAMES` entry, `builtins` entry, `label`, and `render` arm in `scene.rs` (a preset made from an asset file only needs the `NAMES` and `builtins` entries and an `include_bytes!` constant)
-- Help text in `main.rs`
+A built-in scene made in code touches several places:
+- `Scene` variant, `GENERATED` name, `builtins` entry, `group`, `label`, and `render` arm in `scene.rs`, usually with its renderer in its own module (like `ocean.rs`, `lava.rs`, `aurora.rs`)
+- Help text in `main.rs` lists names from `Scene::groups`, so it needs no change
+- README
+
+A preset made from an asset file only needs a `preset!` line in `DRAWINGS` or `MODELS` in `scene.rs`; the macro reads `assets/<name>.svg` or `assets/<name>.glb` with `include_bytes!`. Also:
 - README
 - For third-party assets, a license file next to the asset in `assets/`
+- For generated models, the generator script in `tools/models/` (see below)
 
-The `every_builtin_scene_produces_visible_animation` test covers every entry in `builtins`. A new file format instead needs a loader in `model.rs` or `drawing.rs` and its extension in that module's `EXTENSIONS`.
+`builtins` lists generated scenes, then drawings, then models, and the menu starts a new heading whenever the group changes. The `every_builtin_scene_produces_visible_animation` test covers every entry in `builtins`. A new file format instead needs a loader in `model.rs` or `drawing.rs` and its extension in that module's `EXTENSIONS`.
+
+### Bundled art
+
+The SVG drawings in `assets/` are their own source; edit them directly. The models other than the duck are generated by stdlib-only Python scripts in `tools/models/`, one per model, built with `tools/models/meshkit.py` (lathe, tube, extrude, icosphere, and other primitives; transforms; vertex colors; flat or smooth normals; a GLB writer that converts sRGB colors to glTF's linear ones). Running `python3 tools/models/<name>.py` rewrites `assets/<name>.glb`. To check how art looks, render a frame through the app with `--time` and the block style, for example `COLUMNS=100 LINES=32 cargo run -q -- assets/rocket.glb --style blocks --color truecolor --time 2.6 < /dev/null | cat`. Drawings lift ink darker than value 0.45 and models floor albedo at 0.3, so art should use mid-to-bright colors and keep brightness contrast for the plain style.
 
 ## Conventions
 
