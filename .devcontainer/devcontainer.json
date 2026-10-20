@@ -3,5 +3,30 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "remoteUser": "dev"
+  "remoteUser": "dev",
+
+  // Named volumes live outside the container, so these folders survive a rebuild.
+  // The names carry no repo name, so every dev container that mounts them
+  // shares one login and one set of settings.
+  "mounts": [
+    // Claude Code: login, settings, conversations, memory
+    { "type": "volume", "source": "claude-code", "target": "/home/dev/.claude" },
+    // Codex: login (auth.json), config, sessions, and the Codex program itself
+    { "type": "volume", "source": "codex", "target": "/home/dev/.codex" },
+    // Antigravity CLI (agy): config, conversations, and its login when no OS keyring is available
+    { "type": "volume", "source": "gemini", "target": "/home/dev/.gemini" },
+    // GitHub CLI: login token
+    { "type": "volume", "source": "gh-config", "target": "/home/dev/.config/gh" },
+    // git: user.name, user.email and other `git config --global` settings
+    { "type": "volume", "source": "git-config", "target": "/home/dev/.config/git" }
+  ],
+
+  // Environment variables set in the container.
+  "containerEnv": {
+    // Claude Code keeps ~/.claude.json in the home folder by default; this moves
+    // it into the volume as well.
+    "CLAUDE_CONFIG_DIR": "/home/dev/.claude"
+  },
+
+  "postCreateCommand": "cargo fetch"
 }
