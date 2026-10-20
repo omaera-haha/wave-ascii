@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" width="640" height="360">
+  <!-- Dunes: a desert day in 24 seconds. The sun and moon swing around a
+       point below the horizon, and the sky, the dunes, and the stars change
+       with the hour. Night colors stay bright enough to tell the dunes
+       apart in plain text. Hours: midnight 0, sunrise 0.26, noon 0.5,
+       sunset 0.74. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2766">
+        <animate attributeName="stop-color" values="#1f2766;#2a2f75;#3c4fa0;#3f8fdc;#3f8fdc;#4a4598;#2a2a70;#1f2766"
+                 keyTimes="0;0.2;0.26;0.34;0.66;0.74;0.8;1" dur="24s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="0.55" stop-color="#2c3478">
+        <animate attributeName="stop-color" values="#2c3478;#4a3f88;#c2689a;#86c0ee;#86c0ee;#c95f8a;#4a3a80;#2c3478"
+                 keyTimes="0;0.2;0.26;0.34;0.66;0.74;0.8;1" dur="24s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="1" stop-color="#3d4590">
+        <animate attributeName="stop-color" values="#3d4590;#7a5aa0;#ffa070;#d4ecf7;#d4ecf7;#ff8a5c;#7a4f90;#3d4590"
+                 keyTimes="0;0.2;0.26;0.34;0.66;0.74;0.8;1" dur="24s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <radialGradient id="sunlight">
+      <stop offset="0" stop-color="#ffd98a" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ffb35c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="moonlight">
+      <stop offset="0" stop-color="#dfe6ff" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#dfe6ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="trail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <mask id="crescent">
+      <circle cx="160" cy="62" r="11" fill="white"/>
+      <circle cx="166" cy="58" r="9.5" fill="black"/>
+    </mask>
+  </defs>
+
+  <rect width="320" height="180" fill="url(#sky)"/>
+
+  <g fill="#f2f4ff">
+    <animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;0.18;0.27;0.73;0.82;1"
+             dur="24s" repeatCount="indefinite"/>
+    <circle cx="18" cy="14" r="1.3"><animate attributeName="opacity" values="1;0.3;1" begin="-0.00s" dur="2.4s" repeatCount="indefinite"/></circle>
+    <circle cx="44" cy="40" r="1"/>
+    <circle cx="70" cy="22" r="1.5"/>
+    <circle cx="96" cy="58" r="1"><animate attributeName="opacity" values="1;0.3;1" begin="-1.11s" dur="4.2s" repeatCount="indefinite"/></circle>
+    <circle cx="118" cy="10" r="1.2"/>
+    <circle cx="142" cy="34" r="1"/>
+    <circle cx="178" cy="18" r="1.4"><animate attributeName="opacity" values="1;0.3;1" begin="-2.22s" dur="3.6s" repeatCount="indefinite"/></circle>
+    <circle cx="198" cy="48" r="1"/>
+    <circle cx="224" cy="12" r="1.1"/>
+    <circle cx="246" cy="32" r="1.5"><animate attributeName="opacity" values="1;0.3;1" begin="-0.33s" dur="3.0s" repeatCount="indefinite"/></circle>
+    <circle cx="272" cy="20" r="1"/>
+    <circle cx="298" cy="44" r="1.3"/>
+    <circle cx="306" cy="10" r="1"><animate attributeName="opacity" values="1;0.3;1" begin="-1.44s" dur="2.4s" repeatCount="indefinite"/></circle>
+    <circle cx="30" cy="70" r="1.1"/>
+    <circle cx="284" cy="74" r="1"/>
+    <circle cx="160" cy="6" r="1"><animate attributeName="opacity" values="1;0.3;1" begin="-2.55s" dur="4.2s" repeatCount="indefinite"/></circle>
+    <g opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.06;0.062;0.078;0.09;1"
+               dur="24s" repeatCount="indefinite"/>
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 0;90 36;90 36"
+                        keyTimes="0;0.06;0.09;1" dur="24s" repeatCount="indefinite"/>
+      <path d="M40 16 L66 26.4" stroke="url(#trail)" stroke-width="1.8" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <g transform="rotate(0 160 228)">
+    <animateTransform attributeName="transform" type="rotate"
+                      values="0 160 228;51 160 228;180 160 228;309 160 228;360 160 228"
+                      keyTimes="0;0.2;0.5;0.8;1" dur="24s" repeatCount="indefinite"/>
+    <circle cx="160" cy="62" r="30" fill="url(#moonlight)"/>
+    <circle cx="160" cy="62" r="11" fill="#f5f1dc" mask="url(#crescent)"/>
+  </g>
+
+  <g transform="rotate(-180 160 228)">
+    <animateTransform attributeName="transform" type="rotate"
+                      values="-180 160 228;-51 160 228;0 160 228;51 160 228;180 160 228"
+                      keyTimes="0;0.26;0.5;0.74;1" dur="24s" repeatCount="indefinite"/>
+    <circle cx="160" cy="62" r="40" fill="url(#sunlight)"/>
+    <circle cx="160" cy="62" r="15" fill="#ffb066">
+      <animate attributeName="fill" values="#ff9a5a;#ff9a5a;#fff3c4;#fff3c4;#ff9a5a;#ff9a5a"
+               keyTimes="0;0.26;0.36;0.64;0.74;1" dur="24s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <path d="M0 116 C40 102 82 98 124 108 C164 118 196 96 244 94 C282 92 304 102 320 106 L320 180 L0 180 Z" fill="#5a5aa0">
+    <animate attributeName="fill" values="#5a5aa0;#6b5f9e;#f2a27e;#f6d29a;#f6d29a;#f09a78;#6e5a9a;#5a5aa0"
+             keyTimes="0;0.2;0.26;0.34;0.66;0.74;0.8;1" dur="24s" repeatCount="indefinite"/>
+  </path>
+  <path d="M0 134 C48 120 92 116 142 128 C184 138 222 116 270 114 C296 113 310 118 320 122 L320 180 L0 180 Z" fill="#4a4890">
+    <animate attributeName="fill" values="#4a4890;#5a4f8c;#e08868;#eab06a;#eab06a;#d97a5e;#5d4b88;#4a4890"
+             keyTimes="0;0.2;0.26;0.34;0.66;0.74;0.8;1" dur="24s" repeatCount="indefinite"/>
+  </path>
+  <path d="M0 158 C40 146 92 138 134 148 C174 158 222 150 262 142 C292 136 310 142 320 146 L320 180 L0 180 Z" fill="#3d3b7c">
+    <animate attributeName="fill" values="#3d3b7c;#4b4278;#c96a52;#d98d4c;#d98d4c;#b85a4f;#4d3f74;#3d3b7c"
+             keyTimes="0;0.2;0.26;0.34;0.66;0.74;0.8;1" dur="24s" repeatCount="indefinite"/>
+  </path>
+</svg>

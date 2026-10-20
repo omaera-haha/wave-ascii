@@ -3,23 +3,30 @@
 A Rust terminal app that renders animated scenes as text, in truecolor, 256
 colors, or plain ASCII.
 
-It has 26 built-in scenes in three groups:
+It has 34 built-in scenes in four groups:
 
 - **Generated** in code: a rotating square with a moving, pulsing circle
   (`2d`); a shaded 3D cube (`3d`); a ray-marched sunset `ocean`; a rainbow
-  torus `knot`; three `lava` lamps on a shelf; and the northern lights over a
-  lake (`aurora`).
+  torus `knot`; three `lava` lamps on a shelf; the northern lights over a
+  lake (`aurora`); and a floating `ghost`, after the one on Ghostty's home
+  page, whose eyes look around, blink, and melt into a `>_` prompt inside a
+  ring of flowing light.
 - **Drawings** from SVG: the `wave` logo, a `koi` pond, Mount `fuji`, a
   `synthwave` sunset, a monarch `butterfly`, a low-poly `fox`, a scarlet
   `macaw`, a `mandala`, and pixel-art `invaders`.
+- **Animations** from animated SVG: planets passing behind and in front of
+  the sun (`orbits`); desert `dunes` through a day and night; a `bauhaus`
+  poster whose tiles turn and slide on one beat; flowing silk `ribbons`; a
+  pendulum wave (`pendulums`); comets chasing around an `infinity` loop; and a
+  `breathe` guide that opens on the in-breath.
 - **Models** from glTF: a textured `duck`, a `lighthouse`, a retro `rocket`, a
   ringed `planet`, a hot-air `balloon`, a flying saucer (`ufo`), a `bonsai`,
   fly-agaric `mushrooms`, gem `crystals`, a glazed `donut`, and a `chess`
   set.
 
-It also plays vector art and 3D models made in other tools: SVG drawings from
-Figma, Illustrator, or Inkscape, and glTF, OBJ, or STL models from Blender or
-any CAD or sculpting app.
+It also plays vector art and 3D models made in other tools: SVG drawings and
+SVG animations from Figma, Illustrator, Inkscape, or a text editor, and glTF,
+OBJ, or STL models from Blender or any CAD or sculpting app.
 
 ## Run
 
@@ -35,6 +42,13 @@ cargo run --release -- path/to/model.glb path/to/logo.svg
 
 Without a scene name, the app starts with the scene menu open. Otherwise the
 first scene or file named is shown first. Files join the end of the scene list.
+
+The app draws 60 frames per second. On a faster display, set `--fps` to its
+refresh rate for the smoothest motion, for example `--fps 120` or `--fps 144`.
+A terminal program can't see the display's rate itself, since it talks to the
+terminal through a pty, often over SSH or from a container. Animation speed
+follows the clock, so it is the same at any rate; scenes that take longer to
+draw than a frame allows run as fast as they can.
 
 | Key                | Action                                        |
 | ------------------ | --------------------------------------------- |
@@ -52,7 +66,8 @@ first scene or file named is shown first. Files join the end of the scene list.
 ### Scene menu
 
 The scene menu lists every scene in a panel at the left, grouped under
-Generated, Drawings, Models, and Files, with no search box to type into. The
+Generated, Drawings, Animations, Models, and Files, with no search box to
+type into. The
 highlighted scene plays beside the panel, so you can look through the scenes
 as you move.
 
@@ -98,7 +113,7 @@ changed since the previous frame are rewritten.
 
 | Format                | Made with                               | Notes                                                                                     |
 | --------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `.svg`, `.svgz`       | Figma, Illustrator, Inkscape, Affinity  | Rendered with resvg: gradients, clipping, masks, filters, and text in system fonts       |
+| `.svg`, `.svgz`       | Figma, Illustrator, Inkscape, Affinity  | Rendered with resvg: gradients, clipping, masks, filters, text in system fonts, and SMIL animation |
 | `.glb`, `.gltf`       | Blender, Maya, 3ds Max, Sketchfab       | glTF 2.0 node hierarchy, base color textures and factors, and vertex colors              |
 | `.obj` with `.mtl`    | Nearly every 3D tool                    | Polygons, normals, texture coordinates, vertex colors, and material diffuse colors         |
 | `.stl`                | CAD and 3D-printing tools               | Binary or ASCII; turned from Z-up to Y-up                                                 |
@@ -108,18 +123,40 @@ highlight. Very dark ink is lifted so black artwork stays visible on dark
 terminals. Models are centered, scaled to fit, and shown on a turntable.
 Missing normals are smoothed except across sharp edges.
 
+SVG files with animation play as they would in a browser, framed and clipped
+by their canvas instead of swaying. The app reads SMIL animation:
+
+- `<animate>`, `<set>`, and `<animateTransform>` on any attribute, including
+  colors, path data, gradient stops, and `stroke-dashoffset`, with `values`
+  or `from`, `to`, and `by`
+- `<animateMotion>` along a `path`, an `<mpath>`, or `values`, with
+  `rotate="auto"` and `keyPoints`
+- `begin` offsets (negative ones start partway through), `dur`, `end`,
+  `repeatCount`, `repeatDur`, and `fill="freeze"`
+- `calcMode` `linear`, `discrete`, and `spline` with `keyTimes` and
+  `keySplines`; `paced` moves evenly along a motion path and is linear
+  otherwise
+- `additive="sum"`, and targets named with `href`
+
+Animations that begin on an event, such as a click or another animation
+ending, never start. CSS animations are not supported, and an animated
+attribute doesn't override the same property in a `style` attribute.
+
 glTF meshes compressed with Draco or meshopt are not supported. If a texture
 can't be decoded, for example because it isn't PNG or JPEG, the model is drawn
 without textures.
 
 ## Bundled art
 
-The drawings and models are compiled into the program from `assets/`, so the
-built app needs no asset files. The duck is the Khronos glTF sample model,
+The drawings, animations, and models are compiled into the program from
+`assets/`, so the built app needs no asset files. The duck is the Khronos glTF sample model,
 © 2006 Sony, under the SCEA Shared Source License (see
 `assets/duck.LICENSE.txt`). More sample models are in the
 [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets);
 check each model's license. The other art was made for this project.
+
+The drawings and animations are plain SVG files, written to be edited by hand.
+A web browser plays the animations too, which helps when timing them.
 
 The other models are generated by Python scripts in `tools/models/`, one per
 model, using the small mesh kit in `tools/models/meshkit.py`. They need only
@@ -131,7 +168,8 @@ python3 tools/models/rocket.py
 ```
 
 To see how art looks before adding it, render one frame of the file in blocks
-with color, using `--time` to turn a model to other sides:
+with color, using `--time` to turn a model to other sides or to pick a moment
+of an animation:
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- assets/rocket.glb --style blocks --color truecolor --time 2.6 < /dev/null | cat
@@ -159,7 +197,8 @@ cargo fmt --check
 cargo clippy
 ```
 
-Dependencies: `glam` for vector math, `resvg` for SVG, and `gltf` for glTF.
+Dependencies: `glam` for vector math, `resvg` for SVG, `svgtypes` for colors
+and paths in SVG animation, and `gltf` for glTF.
 
 ## License
 

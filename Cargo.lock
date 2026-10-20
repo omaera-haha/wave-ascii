@@ -712,6 +712,7 @@ dependencies = [
  "glam",
  "gltf",
  "resvg",
+ "svgtypes",
 ]
 
 [[package]]

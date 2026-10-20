@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150" width="600" height="450">
+  <!-- Bauhaus: a poster of twelve tiles. Every two seconds a wave crosses it
+       from the top left: each shape turns, slides, or swells in an eased move,
+       then rests. The moves share one rhythm (keyTimes) and start 0.2 s later
+       per tile along the diagonal. -->
+  <defs>
+    <clipPath id="tile"><rect width="50" height="50"/></clipPath>
+  </defs>
+  <rect width="200" height="150" fill="#1b2a44"/>
+  <g transform="translate(0 0)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#23395b"/>
+    <path d="M0 0 A50 50 0 0 1 50 50 L0 50 Z" fill="#f2b134">
+      <animateTransform attributeName="transform" type="rotate" values="0 25 25;90 25 25;90 25 25;180 25 25;180 25 25;270 25 25;270 25 25;360 25 25;360 25 25"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.0s" dur="8s" repeatCount="indefinite"/>
+    </path>
+  </g>
+  <g transform="translate(50 0)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#f3e9d2"/>
+    <circle cx="25" cy="25" r="15" fill="#e2603f">
+      <animate attributeName="r" values="15;21;21;15;15;21;21;15;15"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.2s" dur="8s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="25" cy="25" r="5" fill="#23395b"/>
+  </g>
+  <g transform="translate(100 0)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#e2603f"/>
+    <rect x="13" y="13" width="24" height="24" fill="#23395b">
+      <animateTransform attributeName="transform" type="rotate" values="0 25 25;45 25 25;45 25 25;90 25 25;90 25 25;135 25 25;135 25 25;180 25 25;180 25 25"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.4s" dur="8s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  <g transform="translate(150 0)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#f2b134"/>
+    <g fill="#23395b">
+      <rect x="8" y="11" width="34" height="6" rx="3">
+        <animate attributeName="width" values="34;14;14;34;34;14;14;34;34"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.6s" dur="8s" repeatCount="indefinite"/>
+      </rect>
+      <rect x="8" y="22" width="14" height="6" rx="3">
+        <animate attributeName="width" values="14;34;34;14;14;34;34;14;14"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.6s" dur="8s" repeatCount="indefinite"/>
+      </rect>
+      <rect x="8" y="33" width="34" height="6" rx="3">
+        <animate attributeName="width" values="34;14;14;34;34;14;14;34;34"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.6s" dur="8s" repeatCount="indefinite"/>
+      </rect>
+    </g>
+  </g>
+  <g transform="translate(0 50)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#1f8a8a"/>
+    <circle r="11" fill="#f4a7a0" transform="translate(14 14)">
+      <animateTransform attributeName="transform" type="translate" values="14 14;36 14;36 14;36 36;36 36;14 36;14 36;14 14;14 14"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.2s" dur="8s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="6" fill="#f3e9d2" transform="translate(36 36)">
+      <animateTransform attributeName="transform" type="translate" values="36 36;14 36;14 36;14 14;14 14;36 14;36 14;36 36;36 36"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.2s" dur="8s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  <g transform="translate(50 50)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#f2b134"/>
+    <path d="M25 8 L42 39 L8 39 Z" fill="#23395b">
+      <animateTransform attributeName="transform" type="rotate" values="0 25 28;90 25 28;90 25 28;180 25 28;180 25 28;270 25 28;270 25 28;360 25 28;360 25 28"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.4s" dur="8s" repeatCount="indefinite"/>
+    </path>
+  </g>
+  <g transform="translate(100 50)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#23395b"/>
+    <g fill="none" stroke-width="7">
+      <animateTransform attributeName="transform" type="rotate" values="0 25 25;-90 25 25;-90 25 25;-180 25 25;-180 25 25;-270 25 25;-270 25 25;-360 25 25;-360 25 25"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.6s" dur="8s" repeatCount="indefinite"/>
+      <path d="M0 6 A44 44 0 0 1 44 50" stroke="#e2603f"/>
+      <path d="M0 20 A30 30 0 0 1 30 50" stroke="#f2b134"/>
+      <path d="M0 34 A16 16 0 0 1 16 50" stroke="#f3e9d2"/>
+    </g>
+  </g>
+  <g transform="translate(150 50)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#f3e9d2"/>
+    <circle cx="25" cy="25" r="18" fill="#e2603f"/>
+    <circle cx="-16" cy="25" r="19.5" fill="#f3e9d2">
+      <animate attributeName="cx" values="-16;8;8;25;25;42;42;66;66"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.8s" dur="8s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  <g transform="translate(0 100)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#f4a7a0"/>
+    <circle cx="25" cy="56" r="10" fill="#f2b134">
+      <animate attributeName="cy" values="56;19;19;56;56;19;19;56;56"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.4s" dur="8s" repeatCount="indefinite"/>
+    </circle>
+    <path d="M3 50 A22 22 0 0 1 47 50 Z" fill="#23395b"/>
+  </g>
+  <g transform="translate(50 100)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#23395b"/>
+    <path d="M0 50 A50 50 0 0 1 50 0 A50 50 0 0 1 0 50 Z" fill="#f2b134">
+      <animateTransform attributeName="transform" type="rotate" values="0 25 25;90 25 25;90 25 25;180 25 25;180 25 25;270 25 25;270 25 25;360 25 25;360 25 25"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.6s" dur="8s" repeatCount="indefinite"/>
+    </path>
+  </g>
+  <g transform="translate(100 100)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#1f8a8a"/>
+    <rect x="7" y="18" width="36" height="14" rx="7" fill="#f3e9d2">
+      <animateTransform attributeName="transform" type="rotate" values="0 25 25;90 25 25;90 25 25;180 25 25;180 25 25;270 25 25;270 25 25;360 25 25;360 25 25"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="0.8s" dur="8s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="25" cy="25" r="4" fill="#e2603f"/>
+  </g>
+  <g transform="translate(150 100)" clip-path="url(#tile)">
+    <rect width="50" height="50" fill="#e2603f"/>
+    <g>
+      <animateTransform attributeName="transform" type="rotate" values="0 25 25;90 25 25;90 25 25;180 25 25;180 25 25;270 25 25;270 25 25;360 25 25;360 25 25"
+          keyTimes="0;0.1;0.25;0.35;0.5;0.6;0.75;0.85;1" calcMode="spline"
+          keySplines="0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1;0.65 0 0.35 1;0 0 1 1" begin="1.0s" dur="8s" repeatCount="indefinite"/>
+      <circle cx="25" cy="25" r="18" fill="#23395b"/>
+      <path d="M7 25 A18 18 0 0 1 43 25 Z" fill="#f3e9d2"/>
+    </g>
+  </g>
+</svg>

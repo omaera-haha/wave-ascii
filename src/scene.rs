@@ -7,7 +7,7 @@ use crate::color::hsv;
 use crate::drawing::{self, Drawing};
 use crate::frame::{Frame, Grid, Shade};
 use crate::mesh::Mesh;
-use crate::{aurora, lava, model, ocean};
+use crate::{aurora, ghost, lava, model, ocean};
 
 /// A drawing or model compiled into the program, so it works without the
 /// asset file.
@@ -29,7 +29,7 @@ macro_rules! preset {
 }
 
 // Command-line names of the scenes made in code, in `builtins` order.
-const GENERATED: [&str; 6] = ["2d", "3d", "ocean", "knot", "lava", "aurora"];
+const GENERATED: [&str; 7] = ["2d", "3d", "ocean", "knot", "lava", "aurora", "ghost"];
 
 const DRAWINGS: &[Preset] = &[
     preset!("wave", "Wave logo", "svg"),
@@ -41,6 +41,17 @@ const DRAWINGS: &[Preset] = &[
     preset!("macaw", "Macaw", "svg"),
     preset!("mandala", "Mandala", "svg"),
     preset!("invaders", "Invaders", "svg"),
+];
+
+// Drawings that animate themselves with SVG animation.
+const ANIMATIONS: &[Preset] = &[
+    preset!("orbits", "Orbits", "svg"),
+    preset!("dunes", "Dunes", "svg"),
+    preset!("bauhaus", "Bauhaus", "svg"),
+    preset!("ribbons", "Ribbons", "svg"),
+    preset!("pendulums", "Pendulum wave", "svg"),
+    preset!("infinity", "Infinity", "svg"),
+    preset!("breathe", "Breathe", "svg"),
 ];
 
 const MODELS: &[Preset] = &[
@@ -88,6 +99,7 @@ pub enum Scene {
     Knot(Mesh),
     Lava,
     Aurora,
+    Ghost,
     Model {
         label: String,
         mesh: Mesh,
@@ -101,11 +113,12 @@ pub enum Scene {
 impl Scene {
     /// Command-line names of the built-in scenes under their menu groups, in
     /// `builtins` order.
-    pub fn groups() -> [(&'static str, Vec<&'static str>); 3] {
+    pub fn groups() -> [(&'static str, Vec<&'static str>); 4] {
         let names = |presets: &[Preset]| presets.iter().map(|preset| preset.name).collect();
         [
             ("Generated", GENERATED.to_vec()),
             ("Drawings", names(DRAWINGS)),
+            ("Animations", names(ANIMATIONS)),
             ("Models", names(MODELS)),
         ]
     }
@@ -123,13 +136,19 @@ impl Scene {
             Self::Knot(Mesh::torus_knot(2, 3)),
             Self::Lava,
             Self::Aurora,
+            Self::Ghost,
         ];
-        scenes.extend(DRAWINGS.iter().map(|preset| Self::Drawing {
-            label: preset.label.to_owned(),
-            drawing: Box::new(Drawing::parse(preset.data, None).unwrap_or_else(|error| {
-                panic!("the bundled {}.svg is invalid: {error}", preset.name)
-            })),
-        }));
+        scenes.extend(
+            DRAWINGS
+                .iter()
+                .chain(ANIMATIONS)
+                .map(|preset| Self::Drawing {
+                    label: preset.label.to_owned(),
+                    drawing: Box::new(Drawing::parse(preset.data, None).unwrap_or_else(|error| {
+                        panic!("the bundled {}.svg is invalid: {error}", preset.name)
+                    })),
+                }),
+        );
         scenes.extend(MODELS.iter().map(|preset| Self::Model {
             label: preset.label.to_owned(),
             mesh: model::parse_gltf(preset.data).unwrap_or_else(|error| {
@@ -181,9 +200,14 @@ impl Scene {
     /// The heading the scene is listed under in the menu.
     pub fn group(&self) -> &'static str {
         match self {
-            Self::Shapes | Self::Cube | Self::Ocean | Self::Knot(_) | Self::Lava | Self::Aurora => {
-                "Generated"
-            }
+            Self::Shapes
+            | Self::Cube
+            | Self::Ocean
+            | Self::Knot(_)
+            | Self::Lava
+            | Self::Aurora
+            | Self::Ghost => "Generated",
+            Self::Drawing { drawing, .. } if drawing.is_animated() => "Animations",
             Self::Drawing { .. } => "Drawings",
             Self::Model { .. } => "Models",
         }
@@ -197,6 +221,7 @@ impl Scene {
             Self::Knot(_) => "Torus knot",
             Self::Lava => "Lava lamps",
             Self::Aurora => "Aurora",
+            Self::Ghost => "Ghost",
             Self::Model { label, .. } | Self::Drawing { label, .. } => label,
         }
     }
@@ -254,6 +279,7 @@ impl Scene {
             Self::Ocean => ocean::render(grid, time, view.yaw, view.pitch, view.zoom),
             Self::Lava => lava::render(grid, time, view.yaw, view.zoom),
             Self::Aurora => aurora::render(grid, time, view.yaw, view.pitch, view.zoom),
+            Self::Ghost => ghost::render(grid, time, view.yaw, view.zoom),
             Self::Knot(mesh) => {
                 let rotation = view.orbit()
                     * Quat::from_rotation_y(time * 0.5)

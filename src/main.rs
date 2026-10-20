@@ -1,9 +1,11 @@
+mod animation;
 mod app;
 mod aurora;
 mod canvas;
 mod color;
 mod drawing;
 mod frame;
+mod ghost;
 mod lava;
 mod menu;
 mod mesh;
@@ -41,6 +43,8 @@ Options:
                                  plain when output is piped
   --time SECONDS                 moment of the frame printed when piped
                                  (default 0)
+  --fps N                        frames per second; set it to the display's
+                                 refresh rate, such as 120 (default 60)
   -h, --help                     show this help
 
 Keys:
@@ -63,6 +67,7 @@ struct Options {
     style: Style,
     color: Option<ColorMode>,
     time: f32,
+    frames_per_second: f64,
 }
 
 fn main() -> ExitCode {
@@ -86,6 +91,7 @@ fn parse_options() -> io::Result<Option<Options>> {
     let mut style = Style::Ascii;
     let mut color = None;
     let mut time = 0.0;
+    let mut frames_per_second = 60.0;
     let mut arguments = env::args().skip(1);
 
     while let Some(argument) = arguments.next() {
@@ -132,6 +138,18 @@ fn parse_options() -> io::Result<Option<Options>> {
                         invalid_input(format!("--time needs a number of seconds, not {value:?}"))
                     })?;
             }
+            "--fps" => {
+                let value = value()?;
+                frames_per_second = value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|rate| (1.0..=1000.0).contains(rate))
+                    .ok_or_else(|| {
+                        invalid_input(format!(
+                            "--fps needs a number from 1 to 1000, not {value:?}"
+                        ))
+                    })?;
+            }
             flag if flag.starts_with('-') => {
                 return Err(invalid_input(format!(
                     "unknown option {flag:?}; see --help"
@@ -161,6 +179,7 @@ fn parse_options() -> io::Result<Option<Options>> {
         style,
         color,
         time,
+        frames_per_second,
     }))
 }
 
@@ -195,6 +214,7 @@ fn run() -> io::Result<()> {
         style,
         color,
         mut time,
+        frames_per_second,
     }) = parse_options()?
     else {
         println!("{}", HELP.replace("{scenes}", &scene_list()));
@@ -244,10 +264,10 @@ fn run() -> io::Result<()> {
     let mut size = terminal.size();
     let mut last_frame = Instant::now();
     let mut last_size_check = last_frame;
-    let frame_duration = Duration::from_secs_f64(1.0 / 30.0);
+    let frame_duration = Duration::from_secs_f64(1.0 / frames_per_second);
+    let mut next_frame = last_frame;
 
     loop {
-        let frame_start = Instant::now();
         let mut restyled = false;
         for key in terminal.keys()? {
             match app.press(key) {
@@ -288,6 +308,15 @@ fn run() -> io::Result<()> {
             draw(columns, rows)
         };
         terminal.draw(&canvas, color, &app.status(scene.label()))?;
-        thread::sleep(frame_duration.saturating_sub(frame_start.elapsed()));
+
+        // Frames start on a fixed beat. When drawing falls behind, the beat
+        // starts over rather than rushing to catch up.
+        next_frame += frame_duration;
+        let now = Instant::now();
+        if next_frame > now {
+            thread::sleep(next_frame - now);
+        } else {
+            next_frame = now;
+        }
     }
 }

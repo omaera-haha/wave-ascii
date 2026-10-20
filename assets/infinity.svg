@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 10 320 140" width="640" height="280">
+  <!-- Infinity: two comets chase each other around a figure eight. Each is a
+       few dashes of the same loop, all ending at the head, so the tail tapers
+       and fades and wide faint dashes make a glow. The loop is 790.76 units long; a dash of length a with its
+       head h along the loop has dashoffset a - h. -->
+  <defs>
+    <path id="loop" d="M160 80 C185 45 230 25 262 25 C292 25 305 55 305 80 C305 105 292 135 262 135 C230 135 185 115 160 80 C135 45 90 25 58 25 C28 25 15 55 15 80 C15 105 28 135 58 135 C90 135 135 115 160 80 Z"/>
+    <linearGradient id="cool" gradientUnits="userSpaceOnUse" x1="15" y1="0" x2="305" y2="0">
+      <stop offset="0" stop-color="#3df2ff"/>
+      <stop offset="1" stop-color="#8a6bff"/>
+    </linearGradient>
+    <linearGradient id="warm" gradientUnits="userSpaceOnUse" x1="15" y1="0" x2="305" y2="0">
+      <stop offset="0" stop-color="#ffb86b"/>
+      <stop offset="1" stop-color="#ff5fa2"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="none" stroke-linecap="round">
+    <use href="#loop" stroke="#c9d2ff" stroke-opacity="0.12" stroke-width="9"/>
+    <use href="#loop" stroke="#c9d2ff" stroke-opacity="0.22" stroke-width="1.5"/>
+
+    <g stroke="url(#cool)">
+      <use href="#loop" stroke-width="22" stroke-opacity="0.16" stroke-dasharray="36 754.76">
+        <animate attributeName="stroke-dashoffset" values="36;-754.76" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="14" stroke-opacity="0.28" stroke-dasharray="40 750.76">
+        <animate attributeName="stroke-dashoffset" values="40;-750.76" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="3" stroke-opacity="0.45" stroke-dasharray="160 630.76">
+        <animate attributeName="stroke-dashoffset" values="160;-630.76" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="5.5" stroke-opacity="0.75" stroke-dasharray="80 710.76">
+        <animate attributeName="stroke-dashoffset" values="80;-710.76" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="8" stroke-dasharray="28 762.76">
+        <animate attributeName="stroke-dashoffset" values="28;-762.76" dur="5s" repeatCount="indefinite"/>
+      </use>
+    </g>
+
+    <g stroke="url(#warm)">
+      <use href="#loop" stroke-width="22" stroke-opacity="0.16" stroke-dasharray="36 754.76">
+        <animate attributeName="stroke-dashoffset" values="36;-754.76" begin="-2.5s" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="14" stroke-opacity="0.28" stroke-dasharray="40 750.76">
+        <animate attributeName="stroke-dashoffset" values="40;-750.76" begin="-2.5s" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="3" stroke-opacity="0.45" stroke-dasharray="160 630.76">
+        <animate attributeName="stroke-dashoffset" values="160;-630.76" begin="-2.5s" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="5.5" stroke-opacity="0.75" stroke-dasharray="80 710.76">
+        <animate attributeName="stroke-dashoffset" values="80;-710.76" begin="-2.5s" dur="5s" repeatCount="indefinite"/>
+      </use>
+      <use href="#loop" stroke-width="8" stroke-dasharray="28 762.76">
+        <animate attributeName="stroke-dashoffset" values="28;-762.76" begin="-2.5s" dur="5s" repeatCount="indefinite"/>
+      </use>
+    </g>
+  </g>
+</svg>
