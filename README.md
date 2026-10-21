@@ -670,8 +670,9 @@ from their lifetime counts; ordinary seeded pictures remain full size unless
 Each ghost is born with its own nature: playful, curious, shy, sleepy, tender,
 or some quiet mix of these. Its inborn nature stays with it, while the days
 it shares with you gently shape its temperament, especially during its first
-month. Games encourage playfulness, discoveries encourage curiosity, and
-care encourages tenderness; company eases shyness, while long absences or
+month. Games and fetch with you encourage playfulness (its own ball
+pushing and twirls don't count), what you show and teach it encourages
+curiosity more than its own reading, and care encourages tenderness; company eases shyness, while long absences or
 frequent pokes can deepen it. Sleep and busy days shape its sleepiness.
 These small daily changes stay close to the nature it was born with, and it
 remembers when it first notices a lasting change. A playful ghost

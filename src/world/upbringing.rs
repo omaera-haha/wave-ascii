@@ -18,8 +18,9 @@ pub struct Upbringing {
 
 /// Signed daily influences in -1..1, before age and the daily rate. Counts
 /// saturate so repeating a deed cannot raise a ghost in a single day.
-/// Twenty playful deeds, sixteen discoveries, or sixteen acts of care fill
-/// their respective days. A quiet half hour together mildly softens play.
+/// A dozen games and fetches with the viewer, ten discoveries (most of
+/// them shown or taught by the viewer), or sixteen acts of care fill their
+/// respective days. A quiet half hour together mildly softens play.
 /// Four hours and a dozen messages ease shyness; repeated pokes and scolds
 /// counter that. An absent day adds only a small shy influence when empty.
 /// Four naps, two lullabies and a full night favor sleep, while hundreds of
@@ -37,44 +38,47 @@ pub fn influences(tally: &Tally) -> [f32; 5] {
         && tally.pets == 0
         && tally.pokes == 0
         && tally.letters_received == 0;
+    // What the viewer plays with it, not the ball it pushes about alone,
+    // so ghosts raised differently grow apart.
     let play = [
         tally.games,
         tally.fetches,
-        tally.nudges,
-        tally.dances,
         tally.finds,
         tally.toppled,
         tally.word_games,
     ]
     .into_iter()
     .map(|count| count as f32)
-    .sum::<f32>();
+    .sum::<f32>()
+        + tally.pounces as f32 / 10.0;
+    // Above all what the viewer shows and teaches it; its own reading and
+    // stargazing count for less.
     let discoveries = [
-        tally.pages,
         tally.constellations,
         tally.drawings_seen,
         tally.pictures_learned,
         tally.learned,
         tally.learned_about,
         tally.word_games,
-        tally.mirror_visits,
     ]
     .into_iter()
     .map(|count| count as f32)
-    .sum::<f32>();
-    let care = [
-        tally.pets,
-        tally.comforts,
-        tally.letters_read,
-        tally.letters_received,
-        tally.viewer_letters_read,
-        tally.stories,
-        tally.focus_sessions,
-        tally.viewer_wishes_granted,
-    ]
-    .into_iter()
-    .map(|count| count as f32)
-    .sum::<f32>();
+    .sum::<f32>()
+        + tally.pages as f32 / 8.0
+        + tally.mirror_visits as f32 / 2.0;
+    let care = tally.pets as f32 / 2.0
+        + [
+            tally.comforts,
+            tally.letters_read,
+            tally.letters_received,
+            tally.viewer_letters_read,
+            tally.stories,
+            tally.focus_sessions,
+            tally.viewer_wishes_granted,
+        ]
+        .into_iter()
+        .map(|count| count as f32)
+        .sum::<f32>();
     let poking = ((tally.pokes as f32 - 3.0) / 12.0).clamp(0.0, 1.0);
     let activities = tally
         .activities
@@ -87,8 +91,8 @@ pub fn influences(tally: &Tally) -> [f32; 5] {
         0.0
     };
     [
-        (play / 20.0).min(1.0) - quiet,
-        (discoveries / 16.0).min(1.0),
+        (play / 12.0).min(1.0) - quiet,
+        (discoveries / 10.0).min(1.0),
         if absent {
             0.4
         } else {
@@ -309,8 +313,7 @@ mod tests {
         for field in [
             "games",
             "fetches",
-            "nudges",
-            "dances",
+            "pounces",
             "finds",
             "toppled",
             "word_games",
@@ -334,7 +337,7 @@ mod tests {
             value[field] = serde_json::json!(1);
             let tally: Tally = serde_json::from_value(value).unwrap();
             let index = match field {
-                "games" | "fetches" | "nudges" | "dances" | "finds" | "toppled" | "word_games" => 0,
+                "games" | "fetches" | "pounces" | "finds" | "toppled" | "word_games" => 0,
                 "pages" | "constellations" | "drawings_seen" | "pictures_learned" | "learned"
                 | "learned_about" | "mirror_visits" => 1,
                 _ => 4,
@@ -348,6 +351,24 @@ mod tests {
             })[1]
                 > 0.0
         );
+        // Pushing the ball about and twirling alone raise no one.
+        let alone = Tally {
+            nudges: 300,
+            dances: 100,
+            ..Tally::default()
+        };
+        assert_eq!(influences(&alone)[0], 0.0);
+        // A day of the ghost's own reading is worth less than one of being
+        // shown things.
+        let reading = influences(&Tally {
+            pages: 20,
+            ..Tally::default()
+        })[1];
+        let shown = influences(&Tally {
+            drawings_seen: 10,
+            ..Tally::default()
+        })[1];
+        assert!(reading < shown, "{reading} {shown}");
     }
 
     #[test]
