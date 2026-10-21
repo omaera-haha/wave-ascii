@@ -37,7 +37,10 @@ const LOOKS_FOR: f32 = 15.0;
 /// the ghost's mind, and the seconds between its idle musings and dreams.
 const MUSES_ON_SETTING_OUT: f32 = 0.35;
 const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
-const DREAMS_EVERY: (f32, f32) = (18.0, 30.0);
+/// A night holds many dreams, but not one every few breaths.
+const DREAMS_EVERY: (f32, f32) = (45.0, 90.0);
+/// Thoughts it remembers having lately, and avoids while it has others.
+const RECENT_THOUGHTS: usize = 16;
 /// Seconds the ghost's own words get before it brings up something new.
 const SPEECH_SETTLES: f64 = 8.0;
 /// Seconds a thought stays before a musing may replace it.
@@ -108,6 +111,8 @@ pub struct Mind {
     /// When the ghost last mused on its own, when it muses next, and
     /// whether its musings are dreams.
     mused_at: f64,
+    /// Its latest thoughts, newest last.
+    recent_thoughts: VecDeque<&'static str>,
     next_musing: f64,
     dreaming: bool,
     /// Messages from the viewer still waiting for a reply.
@@ -149,6 +154,7 @@ impl Mind {
             reflecting: false,
             last_reflection: None,
             mused_at: 0.0,
+            recent_thoughts: VecDeque::new(),
             next_musing: f64::from(MUSES_EVERY.0) * 0.4,
             dreaming: false,
             heard: VecDeque::new(),
@@ -582,7 +588,22 @@ impl Mind {
         if (thinking && !friend_noticed) || lines.is_empty() {
             return;
         }
-        if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
+        // Fresh thoughts first; a line had lately comes back only when
+        // nothing else fits.
+        let fresh: Vec<f32> = lines
+            .iter()
+            .map(|line| f32::from(u8::from(!self.recent_thoughts.contains(line))))
+            .collect();
+        let weights = if fresh.iter().any(|weight| *weight > 0.0) {
+            fresh
+        } else {
+            vec![1.0; lines.len()]
+        };
+        if let Some(index) = world.pick(&weights) {
+            self.recent_thoughts.push_back(lines[index]);
+            if self.recent_thoughts.len() > RECENT_THOUGHTS {
+                self.recent_thoughts.pop_front();
+            }
             let line = musing::named_friend_line(world, lines[index]);
             world.think(&line);
             if asleep {
@@ -1139,6 +1160,28 @@ mod tests {
 
     fn offline() -> Mind {
         Mind::new(&Config::default(), Journal::default(), true)
+    }
+
+    #[test]
+    fn dreams_avoid_lines_it_had_lately_while_others_fit() {
+        let mut mind = offline();
+        let mut world = World::new(3, 2.0);
+        world.ghost.asleep = 1.0;
+        let pool = musing::dreams(&world).len();
+        let rounds = pool.min(RECENT_THOUGHTS);
+        assert!(rounds >= 3, "{pool}");
+        let mut thoughts = Vec::new();
+        for _ in 0..rounds {
+            world.time += 600.0;
+            mind.dreaming = true;
+            mind.next_musing = world.time;
+            mind.muse(&mut world);
+            thoughts.push(world.ghost.thought.as_ref().unwrap().text.clone());
+        }
+        let mut distinct = thoughts.clone();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(distinct.len(), thoughts.len(), "{thoughts:?}");
     }
 
     fn waiting_for_story(text: &str) -> (Mind, World) {
