@@ -54,58 +54,59 @@ impl Letter {
     }
 
     pub fn date_words(&self) -> String {
-        let Ok(date) = self.day.parse::<Date>() else {
-            return String::new();
-        };
-        let month = [
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-        ][date.month() as usize - 1];
-        let day = [
-            "first",
-            "second",
-            "third",
-            "fourth",
-            "fifth",
-            "sixth",
-            "seventh",
-            "eighth",
-            "ninth",
-            "tenth",
-            "eleventh",
-            "twelfth",
-            "thirteenth",
-            "fourteenth",
-            "fifteenth",
-            "sixteenth",
-            "seventeenth",
-            "eighteenth",
-            "nineteenth",
-            "twentieth",
-            "twenty first",
-            "twenty second",
-            "twenty third",
-            "twenty fourth",
-            "twenty fifth",
-            "twenty sixth",
-            "twenty seventh",
-            "twenty eighth",
-            "twenty ninth",
-            "thirtieth",
-            "thirty first",
-        ][date.day() as usize - 1];
-        format!("{month} {day}")
+        self.day.parse::<Date>().map(date_words).unwrap_or_default()
     }
+}
+
+pub(super) fn date_words(date: Date) -> String {
+    let month = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ][date.month() as usize - 1];
+    let day = [
+        "first",
+        "second",
+        "third",
+        "fourth",
+        "fifth",
+        "sixth",
+        "seventh",
+        "eighth",
+        "ninth",
+        "tenth",
+        "eleventh",
+        "twelfth",
+        "thirteenth",
+        "fourteenth",
+        "fifteenth",
+        "sixteenth",
+        "seventeenth",
+        "eighteenth",
+        "nineteenth",
+        "twentieth",
+        "twenty first",
+        "twenty second",
+        "twenty third",
+        "twenty fourth",
+        "twenty fifth",
+        "twenty sixth",
+        "twenty seventh",
+        "twenty eighth",
+        "twenty ninth",
+        "thirtieth",
+        "thirty first",
+    ][date.day() as usize - 1];
+    format!("{month} {day}")
 }
 
 pub fn hit(point: Vec3) -> bool {
