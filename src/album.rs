@@ -231,13 +231,26 @@ pub struct Album {
     seen: Option<(f64, usize)>,
     day: String,
     daily: Vec<String>,
+    /// The life's milestones, which mark pages saved before pages knew
+    /// whether they kept one.
+    milestones: Vec<String>,
 }
 
 impl Album {
+    #[cfg(test)]
     pub fn load(paths: &Paths, now: i64) -> Self {
-        let mut album = Self::default();
+        Self::load_remembering(paths, now, Vec::new())
+    }
+
+    /// Loads the album for a life whose `milestones` say which older pages,
+    /// saved without the mark, keep one.
+    pub fn load_remembering(paths: &Paths, now: i64, milestones: Vec<String>) -> Self {
+        let mut album = Self {
+            milestones,
+            ..Self::default()
+        };
         let mut entries = entries(&paths.album());
-        prune(&mut entries);
+        prune(&mut entries, &album.milestones);
         album.pages = entries.into_iter().map(|(_, page)| page).collect();
         album.last_capture = album
             .pages
@@ -362,7 +375,7 @@ impl Album {
             page.save(paths, &filename)?;
             self.last_capture = Some(self.elapsed);
             let mut saved = entries(&paths.album());
-            prune(&mut saved);
+            prune(&mut saved, &self.milestones);
             self.pages = saved.into_iter().map(|(_, page)| page).collect();
             self.index = self.index.min(self.pages.len().saturating_sub(1));
         }
@@ -413,10 +426,10 @@ fn filename_order(path: &Path) -> (&str, u64) {
 
 // Keeps the newest ordinary pages and milestone pages, each up to its own
 // limit, and deletes the rest. Entries come newest first.
-fn prune(entries: &mut Vec<(PathBuf, Page)>) {
+fn prune(entries: &mut Vec<(PathBuf, Page)>, life_milestones: &[String]) {
     let (mut ordinary, mut milestones) = (0, 0);
     entries.retain(|(path, page)| {
-        let kept = if page.milestone {
+        let kept = if page.milestone || life_milestones.contains(&page.caption) {
             milestones += 1;
             milestones <= MILESTONES_KEPT
         } else {
@@ -686,6 +699,35 @@ mod tests {
             ))
             .is_some()
         );
+    }
+
+    #[test]
+    fn pages_saved_before_the_mark_still_keep_the_lifes_milestones() {
+        let directory = scratch("legacy-milestones");
+        let paths = Paths::in_directory(&directory);
+        let world = World::new(1, 12.0);
+        let canvas = Canvas::blank(1, 1);
+        Page::new(
+            &canvas,
+            &world,
+            0,
+            "I came into being in a glass box.".to_owned(),
+        )
+        .save(&paths, "page-first")
+        .unwrap();
+        for captured in 1..=(PAGES_KEPT as i64 + 5) {
+            Page::new(&canvas, &world, captured, "A moment.".to_owned())
+                .save(&paths, &format!("page-{captured}"))
+                .unwrap();
+        }
+        let milestones = vec!["I came into being in a glass box.".to_owned()];
+        let album = Album::load_remembering(&paths, 1000, milestones);
+        assert_eq!(album.pages.len(), PAGES_KEPT + 1);
+        assert_eq!(
+            album.pages.last().unwrap().caption,
+            "I came into being in a glass box."
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

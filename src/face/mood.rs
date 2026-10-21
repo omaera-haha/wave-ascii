@@ -66,13 +66,14 @@ pub fn face(time: f64, cues: &Cues) -> Face {
         * (1.0 - face.smile);
     face.shut = face.shut.map(|shut| shut.max(blink));
 
+    // A sleeper sleeps through what happens; reactions grow in as it wakes.
     for (start, expression) in &cues.reactions {
         let elapsed = (time - start) as f32;
         let duration = expression.duration();
         if (0.0..duration).contains(&elapsed) {
             let fade =
                 smoothstep(0.0, FADE, elapsed) * smoothstep(duration, duration - FADE, elapsed);
-            face = face.lerp(expression.at(elapsed), fade);
+            face = face.lerp(expression.at(elapsed), fade * (1.0 - cues.asleep));
         }
     }
     face
@@ -454,6 +455,20 @@ mod tests {
         };
         for step in 0..200 {
             assert_eq!(face(f64::from(step) * 0.3, &asleep).shut, [1.0; 2]);
+        }
+    }
+
+    #[test]
+    fn reactions_to_what_happens_leave_a_sleeping_face_asleep() {
+        for expression in [Expression::Worry, Expression::Sparkle, Expression::Surprise] {
+            let cues = Cues {
+                asleep: 1.0,
+                reactions: vec![(0.0, expression)],
+                ..Cues::default()
+            };
+            for step in 0..10 {
+                assert_eq!(face(f64::from(step) * 0.2, &cues).shut, [1.0; 2]);
+            }
         }
     }
 

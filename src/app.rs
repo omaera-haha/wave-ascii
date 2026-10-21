@@ -271,7 +271,14 @@ impl App {
     pub fn live(mut self, paths: Option<Paths>, born: i64) -> Self {
         self.paths = paths;
         if let Some(paths) = &self.paths {
-            self.album = Album::load(paths, mind::now());
+            let milestones = self
+                .world
+                .life
+                .milestones
+                .iter()
+                .map(|entry| entry.text.clone())
+                .collect();
+            self.album = Album::load_remembering(paths, mind::now(), milestones);
         }
         self.born = born;
         self.world.birthday = jiff::Timestamp::from_second(born)
@@ -304,11 +311,13 @@ impl App {
                 .is_some_and(|time| self.world.time >= time)
         {
             self.letter_reply_at = None;
-            // A question still waiting for its answer keeps the floor.
+            // A question still waiting for its answer keeps the floor, and
+            // so does comfort for how the viewer feels.
             if self.world.ghost.asleep < 0.3
                 && self.world.focus.is_none()
                 && self.world.telling.is_none()
                 && self.world.asking.is_none()
+                && self.world.comforting.is_none()
                 && !self.world.reading_viewer_letter()
             {
                 self.world.attend("viewer", 8.0);
@@ -676,7 +685,17 @@ impl App {
             .unread_letter()
             .or_else(|| self.world.life.letters.len().checked_sub(1))
         else {
-            self.mode = Mode::Writing;
+            // Before the ghost has written, the viewer's own letters are the
+            // ones to browse; with none either, a fresh page.
+            if let Some(newest) = self.world.life.received.len().checked_sub(1) {
+                self.sent_letters = true;
+                self.letter_index = newest;
+                self.letter_scroll = 0;
+                self.letter_read = false;
+                self.mode = Mode::Letter;
+            } else {
+                self.mode = Mode::Writing;
+            }
             return;
         };
         self.sent_letters = false;
@@ -1528,7 +1547,12 @@ mod tests {
         assert!(app.draft.is_empty());
         assert_eq!(app.world.life.received[0].lines, ["q", "안녕", "friend"]);
         assert!(app.world.life.received[0].korean);
+        // Before the ghost writes back, its letters open on the viewer's own.
         app.input(Input::Key(Key::Character('e')));
+        assert_eq!(app.mode, Mode::Letter);
+        assert!(app.sent_letters);
+        assert_eq!(app.letter_index, 0);
+        app.input(Input::Key(Key::Character('w')));
         app.input(Input::Key(Key::Control('s')));
         assert_eq!(app.mode, Mode::Writing);
         assert_eq!(app.world.life.received.len(), 1);

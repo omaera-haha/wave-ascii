@@ -804,8 +804,8 @@ COLUMNS=100 LINES=32 cargo run -q -- --date 2027-02-07 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-25 --hour 21 < /dev/null | cat
 ```
 
-The October evening example has a nearly full moon and a visiting ghost friend
-within three simulated minutes.
+The September evening example has a full moon and a visiting ghost friend
+after about four simulated minutes.
 
 The same `--time`, `--hour`, `--date`, and `--born` give the same frame.
 Without `--born`, piped ghosts have no birthday or day-of-life celebrations. Piped time advances the
