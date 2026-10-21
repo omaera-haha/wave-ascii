@@ -856,7 +856,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     let ghost = &app.world.ghost;
     let days = (crate::mind::now() - app.born()).max(0) / 86_400;
     let age = match days {
-        0 => "born today".to_owned(),
+        0 => "less than a day old".to_owned(),
         1 => "one day old".to_owned(),
         days => format!("{days} days old"),
     };
@@ -872,7 +872,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ),
         (String::new(), TEXT),
         (
-            format!("Nature: {}", life.nature.unwrap_or_default().words()),
+            format!("Nature    {}", life.nature.unwrap_or_default().words()),
             TEXT,
         ),
         (
@@ -904,56 +904,55 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     if let Some(usual) = life.usual_time()
         && header.len() < rows.saturating_sub(2)
     {
-        header.push((format!("You usually come: {usual}"), TEXT));
+        header.push((format!("Visits    usually {usual}"), TEXT));
     }
-    if let Some(name) = &life.viewer_name {
-        header.push((format!("You: {name}"), TEXT));
+    // Longer lines continue under their text, past the label's column.
+    let labeled = |label: &str, words: String| -> Vec<(String, Rgb)> {
+        wrap(&words, columns.saturating_sub(20).clamp(20, 52))
+            .into_iter()
+            .enumerate()
+            .map(|(index, line)| {
+                let label = if index == 0 { label } else { "" };
+                (format!("{label:<10}{line}"), TEXT)
+            })
+            .collect()
+    };
+    let korean = app.world.speaks_korean();
+    match (&life.viewer_name, korean) {
+        (Some(name), true) => {
+            header.extend(labeled("You", format!("{name} · talks to it in Korean")))
+        }
+        (Some(name), false) => header.extend(labeled("You", name.clone())),
+        (None, true) => header.extend(labeled("You", "talk to it in Korean".to_owned())),
+        (None, false) => {}
     }
     let practiced: Vec<String> = Skill::ALL
         .into_iter()
         .filter(|skill| life.skills.practice(*skill) > 0.0)
-        .map(|skill| format!("{}: {}", skill.words(), life.skills.words(skill)))
+        .map(|skill| life.skills.description(skill))
         .collect();
     if !practiced.is_empty() {
-        let words = format!("Getting good at: {}", practiced.join(", "));
-        header.extend(
-            wrap(&words, columns.saturating_sub(10).clamp(20, 56))
-                .into_iter()
-                .map(|line| (line, TEXT)),
-        );
+        header.extend(labeled("Skills", practiced.join(", ")));
     }
     if let Some(friend) = &life.friend {
-        header.push((
-            format!(
-                "Friend: {} · {} · visited {}",
-                friend.name,
-                friend.closeness_words(),
-                friend.visit_words()
-            ),
-            TEXT,
-        ));
-        header.push((
-            format!(
-                "  Games together: {}",
+        let mut words = format!(
+            "{} · {} · visited {}",
+            friend.name,
+            friend.closeness_words(),
+            friend.visit_words()
+        );
+        if life.total.friend_games > 0 {
+            words.push_str(&format!(
+                " · played together {}",
                 crate::world::friend::count_words(life.total.friend_games)
-            ),
-            TEXT,
-        ));
+            ));
+        }
+        header.extend(labeled("Friend", words));
     }
-    if app.world.speaks_korean() {
-        header.push(("You speak Korean.".to_owned(), TEXT));
-    }
-    let garden = format!("Garden: {}", app.world.garden_words());
-    let garden = wrap(&garden, columns.saturating_sub(10).clamp(20, 56))
-        .into_iter()
-        .map(|line| (line, TEXT))
-        .collect::<Vec<_>>();
+    let garden = labeled("Garden", app.world.garden_words());
     let total = &life.total;
-    let mut bird = vec![(format!("The bird: {}", life.bird_words()), TEXT)];
-    let room = columns.saturating_sub(10).clamp(20, 56);
-    for line in wrap(&life.keepsake_words(), room) {
-        bird.push((format!("  {line}"), TEXT));
-    }
+    let mut bird = labeled("Bird", life.bird_words().to_owned());
+    bird.extend(labeled("", life.keepsake_words()));
     let mut counts = vec![
         (String::new(), TEXT),
         ("In all its days".to_owned(), ACCENT),
