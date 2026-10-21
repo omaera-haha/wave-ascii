@@ -77,7 +77,9 @@ pub fn request(
         )],
         schema: json!({
             "type": "object",
-            "properties": {"lines": {"type": "array", "minItems": if letter.lines.len() == 2 { 2 } else { 3 }, "maxItems": if letter.lines.len() == 2 { 2 } else { 6 }, "items": {"type": "string"}}},
+            // Structured outputs reject item counts other than zero or one,
+            // so the prompt asks for the length and `Mind::apply` checks it.
+            "properties": {"lines": {"type": "array", "items": {"type": "string"}}},
             "required": ["lines"],
             "additionalProperties": false,
         }),
@@ -113,6 +115,11 @@ mod tests {
             Some(Cache::OneHour),
         );
         assert!(request.system[0].text.contains("Korean"));
+        assert!(
+            crate::mind::reflection::tests::supported_by_structured_outputs(&request.schema),
+            "{}",
+            request.schema
+        );
         assert_eq!(request.messages.len(), 1);
         let context: serde_json::Value =
             serde_json::from_str(&request.messages[0].content[0].text).unwrap();

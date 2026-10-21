@@ -106,7 +106,10 @@ pub fn schema() -> Value {
             "mood": {"type": "string", "enum": Mood::ALL.map(Mood::name)},
             "remember": text,
             "name": text,
-            "write": {"type": "string", "pattern": "^[A-Za-z0-9가-힣]{0,8}$", "description": "A short word in Latin letters, digits, or Hangul syllables; at most eight characters with at most five Hangul syllables."},
+            // Structured outputs reject patterns with range quantifiers and
+            // length limits, so the limits are words here and
+            // `World::write` enforces them.
+            "write": {"type": "string", "description": "A short word in Latin letters, digits, or Hangul syllables; at most eight characters with at most five Hangul syllables, or empty."},
             "look_at": {"type": "string", "enum": std::iter::once("").chain(Thing::NAMES).collect::<Vec<_>>()},
         },
         "required": ["thought", "say", "goal", "mood", "remember", "name", "look_at", "write"],
@@ -359,7 +362,7 @@ pub fn read(value: Value) -> Option<Reflection> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #[test]
     fn the_system_prompt_remembers_self_recognition() {
         let mut life = crate::world::Life::default();
@@ -397,6 +400,63 @@ mod tests {
     }
 
     use super::*;
+
+    /// Whether a schema keeps to what Claude's structured outputs accept:
+    /// no regular expression patterns, length, item-count, or numeric
+    /// limits, and closed objects. A schema outside that is rejected with a
+    /// 400 before Claude ever reads the request.
+    pub(crate) fn supported_by_structured_outputs(schema: &Value) -> bool {
+        const UNSUPPORTED: [&str; 10] = [
+            "pattern",
+            "minLength",
+            "maxLength",
+            "minItems",
+            "maxItems",
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+        ];
+        match schema {
+            Value::Object(fields) => {
+                let closed = fields.get("type") != Some(&json!("object"))
+                    || fields.get("additionalProperties") == Some(&json!(false));
+                closed
+                    && fields.iter().all(|(key, value)| {
+                        // Property names are data, not keywords.
+                        if key == "properties" {
+                            value.as_object().is_some_and(|properties| {
+                                properties.values().all(supported_by_structured_outputs)
+                            })
+                        } else {
+                            !UNSUPPORTED.contains(&key.as_str())
+                                && supported_by_structured_outputs(value)
+                        }
+                    })
+            }
+            Value::Array(items) => items.iter().all(supported_by_structured_outputs),
+            _ => true,
+        }
+    }
+
+    #[test]
+    fn the_structured_output_check_catches_what_claude_rejects() {
+        assert!(!supported_by_structured_outputs(&json!({
+            "type": "string", "pattern": "^[a-z]{0,8}$"
+        })));
+        assert!(!supported_by_structured_outputs(&json!({
+            "type": "object", "additionalProperties": false,
+            "properties": {"lines": {"type": "array", "maxItems": 6, "items": {"type": "string"}}}
+        })));
+        assert!(!supported_by_structured_outputs(&json!({
+            "type": "object", "properties": {"a": {"type": "string"}}
+        })));
+        assert!(supported_by_structured_outputs(&json!({
+            "type": "object", "additionalProperties": false,
+            "properties": {"pattern": {"type": "string"}, "mood": {"enum": ["a"]}}
+        })));
+    }
 
     #[test]
     fn the_system_prompt_keeps_word_game_answers_out_of_speech_and_writing() {
@@ -475,10 +535,7 @@ mod tests {
         assert!(required.iter().all(|name| properties.contains_key(*name)));
         assert_eq!(schema["additionalProperties"], false);
         assert!(required.contains(&"write"));
-        assert_eq!(
-            schema["properties"]["write"]["pattern"],
-            "^[A-Za-z0-9가-힣]{0,8}$"
-        );
+        assert!(supported_by_structured_outputs(&schema), "{schema}");
         assert_eq!(
             schema["properties"]["mood"]["enum"]
                 .as_array()
