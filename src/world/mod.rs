@@ -40,6 +40,7 @@ mod sleep;
 pub mod stars;
 mod story;
 mod things;
+pub mod upbringing;
 pub mod visitor;
 mod vocabulary;
 pub mod wardrobe;
@@ -77,6 +78,7 @@ pub use things::{
     Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, SHELF_POSITION, SILL_POSITION,
     WINDOW_CENTER, flat,
 };
+pub use upbringing::Upbringing;
 pub use visitor::{BirdPicture, Keepsake, Perch, Visitors};
 pub use vocabulary::{Tone, Vocabulary};
 pub use wardrobe::Accessory;
@@ -905,10 +907,7 @@ impl World {
     /// a time.
     pub fn step(&mut self, seconds: f32) {
         self.advance_routine();
-        let day = self.date.to_string();
-        if self.life.day != day {
-            self.life.begin_day(&day);
-        }
+        self.begin_day();
         let calendar_check = self.calendar_at != Some(self.date);
         if calendar_check {
             self.mark_growth();
@@ -1180,8 +1179,7 @@ impl World {
                         && self.invitations_welcome()
                         && self.ghost.asleep < 0.3
                         && self.ghost.needs.energy > 0.25
-                        && (self.life.nature.unwrap_or_default().playful >= 0.5
-                            || self.ghost.needs.fun < 0.4)
+                        && (self.life.temperament().playful >= 0.5 || self.ghost.needs.fun < 0.4)
                 }
                 Activity::Game => {
                     self.viewer_present()
@@ -1713,6 +1711,21 @@ impl World {
     /// How much the ghost is being petted, from 0 to 1.
     pub fn petting(&self) -> f32 {
         self.petting
+    }
+
+    /// Closes yesterday with its age at the time, and lets the usual event
+    /// path show any changes it has come to recognize in itself.
+    pub(crate) fn begin_day(&mut self) {
+        let remembered = self.life.milestones.len();
+        self.life
+            .begin_day_with_birth(&self.date.to_string(), self.birthday);
+        let milestones: Vec<String> = self.life.milestones[remembered..]
+            .iter()
+            .map(|milestone| milestone.text.clone())
+            .collect();
+        for milestone in milestones {
+            self.record(EventKind::Milestone(milestone));
+        }
     }
 
     /// A new ghost comes into being on `day`, a local date as YYYY-MM-DD.
@@ -3007,7 +3020,7 @@ impl World {
                 && friend.position.distance(self.ghost.position) < 1.2
         });
         let night = if self.is_night() { 1.4 } else { 1.0 };
-        let nature = self.life.nature.unwrap_or_default();
+        let nature = self.life.temperament();
         let tiring = 0.85 + 0.3 * nature.sleepy;
         let newborn = self.stage() == Stage::Newborn;
         let fresh_air = self.enjoying_air();

@@ -654,10 +654,17 @@ from their lifetime counts; ordinary seeded pictures remain full size unless
 `--born` supplies a birth date.
 
 Each ghost is born with its own nature: playful, curious, shy, sleepy, tender,
-or some quiet mix of these. It keeps that nature for life. A playful ghost
+or some quiet mix of these. Its inborn nature stays with it, while the days
+it shares with you gently shape its temperament, especially during its first
+month. Games encourage playfulness, discoveries encourage curiosity, and
+care encourages tenderness; company eases shyness, while long absences or
+frequent pokes can deepen it. Sleep and busy days shape its sleepiness.
+These small daily changes stay close to the nature it was born with, and it
+remembers when it first notices a lasting change. A playful ghost
 gets bored sooner and likes the ball; a sleepy one naps more and longer.
 A shy one takes longer to come and greet you, but holds on to your bond.
-Its nature also colors its thoughts and words. Press `l` to see it.
+Its temperament also colors its thoughts and words. Press `l` to see it and
+how it has been changing.
 
 The ghost grows close to you over time. Each minute you spend with it (it
 knows you're there while you use the keys or the mouse, and in terminals that

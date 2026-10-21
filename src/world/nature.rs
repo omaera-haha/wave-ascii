@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use super::{Activity, Random};
 
 /// The inclinations a ghost is born with, kept for its whole life. Each
-/// trait runs from zero to one, with a half as average.
+/// trait runs from zero to one, with a half as average. Upbringing changes
+/// the effective temperament rather than these saved inborn traits.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Nature {

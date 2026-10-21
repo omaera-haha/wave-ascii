@@ -408,7 +408,7 @@ impl World {
             {
                 self.listening = Listening::default();
                 self.notice_viewer();
-                self.life.begin_day(&self.date.to_string());
+                self.begin_day();
                 self.record(EventKind::Heard(text.to_owned()));
                 if let Some(feeling) = feeling {
                     self.remember_feeling(feeling);
@@ -431,7 +431,7 @@ impl World {
     }
 
     fn receive_feeling(&mut self, text: &str, feeling: Feeling, korean: bool) -> Heard {
-        self.life.begin_day(&self.date.to_string());
+        self.begin_day();
         self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
@@ -565,9 +565,7 @@ impl World {
                 Feeling::Stressed | Feeling::Angry => say("Breathe with me…", "같이 숨 쉬자…"),
                 Feeling::Unwell => say("Rest well, okay?", "푹 쉬어, 알겠지?"),
                 Feeling::Tired => say("I'll sit quietly with you.", "조용히 곁에 있을게."),
-                Feeling::Sad | Feeling::Lonely
-                    if self.life.nature.unwrap_or_default().tender >= 0.6 =>
-                {
+                Feeling::Sad | Feeling::Lonely if self.life.temperament().tender >= 0.6 => {
                     say("I'm here.", "내가 여기 있어.")
                 }
                 Feeling::Sad | Feeling::Lonely => {
@@ -796,7 +794,7 @@ pub fn replies(world: &World, feeling: Feeling, korean: bool) -> Vec<String> {
         .iter()
         .map(|(english, hangul)| if korean { *hangul } else { *english }.to_owned())
         .collect();
-    let nature = world.life.nature.unwrap_or_default();
+    let nature = world.life.temperament();
     let extra = if nature.tender >= 0.65 {
         if feeling.negative() {
             Some((

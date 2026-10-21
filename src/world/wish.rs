@@ -293,7 +293,7 @@ impl Wish {
     }
 
     fn weight(&self, world: &World) -> f32 {
-        let nature = world.life.nature.unwrap_or_default();
+        let nature = world.life.temperament();
         let mut weight = 1.0;
         if matches!(
             self,

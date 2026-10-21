@@ -147,7 +147,7 @@ impl World {
     }
 
     fn choose_accessory(&mut self) -> Option<Accessory> {
-        let nature = self.life.nature.unwrap_or_default();
+        let nature = self.life.temperament();
         if self.bedtime() {
             return self.cold_for_scarf().then(|| Accessory::Scarf {
                 color: self.scarf_color(),

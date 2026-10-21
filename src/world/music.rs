@@ -389,7 +389,7 @@ impl World {
         if !self.can_compose() {
             return false;
         }
-        let nature = self.life.nature.unwrap_or_default();
+        let nature = self.life.temperament();
         if self.random.unit() >= 0.25 + 0.15 * (nature.playful + nature.tender - 1.0) {
             return false;
         }
@@ -753,7 +753,7 @@ impl World {
             if self.ghost.plan.count > 0 {
                 if let Some(playing) = &self.music {
                     let phase = playing.beat(self.time) * TAU;
-                    let dancing = self.life.nature.unwrap_or_default().playful > 0.55
+                    let dancing = self.life.temperament().playful > 0.55
                         && self.ghost.needs.energy > 0.45
                         && !playing.lullaby;
                     let offset = if dancing {

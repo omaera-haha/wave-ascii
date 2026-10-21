@@ -1147,7 +1147,7 @@ impl App {
         if world.music.is_some()
             && ghost.plan.activity == crate::world::Activity::Music
             && ghost.plan.count > 0
-            && world.life.nature.unwrap_or_default().tender > 0.55
+            && world.life.temperament().tender > 0.55
         {
             face.shut = [1.0; 2];
         }
@@ -1455,7 +1455,7 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
             + f32::from(now.minute()) / 60.0
             + f32::from(now.second()) / 3600.0;
         let story = crate::world::away::story(left, now, seed, &world.life, world.birthday);
-        world.life.begin_day(&now.date().to_string());
+        world.begin_day();
         story.write_diary(&mut world.life, left.date(), now.date());
         story
     });

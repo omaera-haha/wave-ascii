@@ -11,6 +11,14 @@ pub enum Stage {
 }
 
 impl Stage {
+    pub(super) fn from_age(days: Option<f32>) -> Self {
+        match days {
+            Some(days) if days < 3.0 => Self::Newborn,
+            Some(days) if days < 30.0 => Self::Young,
+            _ => Self::Grown,
+        }
+    }
+
     pub fn words(self) -> &'static str {
         match self {
             Self::Newborn => "a newborn wisp",
@@ -29,11 +37,7 @@ impl World {
     }
 
     pub fn stage(&self) -> Stage {
-        match self.age_days() {
-            Some(days) if days < 3.0 => Stage::Newborn,
-            Some(days) if days < 30.0 => Stage::Young,
-            _ => Stage::Grown,
-        }
+        Stage::from_age(self.age_days())
     }
 
     /// Body scale, eased from a wisp to full size over the first month.

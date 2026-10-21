@@ -467,7 +467,7 @@ impl World {
             self.ghost.plan.done = true;
             return;
         }
-        let playful = self.life.nature.unwrap_or_default().playful;
+        let playful = self.life.temperament().playful;
         let happy = matches!(
             self.ghost.mood,
             super::Mood::Excited | super::Mood::Cheerful

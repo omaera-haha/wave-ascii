@@ -227,7 +227,7 @@ impl World {
             return;
         }
         self.life.constellation_night = Some(self.star_night().to_string());
-        let curiosity = self.life.nature.unwrap_or_default().curious;
+        let curiosity = self.life.temperament().curious;
         if self.random.unit() >= 0.65 + curiosity * 0.3 {
             return;
         }

@@ -1208,7 +1208,13 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             TEXT,
         ),
         (
-            format!("Nature    {}", life.nature.unwrap_or_default().words()),
+            format!(
+                "Nature    {}{}",
+                life.temperament().words(),
+                life.upbringing
+                    .words()
+                    .map_or_else(String::new, |change| format!(", {change}"))
+            ),
             TEXT,
         ),
         (

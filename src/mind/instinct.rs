@@ -90,8 +90,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 if !world.friend_is_open() {
                     0.0
                 } else {
-                    (5.0 + 3.0 * (1.0 - needs.company)
-                        + 2.0 * world.life.nature.unwrap_or_default().playful)
+                    (5.0 + 3.0 * (1.0 - needs.company) + 2.0 * world.life.temperament().playful)
                         * needs.energy
                         * if present {
                             1.0 - 0.25 * world.life.bond
@@ -152,7 +151,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             Activity::Build => {
                 (0.06
                     + 0.3 * (1.0 - needs.fun)
-                    + 0.15 * world.life.nature.unwrap_or_default().curious
+                    + 0.15 * world.life.temperament().curious
                     + if present { 0.1 } else { 0.0 })
                     * needs.energy
             }
@@ -198,7 +197,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     .expectation(world.hour)
                     .max(world.life.expectation(world.hour + 1.0 / 3.0));
                 (0.9 + 1.2 * expectation + 0.8 * world.life.bond)
-                    * (1.0 - 0.3 * world.life.nature.unwrap_or_default().shy)
+                    * (1.0 - 0.3 * world.life.temperament().shy)
             }
             Activity::Window => {
                 let outside = &world.weather;
@@ -362,9 +361,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         .as_ref()
                         .and_then(|puzzle| puzzle.ended)
                         .is_some_and(|ended| world.time - ended < 40.0);
-                    (0.08
-                        + 0.25 * (1.0 - needs.fun)
-                        + 0.15 * world.life.nature.unwrap_or_default().playful)
+                    (0.08 + 0.25 * (1.0 - needs.fun) + 0.15 * world.life.temperament().playful)
                         * needs.energy
                         * if recent { 0.2 } else { 1.0 }
                 }
@@ -378,7 +375,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         .as_ref()
                         .and_then(|game| game.ended)
                         .is_some_and(|ended| world.time - ended < 20.0);
-                    let playful = world.life.nature.unwrap_or_default().playful;
+                    let playful = world.life.temperament().playful;
                     (0.15 + 0.5 * (1.0 - needs.fun) + 0.4 * playful + 0.3 * world.life.bond)
                         * needs.energy
                         * if recent { 0.3 } else { 1.0 }
@@ -454,11 +451,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 * playful
                 * world.life.habit(*activity)
                 * world.life.novelty(*activity)
-                * world
-                    .life
-                    .nature
-                    .unwrap_or_default()
-                    .leaning(*activity, world.life.bond)
+                * world.life.temperament().leaning(*activity, world.life.bond)
         })
         .collect();
     let total: f32 = weights.iter().sum::<f32>().max(f32::MIN_POSITIVE);

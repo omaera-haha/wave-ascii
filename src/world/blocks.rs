@@ -366,8 +366,7 @@ impl World {
         if block.stacked {
             self.topple(direction);
             self.record(EventKind::Toppled { by_viewer: true });
-            let delighted =
-                self.life.nature.unwrap_or_default().playful >= 0.5 || self.life.bond >= 0.55;
+            let delighted = self.life.temperament().playful >= 0.5 || self.life.bond >= 0.55;
             let lines = if delighted {
                 [
                     ("Again!", "또 하자!"),
@@ -632,7 +631,7 @@ impl World {
                         if height > 0 && self.random.unit() < accident_chance(level) {
                             self.topple(self.ghost.velocity);
                             self.record(EventKind::Toppled { by_viewer: false });
-                            let playful = self.life.nature.unwrap_or_default().playful >= 0.5;
+                            let playful = self.life.temperament().playful >= 0.5;
                             self.suggest_mood(
                                 if playful {
                                     Mood::Cheerful
@@ -660,8 +659,7 @@ impl World {
                     });
                     self.ghost.needs.change(-0.003, 0.2, 0.0);
                     if !(self.viewer_present() && self.recent_negative_feeling(1800.0).is_some())
-                        && self.random.unit()
-                            < 0.25 + 0.5 * self.life.nature.unwrap_or_default().playful
+                        && self.random.unit() < 0.25 + 0.5 * self.life.temperament().playful
                     {
                         building.stage = Stage::Swoop;
                         self.ghost.plan.target = building.spot + Vec3::Y * 0.5;

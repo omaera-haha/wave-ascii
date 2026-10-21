@@ -336,7 +336,7 @@ impl World {
     }
 
     pub fn good_sport(&self) -> bool {
-        self.life.nature.unwrap_or_default().tender > 0.4 || self.life.bond >= 0.55
+        self.life.temperament().tender > 0.4 || self.life.bond >= 0.55
     }
 
     pub(super) fn abandon_game(&mut self) {
@@ -437,7 +437,7 @@ impl World {
                         let choices = if !other.is_empty()
                             && self.random.unit()
                                 < mistake_chance(
-                                    self.life.nature.unwrap_or_default(),
+                                    self.life.temperament(),
                                     self.ghost.needs.energy,
                                     self.life.bond,
                                     self.life.skills.level(super::Skill::Games),
@@ -473,7 +473,7 @@ impl World {
         game.finish(outcome, self.time);
         self.record(EventKind::GameOver(outcome));
         let lines: &[(&str, &str)] = match outcome {
-            Outcome::GhostWon { .. } if self.life.nature.unwrap_or_default().playful > 0.6 => {
+            Outcome::GhostWon { .. } if self.life.temperament().playful > 0.6 => {
                 &[("Got you!", "잡았다!"), ("I win!", "내가 이겼다!")]
             }
             Outcome::GhostWon { .. } => {
