@@ -167,6 +167,12 @@ Special days find their way into its thoughts, dreams, and diary, even offline.
 
 ### Its life between runs
 
+Each ghost is born with its own nature: playful, curious, shy, sleepy, tender,
+or some quiet mix of these. It keeps that nature for life. A playful ghost
+gets bored sooner and likes the ball; a sleepy one naps more and longer.
+A shy one takes longer to come and greet you, but holds on to your bond.
+Its nature also colors its thoughts and words. Press `l` to see it.
+
 The ghost grows close to you over time. Each minute you spend with it (it
 knows you're there while you use the keys or the mouse) deepens its bond with
 you, quickly at first and then more slowly: about a third of the way after an
@@ -189,12 +195,12 @@ toward it, so over days each ghost becomes its own: one loves the ball,
 another the window. At the end of each day it writes a line in its diary
 ("Ate 4 light motes, watered the plant until it flowered, and saw a rainbow.
 You were here for about an hour, and we talked."). Press `l` to see its age,
-your bond, what it loves, what it has done in all its days, and today so far;
+nature, your bond, what it loves, what it has done in all its days, and today so far;
 the diary and its moments are in the journal (`j`). Claude reads the last few
 days of the diary and its latest moments.
 
 The ghost's name, needs, the plant, the lamp, its goal, its memories, its
-bond, habits, moments, and diary, and the recent conversation are saved in
+nature, bond, habits, moments, and diary, and the recent conversation are saved in
 `~/.local/share/wave-ascii/ghost.json` (`$XDG_DATA_HOME` if set) every minute
 and on quit. While the app is closed,
 time passes: the plant gets thirsty and the ghost lonely, and it notices how

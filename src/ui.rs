@@ -824,6 +824,10 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ),
         (String::new(), TEXT),
         (
+            format!("Nature: {}", life.nature.unwrap_or_default().words()),
+            TEXT,
+        ),
+        (
             format!(
                 "Bond      {}  {}",
                 meter(life.bond),
