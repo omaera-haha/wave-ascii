@@ -176,6 +176,16 @@ mod tests {
     }
 
     #[test]
+    fn saying_goodnight_at_bedtime_ends_a_story_and_sends_it_to_bed() {
+        let mut world = listening(23.0);
+        world.tell(vec!["A light.".to_owned(); 5]);
+        world.step(0.1);
+        world.hear("goodnight");
+        assert!(world.telling.is_none());
+        assert_eq!(world.ghost.plan.activity, Activity::Rest);
+    }
+
+    #[test]
     fn messages_and_new_requests_leave_the_current_story_running_at_the_glass() {
         let mut world = listening(12.0);
         world.tell(vec!["A light.".to_owned(); 5]);

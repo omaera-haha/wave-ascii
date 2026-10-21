@@ -1027,8 +1027,13 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
-        if self.telling.is_some() && activity != Activity::Visit {
-            return;
+        // A story keeps it at the glass; only going to bed ends one early.
+        if self.telling.is_some() {
+            match activity {
+                Activity::Visit => {}
+                Activity::Rest => self.telling = None,
+                _ => return,
+            }
         }
         if activity != Activity::Visit {
             self.sebae = None;

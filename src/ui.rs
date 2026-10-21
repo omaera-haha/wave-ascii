@@ -979,16 +979,18 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         header.extend(labeled("Friend", words));
     }
     let garden = labeled("Garden", app.world.garden_words());
-    if !life.constellations.is_empty() {
-        header.extend(labeled(
+    let sky = if life.constellations.is_empty() {
+        Vec::new()
+    } else {
+        labeled(
             "Its sky",
             life.constellations
                 .iter()
                 .map(|constellation| constellation.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", "),
-        ));
-    }
+        )
+    };
     let total = &life.total;
     let mut bird = labeled("Bird", life.bird_words().to_owned());
     bird.extend(labeled("", life.keepsake_words()));
@@ -1087,9 +1089,10 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
 
     // In the order they show, with the order they are kept in when space
     // runs short.
-    let sections = [
+    let mut sections = [
         (header, 0),
         (garden, 2),
+        (sky, 3),
         (bird, 2),
         (counts, 4),
         (latest, 3),
@@ -1097,7 +1100,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         (footer, 5),
     ];
     let mut room = rows.saturating_sub(2);
-    let mut kept = [false; 7];
+    let mut kept = [false; 8];
     let mut by_need: Vec<usize> = (0..sections.len()).collect();
     by_need.sort_by_key(|index| sections[*index].1);
     for index in by_need {
@@ -1106,6 +1109,11 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             room -= length;
             kept[index] = true;
         } else if index == 0 {
+            // A long header keeps its first lines, which say who it is.
+            if room > 0 {
+                sections[0].0.truncate(room);
+                kept[0] = true;
+            }
             break;
         }
     }
@@ -1316,6 +1324,30 @@ mod tests {
     }
 
     #[test]
+    fn a_long_sky_and_header_still_leave_the_life_panel_its_first_lines() {
+        let mut app = app();
+        let life = &mut app.world.life;
+        life.viewer_name = Some("Somebody With A Long Name".to_owned());
+        life.total.focus_sessions = 3;
+        life.skills.stacking = 50.0;
+        life.skills.writing = 50.0;
+        for index in 0..12 {
+            life.constellations
+                .push(crate::world::stars::Constellation {
+                    name: format!("the Very Sleepy Dancing Lost Heart Number {index}"),
+                    korean: "하트".to_owned(),
+                    stars: vec![0, 1, 2],
+                    found: "2026-06-21".to_owned(),
+                });
+        }
+        for rows in [24, 12, 6] {
+            let lines = life_lines(&app, 80, rows);
+            assert!(lines.len() + 2 <= rows, "{rows}: {}", lines.len());
+            assert!(lines[0].0.starts_with("Boo"), "{rows}");
+        }
+    }
+
+    #[test]
     fn the_life_panel_leaves_out_what_does_not_fit_the_screen() {
         let mut app = app();
         app.world.life.milestones.push(crate::world::Entry {
@@ -1334,7 +1366,8 @@ mod tests {
                 .iter()
                 .any(|(line, _)| line == "Today so far")
         );
-        assert!(life_lines(&app, 100, 4).is_empty());
+        assert_eq!(life_lines(&app, 100, 4).len(), 2);
+        assert!(life_lines(&app, 100, 2).is_empty());
     }
 
     #[test]
