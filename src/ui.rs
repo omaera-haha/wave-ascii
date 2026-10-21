@@ -331,7 +331,7 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
 }
 
 /// Tips for a quiet words line, the basics first.
-const TIPS: [&str; 11] = [
+const TIPS: [&str; 12] = [
     "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around",
     "drag across the ghost to stroke it · right drag draws in the fog on the glass",
     "e reads its letters, and w there writes it one back",
@@ -343,6 +343,7 @@ const TIPS: [&str; 11] = [
     "tell it “I have an exam tomorrow” or “내일 면접 있어”, and it remembers to cheer you on",
     "Press x, then click the floor to hide a treasure. Try warmer or colder!",
     "it may suggest a stretch after a long sitting · “not now” puts stretches off for three hours",
+    "ask “fold a crane” or “종이학 접어줘” · little paper wishes grow above the plant",
 ];
 /// Seconds the basics show first, and each later tip after them.
 const BASICS_SHOW: f64 = 90.0;
@@ -1360,6 +1361,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         header.extend(labeled("Mirror", life.mirror.words().to_owned()));
     }
     header.extend(labeled("Books", app.world.books_words()));
+    if app.world.life.cranes.total > 0 || app.world.life.cranes.paper.is_some() {
+        header.extend(labeled(
+            "Cranes",
+            format!("{} folded for you", app.world.life.cranes.total),
+        ));
+    }
     if !life.tunes.is_empty() || !life.compositions.is_empty() {
         let own = app.world.composition_words(false);
         let words = if own.is_empty() {

@@ -37,11 +37,12 @@ pub enum Thing {
     Mirror,
     ViewerLetter,
     Treasure,
+    Cranes,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 20] = [
+    pub const NAMES: [&str; 21] = [
         "viewer",
         "window",
         "plant",
@@ -62,6 +63,7 @@ impl Thing {
         "mirror",
         "letter",
         "treasure",
+        "cranes",
     ];
 
     pub fn name(self) -> &'static str {
@@ -86,6 +88,7 @@ impl Thing {
             Self::ViewerLetter => "letter",
             Self::Mirror => "mirror",
             Self::Treasure => "treasure",
+            Self::Cranes => "cranes",
         }
     }
 }
@@ -175,6 +178,7 @@ impl World {
                 super::garden::SPOTS[index] + Vec3::Y * plant.height() * 0.5
             }
             Thing::Treasure => self.treasure()?.0,
+            Thing::Cranes => super::cranes::CENTER,
         })
     }
 
@@ -207,6 +211,7 @@ impl World {
             Thing::Mirror,
             Thing::ViewerLetter,
             Thing::Treasure,
+            Thing::Cranes,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -279,6 +284,7 @@ impl World {
                 Thing::Mirror,
                 Thing::ViewerLetter,
                 Thing::Treasure,
+                Thing::Cranes,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),

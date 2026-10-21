@@ -501,6 +501,13 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
         EventKind::FoundTreasure { gave_up: false, .. } => {
             ("I found the treasure you hid.".to_owned(), None)
         }
+        EventKind::FoldedCrane { count: 100 } => {
+            ("A hundred paper cranes for you.".to_owned(), None)
+        }
+        EventKind::FoldedCrane { count: 1000 } => (
+            "A thousand paper cranes, and a wish for you.".to_owned(),
+            None,
+        ),
         _ => return None,
     };
     Some((caption, daily))

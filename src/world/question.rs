@@ -45,6 +45,7 @@ pub enum Question {
     Wish,
     Mirror,
     Viewer(super::acquaintance::Topic),
+    Cranes,
 }
 
 impl Question {
@@ -349,6 +350,14 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
             &["you", "okay"],
         ],
     ),
+    (
+        Question::Cranes,
+        &[
+            &["how", "many", "cranes", "have", "you", "folded"],
+            &["how", "many", "paper", "cranes"],
+            &["how", "many", "cranes"],
+        ],
+    ),
 ];
 
 // Questions in Korean, as pieces of the message with its spaces taken out,
@@ -538,6 +547,7 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
         false,
     ),
     (Question::Feeling, &["잘지내", "괜찮아"], true),
+    (Question::Cranes, &["종이학몇마리", "학몇마리접"], false),
 ];
 
 /// The question `text` asks, if it is one the ghost can answer by itself.

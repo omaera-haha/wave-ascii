@@ -2162,7 +2162,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..24800 {
+        for _ in 0..20400 {
             app.advance(0.05);
         }
         assert!(

@@ -169,6 +169,7 @@ pub fn request(
         .map(|constellation| constellation.name.as_str())
         .collect();
     let finished_books = life.books.titles(true, false);
+    let cranes = life.cranes.words();
     let tunes: Vec<&str> = life.tunes.iter().map(|tune| tune.name.as_str()).collect();
     let days = dated(&life.diary, DAYS_SENT);
     let viewer_words = |text: &str| {
@@ -324,7 +325,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\nHow shared days are changing you: {}.\n\
                  You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}
+                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}\nPaper cranes folded for the viewer: {cranes}.
 Recent feelings the viewer shared: {feelings}\nViewer plans you remember: {agenda}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\

@@ -470,6 +470,29 @@ even across restarts. No extra keys are needed.
   Claude key, Claude answers instead. It also answers "tell me a story"
   offline, weaving its own memories into a short tale in either language.
 
+### A thousand paper cranes
+
+After its first three days, the ghost starts folding colored paper cranes
+for you in quiet moments. It settles beside its books, lights the lamp at
+night, and spends twenty to thirty-five seconds folding before floating up
+to hang the crane in the back-right corner. The first eighty cranes fill
+eight threads; the count keeps growing. Sometimes it uses your favorite
+color, and on sad days it folds a little wish for you.
+
+Say “fold a crane”, “fold me a paper crane”, “make a paper crane”, or
+“종이학 접어줘”. Requests during sleep, stories, or a focus session wait
+for quiet awake time. It usually folds one a day, sometimes two, rarely
+three, with a daily limit of three including requests. Interrupted paper
+keeps its color and progress; finished cranes are hung safely. Ask “how
+many cranes have you folded?” or “종이학 몇 마리 접었어?”, or open `l` to
+see the count.
+
+The first crane, ten, fifty, a hundred, five hundred, and a thousand become
+milestones. At a thousand the garland glows softly, and the ghost leaves a
+letter with a wish for you. It makes that wish once, then keeps folding
+more slowly, about one crane every few days. Cranes do not accumulate
+while the app is closed.
+
 ### Getting to know you
 
 Once you are friends, the ghost sometimes asks about your favorite color,
@@ -858,7 +881,7 @@ first, deciding on instinct. `--hour` sets the time of day (default noon),
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
-COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-26 --hour 21 --time 1240 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-26 --hour 21 --time 1020 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat
