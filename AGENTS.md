@@ -26,8 +26,7 @@ When stdin or stdout isn't a terminal, the app prints one frame of a fresh, seed
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
-COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time
- 300
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time 684
  < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
