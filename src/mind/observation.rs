@@ -43,6 +43,7 @@ pub fn observe(world: &World) -> Value {
             "glass": glass(world),
         },
         "viewer": viewer(world),
+        "viewer_name": world.life.viewer_name.as_ref().map_or_else(|| "not known yet".to_owned(), |name| format!("The viewer's name is {name}.")),
         "bond_with_viewer": world.life.bond_words(),
         "recent_events": recent(world, 8),
     })
@@ -274,7 +275,12 @@ fn glass(world: &World) -> String {
             } else {
                 ""
             };
-            format!("a {} you drew in the fog{fading}", doodle.sketch.name())
+            match &doodle.picture {
+                crate::world::Picture::Sketch(sketch) => {
+                    format!("a {} you drew in the fog{fading}", sketch.name())
+                }
+                picture => format!("{} you wrote in the fog{fading}", picture.name()),
+            }
         })
         .collect();
     if doodles.is_empty() {
@@ -636,7 +642,7 @@ mod tests {
             .enumerate()
         {
             world.doodles.push(Doodle {
-                sketch,
+                picture: crate::world::Picture::Sketch(sketch),
                 center: Vec2::ZERO,
                 size: 0.3,
                 started: index as f64,
@@ -744,6 +750,35 @@ mod tests {
         assert!(recent(&world, 8).contains(&"a new year began (just now)".to_owned()));
         assert!(
             !observe(&world)
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+
+    #[test]
+    fn the_observation_knows_the_viewers_name_and_describes_written_digits_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.hear("my name is Mina");
+        assert!(world.write("2027"));
+        world.ghost.position = world.ghost.plan.target;
+        world.step(8.0);
+        let observation = observe(&world);
+        assert_eq!(observation["viewer_name"], "The viewer's name is Mina.");
+        assert!(
+            observation["room"]["glass"]
+                .as_str()
+                .unwrap()
+                .contains("two zero two seven")
+        );
+        assert!(
+            observation["room"]["glass"]
+                .as_str()
+                .unwrap()
+                .contains("wrong way round")
+        );
+        assert!(
+            !observation
                 .to_string()
                 .chars()
                 .any(|character| character.is_ascii_digit())

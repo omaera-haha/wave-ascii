@@ -343,16 +343,19 @@ fn glass_color(
     let frost = Vec3::new(0.8, 0.92, 1.0);
     for doodle in &scene.world.doodles {
         let offset = point - doodle.center;
-        let radius = doodle.size * 1.3;
-        let mist_edge = footprint.max(doodle.size * 0.25);
-        if offset.length() > radius + mist_edge {
+        let radius = doodle.picture.extent().max(Vec2::splat(0.02)) * doodle.size * 1.3;
+        let mist_edge = footprint.max(radius.min_element() * 0.2);
+        if offset.abs().cmpgt(radius + Vec2::splat(mist_edge)).any() {
             continue;
         }
         let opacity = doodle.opacity(scene.world.time);
-        let mist = coverage(offset.length() - radius, mist_edge);
+        let mist = coverage(
+            ((offset / radius).length() - 1.0) * radius.min_element(),
+            mist_edge,
+        );
         color = color.lerp(frost, mist * 0.12 * opacity);
         let stroke = doodle
-            .sketch
+            .picture
             .distance(offset / doodle.size, doodle.drawn(scene.world.time))
             * doodle.size;
         let stroke = coverage(stroke - 0.0125, footprint * 0.5);
@@ -699,7 +702,7 @@ mod tests {
         let mut world = World::new(1, 12.0);
         for sketch in Sketch::ALL {
             world.doodles = vec![Doodle {
-                sketch,
+                picture: crate::world::Picture::Sketch(sketch),
                 center: Vec2::new(0.0, 1.2),
                 size: 0.3,
                 started: 0.0,

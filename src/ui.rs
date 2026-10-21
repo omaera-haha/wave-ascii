@@ -849,7 +849,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         1 => "one day old".to_owned(),
         days => format!("{days} days old"),
     };
-    let header = vec![
+    let mut header = vec![
         (
             format!("{} · {age} · born {}", ghost.name, date(app.born())),
             TITLE,
@@ -885,6 +885,9 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ),
         (format!("Knows     {}", known_words(life, columns)), TEXT),
     ];
+    if let Some(name) = &life.viewer_name {
+        header.push((format!("You: {name}"), TEXT));
+    }
     let total = &life.total;
     let mut counts = vec![
         (String::new(), TEXT),
@@ -915,6 +918,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             total.nights,
         ),
         ("birds watched", total.birds, "moths seen", total.moths),
+        (
+            "words written",
+            total.writings,
+            "watched",
+            total.watched_writings,
+        ),
     ] {
         counts.push((
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),

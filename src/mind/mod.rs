@@ -486,6 +486,9 @@ impl Mind {
         if !name.is_empty() {
             world.ghost.name = name;
         }
+        if !reflection.write.is_empty() {
+            world.write(&reflection.write);
+        }
         if !reflection.look_at.is_empty() {
             world.attend(&reflection.look_at, LOOKS_FOR);
         }
@@ -552,7 +555,7 @@ mod tests {
     const REFLECTION: &str = r#"{"id": "msg_1", "type": "message", "role": "assistant",
         "model": "claude-opus-5-5",
         "content": [{"type": "thinking", "thinking": "", "signature": "x"},
-            {"type": "text", "text": "{\"thought\": \"A visitor!\", \"say\": \"Hello there!\", \"goal\": \"play with the ball\", \"mood\": \"cheerful\", \"remember\": \"\", \"name\": \"\"}"}],
+            {"type": "text", "text": "{\"thought\": \"A visitor!\", \"say\": \"Hello there!\", \"goal\": \"play with the ball\", \"mood\": \"cheerful\", \"remember\": \"\", \"name\": \"\", \"look_at\": \"\", \"write\": \"\"}"}],
         "stop_reason": "end_turn", "stop_details": null,
         "usage": {"input_tokens": 900, "output_tokens": 60}}"#;
 
@@ -728,6 +731,7 @@ mod tests {
             remember: "The person is called Mina.".to_owned(),
             name: "Pip".to_owned(),
             look_at: "window".to_owned(),
+            write: "HI".to_owned(),
         };
         mind.reflecting = true;
         mind.apply(Answer::Reflected(Ok(Some(reflection.clone()))), &mut world);
@@ -736,6 +740,11 @@ mod tests {
         assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Hi Mina!");
         assert_eq!(world.ghost.goal.as_deref(), Some("tend the plant"));
         assert_eq!(world.ghost.name, "Pip");
+        assert_eq!(world.ghost.plan.activity, Activity::Doodle);
+        let Some(crate::world::Picture::Word(writing)) = &world.ghost.plan.picture else {
+            panic!("expected writing")
+        };
+        assert_eq!(writing.text, "HI");
         assert_eq!(
             world.ghost.attention.map(|(thing, _)| thing),
             Some(crate::world::Thing::Window)

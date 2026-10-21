@@ -1,7 +1,7 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use super::Sketch;
+use super::Picture;
 
 /// Something the ghost can set out to do. The world carries it out; minds
 /// only choose which.
@@ -102,7 +102,7 @@ pub struct Plan {
     /// The mote it is chasing.
     pub mote: Option<u32>,
     /// The picture it means to draw on the glass.
-    pub sketch: Option<Sketch>,
+    pub picture: Option<Picture>,
     /// How many times it has done the activity's action, such as nudging
     /// the ball or picking a new spot to explore.
     pub count: u32,
@@ -122,7 +122,7 @@ impl Plan {
             anchor: target,
             arrived: None,
             mote: None,
-            sketch: None,
+            picture: None,
             count: 0,
             length,
             done: false,

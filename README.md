@@ -125,7 +125,13 @@ piped output never saves them.
   sun, flower, wave, or snowflake, chosen from its mood, the weather, and how
   close it feels to you. The stroke takes a few seconds; then it backs away to
   admire it. Up to three pictures linger, fading after about two and a half
-  minutes.
+  minutes. It also writes "HI" for a friend arriving, "BOO" at Halloween,
+  the coming year at New Year, "YAY" on its birthday, and your name once it
+  grows close to you, sometimes followed by a heart. Names in other scripts
+  get a heart instead. At first it writes as it reads from inside the box,
+  so the letters look mirrored to you. After three words written while you
+  watch, it learns to write your way round and keeps that moment as a milestone.
+  Claude can also ask it to write a short word in the fog.
 - **Asking.** With a Jev key, what you type can ask it to do things: play,
   fetch, catch your finger, dance, hide, draw, rest, look out of the window,
   or come closer.
@@ -139,7 +145,10 @@ piped output never saves them.
   remembers. Once it knows a word, saying it is enough ("Twirl? Okay!"), as
   long as it can do that just now. With a Jev key, what Jev understands
   teaches it too, so it keeps those words if you go without. The life panel
-  lists the words it knows, and Claude hears them.
+  lists the words it knows, and Claude hears them. It learns your name without
+  a model too: say "my name is Mina", "call me Sam", or "내 이름은 민수야".
+  It remembers the name between visits, greets you by it sometimes, and shows
+  it in the life panel. A later "call me …" changes it.
 
 ### What you see
 
