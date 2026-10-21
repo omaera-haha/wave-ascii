@@ -584,6 +584,22 @@ impl App {
             return;
         }
         let direction = view.ray(point);
+        let block = self
+            .world
+            .blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| {
+                let offset = view.eye - block.position;
+                let along = -offset.dot(direction);
+                let miss = (offset + direction * along).length();
+                (along > 0.0 && miss < crate::world::blocks::RADIUS).then_some((index, along))
+            })
+            .min_by(|first, second| first.1.total_cmp(&second.1));
+        if let Some((index, _)) = block {
+            self.world.nudge_block(index, direction);
+            return;
+        }
         let offset = view.eye - self.world.ball.position;
         let along = -offset.dot(direction);
         let miss = (offset + direction * along).length();
@@ -1667,5 +1683,30 @@ mod tests {
             .date();
         let app = app().live(None, born);
         assert_eq!(app.world.birthday, Some(expected));
+    }
+
+    #[test]
+    fn clicking_a_loose_block_flicks_it_and_clicking_a_tower_topples_it() {
+        let mut app = app();
+        let spot = Vec3::new(-0.45, 0.0, 0.65);
+        app.world.blocks[0] = crate::world::Block::at(spot, 0);
+        let (column, row) = cell_of(&app, app.world.blocks[0].position);
+        let motes = app.world.motes.len();
+        click(&mut app, column, row);
+        assert!(app.world.blocks[0].velocity.length() > 0.5);
+        assert_eq!(app.world.motes.len(), motes);
+
+        app.world.tower = Some(spot);
+        for (level, block) in app.world.blocks.iter_mut().take(3).enumerate() {
+            block.position = spot + Vec3::Y * ((level as f32 + 0.5) * crate::world::blocks::EDGE);
+            block.stacked = true;
+            block.velocity = Vec3::ZERO;
+        }
+        let (column, row) = cell_of(&app, app.world.blocks[1].position);
+        click(&mut app, column, row);
+        assert!(app.world.tower.is_none());
+        assert!(app.world.blocks.iter().all(|block| !block.stacked));
+        assert_eq!(app.world.life.total.toppled, 1);
+        assert_eq!(app.world.motes.len(), motes);
     }
 }

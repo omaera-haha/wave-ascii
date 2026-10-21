@@ -2,20 +2,21 @@
 
 A ghost lives in a glass box in your terminal.
 
-The box is a small room drawn in dots: a floor lamp, a potted plant, a ball, a
-cushion to sleep on, specks of light that drift in, and a window onto hills
-where the seasons turn, birds come to perch, storms roll through, snow falls
-in winter, and rain can leave a rainbow. On lit nights, a little moth
+The box is a small room drawn in dots: a floor lamp, a potted plant, a ball, five
+bright toy blocks, a cushion to sleep on, specks of light that drift in, and a
+window onto hills where the seasons turn, birds come to perch, storms roll
+through, snow falls in winter, and rain can leave a rainbow. On lit nights,
+a little moth
 sometimes flutters in and circles the lamp. The ghost is a point in that room
 with a body, needs, a mood, and a gaze: it sees what lies within sixty
 degrees of where it faces, and furniture hides what's behind it. You see it
 as an abstract shape made of dots, and its glow shows how it is.
 
 It floats about, chases and eats the light motes it has spotted, plays with
-the ball and brings it back after a throw, pounces on your pointer through
-the glass, waters the plant, switches the lamp, watches the birds from the
-window, naps when tired, and comes to the glass to look at you. When
-delighted it dances a little twirl in the air. It plays hide-and-seek and
+the ball and brings it back after a throw, stacks towers of blocks, pounces
+on your pointer through the glass, waters the plant, switches the lamp, watches
+the birds from the window, naps when tired, and comes to the glass to look at
+you. When delighted it dances a little twirl in the air. It plays hide-and-seek and
 draws little pictures in the fog on the glass. At night it goes to bed and
 sleeps until morning. Each ghost is born with a nature of its own, and over
 days it grows close to you, learns your words, forms habits, keeps a diary,
@@ -84,8 +85,9 @@ the next requests use them at once.
 | `q`, Esc        | Quit (Esc closes panels or cancels typing)                 |
 
 With the mouse, click the ghost to poke it (poke it a few times and it gets
-grumpy), click the ball to flick it, and click anywhere else in the room to
-drop in a light mote. Press on the ghost and drag back and forth across it to
+grumpy), click the ball to flick it, click a loose block to nudge it or a
+tower to knock it down, and click anywhere else in the room to drop in a
+light mote. Press on the ghost and drag back and forth across it to
 stroke it. Drag anywhere else to turn the view, and scroll to zoom. The
 ghost's eyes follow the pointer.
 
@@ -122,6 +124,14 @@ piped output never saves them.
   to spare goes after it, carries it back to the glass, lets it drop in front
   of you, and waits a few seconds for another throw. It lets go of the ball if
   you poke it or it starts something else.
+- **Blocks.** It gathers five bright toy blocks one at a time, stacks a
+  slightly wobbly tower, then backs away to admire it. Depending on its nature,
+  it leaves the tower standing or swoops in to knock it down. Click a loose
+  block to nudge it, or any block in the tower to topple it; a playful ghost or
+  a close friend laughs, while a quieter ghost may sulk over its fallen work.
+  A fast ball knocks the tower over too. Loose blocks fall, tumble, bounce,
+  and settle on their faces. The blocks start scattered each session; its
+  diary remembers towers built, the tallest tower, and your demolitions.
 - **Catch your finger.** Move the mouse quickly over the room and a playful
   ghost chases your pointer along the inside of the glass and pounces on it.
   It tires of the game after a few catches. Hold still and it lingers at the
@@ -146,8 +156,9 @@ piped output never saves them.
   admire it. Up to three pictures linger, fading after about two and a half
   minutes.
 - **Asking.** With a Jev key, what you type can ask it to do things: play,
-  fetch, catch your finger, play noughts and crosses, dance, hide, draw, rest,
-  look out of the window, or come closer.
+  fetch, build a tower, catch your finger, play noughts and crosses, dance, hide, draw, rest,
+  look out of
+  the window, or come closer.
 - **Teaching it words.** Even without keys, the ghost hears whether you greet
   it, praise it ("good", "yay", "잘했어"), say goodbye, or tell it no ("no",
   "stop", "그만"), which stops what it's doing. Other words it has to learn,

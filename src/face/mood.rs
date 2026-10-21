@@ -82,6 +82,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Fetched
         | EventKind::Kept(_)
         | EventKind::Pounced
+        | EventKind::Built { .. }
         | EventKind::Found
         | EventKind::ExpectedArrival
         | EventKind::Celebrated(_)
@@ -99,6 +100,8 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::WokeUp | EventKind::KickedBall | EventKind::Jumped | EventKind::Thunder => {
             Expression::Surprise
         }
+        EventKind::Toppled { by_viewer: false } => Expression::Smile,
+        EventKind::Toppled { by_viewer: true } => Expression::Surprise,
         EventKind::Morning => Expression::Stretch,
         EventKind::ViewerArrived => Expression::Wink,
         EventKind::Praised | EventKind::Petted => Expression::Smile,

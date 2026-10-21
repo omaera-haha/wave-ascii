@@ -1,4 +1,5 @@
 mod activity;
+pub mod blocks;
 pub mod calendar;
 mod doodle;
 pub mod game;
@@ -20,6 +21,7 @@ mod weather;
 use glam::{Vec2, Vec3};
 
 pub use activity::{Activity, Plan};
+pub use blocks::Block;
 pub use calendar::Season;
 pub use doodle::{Doodle, Sketch};
 pub use game::{Game, Mark, Outcome};
@@ -142,6 +144,12 @@ pub enum EventKind {
     GameOver(Outcome),
     Celebrated(Occasion),
     Pounced,
+    Built {
+        height: u32,
+    },
+    Toppled {
+        by_viewer: bool,
+    },
     Morning,
     /// The viewer sounded pleased with the ghost.
     Praised,
@@ -178,6 +186,14 @@ impl EventKind {
             Self::NudgedBall => "nudged the ball".to_owned(),
             Self::PickedUpBall => "picked up the ball".to_owned(),
             Self::Fetched => "brought the ball back to the viewer".to_owned(),
+            Self::Built { height } => format!(
+                "stacked the blocks into a tower {} blocks high",
+                blocks::height_words(*height as usize)
+            ),
+            Self::Toppled { by_viewer: true } => "the viewer knocked your tower down".to_owned(),
+            Self::Toppled { by_viewer: false } => {
+                "knocked your tower down with a whoosh".to_owned()
+            }
             Self::Pounced => "pounced on the viewer's finger on the glass".to_owned(),
             Self::Danced => "danced a little twirl".to_owned(),
             Self::Tended => "watered the plant".to_owned(),
@@ -373,6 +389,10 @@ pub struct World {
     pub ghost: Ghost,
     pub lamp: Lamp,
     pub ball: Ball,
+    pub blocks: Vec<Block>,
+    /// The base of a standing tower, absent when the blocks are scattered.
+    pub tower: Option<Vec3>,
+    building: Option<blocks::Building>,
     pub plant: Plant,
     pub nook: Nook,
     pub motes: Vec<Mote>,
@@ -414,7 +434,7 @@ impl World {
         let weather = Weather::new(&mut random);
         let nature = Nature::roll(&mut random);
         let visitors = Visitors::new(&mut random);
-        Self {
+        let mut world = Self {
             time: 0.0,
             hour,
             date: jiff::civil::Date::constant(2026, 6, 21),
@@ -446,6 +466,9 @@ impl World {
                 on: true,
             },
             ball: Ball::at(0.7, 0.45),
+            blocks: Vec::new(),
+            tower: None,
+            building: None,
             plant: Plant {
                 position: Vec3::new(1.5, 0.0, -0.9),
                 growth: 0.15,
@@ -480,7 +503,9 @@ impl World {
             petting: 0.0,
             petted: false,
             routine: routine::Routine::default(),
-        }
+        };
+        world.scatter_blocks();
+        world
     }
 
     /// Moves the world forward by `seconds`, at most a tenth of a second at
@@ -562,8 +587,7 @@ impl World {
         }
         self.advance_visitors(seconds);
 
-        let obstacles = self.obstacles();
-        self.ball.roll(seconds, &obstacles);
+        self.advance_blocks(seconds);
         self.plant.thirst = (self.plant.thirst + seconds / Plant::THIRST_TIME).min(1.0);
 
         let present = self.viewer_present();
@@ -593,6 +617,7 @@ impl World {
             );
             self.ball.velocity = self.ghost.velocity;
         }
+        self.follow_block();
         self.update_needs(seconds);
         self.ghost.mood = self.feeling();
         self.look_around(seconds);
@@ -658,6 +683,12 @@ impl World {
                     self.viewer_present()
                         && self.ghost.asleep < 0.3
                         && self.ghost.needs.energy > 0.25
+                }
+                Activity::Build => {
+                    self.ghost.asleep < 0.3
+                        && self.ghost.needs.energy > 0.3
+                        && self.blocks.iter().filter(|block| block.on_floor()).count() >= 2
+                        && self.tower_height() < self.blocks.len()
                 }
                 Activity::Float
                 | Activity::Explore
@@ -753,6 +784,9 @@ impl World {
                                 viewer is around."
                     .to_owned()
             }
+            Activity::Build => "Stack the toy blocks into a tower, then maybe knock it down. \
+                                Fits when bored or curious, with energy to spare."
+                .to_owned(),
             Activity::Dance => "Do a happy little twirl in the air. Fits when delighted, after \
                                 something good happened, or to show off for the viewer."
                 .to_owned(),
@@ -775,6 +809,8 @@ impl World {
         self.abandon_game();
         self.put_keepsake_away();
         self.drop_ball();
+        self.drop_block();
+        self.building = None;
         let position = self.ghost.position;
         let length = match activity {
             Activity::Float => self.random.range(5.0, 11.0),
@@ -808,7 +844,7 @@ impl World {
                 self.random.range(1.0, 1.6),
                 ROOM_MAX.z - 0.35,
             ),
-            Activity::Float | Activity::Chase | Activity::Play => position,
+            Activity::Float | Activity::Chase | Activity::Play | Activity::Build => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         plan.overnight = activity == Activity::Rest && self.bedtime();
@@ -825,6 +861,9 @@ impl World {
             self.begin_wait();
         }
         self.ghost.plan = plan;
+        if activity == Activity::Build {
+            self.begin_build();
+        }
         self.record(EventKind::Began(activity));
     }
 
@@ -1007,6 +1046,7 @@ impl World {
                     stopped = true;
                     self.drop_ball();
                     self.abandon_game();
+                    self.drop_block();
                 }
                 self.ghost.needs.change(0.0, -0.03, 0.0);
                 self.record(EventKind::Scolded);
@@ -1264,6 +1304,10 @@ impl World {
             self.put_keepsake_away();
             self.ghost.plan.done = true;
         }
+        if self.blocks.iter().any(|block| block.held) {
+            self.drop_block();
+            self.ghost.plan.done = true;
+        }
         if self.ball.held {
             self.drop_ball();
             self.ghost.plan.done = true;
@@ -1410,6 +1454,7 @@ impl World {
             self.abandon_game();
             self.put_keepsake_away();
             self.drop_ball();
+            self.drop_block();
             return;
         }
         let arrived_now = position.distance(plan.target) < ARRIVED;
@@ -1427,6 +1472,7 @@ impl World {
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
             self.drop_ball();
+            self.drop_block();
             self.ghost.plan.done = true;
             self.abandon_game();
             return;
@@ -1582,6 +1628,7 @@ impl World {
             }
             Activity::Pounce => look = self.pounce(seconds),
             Activity::Game => look = self.play_game(),
+            Activity::Build => look = self.build(),
             Activity::Fetch => {
                 if self.ghost.plan.count == 0 {
                     let target = self.ball.position + Vec3::Y * 0.42;
@@ -1699,6 +1746,13 @@ impl World {
     // walls.
     fn move_ghost(&mut self, seconds: f32) {
         let decoration = self.decoration();
+        let tower = self.tower.filter(|_| !self.placing_block()).map(|spot| {
+            (
+                spot,
+                blocks::EDGE,
+                self.tower_height() as f32 * blocks::EDGE + 0.36,
+            )
+        });
         let ghost = &mut self.ghost;
         let mut target = ghost.plan.target;
         if ghost.plan.activity == Activity::Float {
@@ -1768,7 +1822,7 @@ impl World {
                 decoration.height() + 0.3,
             )
         });
-        for (center, radius, top) in obstacles.into_iter().chain(decoration) {
+        for (center, radius, top) in obstacles.into_iter().chain(decoration).chain(tower) {
             let offset = flat(ghost.position - center);
             // Hiding tucks the ghost closer behind furniture than its
             // usual steering allows, especially beside the back wall.
@@ -1883,6 +1937,8 @@ impl World {
                     | EventKind::Fetched
                     | EventKind::Found
                     | EventKind::Pounced
+                    | EventKind::Built { .. }
+                    | EventKind::Toppled { by_viewer: false }
                     | EventKind::Milestone(_)
                     | EventKind::LearnedWord { .. }
                     | EventKind::Kept(_)

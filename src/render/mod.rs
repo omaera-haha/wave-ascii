@@ -177,6 +177,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             world.ghost.position - Vec3::Y * 0.5,
         ));
     }
+    furniture.extend(world.blocks.iter().copied().map(Furniture::Block));
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
     Frame::sample(grid, |point| {

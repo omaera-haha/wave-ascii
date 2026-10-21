@@ -23,6 +23,7 @@ pub enum Thing {
     Plant,
     Ball,
     Cushion,
+    Blocks,
     Decoration,
     Mote(u32),
     Bird,
@@ -32,7 +33,7 @@ pub enum Thing {
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 11] = [
+    pub const NAMES: [&str; 12] = [
         "viewer",
         "window",
         "plant",
@@ -44,6 +45,7 @@ impl Thing {
         "bird",
         "moth",
         "shelf",
+        "blocks",
     ];
 
     pub fn name(self) -> &'static str {
@@ -54,6 +56,7 @@ impl Thing {
             Self::Plant => "plant",
             Self::Ball => "ball",
             Self::Cushion => "cushion",
+            Self::Blocks => "blocks",
             Self::Decoration => "decoration",
             Self::Mote(_) => "light mote",
             Self::Bird => "bird",
@@ -100,6 +103,23 @@ impl World {
             Thing::Lamp => self.lamp.bulb(),
             Thing::Plant => self.plant.position + Vec3::Y * self.plant.height() * 0.6,
             Thing::Ball => self.ball.position,
+            Thing::Blocks => match self.tower {
+                Some(spot) => {
+                    spot + Vec3::Y * (self.tower_height() as f32 * super::blocks::EDGE * 0.5)
+                }
+                None => {
+                    self.blocks
+                        .iter()
+                        .filter(|block| !block.held && !block.stacked)
+                        .min_by(|first, second| {
+                            first
+                                .position
+                                .distance_squared(self.ghost.position)
+                                .total_cmp(&second.position.distance_squared(self.ghost.position))
+                        })?
+                        .position
+                }
+            },
             Thing::Cushion => self.nook.position + Vec3::Y * 0.1,
             Thing::Decoration => {
                 let decoration = self.decoration()?;
@@ -125,6 +145,7 @@ impl World {
             Thing::Ball,
             Thing::Lamp,
             Thing::Cushion,
+            Thing::Blocks,
             Thing::Decoration,
             Thing::Bird,
             Thing::Moth,
@@ -185,6 +206,7 @@ impl World {
                 Thing::Ball,
                 Thing::Lamp,
                 Thing::Cushion,
+                Thing::Blocks,
                 Thing::Decoration,
                 Thing::Bird,
                 Thing::Moth,
@@ -227,6 +249,30 @@ impl World {
                 decoration.radius(),
             )
         });
+        let tower = self.tower.filter(|_| self.tower_height() >= 3).map(|spot| {
+            (
+                Thing::Blocks,
+                spot,
+                self.tower_height() as f32 * super::blocks::EDGE,
+            )
+        });
+        if let Some((_, spot, height)) = tower
+            && thing != Thing::Blocks
+        {
+            let floor_along = super::flat(along);
+            let fraction = (super::flat(spot - eye).dot(floor_along)
+                / floor_along.length_squared().max(1e-6))
+            .clamp(0.0, 1.0);
+            let closest = eye + along * fraction;
+            if fraction > 0.02
+                && fraction < 0.95
+                && closest.y >= 0.0
+                && closest.y <= height
+                && super::flat(closest - spot).length() < super::blocks::EDGE
+            {
+                return Some(Thing::Blocks);
+            }
+        }
         blockers
             .into_iter()
             .chain(decoration)
@@ -599,5 +645,42 @@ mod tests {
         assert_eq!(world.blocker(eye, target, Thing::Decoration), None);
         world.date = jiff::civil::Date::constant(2026, 11, 1);
         assert_eq!(world.blocker(eye, target, Thing::Ball), None);
+    }
+
+    #[test]
+    fn blocks_can_hold_attention_and_a_tall_tower_hides_things_beyond_it() {
+        let mut world = World::new(1, 12.0);
+        let nearest = world
+            .blocks
+            .iter()
+            .min_by(|first, second| {
+                first
+                    .position
+                    .distance_squared(world.ghost.position)
+                    .total_cmp(&second.position.distance_squared(world.ghost.position))
+            })
+            .unwrap()
+            .position;
+        assert_eq!(world.position_of(Thing::Blocks), Some(nearest));
+        world.tower = Some(Vec3::ZERO);
+        for (level, block) in world.blocks.iter_mut().take(3).enumerate() {
+            block.position = Vec3::Y * ((level as f32 + 0.5) * super::super::blocks::EDGE);
+            block.stacked = true;
+        }
+        world.attend("blocks", 3.0);
+        assert_eq!(world.ghost.attention, Some((Thing::Blocks, 3.0)));
+        let eye = Vec3::new(0.0, 0.25, 1.0);
+        let target = Vec3::new(0.0, 0.25, -1.0);
+        assert_eq!(
+            world.blocker(eye, target, Thing::Plant),
+            Some(Thing::Blocks)
+        );
+        assert_eq!(
+            world.blocker(eye + Vec3::Y, target + Vec3::Y, Thing::Plant),
+            None
+        );
+        assert_eq!(world.blocker(eye, target, Thing::Blocks), None);
+        world.blocks[2].stacked = false;
+        assert_eq!(world.blocker(eye, target, Thing::Plant), None);
     }
 }

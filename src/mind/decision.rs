@@ -110,6 +110,7 @@ fn request(activity: Activity) -> &'static str {
         Activity::Game => {
             "Asks it to play noughts and crosses, tic-tac-toe, or a game on the glass."
         }
+        Activity::Build => "Asks it to build, stack the blocks, or make a tower.",
         Activity::Doodle => "Asks it to draw, doodle, or write something on the glass.",
     }
 }
