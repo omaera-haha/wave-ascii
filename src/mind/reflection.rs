@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::claude::{Block, Cache, Effort, Message, Request, Role};
 use crate::store::{Memory, Remark, Speaker};
-use crate::world::Mood;
+use crate::world::{Mood, Thing};
 
 /// At most this many memories and lines of conversation go into a request.
 const MEMORIES_SENT: usize = 40;
@@ -12,6 +12,7 @@ const REMARKS_SENT: usize = 16;
 /// What the ghost makes of its situation after thinking it over. Empty
 /// strings mean "nothing" or "no change".
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct Reflection {
     /// A private thought, shown faintly.
     pub thought: String,
@@ -24,6 +25,8 @@ pub struct Reflection {
     pub remember: String,
     /// A new name, when the viewer gave it one.
     pub name: String,
+    /// What to turn and look at next, by its name in `Thing::NAMES`.
+    pub look_at: String,
 }
 
 const SYSTEM: &str = "\
@@ -32,6 +35,10 @@ The box holds a floor lamp, a potted plant, a ball, a cushion to sleep on, and l
 drift in and that the ghost eats for energy. The person watches from the other side of the glass \
 and can move a pointer over it, poke the ghost, drop light motes in, flick the ball, and type to \
 it. The ghost cannot leave the box or do anything outside it.
+
+The observation's `sight` is what the ghost sees right now from where it faces; it knows of \
+everything else only from memory. A window in the back wall looks out on hills and the sky, \
+where it sometimes rains and, after rain by day, a rainbow shines.
 
 The ghost is gentle, curious, and a little playful. It speaks in short, plain sentences, at most \
 about twenty words, in the language the person last wrote in. It only speaks when spoken to or \
@@ -48,7 +55,9 @@ visiting the person, the lamp), or empty to keep its current goal.
 - mood: how it feels.
 - remember: a fact worth keeping for good, such as the person's name or something they care \
 about, or empty. Most of the time this is empty.
-- name: its new name if the person just gave it one, or empty.";
+- name: its new name if the person just gave it one, or empty.
+- look_at: what it turns to look at next, if it wants to look at something it doesn't see \
+now or to keep its eyes on something, or empty to let its eyes wander.";
 
 /// The schema Claude's reply must follow.
 pub fn schema() -> Value {
@@ -62,8 +71,9 @@ pub fn schema() -> Value {
             "mood": {"type": "string", "enum": Mood::ALL.map(Mood::name)},
             "remember": text,
             "name": text,
+            "look_at": {"type": "string", "enum": std::iter::once("").chain(Thing::NAMES).collect::<Vec<_>>()},
         },
-        "required": ["thought", "say", "goal", "mood", "remember", "name"],
+        "required": ["thought", "say", "goal", "mood", "remember", "name", "look_at"],
         "additionalProperties": false,
     })
 }
@@ -147,6 +157,7 @@ pub fn read(value: Value) -> Option<Reflection> {
         &mut reflection.goal,
         &mut reflection.remember,
         &mut reflection.name,
+        &mut reflection.look_at,
     ] {
         *field = field.trim().to_owned();
     }

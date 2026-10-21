@@ -30,6 +30,8 @@ const FIRST_REFLECTION: f64 = 4.0;
 const ALONE_FACTOR: f64 = 5.0;
 /// Seconds a mood suggested by a mind holds.
 const MOOD_HOLDS: f32 = 90.0;
+/// Seconds the ghost keeps looking at what a mind turned it to.
+const LOOKS_FOR: f32 = 15.0;
 const MEMORIES_KEPT: usize = 60;
 const REMARKS_KEPT: usize = 40;
 
@@ -389,6 +391,9 @@ impl Mind {
         if !name.is_empty() {
             world.ghost.name = name;
         }
+        if !reflection.look_at.is_empty() {
+            world.attend(&reflection.look_at, LOOKS_FOR);
+        }
     }
 }
 
@@ -627,6 +632,7 @@ mod tests {
             mood: Some(crate::world::Mood::Cheerful),
             remember: "The person is called Mina.".to_owned(),
             name: "Pip".to_owned(),
+            look_at: "window".to_owned(),
         };
         mind.reflecting = true;
         mind.apply(Answer::Reflected(Ok(Some(reflection.clone()))), &mut world);
@@ -635,6 +641,10 @@ mod tests {
         assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Hi Mina!");
         assert_eq!(world.ghost.goal.as_deref(), Some("tend the plant"));
         assert_eq!(world.ghost.name, "Pip");
+        assert_eq!(
+            world.ghost.attention.map(|(thing, _)| thing),
+            Some(crate::world::Thing::Window)
+        );
         assert_eq!(mind.journal.memories.len(), 1);
         assert_eq!(mind.journal.conversation.len(), 2);
         world.step(0.05);

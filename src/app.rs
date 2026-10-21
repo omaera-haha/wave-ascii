@@ -530,8 +530,8 @@ impl App {
         screen
     }
 
-    // Where the eyes go: to the pointer while it moves, else to what the
-    // ghost is busy with.
+    // Where the eyes go: to the pointer while it moves, else the way the
+    // ghost faces, so its face shows what it is looking at.
     fn gaze(&self, view: &View, center: Option<Vec2>) -> Option<(Vec2, f32)> {
         let center = center?;
         let ghost = &self.world.ghost;
@@ -543,8 +543,8 @@ impl App {
         {
             return Some(((pointer - center) / 0.5, 0.85));
         }
-        let look = view.project(ghost.look?)?;
-        Some(((look - center) / 0.5, 0.6))
+        let ahead = view.project(ghost.position + ghost.heading)?;
+        Some(((ahead - center) / 0.45, 0.75))
     }
 
     pub fn born(&self) -> i64 {

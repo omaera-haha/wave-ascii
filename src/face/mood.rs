@@ -67,6 +67,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::NudgedBall | EventKind::Tended => Expression::Smile,
         EventKind::WokeUp | EventKind::KickedBall => Expression::Surprise,
         EventKind::ViewerArrived => Expression::Wink,
+        EventKind::Noticed(thing) if thing.starts_with("the rainbow") => Expression::Sparkle,
         _ => return None,
     })
 }

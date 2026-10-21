@@ -36,6 +36,12 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 let present = if world.viewer_present() { 0.6 } else { 0.0 };
                 present + 1.3 * (1.0 - needs.company)
             }
+            Activity::Window => {
+                let outside = &world.weather;
+                0.2 + 0.5 * (1.0 - needs.fun)
+                    + 0.6 * outside.rain(world.time)
+                    + 2.5 * outside.rainbow(world.time)
+            }
         })
         .collect();
     let total: f32 = weights.iter().sum::<f32>().max(f32::MIN_POSITIVE);

@@ -1,14 +1,19 @@
 mod activity;
 mod needs;
 mod random;
+mod sight;
 mod things;
+mod weather;
 
 use glam::Vec3;
 
 pub use activity::{Activity, Plan};
 pub use needs::{Mood, Needs};
 pub use random::Random;
-pub use things::{Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, flat};
+pub use sight::{Seen, Thing};
+pub use things::{Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, WINDOW_CENTER, flat};
+use weather::Change;
+pub use weather::{Sky, Weather};
 
 /// At most this many motes drift in the room at once.
 const MAX_MOTES: usize = 6;
@@ -61,6 +66,12 @@ pub enum EventKind {
     Returned {
         away: f64,
     },
+    /// The ghost caught sight of something new to it.
+    Noticed(String),
+    RainStarted,
+    RainStopped,
+    RainbowAppeared,
+    RainbowFaded,
 }
 
 impl EventKind {
@@ -94,6 +105,11 @@ impl EventKind {
                 };
                 format!("the viewer came back after {while_away} away")
             }
+            Self::Noticed(thing) => format!("spotted {thing}"),
+            Self::RainStarted => "it started to rain outside".to_owned(),
+            Self::RainStopped => "the rain stopped".to_owned(),
+            Self::RainbowAppeared => "the rain stopped and a rainbow came out".to_owned(),
+            Self::RainbowFaded => "the rainbow faded".to_owned(),
         }
     }
 }
@@ -125,6 +141,14 @@ pub struct Ghost {
     pub goal: Option<String>,
     pub speech: Option<Line>,
     pub thought: Option<Line>,
+    /// Which way it faces: what it sees lies around this direction.
+    pub heading: Vec3,
+    /// What it turned to look at, and until when.
+    pub attention: Option<(Thing, f64)>,
+    /// The motes it has seen, which it knows are there.
+    pub known: Vec<u32>,
+    /// Whether it has seen the current rainbow.
+    pub saw_rainbow: bool,
 }
 
 /// The person at the glass, as the world knows them.
@@ -154,6 +178,7 @@ pub struct World {
     pub motes: Vec<Mote>,
     pub events: Vec<Event>,
     pub viewer: Viewer,
+    pub weather: Weather,
     random: Random,
     next_mote: u32,
     next_mote_at: f64,
@@ -165,6 +190,8 @@ pub struct World {
 impl World {
     pub fn new(seed: u64, hour: f32) -> Self {
         let start = Vec3::new(0.2, 1.1, 0.0);
+        let mut random = Random::new(seed);
+        let weather = Weather::new(&mut random);
         Self {
             time: 0.0,
             hour,
@@ -181,6 +208,10 @@ impl World {
                 goal: None,
                 speech: None,
                 thought: None,
+                heading: Vec3::Z,
+                attention: None,
+                known: Vec::new(),
+                saw_rainbow: false,
             },
             lamp: Lamp {
                 position: Vec3::new(-1.55, 0.0, -0.95),
@@ -198,7 +229,8 @@ impl World {
             motes: Vec::new(),
             events: Vec::new(),
             viewer: Viewer::default(),
-            random: Random::new(seed),
+            weather,
+            random,
             next_mote: 0,
             next_mote_at: 8.0,
             viewer_present: false,
@@ -237,6 +269,19 @@ impl World {
             self.next_mote_at = self.time + f64::from(self.random.range(25.0, 60.0));
         }
 
+        let daytime = (7.0..18.5).contains(&self.hour);
+        if let Some(change) = self.weather.step(self.time, daytime, &mut self.random) {
+            if change == Change::RainbowFaded {
+                self.ghost.saw_rainbow = false;
+            }
+            self.record(match change {
+                Change::RainStarted => EventKind::RainStarted,
+                Change::RainStopped => EventKind::RainStopped,
+                Change::RainbowAppeared => EventKind::RainbowAppeared,
+                Change::RainbowFaded => EventKind::RainbowFaded,
+            });
+        }
+
         let obstacles = self.obstacles();
         self.ball.roll(seconds, &obstacles);
         self.plant.thirst = (self.plant.thirst + seconds / Plant::THIRST_TIME).min(1.0);
@@ -255,6 +300,7 @@ impl World {
         self.move_ghost(seconds);
         self.update_needs(seconds);
         self.ghost.mood = self.feeling();
+        self.look_around(seconds);
 
         if self.events.len() > EVENTS_KEPT {
             let excess = self.events.len() - EVENTS_KEPT;
@@ -281,11 +327,15 @@ impl World {
         Activity::ALL
             .into_iter()
             .filter(|activity| match activity {
-                Activity::Chase => !self.motes.is_empty(),
+                Activity::Chase => self.nearest_mote().is_some(),
                 Activity::Rest => self.ghost.needs.energy < 0.85,
                 Activity::Tend => self.plant.thirst > 0.25,
                 Activity::Visit => self.viewer_present() || self.ghost.needs.company < 0.6,
-                Activity::Float | Activity::Explore | Activity::Play | Activity::Lamp => true,
+                Activity::Float
+                | Activity::Explore
+                | Activity::Play
+                | Activity::Lamp
+                | Activity::Window => true,
             })
             .collect()
     }
@@ -324,6 +374,18 @@ impl World {
             Activity::Visit => "Go up to the glass to be near the viewer and look at them. Fits \
                                 when the viewer is around, or when lonely."
                 .to_owned(),
+            Activity::Window => {
+                let outside = match self.weather.sky {
+                    Sky::Rainbow => ", where a rainbow is shining",
+                    Sky::Rain => ", where it is raining",
+                    Sky::Clear if self.is_night() => " at the night sky",
+                    Sky::Clear => " at the sky and the hills",
+                };
+                format!(
+                    "Float to the window and look out{outside}. Fits when curious or calm, \
+                     and above all when something is happening outside."
+                )
+            }
         }
     }
 
@@ -339,6 +401,7 @@ impl World {
         let length = match activity {
             Activity::Float => self.random.range(5.0, 11.0),
             Activity::Visit => self.random.range(8.0, 15.0),
+            Activity::Window => self.random.range(10.0, 18.0),
             _ => 0.0,
         };
         let target = match activity {
@@ -347,6 +410,7 @@ impl World {
             Activity::Tend => self.plant.top() + Vec3::new(0.0, 0.25, 0.3),
             Activity::Lamp => self.lamp.bulb() + Vec3::new(0.35, -0.15, 0.25),
             Activity::Visit => self.glass_spot(),
+            Activity::Window => WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.55),
             Activity::Float | Activity::Chase | Activity::Play => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
@@ -376,12 +440,15 @@ impl World {
         self.record(EventKind::Poked { count });
     }
 
-    /// The viewer dropped a mote into the room at `position`.
+    /// The viewer dropped a mote into the room at `position`. The ghost saw
+    /// it happen, so it knows the mote is there and glances at it.
     pub fn drop_mote(&mut self, position: Vec3) {
         if self.motes.len() >= MAX_MOTES {
             self.motes.remove(0);
         }
-        self.add_mote(position);
+        let id = self.add_mote(position);
+        self.ghost.known.push(id);
+        self.ghost.attention = Some((Thing::Mote(id), self.time + 2.0));
         self.record(EventKind::DroppedMote);
     }
 
@@ -434,14 +501,19 @@ impl World {
         self.viewer.active_at = self.time.max(f64::MIN_POSITIVE);
     }
 
+    /// The nearest mote the ghost knows of.
     pub fn nearest_mote(&self) -> Option<&Mote> {
-        self.motes.iter().min_by(|first, second| {
-            let distance = |mote: &Mote| mote.position.distance_squared(self.ghost.position);
-            distance(first).total_cmp(&distance(second))
-        })
+        let known = &self.ghost.known;
+        self.motes
+            .iter()
+            .filter(|mote| known.contains(&mote.id))
+            .min_by(|first, second| {
+                let distance = |mote: &Mote| mote.position.distance_squared(self.ghost.position);
+                distance(first).total_cmp(&distance(second))
+            })
     }
 
-    fn add_mote(&mut self, position: Vec3) {
+    fn add_mote(&mut self, position: Vec3) -> u32 {
         self.next_mote += 1;
         let seed = self.random.unit();
         self.motes.push(Mote {
@@ -450,6 +522,7 @@ impl World {
             born: self.time,
             seed,
         });
+        self.next_mote
     }
 
     fn record(&mut self, kind: EventKind) {
@@ -632,6 +705,12 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
+            Activity::Window => {
+                look = Some(WINDOW_CENTER);
+                if self.ghost.plan.stayed(time) > self.ghost.plan.length {
+                    self.ghost.plan.done = true;
+                }
+            }
             Activity::Visit => {
                 if self.viewer.pointer.is_some() {
                     self.ghost.plan.target = self.glass_spot();
@@ -734,6 +813,9 @@ impl World {
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
             Activity::Visit if present => company += 0.01,
+            Activity::Window if ghost.plan.arrived.is_some() => {
+                fun += 0.004 + 0.02 * self.weather.rainbow(self.time)
+            }
             _ => {}
         }
         if present {
@@ -774,6 +856,9 @@ impl World {
                 EventKind::AteMote | EventKind::NudgedBall | EventKind::Bloomed
             )
         }) {
+            return Mood::Excited;
+        }
+        if self.weather.rainbow(self.time) > 0.3 && ghost.saw_rainbow {
             return Mood::Excited;
         }
         if ghost.needs.company < 0.25 {
