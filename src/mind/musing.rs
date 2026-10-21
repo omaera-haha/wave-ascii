@@ -183,6 +183,7 @@ pub fn returned(world: &World, korean: bool) -> Vec<String> {
 pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
     let present = world.viewer_present();
     let mut lines = match activity {
+        Activity::Mirror => world.mirror_thoughts(),
         Activity::Read => vec!["Just one more page.", "I wonder what happens next."],
         Activity::Friend => vec![
             "Tag! You’re it!",
@@ -372,6 +373,9 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if ghost.plan.activity == Activity::Mirror && !ghost.plan.done {
+        lines.extend(world.mirror_thoughts());
+    }
     if let Some(spell) = world.active_quirk() {
         lines.extend_from_slice(spell.kind.thoughts());
     }
@@ -601,6 +605,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Air => "A breeze makes the room feel new.",
             Activity::Company => "I like working quietly beside you.",
             Activity::Read => "A book is a little window too.",
+            Activity::Mirror => "I wonder what the mirror ghost is doing.",
         });
     }
     if lines.is_empty() {
@@ -639,6 +644,15 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if today.mirror_visits > 0 || today.met_reflection {
+        lines.push(if world.life.mirror.recognizes_self() {
+            "…my own ghost waves back from a silver room…"
+        } else if world.life.mirror.sessions >= 2 {
+            "…the ghost in the mirror copies even my dreams…"
+        } else {
+            "…the ghost in the mirror invites me through…"
+        });
+    }
     if today.tunes_played > 0 || world.music.is_some() {
         lines.push("…music carries my little room over the clouds…");
     }
@@ -1060,6 +1074,13 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
     let needs = ghost.needs;
     let bond = world.life.bond;
     match question {
+        Question::Mirror if world.life.mirror.recognizes_self() => {
+            lines(&["That's me!"], &["그건 나야!"])
+        }
+        Question::Mirror => lines(
+            &["Another ghost! It copies me."],
+            &["다른 유령이야! 나를 따라 해."],
+        ),
         Question::Wearing => match world.wearing {
             Some(accessory) if korean => vec![format!("{}! 마음에 들어.", accessory.korean())],
             Some(accessory) => vec![format!("I’m wearing {}!", accessory.words())],
@@ -1777,6 +1798,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Puzzle => "유리에 낱말 맞추기 하는 중",
         Activity::Read => "그림책 읽는 중",
         Activity::Music => "오르골 음악을 듣는 중",
+        Activity::Mirror => "거울 보는 중",
     }
 }
 
@@ -1807,6 +1829,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Puzzle => "낱말 맞추기",
         Activity::Read => "그림책 읽기",
         Activity::Music => "오르골 듣기",
+        Activity::Mirror => "거울 보기",
     }
 }
 
@@ -1885,6 +1908,79 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mirror_questions_follow_its_understanding_in_both_languages_without_teaching_words() {
+        let mut world = World::new(1, 12.0);
+        for recognized in [false, true] {
+            world.life.mirror.sessions = if recognized { 10 } else { 2 };
+            world.life.mirror.recognized = recognized.then(|| world.date.to_string());
+            for (message, expected) in [
+                (
+                    "who is in the mirror?",
+                    if recognized {
+                        "That's me!"
+                    } else {
+                        "Another ghost! It copies me."
+                    },
+                ),
+                (
+                    "who's that in the mirror?",
+                    if recognized {
+                        "That's me!"
+                    } else {
+                        "Another ghost! It copies me."
+                    },
+                ),
+                (
+                    "거울 속에 누구야?",
+                    if recognized {
+                        "그건 나야!"
+                    } else {
+                        "다른 유령이야! 나를 따라 해."
+                    },
+                ),
+                (
+                    "거울에 누가 있어?",
+                    if recognized {
+                        "그건 나야!"
+                    } else {
+                        "다른 유령이야! 나를 따라 해."
+                    },
+                ),
+            ] {
+                let vocabulary = world.life.vocabulary.clone();
+                let heard = world.hear(message);
+                assert!(
+                    matches!(
+                        heard.understanding,
+                        Understanding::Asked {
+                            question: Question::Mirror,
+                            ..
+                        }
+                    ),
+                    "{message}"
+                );
+                assert_eq!(reply(&world, &heard, None), vec![expected.to_owned()]);
+                assert_eq!(world.life.vocabulary, vocabulary);
+            }
+        }
+    }
+
+    #[test]
+    fn mirror_thoughts_and_dreams_grow_from_stranger_to_familiar() {
+        let mut world = World::new(1, 12.0);
+        world.life.today.mirror_visits = 1;
+        assert!(setting_out(&world, Activity::Mirror).contains(&"Hello? Who are you?"));
+        assert!(dreams(&world).contains(&"…the ghost in the mirror invites me through…"));
+        world.life.mirror.sessions = 2;
+        assert!(setting_out(&world, Activity::Mirror).contains(&"It copies everything I do…"));
+        assert!(dreams(&world).contains(&"…the ghost in the mirror copies even my dreams…"));
+        world.life.mirror.recognized = Some(world.date.to_string());
+        world.wearing = Some(crate::world::Accessory::Scarf { color: 0 });
+        assert!(setting_out(&world, Activity::Mirror).contains(&"This scarf suits me."));
+        assert!(dreams(&world).contains(&"…my own ghost waves back from a silver room…"));
+    }
 
     #[test]
     fn an_ongoing_yawn_adds_a_sleepy_thought_and_focus_keeps_its_quiet_lines() {

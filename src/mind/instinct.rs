@@ -16,6 +16,27 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
     let weights: Vec<f32> = options
         .iter()
         .map(|activity| match activity {
+            Activity::Mirror => {
+                if world.ghost.asleep >= 0.3 {
+                    0.0
+                } else {
+                    let young = if world.stage() == Stage::Grown {
+                        1.0
+                    } else {
+                        1.5
+                    };
+                    let new_outfit = world.wearing.is_some()
+                        && world
+                            .events
+                            .iter()
+                            .rev()
+                            .take_while(|event| world.time - event.time < 600.0)
+                            .any(|event| matches!(event.kind, EventKind::PutOn(_)));
+                    (0.006 + 0.009 * (1.0 - needs.fun) + if new_outfit { 0.014 } else { 0.0 })
+                        * needs.energy
+                        * young
+                }
+            }
             Activity::Read => {
                 let age = if world.stage() == Stage::Newborn {
                     0.25

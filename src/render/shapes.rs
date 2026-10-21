@@ -166,11 +166,16 @@ pub enum Furniture<'a> {
     },
     MusicBox(bool, f32),
     MusicNote(Vec3, bool, u8),
+    Mirror,
 }
 
 impl Furniture<'_> {
     pub fn bounds(&self) -> (Vec3, f32) {
         match self {
+            Self::Mirror => (
+                crate::world::mirror::CENTER - Vec3::X * crate::world::mirror::STANDOFF,
+                0.8,
+            ),
             Self::Books(_, _) => (crate::world::books::POSITION + Vec3::Y * 0.09, 0.29),
             Self::OpenBook { position, size, .. } => (*position, 0.29 * size),
             Self::MusicBox(_, _) => (crate::world::music::POSITION + Vec3::Y * 0.19, 0.4),
@@ -213,6 +218,23 @@ impl Furniture<'_> {
     /// nearest it.
     pub fn distance(&self, point: Vec3) -> (f32, Material) {
         match self {
+            Self::Mirror => {
+                use crate::world::mirror::{
+                    CENTER, FRAME_DEPTH, FRAME_WIDTH, HEIGHT, STANDOFF, WIDTH,
+                };
+                let local = point - (CENTER - Vec3::X * STANDOFF);
+                let outer = box_distance(
+                    local,
+                    Vec3::new(
+                        FRAME_DEPTH * 0.5,
+                        HEIGHT * 0.5 + FRAME_WIDTH,
+                        WIDTH * 0.5 + FRAME_WIDTH,
+                    ),
+                );
+                let opening =
+                    box_distance(local, Vec3::new(FRAME_DEPTH, HEIGHT * 0.5, WIDTH * 0.5));
+                (outer.max(-opening), Material::Wood)
+            }
             Self::Books(owned, held) => {
                 let point = point - crate::world::books::POSITION;
                 let mut nearest = (f32::MAX, Material::BookPages);
@@ -1083,6 +1105,34 @@ pub fn ellipsoid(point: Vec3, radii: Vec3) -> f32 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_mirror_frame_has_bounded_finite_distances_normals_and_hits() {
+        use crate::world::mirror;
+        let piece = Furniture::Mirror;
+        let (center, radius) = piece.bounds();
+        for step in 0..64 {
+            let angle = step as f32 * std::f32::consts::TAU / 64.0;
+            for offset in [
+                Vec3::new(0.0, angle.cos(), angle.sin()),
+                Vec3::new(angle.cos(), angle.sin(), 0.0),
+            ] {
+                let point = center + offset * radius;
+                assert!(piece.distance(point).0 > 0.0);
+                assert!(piece.normal(point).is_finite());
+            }
+        }
+        for target in [
+            mirror::CENTER,
+            mirror::CENTER + Vec3::Y * (mirror::HEIGHT + mirror::FRAME_WIDTH) * 0.5,
+        ] {
+            let origin = target - Vec3::X * 2.0;
+            if let Some((distance, _)) = piece.trace(origin, Vec3::X, 3.0) {
+                assert!(distance.is_finite() && (0.0..=3.0).contains(&distance));
+            }
+            assert!(piece.distance(target).0.is_finite());
+        }
+    }
 
     #[test]
     fn music_box_and_rising_notes_have_finite_distances_normals_and_ray_hits() {

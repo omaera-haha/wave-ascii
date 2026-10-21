@@ -10,6 +10,7 @@ use glam::{Vec2, Vec3};
 use crate::face::Face;
 use crate::frame::{Frame, Grid, Shade};
 use crate::sdf::{capsule, coverage, mix, smoothstep};
+use crate::world::mirror;
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
 use ghost::{Aura, BOUNDS, Body, Pose};
 use shapes::{Furniture, Material, decoration_light, sphere_span};
@@ -145,12 +146,31 @@ impl View {
     /// Where a ray meets the ghost's billboard: the distance along the ray
     /// and the point in the ghost's own space.
     fn billboard(&self, direction: Vec3, ghost: Vec3, scale: f32) -> Option<(f32, Vec2)> {
+        self.billboard_from(self.eye, direction, ghost, scale)
+    }
+
+    fn mirrored(&self) -> Self {
+        Self {
+            eye: mirror::reflect_point(self.eye),
+            forward: mirror::reflect_direction(self.forward),
+            right: mirror::reflect_direction(self.right),
+            up: mirror::reflect_direction(self.up),
+        }
+    }
+
+    fn billboard_from(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        ghost: Vec3,
+        scale: f32,
+    ) -> Option<(f32, Vec2)> {
         let along = direction.dot(self.forward);
-        let distance = (ghost - self.eye).dot(self.forward) / along;
+        let distance = (ghost - origin).dot(self.forward) / along;
         if along <= 0.0 || distance <= 0.0 {
             return None;
         }
-        let offset = self.eye + direction * distance - ghost;
+        let offset = origin + direction * distance - ghost;
         Some((
             distance,
             Vec2::new(offset.dot(self.right), offset.dot(self.up)) / scale,
@@ -221,6 +241,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             &world.life.keepsakes,
             world.wearing.and_then(|accessory| accessory.keepsake()),
         ),
+        Furniture::Mirror,
         Furniture::MusicBox(
             world.music.is_some(),
             world
@@ -280,163 +301,239 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     }
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
+    let mut reflected_bodies = bodies;
+    let mirrored_view = scene.view.mirrored();
+    if let [Some(first), Some(second)] = reflected_bodies
+        && first.position.dot(mirrored_view.forward) < second.position.dot(mirrored_view.forward)
+    {
+        reflected_bodies.swap(0, 1);
+    }
+    let tracer = Tracer {
+        scene,
+        lights: &lights,
+        furniture: &furniture,
+        bodies: [bodies, reflected_bodies],
+        spread,
+    };
     Frame::sample(grid, |point| {
         let direction = scene.view.ray(point);
         let dream = dream.as_ref().filter(|bubble| bubble.contains(point));
-        let color = trace(
-            scene, &lights, &furniture, &bodies, dream, direction, spread,
-        );
+        let color = tracer.trace(scene.view.eye, direction, scene.view, 0.0, dream, false);
         Shade::from_rgb(color.min(Vec3::ONE))
     })
 }
 
-fn trace(
-    scene: &Scene,
-    lights: &Lights,
-    furniture: &[Furniture<'_>],
-    bodies: &[Option<Body>; 2],
-    dream: Option<&dream::Bubble>,
-    direction: Vec3,
+struct Tracer<'a> {
+    scene: &'a Scene<'a>,
+    lights: &'a Lights,
+    furniture: &'a [Furniture<'a>],
+    bodies: [[Option<Body>; 2]; 2],
     spread: f32,
-) -> Vec3 {
-    let world = scene.world;
-    let eye = scene.view.eye;
-    let room = room_exit(eye, direction);
-    let mut limit = room.map_or(f32::INFINITY, |hit| hit.distance);
-    let mut color = room.map_or(Vec3::ZERO, |hit| {
-        room_color(&hit, lights, spread, &scene.outside)
-    });
+}
 
-    if let Some((enter, _)) = sphere_span(eye, direction, world.ball.position, Ball::RADIUS)
-        && enter > 0.0
-        && enter < limit
-    {
-        limit = enter;
-        let point = eye + direction * enter;
-        let normal = (point - world.ball.position) / Ball::RADIUS;
-        color = Material::Ball.albedo(&world.plant) * lights.at(point, normal);
-    }
-    for piece in furniture {
-        if let Some((distance, material)) = piece.trace(eye, direction, limit) {
-            limit = distance;
-            let point = eye + direction * distance;
-            let normal = piece.normal(point);
-            let albedo = material.albedo(&world.plant);
-            color = albedo * lights.at(point, normal)
-                + material.emission(world.time, &world.plant)
-                + match material {
-                    Material::Water => {
-                        Vec3::new(0.4, 0.55, 0.7)
-                            * (0.2 + 0.6 * (1.0 - normal.dot(-direction).abs()).powi(3))
-                    }
-                    Material::Bulb if world.lamp.on => albedo * 1.4,
-                    Material::Lampshade if world.lamp.on => LAMP_LIGHT * 0.35,
-                    _ => Vec3::ZERO,
-                };
+impl Tracer<'_> {
+    fn trace(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        view: View,
+        traveled: f32,
+        dream: Option<&dream::Bubble>,
+        reflected: bool,
+    ) -> Vec3 {
+        let scene = self.scene;
+        let lights = self.lights;
+        let furniture = self.furniture;
+        let bodies = &self.bodies[usize::from(reflected)];
+        let spread = self.spread;
+        let world = scene.world;
+        let eye = origin;
+        let room = room_exit(eye, direction);
+        let mut limit = room.map_or(f32::INFINITY, |hit| hit.distance);
+        let mut color = room.map_or(Vec3::ZERO, |hit| {
+            if reflected && hit.axis == 2 && hit.high {
+                Vec3::ZERO
+            } else {
+                room_color(
+                    &hit,
+                    lights,
+                    (traveled + hit.distance) * spread,
+                    &scene.outside,
+                )
+            }
+        });
+
+        if let Some((enter, _)) = sphere_span(eye, direction, world.ball.position, Ball::RADIUS)
+            && enter > 0.0
+            && enter < limit
+        {
+            limit = enter;
+            let point = eye + direction * enter;
+            let normal = (point - world.ball.position) / Ball::RADIUS;
+            color = Material::Ball.albedo(&world.plant) * lights.at(point, normal);
         }
-    }
-    if let Some(moth) = &world.visitors.moth
-        && let Some((distance, local)) = scene.view.billboard(direction, moth.position, GHOST_SCALE)
-        && distance < limit
-    {
-        let point = local * GHOST_SCALE;
-        let pixel = (distance * spread).max(1e-5);
-        // Nothing of the moth, outspread wings and their soft edge
-        // included, reaches farther; the wings' distance is scaled down,
-        // so their edge widens with the pixel.
-        let coverage = if point.length() < MOTH_REACH + 1.6 * pixel {
-            moth_coverage(point, pixel, moth.flap(world.time))
-        } else {
-            0.0
-        };
-        if coverage > 0.0 {
-            let warm = if world.lamp.on {
-                (1.0 - moth.position.distance(world.lamp.bulb()) / 0.7).max(0.0)
+        for piece in furniture {
+            if let Some((distance, material)) = piece.trace(eye, direction, limit) {
+                limit = distance;
+                let point = eye + direction * distance;
+                let normal = piece.normal(point);
+                let albedo = material.albedo(&world.plant);
+                color = albedo * lights.at(point, normal)
+                    + material.emission(world.time, &world.plant)
+                    + match material {
+                        Material::Water => {
+                            Vec3::new(0.4, 0.55, 0.7)
+                                * (0.2 + 0.6 * (1.0 - normal.dot(-direction).abs()).powi(3))
+                        }
+                        Material::Bulb if world.lamp.on => albedo * 1.4,
+                        Material::Lampshade if world.lamp.on => LAMP_LIGHT * 0.35,
+                        _ => Vec3::ZERO,
+                    };
+            }
+        }
+        if !reflected
+            && let Some(hit) = room
+            && hit.axis == 0
+            && hit.high
+            && mirror::contains(hit.point)
+            && limit == hit.distance
+        {
+            let reflected_direction = mirror::reflect_direction(direction);
+            let reflected_color = self.trace(
+                hit.point - Vec3::X * 1e-4,
+                reflected_direction,
+                view.mirrored(),
+                traveled + hit.distance,
+                None,
+                true,
+            );
+            let sheen = 0.025 + 0.055 * (1.0 - direction.x.abs()).powi(3);
+            color =
+                reflected_color * Vec3::new(0.86, 0.9, 0.95) + Vec3::new(0.55, 0.7, 0.9) * sheen;
+        }
+        if let Some(moth) = &world.visitors.moth
+            && let Some((distance, local)) =
+                view.billboard_from(eye, direction, moth.position, GHOST_SCALE)
+            && distance < limit
+        {
+            let point = local * GHOST_SCALE;
+            let pixel = ((traveled + distance) * spread).max(1e-5);
+            // Nothing of the moth, outspread wings and their soft edge
+            // included, reaches farther; the wings' distance is scaled down,
+            // so their edge widens with the pixel.
+            let coverage = if point.length() < MOTH_REACH + 1.6 * pixel {
+                moth_coverage(point, pixel, moth.flap(world.time))
             } else {
                 0.0
             };
-            let albedo = Vec3::new(0.72, 0.72, 0.68);
-            let light = lights.at(moth.position, -direction).max(Vec3::splat(0.35));
-            color = color.lerp(albedo * light + LAMP_LIGHT * warm * 0.45, coverage);
-            if coverage > 0.5 {
-                limit = distance;
+            if coverage > 0.0 {
+                let warm = if world.lamp.on {
+                    (1.0 - moth.position.distance(world.lamp.bulb()) / 0.7).max(0.0)
+                } else {
+                    0.0
+                };
+                let albedo = Vec3::new(0.72, 0.72, 0.68);
+                let light = lights.at(moth.position, -direction).max(Vec3::splat(0.35));
+                color = color.lerp(albedo * light + LAMP_LIGHT * warm * 0.45, coverage);
+                if coverage > 0.5 {
+                    limit = distance;
+                }
             }
         }
-    }
 
-    // The glass, with whatever is drawn on it, lies over what is behind it,
-    // and under the ghost when the ghost is nearer.
-    let glass = glass_distance(eye, direction).filter(|distance| *distance <= limit + 1e-3);
-    let mut glazed = false;
-    let mut dream = dream.and_then(|bubble| {
-        scene
-            .view
-            .billboard(direction, bubble.position, bubble.scale)
-            .filter(|(distance, _)| *distance < limit)
-            .map(|(distance, local)| (distance, local, bubble))
-    });
-    let mut overlay = |distance: f32, glow: ghost::Glow| {
-        if let Some(glass) = glass
-            && glass > distance
-            && !glazed
-        {
-            color = glass_color(scene, direction, spread, glass, color);
-            glazed = true;
-        }
-        color = glow.over(color);
-    };
-    for body in bodies.iter().flatten() {
-        if body.opacity <= 0.0 {
-            continue;
-        }
-        let through_window = body.position.z < ROOM_MIN.z
-            && room.is_some_and(|hit| {
-                hit.axis == 2 && !hit.high && (limit - hit.distance).abs() < 1e-4
-            });
-        let Some((distance, local)) = scene.view.billboard(direction, body.position, body.scale)
-        else {
-            continue;
+        // The glass, with whatever is drawn on it, lies over what is behind it,
+        // and under the ghost when the ghost is nearer.
+        let glass = (!reflected)
+            .then(|| glass_distance(eye, direction))
+            .flatten()
+            .filter(|distance| *distance <= limit + 1e-3);
+        let mut glazed = false;
+        let mut dream = dream.and_then(|bubble| {
+            view.billboard_from(eye, direction, bubble.position, bubble.scale)
+                .filter(|(distance, _)| *distance < limit)
+                .map(|(distance, local)| (distance, local, bubble))
+        });
+        let mut overlay = |distance: f32, glow: ghost::Glow| {
+            if let Some(glass) = glass
+                && glass > distance
+                && !glazed
+            {
+                color = glass_color(scene, eye, direction, spread, glass, color);
+                glazed = true;
+            }
+            color = glow.over(color);
         };
-        if (distance >= limit && !through_window)
-            || local.cmplt(BOUNDS[0]).any()
-            || local.cmpgt(BOUNDS[1]).any()
-        {
-            continue;
+        for body in bodies.iter().flatten() {
+            if body.opacity <= 0.0 {
+                continue;
+            }
+            let through_window = body.position.z < ROOM_MIN.z
+                && room.is_some_and(|hit| {
+                    hit.axis == 2 && !hit.high && (limit - hit.distance).abs() < 1e-4
+                });
+            let Some((distance, local)) =
+                view.billboard_from(eye, direction, body.position, body.scale)
+            else {
+                continue;
+            };
+            if (distance >= limit && !through_window)
+                || local.cmplt(BOUNDS[0]).any()
+                || local.cmpgt(BOUNDS[1]).any()
+            {
+                continue;
+            }
+            if let Some((distance, local, bubble)) =
+                dream.take_if(|(dream_distance, _, _)| *dream_distance >= distance)
+            {
+                overlay(
+                    distance,
+                    bubble.shade(local, (traveled + distance) * spread / bubble.scale),
+                );
+            }
+            let pixel = (traveled + distance) * spread / body.scale;
+            overlay(distance, ghost::shade(local, pixel, world.time, body));
         }
-        if let Some((distance, local, bubble)) =
-            dream.take_if(|(dream_distance, _, _)| *dream_distance >= distance)
-        {
+        if let Some((distance, local, bubble)) = dream {
             overlay(
                 distance,
-                bubble.shade(local, distance * spread / bubble.scale),
+                bubble.shade(local, (traveled + distance) * spread / bubble.scale),
             );
         }
-        let pixel = distance * spread / body.scale;
-        overlay(distance, ghost::shade(local, pixel, world.time, body));
-    }
-    if let Some((distance, local, bubble)) = dream {
-        overlay(
-            distance,
-            bubble.shade(local, distance * spread / bubble.scale),
-        );
-    }
-    if let Some(glass) = glass
-        && !glazed
-    {
-        color = glass_color(scene, direction, spread, glass, color);
-    }
+        if let Some(glass) = glass
+            && !glazed
+        {
+            color = glass_color(scene, eye, direction, spread, glass, color);
+        }
 
-    // Light motes and the lamp's bulb glow in front of whatever is behind.
-    for mote in &world.motes {
-        color += mote_color(world)
-            * sprite(eye, direction, mote.position, limit, spread, 0.035)
-            * mote.glow(world.time);
+        // Light motes and the lamp's bulb glow in front of whatever is behind.
+        for mote in &world.motes {
+            color += mote_color(world)
+                * sprite(
+                    eye,
+                    direction,
+                    mote.position,
+                    limit,
+                    spread,
+                    0.035,
+                    traveled,
+                )
+                * mote.glow(world.time);
+        }
+        if world.lamp.on {
+            color += LAMP_LIGHT
+                * sprite(
+                    eye,
+                    direction,
+                    world.lamp.bulb(),
+                    limit + 0.3,
+                    spread,
+                    0.12,
+                    traveled,
+                )
+                * 0.3;
+        }
+        color
     }
-    if world.lamp.on {
-        color +=
-            LAMP_LIGHT * sprite(eye, direction, world.lamp.bulb(), limit + 0.3, spread, 0.12) * 0.3;
-    }
-    color
 }
 
 /// How far the moth reaches from its center, wings spread.
@@ -476,6 +573,7 @@ fn glass_distance(eye: Vec3, direction: Vec3) -> Option<f32> {
 // laid over `color`.
 fn glass_color(
     scene: &Scene,
+    origin: Vec3,
     direction: Vec3,
     spread: f32,
     distance: f32,
@@ -488,7 +586,7 @@ fn glass_color(
     {
         return color;
     }
-    let hit = scene.view.eye + direction * distance;
+    let hit = origin + direction * distance;
     let point = Vec2::new(hit.x, hit.y);
     let footprint = distance * spread / direction.z.abs().max(0.01);
     let frost = Vec3::new(0.8, 0.92, 1.0);
@@ -560,13 +658,21 @@ fn glass_color(
 
 // How brightly a glowing point lights the ray, falling off with how far the
 // ray passes from it.
-fn sprite(eye: Vec3, direction: Vec3, center: Vec3, limit: f32, spread: f32, size: f32) -> f32 {
+fn sprite(
+    eye: Vec3,
+    direction: Vec3,
+    center: Vec3,
+    limit: f32,
+    spread: f32,
+    size: f32,
+    traveled: f32,
+) -> f32 {
     let along = (center - eye).dot(direction);
     if along <= 0.0 || along > limit + 0.05 {
         return 0.0;
     }
     let miss = (eye + direction * along).distance_squared(center);
-    let width = size.max(along * spread * 1.2);
+    let width = size.max((traveled + along) * spread * 1.2);
     (-miss / (width * width)).exp()
 }
 
@@ -607,8 +713,7 @@ fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
 
 // The inside of a wall: a lattice of dots, densest on the floor, edged by
 // dashed lines along the box's corners. The glass shows only its edges.
-fn room_color(hit: &RoomHit, lights: &Lights, spread: f32, outside: &window::Outside) -> Vec3 {
-    let footprint = hit.distance * spread;
+fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32, outside: &window::Outside) -> Vec3 {
     let (first, second) = match hit.axis {
         0 => (1, 2),
         1 => (0, 2),
@@ -766,6 +871,220 @@ mod tests {
 
     fn grid() -> Grid {
         Style::Ascii.grid(100, 30)
+    }
+
+    fn mirror_scene(world: &World) -> Scene<'_> {
+        Scene {
+            world,
+            outside: window::Outside::clear(world.hour, world.time),
+            view: Camera::default().view(grid()),
+            face: Face::REST,
+            aura: Aura {
+                color: Vec3::ONE,
+                visibility: 1.0,
+                brightness: 0.7,
+                beat: 1.0,
+            },
+            pose: Pose::new(world.time, 0.0, 0.0, 0.0),
+            friend: None,
+        }
+    }
+
+    fn resident(scene: &Scene) -> Body {
+        Body {
+            position: scene.world.ghost.position,
+            scale: GHOST_SCALE,
+            pose: scene.pose,
+            face: scene.face,
+            aura: scene.aura,
+            opacity: 1.0,
+            accessory: None,
+        }
+    }
+
+    #[test]
+    fn a_ray_from_the_default_camera_reaches_the_mirror_center() {
+        let view = Camera::default().view(grid());
+        let direction = (mirror::CENTER - view.eye).normalize();
+        let hit = room_exit(view.eye, direction).unwrap();
+        assert_eq!(hit.axis, 0);
+        assert!(hit.high);
+        assert!(hit.point.distance(mirror::CENTER) < 1e-5);
+        assert!(mirror::contains(hit.point));
+        for offset in [Vec3::Y * 0.61, Vec3::Z * 0.39] {
+            assert!(!mirror::contains(mirror::CENTER + offset));
+        }
+    }
+
+    #[test]
+    fn mirrored_billboards_use_the_reflected_eye_and_basis_and_total_path() {
+        let view = Camera::default().view(grid());
+        let mirrored = view.mirrored();
+        assert_eq!(mirrored.eye, mirror::reflect_point(view.eye));
+        for (basis, reflected) in [
+            (view.forward, mirrored.forward),
+            (view.right, mirrored.right),
+            (view.up, mirrored.up),
+        ] {
+            assert_eq!(reflected, mirror::reflect_direction(basis));
+            assert!((reflected.length() - 1.0).abs() < 1e-6);
+        }
+        assert!(mirrored.right.dot(mirrored.up).abs() < 1e-6);
+        let direction = (mirror::CENTER - view.eye).normalize();
+        let reflected = mirror::reflect_direction(direction);
+        let position = mirror::CENTER + reflected * 0.25;
+        let scale = 0.1;
+        let local = Vec2::new(0.2, -0.3);
+        let surface = position + (mirrored.right * local.x + mirrored.up * local.y) * scale;
+        let reflected = (surface - mirrored.eye).normalize();
+        let incoming = mirror::reflect_direction(reflected);
+        let hit = room_exit(view.eye, incoming).unwrap();
+        assert!(mirror::contains(hit.point));
+        let (from_eye, eye_local) = mirrored.billboard(reflected, position, scale).unwrap();
+        let (from_glass, glass_local) = mirrored
+            .billboard_from(hit.point, reflected, position, scale)
+            .unwrap();
+        assert!(eye_local.distance(local) < 1e-4);
+        assert!(glass_local.distance(local) < 1e-4);
+        assert!((hit.distance + from_glass - from_eye).abs() < 1e-5);
+        assert!(mirrored.forward.dot((mirrored.eye - position).normalize()) < 0.0);
+    }
+
+    #[test]
+    fn rays_away_from_the_mirror_match_the_original_trace() {
+        let world = World::new(1, 12.0);
+        let scene = mirror_scene(&world);
+        let bodies = [Some(resident(&scene)), None];
+        let furniture = [
+            Furniture::Lamp(world.lamp),
+            Furniture::Plant(world.plant),
+            Furniture::Nook(world.nook),
+        ];
+        let lights = Lights::of(&scene);
+        let tracer = Tracer {
+            scene: &scene,
+            lights: &lights,
+            furniture: &furniture,
+            bodies: [bodies, bodies],
+            spread: 0.01,
+        };
+        // Computed with the original trace before separating the origin from the camera.
+        for (target, original) in [
+            (
+                Vec3::new(-1.0, 1.0, -1.5),
+                Vec3::new(0.030333366, 0.031090869, 0.035526168),
+            ),
+            (
+                Vec3::new(-1.0, 0.0, 0.2),
+                Vec3::new(0.55302423, 0.5093097, 0.90395874),
+            ),
+            (
+                world.ghost.position,
+                Vec3::new(0.7468277, 0.76198936, 0.7901465),
+            ),
+            (
+                world.ball.position,
+                Vec3::new(0.5958956, 0.28548053, 0.24318193),
+            ),
+            (
+                Vec3::new(-2.0, 1.0, 0.0),
+                Vec3::new(0.0240388, 0.025569687, 0.030685458),
+            ),
+        ] {
+            let direction = (target - scene.view.eye).normalize();
+            assert!(
+                tracer
+                    .trace(scene.view.eye, direction, scene.view, 0.0, None, false)
+                    .distance(original)
+                    < 1e-6
+            );
+        }
+    }
+
+    #[test]
+    fn reflected_small_faded_and_visiting_ghosts_are_finite() {
+        let world = World::new(1, 21.0);
+        let scene = mirror_scene(&world);
+        let lights = Lights::of(&scene);
+        let incoming = (mirror::CENTER - scene.view.eye).normalize();
+        let position = mirror::CENTER + mirror::reflect_direction(incoming) * 0.25;
+        for scale in [0.01, 0.15, GHOST_SCALE] {
+            for visibility in [0.0, 0.1, 1.0] {
+                for has_friend in [false, true] {
+                    let body = Body {
+                        position,
+                        scale,
+                        aura: Aura {
+                            visibility,
+                            ..scene.aura
+                        },
+                        ..resident(&scene)
+                    };
+                    let friend = has_friend.then_some(Body {
+                        position: position - Vec3::X * 0.08,
+                        scale: scale * 0.75,
+                        opacity: 0.4,
+                        ..body
+                    });
+                    let bodies = [Some(body), friend];
+                    let furniture = [
+                        Furniture::Mirror,
+                        Furniture::Lamp(world.lamp),
+                        Furniture::MusicBox(false, 0.0),
+                    ];
+                    let tracer = Tracer {
+                        scene: &scene,
+                        lights: &lights,
+                        furniture: &furniture,
+                        bodies: [bodies, bodies],
+                        spread: 0.003,
+                    };
+                    for vertical in -4..=4 {
+                        for across in -4..=4 {
+                            let target = mirror::CENTER
+                                + Vec3::new(0.0, vertical as f32 * 0.1, across as f32 * 0.07);
+                            let direction = (target - scene.view.eye).normalize();
+                            assert!(
+                                tracer
+                                    .trace(scene.view.eye, direction, scene.view, 0.0, None, false)
+                                    .is_finite()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reflected_rays_skip_front_glass_drawings_and_the_viewers_side_is_dark() {
+        use crate::world::{Doodle, Picture, Sketch};
+        let mut world = World::new(1, 12.0);
+        let ray = Vec3::Z;
+        let origin = mirror::CENTER - Vec3::X * 0.01;
+        let view = Camera::default().view(grid()).mirrored();
+        let empty = |world: &World| {
+            let scene = mirror_scene(world);
+            let lights = Lights::of(&scene);
+            let tracer = Tracer {
+                scene: &scene,
+                lights: &lights,
+                furniture: &[],
+                bodies: [[None; 2]; 2],
+                spread: 0.01,
+            };
+            tracer.trace(origin, ray, view, 1.0, None, true)
+        };
+        world.lamp.on = false;
+        world.motes.clear();
+        assert_eq!(empty(&world), Vec3::ZERO);
+        world.doodles.push(Doodle {
+            picture: Picture::Sketch(Sketch::Heart),
+            center: origin.truncate(),
+            size: 0.3,
+            started: 0.0,
+        });
+        assert_eq!(empty(&world), Vec3::ZERO);
     }
 
     #[test]

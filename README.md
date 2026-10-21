@@ -38,6 +38,13 @@ its friend, drifts in through the window to play.
 On clear nights it finds and names pictures in the stars, keeping their faint
 outlines in its sky.
 
+A wooden mirror on the right wall reflects the room and its ghosts. At first
+it greets the stranger inside, then tests how the reflection copies it.
+After enough completed visits, a young or grown ghost recognizes itself;
+an accessory helps it make the connection sooner. Later it makes faces,
+admires what it wears, and practices little twirls. Ask “who is in the
+mirror?” or “거울 속에 누구야?” to hear what it thinks.
+
 Little involuntary quirks follow the room: hiccups after too many motes or
 much delight, sneezes around spring blossom or dusty corners, sleepy yawns,
 cold shivers, and contented sighs after a long stroke or settling on the
@@ -684,7 +691,7 @@ first, deciding on instinct. `--hour` sets the time of day (default noon),
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
-COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time 684 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time 240 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat

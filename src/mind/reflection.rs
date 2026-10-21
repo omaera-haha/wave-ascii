@@ -229,6 +229,11 @@ pub fn request(
         .take(3)
         .map(|granted| granted.wish.words(life))
         .collect::<Vec<_>>();
+    let mirror = if life.mirror.recognizes_self() {
+        "\nYou recognize the ghost in the mirror on the right wall as yourself."
+    } else {
+        ""
+    };
     let wishes = format!(
         "{wish}\nWishes that came true recently:\n{}",
         bullets(&granted)
@@ -241,7 +246,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\n\
                  You are {stage}.{voice}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{friend}\n\n{wishes}\n\n\
+                 Your bond with the viewer: {}.{routine}{name}{friend}{mirror}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}",
@@ -331,6 +336,26 @@ pub fn read(value: Value) -> Option<Reflection> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_system_prompt_remembers_self_recognition() {
+        let mut life = crate::world::Life::default();
+        let prompt = |life: &crate::world::Life| {
+            super::request(&serde_json::json!({}), &[], life, &[], None, None, None)
+                .system
+                .iter()
+                .map(|block| block.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert!(!prompt(&life).contains("recognize the ghost in the mirror"));
+        life.mirror.sessions = 10;
+        life.mirror.recognized = Some("2026-06-21".to_owned());
+        assert!(
+            prompt(&life)
+                .contains("recognize the ghost in the mirror on the right wall as yourself")
+        );
+    }
+
     #[test]
     fn the_system_prompt_lists_the_picture_books_it_finished() {
         let mut life = crate::world::Life::default();
