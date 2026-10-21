@@ -887,6 +887,11 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         (format!("Knows     {}", known_words(life, columns)), TEXT),
     ];
     let total = &life.total;
+    let mut bird = vec![(format!("The bird: {}", life.bird_words()), TEXT)];
+    let room = columns.saturating_sub(10).clamp(20, 56);
+    for line in wrap(&life.keepsake_words(), room) {
+        bird.push((format!("  {line}"), TEXT));
+    }
     let mut counts = vec![
         (String::new(), TEXT),
         ("In all its days".to_owned(), ACCENT),
@@ -935,6 +940,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ),
         TEXT,
     ));
+    counts.push((format!("  gifts kept        {:>5}", total.gifts), TEXT));
     let latest = match life.milestones.last() {
         Some(milestone) => vec![
             (String::new(), TEXT),
@@ -960,13 +966,14 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     // runs short.
     let sections = [
         (header, 0),
-        (counts, 3),
-        (latest, 2),
+        (bird, 2),
+        (counts, 4),
+        (latest, 3),
         (today, 1),
-        (footer, 4),
+        (footer, 5),
     ];
     let mut room = rows.saturating_sub(2);
-    let mut kept = [false; 5];
+    let mut kept = [false; 6];
     let mut by_need: Vec<usize> = (0..sections.len()).collect();
     by_need.sort_by_key(|index| sections[*index].1);
     for index in by_need {

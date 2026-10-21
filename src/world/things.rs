@@ -7,6 +7,10 @@ pub const ROOM_MIN: Vec3 = Vec3::new(-2.0, 0.0, -1.4);
 pub const ROOM_MAX: Vec3 = Vec3::new(2.0, 2.4, 1.4);
 /// The middle of the window in the back wall.
 pub const WINDOW_CENTER: Vec3 = Vec3::new(0.0, 1.5, ROOM_MIN.z);
+/// The keepsake shelf on the back wall, left of the window and above the lamp.
+pub const SHELF_POSITION: Vec3 = Vec3::new(-1.35, 1.87, -1.27);
+/// Where the bird leaves gifts on the outer sill, just beyond the pane.
+pub const SILL_POSITION: Vec3 = Vec3::new(0.42, 1.06, ROOM_MIN.z - 0.02);
 
 /// A floor lamp whose bulb lights the room when it is on.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

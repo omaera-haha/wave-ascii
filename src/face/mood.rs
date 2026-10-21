@@ -80,6 +80,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Bloomed
         | EventKind::DroppedMote
         | EventKind::Fetched
+        | EventKind::Kept(_)
         | EventKind::Pounced
         | EventKind::Found
         | EventKind::Celebrated(_)
@@ -109,6 +110,9 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
                 || thing == "a bird at the window" =>
         {
             Expression::Sparkle
+        }
+        EventKind::Noticed(thing) if thing.starts_with("a gift on the sill") => {
+            Expression::Surprise
         }
         _ => return None,
     })

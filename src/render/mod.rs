@@ -166,9 +166,16 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         Furniture::Lamp(world.lamp),
         Furniture::Plant(world.plant),
         Furniture::Nook(world.nook),
+        Furniture::Shelf(&world.life.keepsakes),
     ];
     if let Some(decoration) = world.decoration() {
         furniture.push(Furniture::Decoration(decoration, world.time));
+    }
+    if let Some(gift) = world.ghost.keepsake {
+        furniture.push(Furniture::Keepsake(
+            gift,
+            world.ghost.position - Vec3::Y * 0.5,
+        ));
     }
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
@@ -182,7 +189,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
 fn trace(
     scene: &Scene,
     lights: &Lights,
-    furniture: &[Furniture],
+    furniture: &[Furniture<'_>],
     direction: Vec3,
     spread: f32,
 ) -> Vec3 {

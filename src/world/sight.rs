@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use glam::{Quat, Vec3};
 
 use super::things::{Nook, Plant, ROOM_MAX, WINDOW_CENTER};
-use super::{Ball, Decoration, EventKind, World};
+use super::{Ball, Decoration, EventKind, SHELF_POSITION, World};
 
 /// Half the ghost's field of view: it sees what lies within this angle of
 /// where it faces.
@@ -27,11 +27,12 @@ pub enum Thing {
     Mote(u32),
     Bird,
     Moth,
+    Shelf,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 10] = [
+    pub const NAMES: [&str; 11] = [
         "viewer",
         "window",
         "plant",
@@ -42,6 +43,7 @@ impl Thing {
         "decoration",
         "bird",
         "moth",
+        "shelf",
     ];
 
     pub fn name(self) -> &'static str {
@@ -56,6 +58,7 @@ impl Thing {
             Self::Mote(_) => "light mote",
             Self::Bird => "bird",
             Self::Moth => "moth",
+            Self::Shelf => "shelf",
         }
     }
 }
@@ -105,6 +108,7 @@ impl World {
             Thing::Mote(id) => self.motes.iter().find(|mote| mote.id == id)?.position,
             Thing::Bird => self.visitors.bird.as_ref()?.position(self.time),
             Thing::Moth => self.visitors.moth.as_ref()?.position,
+            Thing::Shelf => SHELF_POSITION,
         })
     }
 
@@ -124,6 +128,7 @@ impl World {
             Thing::Decoration,
             Thing::Bird,
             Thing::Moth,
+            Thing::Shelf,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -183,6 +188,7 @@ impl World {
                 Thing::Decoration,
                 Thing::Bird,
                 Thing::Moth,
+                Thing::Shelf,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -208,6 +214,9 @@ impl World {
                 Nook::RADIUS * 0.8,
             ),
             (Thing::Ball, self.ball.position, Ball::RADIUS),
+            (Thing::Shelf, SHELF_POSITION - Vec3::X * 0.32, 0.12),
+            (Thing::Shelf, SHELF_POSITION, 0.12),
+            (Thing::Shelf, SHELF_POSITION + Vec3::X * 0.32, 0.12),
         ];
         let along = target - eye;
         let length = along.length();
@@ -275,6 +284,17 @@ impl World {
             Sight::default()
         };
         for seen in &sight.in_view {
+            if seen.thing == Thing::Window
+                && seen.hidden_behind.is_none()
+                && !self.ghost.saw_gift
+                && let Some(gift) = self.life.sill
+            {
+                self.ghost.saw_gift = true;
+                self.record(EventKind::Noticed(format!(
+                    "a gift on the sill outside: {}",
+                    gift.name()
+                )));
+            }
             match seen.thing {
                 Thing::Mote(id)
                     if seen.hidden_behind.is_none() && !self.ghost.known.contains(&id) =>
@@ -470,6 +490,7 @@ mod tests {
         world.date = jiff::civil::Date::constant(2026, 10, 31);
         world.drop_mote(Vec3::ONE);
         world.visitors.bird = Some(super::super::visitor::Bird::new(
+            0.0,
             0.0,
             &mut super::super::Random::new(1),
         ));

@@ -210,7 +210,15 @@ looks out of the window, and comes to the glass to greet you.
 By day, a little bird sometimes lands on a branch or the outer sill, hops,
 pecks, and sings. Winter brings a robin, even in snow; rain sends it away.
 The ghost likes to watch quietly. Coming too close or rushing at the window
-startles the bird, and the ghost wishes it hadn't scared its visitor.
+startles the bird, and the ghost wishes it hadn't scared its visitor. Quiet
+watching slowly earns its trust across days; startling it costs some. As they
+become friends the bird visits more often, sings more, and sits closer. In time
+it leaves small gifts on the outer sill: feathers, petals, acorns, leaves,
+berries, or pebbles, depending on the season. The ghost reaches through the
+window pane, carries each gift inside, and puts it on a little wooden shelf
+above the lamp, keeping the newest eight. The life panel (`l`) shows their
+friendship and its keepsakes; gifts and friendship become moments and diary
+entries too.
 
 Showers come more often in spring and less often in summer; rain that ends by
 day leaves a rainbow for a couple of minutes. Some showers become
@@ -275,7 +283,8 @@ the diary and its moments are in the journal (`j`). Claude reads the last few
 days of the diary and its latest moments.
 
 The ghost's name, needs, the plant, the lamp, its goal, its memories, its
-nature, bond, habits, moments, diary, and the words it has learned, and the recent
+nature, bond, habits, moments, diary, the words it has learned, its friendship
+with the bird, keepsakes, any gift waiting on the sill, and the recent
 conversation are saved in
 `~/.local/share/wave-ascii/ghost.json` (`$XDG_DATA_HOME` if set) every minute
 and on quit. While the app is closed,

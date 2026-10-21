@@ -1,13 +1,52 @@
 use std::f32::consts::TAU;
 
 use glam::{Vec2, Vec3};
+use serde::{Deserialize, Serialize};
 
-use super::{EventKind, Lamp, ROOM_MAX, ROOM_MIN, Random, Sky, World};
+use super::{
+    ARRIVED, Activity, EventKind, Lamp, Life, ROOM_MAX, ROOM_MIN, Random, SHELF_POSITION,
+    SILL_POSITION, Season, Sky, Thing, WINDOW_CENTER, World,
+};
 
 const BIRD_FLIGHT: f64 = 3.0;
 const MOTH_FLIGHT: f64 = 4.0;
 
-/// The visitors are passing company, with no state kept between runs.
+/// A little gift from the bird, kept between runs in the ghost's life.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Keepsake {
+    Feather,
+    Petal,
+    Acorn,
+    Leaf,
+    Berry,
+    Pebble,
+}
+
+impl Keepsake {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Feather => "a feather",
+            Self::Petal => "a blossom petal",
+            Self::Acorn => "an acorn",
+            Self::Leaf => "a red leaf",
+            Self::Berry => "a holly berry",
+            Self::Pebble => "a smooth pebble",
+        }
+    }
+
+    fn choose(season: Season, random: &mut Random) -> Self {
+        let choices = match season {
+            Season::Spring => [Self::Petal, Self::Feather],
+            Season::Summer => [Self::Feather, Self::Pebble],
+            Season::Autumn => [Self::Acorn, Self::Leaf],
+            Season::Winter => [Self::Berry, Self::Feather],
+        };
+        choices[usize::from(random.unit() >= 0.5)]
+    }
+}
+
+/// Visits are temporary; the bird's trust and gifts live in `Life`.
 #[derive(Clone, Debug)]
 pub struct Visitors {
     pub bird: Option<Bird>,
@@ -60,10 +99,10 @@ pub struct BirdPicture {
 }
 
 impl Bird {
-    pub fn new(time: f64, random: &mut Random) -> Self {
+    pub fn new(time: f64, trust: f32, random: &mut Random) -> Self {
         let arrived_at = time + BIRD_FLIGHT;
         Self {
-            perch: if random.unit() < 0.6 {
+            perch: if random.unit() < 1.0 - sill_chance(trust) {
                 Perch::Tree
             } else {
                 Perch::Sill
@@ -75,7 +114,7 @@ impl Bird {
             departing: None,
             side: if random.unit() < 0.5 { -1.0 } else { 1.0 },
             phase: random.range(0.0, TAU),
-            next_song: arrived_at + f64::from(random.range(7.0, 16.0)),
+            next_song: arrived_at + f64::from(song_interval(random.range(7.0, 16.0), trust)),
             sang_at: f64::NEG_INFINITY,
         }
     }
@@ -237,7 +276,7 @@ impl Moth {
 }
 
 impl World {
-    pub(super) fn advance_visitors(&mut self) {
+    pub(super) fn advance_visitors(&mut self, seconds: f32) {
         let time = self.time;
         let daytime = (7.0..18.5).contains(&self.hour);
         let bird_weather = self.weather.sky != Sky::Rain && !self.weather.storm;
@@ -247,9 +286,13 @@ impl World {
             } else {
                 1.0
             };
-            self.visitors.next_bird = time + f64::from(self.random.range(180.0, 360.0) * snow);
+            self.visitors.next_bird = time
+                + f64::from(visit_interval(
+                    self.random.range(180.0, 360.0) * snow,
+                    self.life.bird_trust,
+                ));
             if daytime && bird_weather {
-                self.visitors.bird = Some(Bird::new(time, &mut self.random));
+                self.visitors.bird = Some(Bird::new(time, self.life.bird_trust, &mut self.random));
             }
         }
         if let Some(mut bird) = self.visitors.bird.take() {
@@ -260,11 +303,32 @@ impl World {
             }
             let offset = bird.position(time) - self.ghost.position;
             let depth = self.ghost.position.z - ROOM_MIN.z;
+            let sensitivity = startle_scale(self.life.bird_trust);
             let in_front = Vec2::new(offset.x, offset.y).length() < 0.5;
-            let rushing = depth < 0.8
-                && self.ghost.velocity.length() > 0.9
-                && self.ghost.velocity.dot(offset.normalize_or_zero()) > 0.5;
-            let startled = perched && in_front && (depth < 0.35 || rushing);
+            let rushing = depth < 0.8 * sensitivity
+                && self.ghost.velocity.length() * sensitivity > 0.9
+                && self.ghost.velocity.dot(offset.normalize_or_zero()) * sensitivity > 0.5;
+            // A friend lets it reach gently through the pane for a gift.
+            let reaching = self.life.bird_trust >= 0.7
+                && self.ghost.plan.activity == Activity::Window
+                && !self.ghost.plan.done
+                && matches!(self.ghost.plan.count, 1 | 2);
+            let startled =
+                perched && in_front && (rushing || depth < 0.35 * sensitivity && !reaching);
+            if perched
+                && bird.noticed
+                && !startled
+                && self.ghost.asleep < 0.3
+                && self.ghost.plan.activity == Activity::Window
+                && !self.ghost.plan.done
+                && self.ghost.plan.count == 0
+                && self.ghost.plan.arrived.is_some()
+                && self.ghost.position.distance(self.ghost.plan.target) < ARRIVED
+                && self.ghost.velocity.length() < 0.3
+                && let Some(milestone) = self.life.watch_bird(seconds)
+            {
+                self.record(EventKind::Milestone(milestone));
+            }
             if bird.departing.is_none()
                 && (!daytime || !bird_weather || time >= bird.leaves_at || startled)
                 && perched
@@ -273,11 +337,26 @@ impl World {
                 if startled && self.ghost.asleep < 0.5 {
                     self.think("Oh… I scared it.");
                 }
+                if startled {
+                    self.life.bird_trust = startled_trust(self.life.bird_trust);
+                } else if self.life.bird_trust >= 0.4
+                    && self.life.sill.is_none()
+                    && self.random.unit() < gift_chance(self.life.bird_trust)
+                {
+                    let gift = Keepsake::choose(self.season(), &mut self.random);
+                    self.life.sill = Some(gift);
+                    self.ghost.saw_gift = false;
+                    self.record(EventKind::GiftLeft(gift));
+                }
                 bird.departing = Some((time, bird.picture(time).position));
             }
             if bird.perched(time) && time >= bird.next_song {
                 bird.sang_at = time;
-                bird.next_song = time + f64::from(self.random.range(20.0, 30.0));
+                bird.next_song = time
+                    + f64::from(song_interval(
+                        self.random.range(20.0, 30.0),
+                        self.life.bird_trust,
+                    ));
                 self.record(EventKind::BirdSang);
             }
             if (daytime && bird_weather || bird.landed)
@@ -311,6 +390,108 @@ impl World {
             }
         }
     }
+
+    /// A save settles a gift being carried onto the shelf, just as an
+    /// interrupted plan does, without changing the running world's journey.
+    pub fn saved_life(&self) -> Life {
+        let mut life = self.life.clone();
+        if let Some(gift) = self.ghost.keepsake {
+            life.keep(gift);
+            life.note(&EventKind::Kept(gift));
+        }
+        life
+    }
+
+    pub(super) fn put_keepsake_away(&mut self) {
+        if let Some(gift) = self.ghost.keepsake.take() {
+            self.life.keep(gift);
+            self.ghost.needs.change(0.0, 0.12, 0.06);
+            self.record(EventKind::Kept(gift));
+        }
+    }
+
+    pub(super) fn watch_window(&mut self) -> Option<Vec3> {
+        let position = self.ghost.position;
+        let available = self.visitors.bird.is_none()
+            || self
+                .visitors
+                .bird
+                .as_ref()
+                .is_some_and(|bird| bird.perched(self.time) && self.life.bird_trust >= 0.7);
+        match self.ghost.plan.count {
+            0 if self.life.sill.is_some() && available && self.ghost.plan.arrived.is_some() => {
+                self.ghost.plan.count = 1;
+                self.ghost.plan.arrived = None;
+                self.ghost.plan.target = SILL_POSITION + Vec3::new(0.0, 0.27, 0.03);
+            }
+            1 => {
+                if !available {
+                    self.ghost.plan.count = 0;
+                    self.ghost.plan.arrived = None;
+                    self.ghost.plan.target = WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.55);
+                } else if position.distance(self.ghost.plan.target) < 0.08 {
+                    self.ghost.keepsake = self.life.sill.take();
+                    self.ghost.saw_gift = false;
+                    self.ghost.plan.count = 2;
+                    self.ghost.plan.arrived = None;
+                    self.ghost.plan.target = SHELF_POSITION + Vec3::new(0.0, 0.25, 0.35);
+                }
+            }
+            2 if position.distance(self.ghost.plan.target) < ARRIVED => {
+                self.put_keepsake_away();
+                self.ghost.plan.done = true;
+            }
+            0 if self.ghost.plan.stayed(self.time) > self.ghost.plan.length => {
+                self.ghost.plan.done = true;
+            }
+            _ => {}
+        }
+        Some(match self.ghost.plan.count {
+            1 => SILL_POSITION,
+            2 => SHELF_POSITION,
+            _ => self.position_of(Thing::Bird).unwrap_or(WINDOW_CENTER),
+        })
+    }
+}
+
+/// Quiet watching earns about two hundredths of trust each minute, slowing gently
+/// as friendship grows. The exponential keeps the rate independent of steps.
+pub(super) fn quiet_trust(trust: f32, seconds: f32) -> f32 {
+    let trust = trust.clamp(0.0, 1.0);
+    let growth = -(-0.4 * 0.02 / 60.0 * seconds.max(0.0)).exp_m1();
+    (trust + (2.5 - trust) * growth).clamp(0.0, 1.0)
+}
+
+fn startled_trust(trust: f32) -> f32 {
+    (trust - 0.05).clamp(0.0, 1.0)
+}
+
+fn startle_scale(trust: f32) -> f32 {
+    1.0 - 0.6 * trust.clamp(0.0, 1.0)
+}
+
+fn visit_interval(seconds: f32, trust: f32) -> f32 {
+    seconds / (1.0 + trust.clamp(0.0, 1.0))
+}
+
+fn song_interval(seconds: f32, trust: f32) -> f32 {
+    seconds * (1.0 - 0.4 * trust.clamp(0.0, 1.0))
+}
+
+fn sill_chance(trust: f32) -> f32 {
+    if trust < 0.35 {
+        0.4
+    } else {
+        0.6 + 0.3 * trust.clamp(0.0, 1.0)
+    }
+}
+
+fn gift_chance(trust: f32) -> f32 {
+    if trust < 0.4 {
+        0.0
+    } else {
+        0.15 + 0.35 * trust.clamp(0.0, 1.0)
+    }
 }
 
 // The angle of an oscillation at `speed` radians a second, taken in
@@ -336,7 +517,6 @@ mod tests {
             }
         }
     }
-    use crate::world::{Activity, Thing, WINDOW_CENTER};
 
     fn quiet_world(hour: f32) -> World {
         let mut world = World::new(17, hour);
@@ -398,7 +578,7 @@ mod tests {
             world.weather.storm = storm;
             for _ in 0..36_000 {
                 world.time += 0.1;
-                world.advance_visitors();
+                world.advance_visitors(0.1);
                 assert!(world.visitors.bird.is_none());
             }
             assert!(
@@ -418,7 +598,7 @@ mod tests {
             let mut visits = 0;
             for _ in 0..100_000 {
                 world.time += 0.1;
-                world.advance_visitors();
+                world.advance_visitors(0.1);
                 visits += world
                     .events
                     .iter()
@@ -441,13 +621,13 @@ mod tests {
             (0.55, Vec3::ZERO, false),
         ] {
             let mut world = quiet_world(12.0);
-            let bird = Bird::new(0.0, &mut world.random);
+            let bird = Bird::new(0.0, 0.0, &mut world.random);
             world.time = 4.0;
             world.ghost.position = bird.position(world.time) + Vec3::Z * depth;
             world.ghost.position.z = ROOM_MIN.z + depth;
             world.ghost.velocity = velocity;
             world.visitors.bird = Some(bird);
-            world.advance_visitors();
+            world.advance_visitors(0.1);
             assert_eq!(
                 world
                     .events
@@ -464,7 +644,7 @@ mod tests {
             }
         }
         let mut world = quiet_world(12.0);
-        world.visitors.bird = Some(Bird::new(0.0, &mut world.random));
+        world.visitors.bird = Some(Bird::new(0.0, 0.0, &mut world.random));
         world.time = 4.0;
         world.ghost.position = WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.55);
         world.begin(Activity::Window);
@@ -554,12 +734,12 @@ mod tests {
             };
             for visit in 1..=2 {
                 if bird_visit {
-                    world.visitors.bird = Some(Bird::new(world.time, &mut world.random));
+                    world.visitors.bird = Some(Bird::new(world.time, 0.0, &mut world.random));
                 } else {
                     world.visitors.moth = Some(Moth::new(world.time, &mut world.random));
                 }
                 world.time += 5.0;
-                world.advance_visitors();
+                world.advance_visitors(0.1);
                 if let Some(moth) = &mut world.visitors.moth {
                     moth.position = world.lamp.bulb() + Vec3::new(0.3, 0.15, 0.3);
                 }
@@ -603,7 +783,7 @@ mod tests {
     #[test]
     fn birds_are_not_noticed_while_they_are_still_flying_in() {
         let mut world = quiet_world(12.0);
-        world.visitors.bird = Some(Bird::new(0.0, &mut world.random));
+        world.visitors.bird = Some(Bird::new(0.0, 0.0, &mut world.random));
         world.ghost.heading =
             (world.position_of(Thing::Bird).unwrap() - world.ghost.position).normalize();
         world.look_around(0.0);
@@ -614,10 +794,10 @@ mod tests {
     fn bird_positions_stay_finite_and_inside_the_window_through_a_visit() {
         for seed in 0..20 {
             let mut world = quiet_world(12.0);
-            world.visitors.bird = Some(Bird::new(0.0, &mut Random::new(seed)));
+            world.visitors.bird = Some(Bird::new(0.0, 0.0, &mut Random::new(seed)));
             for _ in 0..1000 {
                 world.time += 0.1;
-                world.advance_visitors();
+                world.advance_visitors(0.1);
                 if let Some(bird) = world.visitors.bird {
                     let position = bird.position(world.time);
                     assert!(position.is_finite());
@@ -641,6 +821,254 @@ mod tests {
                 assert_eq!(first.visitors.moth, second.visitors.moth);
                 assert_eq!(first.events, second.events);
             }
+        }
+    }
+
+    #[test]
+    fn quiet_watching_earns_trust_slowly_and_startling_loses_some() {
+        assert!((quiet_trust(0.0, 60.0) - 0.02).abs() < 0.001);
+        assert!(quiet_trust(0.8, 60.0) - 0.8 < quiet_trust(0.0, 60.0));
+        assert_eq!(quiet_trust(0.9, 10_000.0), 1.0);
+        assert_eq!(quiet_trust(0.0, -10.0), 0.0);
+        assert_eq!(startled_trust(0.02), 0.0);
+        assert!((startled_trust(0.8) - 0.75).abs() < 1e-6);
+        for trust in [-1.0, 0.0, 0.5, 1.0, 2.0] {
+            assert!((0.0..=1.0).contains(&quiet_trust(trust, 1000.0)));
+            assert!((0.0..=1.0).contains(&startled_trust(trust)));
+        }
+    }
+
+    #[test]
+    fn friendship_softens_startles_and_brings_closer_more_frequent_company() {
+        assert!((startle_scale(1.0) - 0.4).abs() < 1e-6);
+        assert_eq!(visit_interval(240.0, 1.0), 120.0);
+        assert!((song_interval(25.0, 1.0) - 15.0).abs() < 1e-5);
+        assert!(sill_chance(0.35) > sill_chance(0.34));
+        for trust in [0.0, 1.0] {
+            let mut world = quiet_world(12.0);
+            let bird = Bird::new(0.0, trust, &mut world.random);
+            world.time = 4.0;
+            world.life.bird_trust = trust;
+            world.ghost.position = bird.position(world.time) + Vec3::Z * 0.25;
+            world.visitors.bird = Some(bird);
+            world.advance_visitors(0.1);
+            assert_eq!(
+                world.visitors.bird.unwrap().perched(world.time),
+                trust > 0.5
+            );
+        }
+    }
+
+    #[test]
+    fn trust_grows_only_during_settled_noticed_window_watching() {
+        for (noticed, arrived, done, moving, grows) in [
+            (true, true, false, false, true),
+            (false, true, false, false, false),
+            (true, false, false, false, false),
+            (true, true, true, false, false),
+            (true, true, false, true, false),
+        ] {
+            let mut world = quiet_world(12.0);
+            world.time = 4.0;
+            let mut bird = Bird::new(0.0, 0.0, &mut world.random);
+            bird.noticed = noticed;
+            world.visitors.bird = Some(bird);
+            world.begin(Activity::Window);
+            world.ghost.position = world.ghost.plan.target;
+            world.ghost.plan.arrived = arrived.then_some(world.time);
+            world.ghost.plan.done = done;
+            world.ghost.velocity = if moving { Vec3::X } else { Vec3::ZERO };
+            world.advance_visitors(0.1);
+            assert_eq!(world.life.bird_trust > 0.0, grows);
+        }
+    }
+
+    #[test]
+    fn only_an_unstartled_trusting_bird_can_leave_a_seasonal_gift_on_an_empty_sill() {
+        for (month, choices) in [
+            (4, [Keepsake::Petal, Keepsake::Feather]),
+            (7, [Keepsake::Feather, Keepsake::Pebble]),
+            (10, [Keepsake::Acorn, Keepsake::Leaf]),
+            (1, [Keepsake::Berry, Keepsake::Feather]),
+        ] {
+            let mut received = Vec::new();
+            for seed in 0..60 {
+                let mut world = quiet_world(12.0);
+                world.random = Random::new(seed);
+                world.date = jiff::civil::Date::constant(2026, month, 10);
+                world.life.bird_trust = 0.8;
+                let mut bird = Bird::new(0.0, 0.8, &mut world.random);
+                world.time = bird.leaves_at;
+                bird.landed = true;
+                world.visitors.bird = Some(bird);
+                world.advance_visitors(0.1);
+                if let Some(gift) = world.life.sill {
+                    assert!(choices.contains(&gift));
+                    assert!(
+                        world
+                            .events
+                            .iter()
+                            .any(|event| event.kind == EventKind::GiftLeft(gift))
+                    );
+                    received.push(gift);
+                }
+            }
+            assert!(choices.into_iter().all(|gift| received.contains(&gift)));
+        }
+        for (trust, waiting, startled) in [
+            (0.39, None, false),
+            (1.0, Some(Keepsake::Petal), false),
+            (1.0, None, true),
+        ] {
+            for seed in 0..30 {
+                let mut world = quiet_world(12.0);
+                world.random = Random::new(seed);
+                world.life.bird_trust = trust;
+                world.life.sill = waiting;
+                let bird = Bird::new(0.0, trust, &mut world.random);
+                world.time = bird.leaves_at;
+                if startled {
+                    world.ghost.position = bird.position(world.time) + Vec3::Z * 0.05;
+                }
+                world.visitors.bird = Some(bird);
+                world.advance_visitors(0.1);
+                assert_eq!(world.life.sill, waiting);
+                assert!(
+                    !world
+                        .events
+                        .iter()
+                        .any(|event| matches!(event.kind, EventKind::GiftLeft(_)))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_window_plan_takes_the_sill_gift_carries_it_and_places_it_on_the_shelf() {
+        let mut world = quiet_world(12.0);
+        world.life.sill = Some(Keepsake::Feather);
+        world.begin(Activity::Window);
+        let mut carried = false;
+        for _ in 0..600 {
+            world.step(0.1);
+            if world.ghost.keepsake.is_some() {
+                carried = true;
+                assert_eq!(world.life.sill, None);
+                assert!(world.life.keepsakes.is_empty());
+            }
+            if world.ghost.plan.done {
+                break;
+            }
+        }
+        assert!(carried);
+        assert!(world.ghost.plan.done);
+        assert_eq!(world.ghost.keepsake, None);
+        assert_eq!(world.life.keepsakes, [Keepsake::Feather]);
+        assert_eq!(world.life.total.gifts, 1);
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::Kept(Keepsake::Feather))
+        );
+    }
+
+    #[test]
+    fn a_sill_gift_delights_the_ghost_only_when_noticed_and_only_once() {
+        let mut world = quiet_world(12.0);
+        world.time = 10.0;
+        world.life.sill = Some(Keepsake::Feather);
+        world.record(EventKind::GiftLeft(Keepsake::Feather));
+        world.ghost.heading = Vec3::Z;
+        world.look_around(0.0);
+        assert!(!world.ghost.saw_gift);
+        assert_ne!(world.feeling(), super::super::Mood::Excited);
+        world.ghost.heading = (WINDOW_CENTER - world.ghost.position).normalize();
+        world.look_around(0.0);
+        assert!(world.ghost.saw_gift);
+        assert_eq!(world.feeling(), super::super::Mood::Excited);
+        world.look_around(0.0);
+        assert_eq!(world.events.iter().filter(|event| {
+            matches!(&event.kind, EventKind::Noticed(thing) if thing.starts_with("a gift on the sill"))
+        }).count(), 1);
+    }
+
+    #[test]
+    fn a_friend_allows_a_gift_to_be_taken_while_a_wary_bird_is_left_alone() {
+        for trust in [0.5, 0.8] {
+            let mut world = quiet_world(12.0);
+            world.time = 4.0;
+            world.life.bird_trust = trust;
+            world.life.sill = Some(Keepsake::Petal);
+            let mut bird = Bird::new(0.0, trust, &mut world.random);
+            bird.leaves_at = 100.0;
+            world.visitors.bird = Some(bird);
+            world.begin(Activity::Window);
+            world.ghost.position = world.ghost.plan.target;
+            world.step(30.0);
+            assert!(world.visitors.bird.unwrap().perched(world.time));
+            if trust >= 0.7 {
+                assert_eq!(world.life.keepsakes, [Keepsake::Petal]);
+            } else {
+                assert_eq!(world.life.sill, Some(Keepsake::Petal));
+            }
+        }
+    }
+
+    #[test]
+    fn interrupting_or_saving_a_carry_keeps_the_gift_once() {
+        for interrupt in ["activity", "poke", "no", "ball", "save"] {
+            let mut world = quiet_world(12.0);
+            world.life.sill = Some(Keepsake::Acorn);
+            world.begin(Activity::Window);
+            for _ in 0..300 {
+                world.step(0.1);
+                if world.ghost.keepsake.is_some() {
+                    break;
+                }
+            }
+            assert_eq!(world.ghost.keepsake, Some(Keepsake::Acorn));
+            match interrupt {
+                "activity" => world.begin(Activity::Float),
+                "poke" => world.poke(),
+                "no" => {
+                    world.hear("no");
+                }
+                "ball" => world.kick_ball(Vec3::X),
+                _ => {
+                    let first = world.saved_life();
+                    let second = world.saved_life();
+                    assert_eq!(first, second);
+                    assert_eq!(first.keepsakes, [Keepsake::Acorn]);
+                    assert_eq!(first.total.gifts, 1);
+                    assert_eq!(world.life.total.gifts, 0);
+                    continue;
+                }
+            }
+            world.step(0.1);
+            assert_eq!(world.ghost.keepsake, None);
+            assert_eq!(world.life.keepsakes, [Keepsake::Acorn]);
+            assert_eq!(world.life.total.gifts, 1);
+        }
+    }
+
+    #[test]
+    fn the_same_seed_keeps_friendship_gifts_and_journeys_deterministic() {
+        let mut first = quiet_world(12.0);
+        first.life.bird_trust = 0.8;
+        let mut second = first.clone();
+        for _ in 0..15_000 {
+            for world in [&mut first, &mut second] {
+                if world.needs_decision() {
+                    world.begin(Activity::Window);
+                }
+                world.step(0.1);
+            }
+            assert_eq!(first.life, second.life);
+            assert_eq!(first.events, second.events);
+            assert_eq!(first.ghost.position, second.ghost.position);
+            assert_eq!(first.ghost.keepsake, second.ghost.keepsake);
+            assert_eq!(first.visitors.bird, second.visitors.bird);
         }
     }
 }

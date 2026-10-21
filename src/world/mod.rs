@@ -29,8 +29,11 @@ pub use occasion::{Decoration, Occasion};
 pub use question::Question;
 pub use random::Random;
 pub use sight::{Seen, Thing};
-pub use things::{Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, WINDOW_CENTER, flat};
-pub use visitor::{BirdPicture, Perch, Visitors};
+pub use things::{
+    Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, SHELF_POSITION, SILL_POSITION,
+    WINDOW_CENTER, flat,
+};
+pub use visitor::{BirdPicture, Keepsake, Perch, Visitors};
 pub use vocabulary::{Tone, Vocabulary};
 use weather::Change;
 pub use weather::{Sky, Weather};
@@ -157,6 +160,8 @@ pub enum EventKind {
     },
     MothArrived,
     MothLeft,
+    GiftLeft(Keepsake),
+    Kept(Keepsake),
 }
 
 impl EventKind {
@@ -232,6 +237,8 @@ impl EventKind {
             Self::BirdFlewOff { startled: true } => "the bird took fright and flew away".to_owned(),
             Self::MothArrived => "a moth fluttered in to the lamp".to_owned(),
             Self::MothLeft => "the moth fluttered away".to_owned(),
+            Self::GiftLeft(gift) => format!("the bird left {} on the sill outside", gift.name()),
+            Self::Kept(gift) => format!("put {} on the shelf of keepsakes", gift.name()),
         }
     }
 }
@@ -323,6 +330,10 @@ pub struct Ghost {
     pub saw_rainbow: bool,
     /// Whether it has seen the current snowfall.
     pub saw_snow: bool,
+    /// Whether it has noticed the gift currently on the outer sill.
+    pub saw_gift: bool,
+    /// A gift riding just below it on the way to the shelf.
+    pub keepsake: Option<Keepsake>,
 }
 
 /// The person at the glass, as the world knows them.
@@ -419,6 +430,8 @@ impl World {
                 known: Vec::new(),
                 saw_rainbow: false,
                 saw_snow: false,
+                saw_gift: false,
+                keepsake: None,
             },
             lamp: Lamp {
                 position: Vec3::new(-1.55, 0.0, -0.95),
@@ -536,7 +549,7 @@ impl World {
             self.record(EventKind::Thunder);
             self.hear_thunder();
         }
-        self.advance_visitors();
+        self.advance_visitors(seconds);
 
         let obstacles = self.obstacles();
         self.ball.roll(seconds, &obstacles);
@@ -701,6 +714,13 @@ impl World {
                                  bored and creative."
                 .to_owned(),
             Activity::Window => {
+                if let Some(gift) = self.life.sill {
+                    return format!(
+                        "Float to the window, where {} waits on the outer sill. \
+                         Reach through the pane and carry it to the shelf when the bird lets you.",
+                        gift.name()
+                    );
+                }
                 let outside = match self.weather.sky {
                     Sky::Rainbow => ", where a rainbow is shining",
                     Sky::Rain if self.weather.storm => ", where a thunderstorm is rumbling",
@@ -740,6 +760,7 @@ impl World {
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
         self.abandon_game();
+        self.put_keepsake_away();
         self.drop_ball();
         let position = self.ghost.position;
         let length = match activity {
@@ -842,6 +863,9 @@ impl World {
             ) || (plan.activity == Activity::Fetch && plan.count >= 2))
         {
             plan.done = true;
+        }
+        if self.ghost.plan.done {
+            self.put_keepsake_away();
         }
         self.record(EventKind::KickedBall);
         self.shown(Activity::Fetch);
@@ -1218,6 +1242,10 @@ impl World {
     }
 
     fn wake(&mut self) {
+        if self.ghost.keepsake.is_some() {
+            self.put_keepsake_away();
+            self.ghost.plan.done = true;
+        }
         if self.ball.held {
             self.drop_ball();
             self.ghost.plan.done = true;
@@ -1362,6 +1390,7 @@ impl World {
         }
         if plan.done {
             self.abandon_game();
+            self.put_keepsake_away();
             self.drop_ball();
             return;
         }
@@ -1376,6 +1405,7 @@ impl World {
             Activity::Rest | Activity::Hide | Activity::Game
         ) && self.ghost.plan.arrived.is_some();
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
+            self.put_keepsake_away();
             self.drop_ball();
             self.ghost.plan.done = true;
             self.abandon_game();
@@ -1496,10 +1526,7 @@ impl World {
                 }
             }
             Activity::Window => {
-                look = self.position_of(Thing::Bird).or(Some(WINDOW_CENTER));
-                if self.ghost.plan.stayed(time) > self.ghost.plan.length {
-                    self.ghost.plan.done = true;
-                }
+                look = self.watch_window();
             }
             Activity::Visit => {
                 if self.viewer.pointer.is_some() {
@@ -1664,7 +1691,12 @@ impl World {
         // Walls push back within a margin, and obstacles push sideways
         // below their tops.
         // The hem hangs about 0.36 below the ghost's center.
-        let low = ROOM_MIN + Vec3::new(0.3, 0.45, 0.3);
+        let reaching =
+            ghost.plan.activity == Activity::Window && !ghost.plan.done && ghost.plan.count == 1;
+        let mut low = ROOM_MIN + Vec3::new(0.3, 0.45, 0.3);
+        if reaching {
+            low.z = ROOM_MIN.z - 0.04;
+        }
         let high = ROOM_MAX - Vec3::new(0.3, 0.35, 0.3);
         for axis in 0..3 {
             if ghost.position[axis] < low[axis] {
@@ -1712,10 +1744,11 @@ impl World {
         let steer = steer.clamp_length_max(3.0);
         ghost.velocity += steer * seconds;
         ghost.position += ghost.velocity * seconds;
-        ghost.position = ghost.position.clamp(
-            ROOM_MIN + Vec3::new(0.12, 0.38, 0.12),
-            ROOM_MAX - Vec3::splat(0.12),
-        );
+        let mut minimum = ROOM_MIN + Vec3::new(0.12, 0.38, 0.12);
+        if reaching {
+            minimum.z = ROOM_MIN.z - 0.04;
+        }
+        ghost.position = ghost.position.clamp(minimum, ROOM_MAX - Vec3::splat(0.12));
     }
 
     fn update_needs(&mut self, seconds: f32) {
@@ -1809,7 +1842,9 @@ impl World {
                     | EventKind::Pounced
                     | EventKind::Milestone(_)
                     | EventKind::LearnedWord { .. }
+                    | EventKind::Kept(_)
             )
+                || matches!(&event.kind, EventKind::Noticed(thing) if thing.starts_with("a gift on the sill"))
         }) {
             return Mood::Excited;
         }

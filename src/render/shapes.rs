@@ -1,7 +1,7 @@
 use glam::{Vec2, Vec3};
 
 use crate::sdf::{star, trapezoid};
-use crate::world::{Decoration, Lamp, Nook, Occasion, Plant};
+use crate::world::{Decoration, Keepsake, Lamp, Nook, Occasion, Plant, SHELF_POSITION};
 
 /// What a surface is made of, which sets its color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,6 +21,14 @@ pub enum Material {
     Candle,
     Ember,
     TreeLight(u8),
+    Wood,
+    Quill,
+    Feather,
+    Acorn,
+    AcornCap,
+    AutumnLeaf,
+    Berry,
+    Pebble,
 }
 
 impl Material {
@@ -44,6 +52,14 @@ impl Material {
             Self::Frosting => Vec3::new(1.0, 0.74, 0.83),
             Self::Candle => Vec3::new(0.65, 0.85, 1.0),
             Self::Ember => Vec3::new(1.0, 0.72, 0.24),
+            Self::Wood => Vec3::new(0.8, 0.57, 0.36),
+            Self::Quill => Vec3::new(1.0, 0.91, 0.7),
+            Self::Feather => Vec3::new(0.72, 0.86, 1.0),
+            Self::Acorn => Vec3::new(0.85, 0.58, 0.32),
+            Self::AcornCap => Vec3::new(0.58, 0.43, 0.3),
+            Self::AutumnLeaf => Vec3::new(1.0, 0.42, 0.2),
+            Self::Berry => Vec3::new(1.0, 0.3, 0.38),
+            Self::Pebble => Vec3::new(0.7, 0.76, 0.84),
             Self::TreeLight(index) => match index % 4 {
                 0 => Vec3::new(1.0, 0.4, 0.44),
                 1 => Vec3::new(0.45, 0.72, 1.0),
@@ -68,14 +84,16 @@ impl Material {
 /// A piece of furniture: a signed distance field inside a bounding sphere,
 /// so rays that miss the sphere skip it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Furniture {
+pub enum Furniture<'a> {
     Lamp(Lamp),
     Plant(Plant),
     Nook(Nook),
     Decoration(Decoration, f64),
+    Shelf(&'a [Keepsake]),
+    Keepsake(Keepsake, Vec3),
 }
 
-impl Furniture {
+impl Furniture<'_> {
     pub fn bounds(&self) -> (Vec3, f32) {
         match self {
             Self::Lamp(lamp) => (lamp.position + Vec3::Y * 0.72, 0.78),
@@ -84,6 +102,8 @@ impl Furniture {
                 (plant.position + Vec3::Y * height * 0.5, height * 0.5 + 0.28)
             }
             Self::Nook(nook) => (nook.position + Vec3::Y * 0.08, Nook::RADIUS + 0.06),
+            Self::Shelf(_) => (SHELF_POSITION, 0.58),
+            Self::Keepsake(_, position) => (*position + Vec3::Y * 0.08, 0.14),
             Self::Decoration(decoration, _) => {
                 let half = decoration.height() * 0.5;
                 (
@@ -103,6 +123,8 @@ impl Furniture {
             }
             Self::Lamp(lamp) => lamp_distance(point - lamp.position),
             Self::Plant(plant) => plant_distance(point - plant.position, plant),
+            Self::Shelf(keepsakes) => shelf_distance(point - SHELF_POSITION, keepsakes),
+            Self::Keepsake(gift, position) => keepsake_distance(point - *position, *gift),
             Self::Nook(nook) => (
                 rounded_cylinder(point - nook.position, Nook::RADIUS, Nook::HEIGHT, 0.06),
                 Material::Cushion,
@@ -144,6 +166,102 @@ impl Furniture {
             distance += gap * 0.9;
         }
         None
+    }
+}
+
+// A plank and two diagonal brackets, with the gifts in a row above it.
+fn shelf_distance(point: Vec3, keepsakes: &[Keepsake]) -> (f32, Material) {
+    let outside = point.abs() - Vec3::new(0.5, 0.025, 0.12);
+    let plank = outside.max(Vec3::ZERO).length() + outside.max_element().min(0.0) - 0.005;
+    let mut nearest = (plank, Material::Wood);
+    for across in [-0.34, 0.34] {
+        let back = Vec3::new(across, -0.18, -0.105);
+        let front = Vec3::new(across, -0.025, 0.09);
+        let bracket = capsule(point, back, front, 0.018).min(capsule(
+            point,
+            back,
+            Vec3::new(across, 0.0, -0.105),
+            0.018,
+        ));
+        if bracket < nearest.0 {
+            nearest = (bracket, Material::Wood);
+        }
+    }
+    for (index, gift) in keepsakes.iter().take(8).enumerate() {
+        let local = point - Vec3::new(-0.42 + index as f32 * 0.12, 0.03, 0.01);
+        if (local - Vec3::Y * 0.08).length() - 0.14 < nearest.0 {
+            let surface = keepsake_distance(local, *gift);
+            if surface.0 < nearest.0 {
+                nearest = surface;
+            }
+        }
+    }
+    nearest
+}
+
+/// A gift standing on the origin, also used in the window's picture.
+pub(super) fn keepsake_distance(point: Vec3, gift: Keepsake) -> (f32, Material) {
+    match gift {
+        Keepsake::Feather => {
+            let vane = ellipsoid(
+                point - Vec3::new(0.014, 0.095, 0.0),
+                Vec3::new(0.032, 0.075, 0.012),
+            );
+            let middle = Vec3::new(0.014, 0.09, 0.0);
+            let quill = capsule(point, Vec3::ZERO, middle, 0.006).min(capsule(
+                point,
+                middle,
+                Vec3::new(0.004, 0.17, 0.0),
+                0.004,
+            ));
+            if quill < vane {
+                (quill, Material::Quill)
+            } else {
+                (vane, Material::Feather)
+            }
+        }
+        Keepsake::Petal => (
+            ellipsoid(point - Vec3::Y * 0.018, Vec3::new(0.05, 0.015, 0.035)),
+            Material::Petal,
+        ),
+        Keepsake::Acorn => {
+            let body = ellipsoid(point - Vec3::Y * 0.043, Vec3::new(0.033, 0.043, 0.032));
+            let cap = ellipsoid(point - Vec3::Y * 0.078, Vec3::new(0.04, 0.019, 0.038));
+            if cap < body {
+                (cap, Material::AcornCap)
+            } else {
+                (body, Material::Acorn)
+            }
+        }
+        Keepsake::Leaf => {
+            let leaf = ellipsoid(point - Vec3::Y * 0.016, Vec3::new(0.05, 0.012, 0.037));
+            let midrib = capsule(
+                point,
+                Vec3::new(-0.045, 0.025, -0.02),
+                Vec3::new(0.045, 0.025, 0.02),
+                0.004,
+            );
+            if midrib < leaf {
+                (midrib, Material::Quill)
+            } else {
+                (leaf, Material::AutumnLeaf)
+            }
+        }
+        Keepsake::Berry => {
+            let berry = [
+                Vec3::new(-0.018, 0.025, 0.0),
+                Vec3::new(0.018, 0.025, 0.0),
+                Vec3::new(0.0, 0.045, -0.02),
+            ]
+            .into_iter()
+            .map(|center| point.distance(center) - 0.024)
+            .fold(f32::INFINITY, f32::min);
+            (berry, Material::Berry)
+        }
+        Keepsake::Pebble => (
+            ellipsoid(point - Vec3::Y * 0.025, Vec3::new(0.047, 0.025, 0.035)),
+            Material::Pebble,
+        ),
     }
 }
 

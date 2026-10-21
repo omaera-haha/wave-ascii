@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind, GREETS_FROM, Nature, Occasion, Outcome, Vocabulary};
+use super::{Activity, EventKind, GREETS_FROM, Keepsake, Nature, Occasion, Outcome, Vocabulary};
 
 /// Days of the diary kept.
 const DAYS_KEPT: usize = 60;
@@ -109,6 +109,12 @@ pub struct Tally {
     /// Visits it saw at the window and the lamp.
     pub birds: u32,
     pub moths: u32,
+    /// Gifts from the bird that made it onto the shelf.
+    #[serde(default)]
+    pub gifts: u32,
+    /// The kinds it kept, once each, for the diary.
+    #[serde(default)]
+    pub keepsakes: Vec<Keepsake>,
 }
 
 impl Tally {
@@ -168,6 +174,12 @@ impl Tally {
             }
             EventKind::Poked { .. } => self.pokes += 1,
             EventKind::Petted => self.pets += 1,
+            EventKind::Kept(gift) => {
+                self.gifts += 1;
+                if !self.keepsakes.contains(gift) {
+                    self.keepsakes.push(*gift);
+                }
+            }
             _ => {}
         }
     }
@@ -266,6 +278,23 @@ impl Tally {
         if self.birds > 0 {
             deeds.push("watched a bird at the window".to_owned());
         }
+        if self.gifts > 0 {
+            let gifts: Vec<String> = self
+                .keepsakes
+                .iter()
+                .map(|gift| gift.name().to_owned())
+                .collect();
+            let gifts = if gifts.is_empty() {
+                "a little gift".to_owned()
+            } else {
+                listed(&gifts)
+            };
+            deeds.push(if self.gifts == 1 {
+                format!("the bird brought me {gifts}")
+            } else {
+                format!("the bird brought me gifts, including {gifts}")
+            });
+        }
         if self.moths > 0 {
             deeds.push("saw a moth at the lamp".to_owned());
         }
@@ -353,9 +382,59 @@ pub struct Life {
     pub alone: f64,
     /// The viewer's words it has picked up, and what it thinks they mean.
     pub vocabulary: Vocabulary,
+    /// How safe the bird feels with the ghost, from wary to trusting.
+    #[serde(default)]
+    pub bird_trust: f32,
+    /// The shelf's newest eight gifts, oldest first.
+    #[serde(default)]
+    pub keepsakes: Vec<Keepsake>,
+    /// A gift still waiting outside, even while the app is closed.
+    #[serde(default)]
+    pub sill: Option<Keepsake>,
 }
 
 impl Life {
+    /// Quiet company slowly earns the bird's trust, marking friendship once.
+    pub fn watch_bird(&mut self, seconds: f32) -> Option<String> {
+        let before = self.bird_trust;
+        self.bird_trust = super::visitor::quiet_trust(before, seconds);
+        if before < 0.5 && self.bird_trust >= 0.5 {
+            self.reach("The bird trusts me now.".to_owned())
+        } else {
+            None
+        }
+    }
+
+    /// Places a gift on the shelf, making room for the newest eight.
+    pub fn keep(&mut self, gift: Keepsake) {
+        self.keepsakes.push(gift);
+        if self.keepsakes.len() > 8 {
+            self.keepsakes.drain(..self.keepsakes.len() - 8);
+        }
+    }
+
+    /// How the bird feels about the ghost, in its own words.
+    pub fn bird_words(&self) -> &'static str {
+        match self.bird_trust {
+            trust if trust < 0.2 => "wary of me",
+            trust if trust < 0.5 => "getting used to me",
+            _ => "a friend",
+        }
+    }
+
+    pub fn keepsake_words(&self) -> String {
+        let names: Vec<String> = self
+            .keepsakes
+            .iter()
+            .map(|gift| gift.name().to_owned())
+            .collect();
+        if names.is_empty() {
+            "an empty shelf".to_owned()
+        } else {
+            format!("the shelf of keepsakes, with {}", listed(&names))
+        }
+    }
+
     /// Counts what happened, and lets it warm or cool the bond. Returns the
     /// milestone this reached, if any.
     pub fn note(&mut self, kind: &EventKind) -> Option<String> {
@@ -507,6 +586,10 @@ impl Life {
             }
         };
         self.closest = unit(self.closest);
+        self.bird_trust = unit(self.bird_trust);
+        if self.keepsakes.len() > 8 {
+            self.keepsakes.drain(..self.keepsakes.len() - 8);
+        }
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
@@ -549,6 +632,7 @@ impl Life {
             return first;
         }
         let text = match kind {
+            EventKind::Kept(_) if total.gifts == 1 => "The bird brought me a gift.".to_owned(),
             EventKind::AteMote if total.motes == 1 => "Caught my first light mote.".to_owned(),
             EventKind::AteMote => MOTES_MARKED
                 .into_iter()
@@ -737,6 +821,57 @@ mod tests {
         assert_eq!(loaded, life);
         let old: Tally = serde_json::from_str(r#"{"doodles": 2}"#).unwrap();
         assert_eq!((old.games, old.wins, old.losses, old.draws), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn the_shelf_keeps_the_newest_eight_gifts_and_restores_safely() {
+        let mut life = Life::default();
+        life.keep(Keepsake::Petal);
+        life.keep(Keepsake::Pebble);
+        for _ in 0..7 {
+            life.keep(Keepsake::Feather);
+        }
+        assert_eq!(life.keepsakes.len(), 8);
+        assert_eq!(life.keepsakes[0], Keepsake::Pebble);
+        life.keepsakes.insert(0, Keepsake::Acorn);
+        life.bird_trust = 8.0;
+        let life = life.sanitized();
+        assert_eq!(life.bird_trust, 1.0);
+        assert_eq!(life.keepsakes.len(), 8);
+        assert_eq!(life.keepsakes[0], Keepsake::Pebble);
+        for trust in [f32::NAN, f32::INFINITY, -1.0] {
+            let life = Life {
+                bird_trust: trust,
+                ..Life::default()
+            }
+            .sanitized();
+            assert_eq!(life.bird_trust, 0.0);
+        }
+    }
+
+    #[test]
+    fn friendship_and_the_first_kept_gift_are_milestones_once() {
+        let mut life = Life {
+            bird_trust: 0.499,
+            ..Life::default()
+        };
+        assert_eq!(
+            life.watch_bird(10.0).as_deref(),
+            Some("The bird trusts me now.")
+        );
+        life.bird_trust = 0.499;
+        assert_eq!(life.watch_bird(10.0), None);
+        assert_eq!(life.note(&EventKind::GiftLeft(Keepsake::Feather)), None);
+        assert_eq!(life.total.gifts, 0);
+        assert_eq!(
+            life.note(&EventKind::Kept(Keepsake::Feather)).as_deref(),
+            Some("The bird brought me a gift.")
+        );
+        assert_eq!(life.note(&EventKind::Kept(Keepsake::Acorn)), None);
+        assert_eq!(life.total.gifts, 2);
+        let words = life.today.words();
+        assert!(words.contains("a feather and an acorn"));
+        assert!(!words.chars().any(|character| character.is_ascii_digit()));
     }
 
     #[test]
