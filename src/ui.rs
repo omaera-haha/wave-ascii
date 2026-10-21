@@ -572,13 +572,14 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "j          journal and diary   click room    drop a light mote",
         "l          life and growth     click blocks  nudge or topple",
         "p          save a postcard     click friend  make it giggle",
+        "o          focus (o ends it)   drag ghost    stroke it",
         "g          noughts and crosses 1-9, click    choose a square",
         "f          finger in the fog   right-drag    draw on glass",
         "           f or Esc stops      left-click    still interacts",
         "arrows     turn the view       drag          turn the view",
-        "+ -, wheel zoom                drag ghost    stroke it",
+        "+ -, wheel zoom                r             reset the view",
         "m  c       style, color        space         pause",
-        "r          reset the view      q, Esc        quit",
+        "?          this help           q, Esc        quit",
     ];
     let notes = [
         "",
@@ -935,6 +936,16 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             })
             .collect()
     };
+    if life.total.focus_sessions > 0 || life.total.focus_minutes > 0 {
+        header.extend(labeled(
+            "Focus",
+            format!(
+                "{} sessions · {} together",
+                life.total.focus_sessions,
+                hours_and_minutes(f64::from(life.total.focus_minutes) * 60.0)
+            ),
+        ));
+    }
     let korean = app.world.speaks_korean();
     match (&life.viewer_name, korean) {
         (Some(name), true) => {
@@ -1315,11 +1326,11 @@ mod tests {
         let full = help_lines(60);
         assert!(full.len() + 2 <= 24);
         assert_eq!(help_lines(24), full);
-        for rows in [20, 16, 15] {
+        for rows in [20, 17, 16] {
             let lines = help_lines(rows);
             assert!(lines.len() + 2 <= rows, "{rows}: {}", lines.len());
             assert!(lines.iter().any(|line| line.starts_with("t, Enter")));
-            assert!(lines.iter().any(|line| line.starts_with("r ")));
+            assert!(lines.iter().any(|line| line.starts_with("? ")));
         }
     }
 

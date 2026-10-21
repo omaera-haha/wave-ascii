@@ -338,7 +338,9 @@ impl App {
         if world.speaks_korean() {
             return self.farewell_in_korean(&name);
         }
-        let line = if ghost.asleep > 0.5 {
+        let line = if world.taking_break() {
+            "waves goodbye. We worked well together. Enjoy your break!"
+        } else if ghost.asleep > 0.5 {
             "is asleep on its cushion. Sweet dreams."
         } else {
             match ghost.mood {
@@ -371,7 +373,9 @@ impl App {
         } else {
             "가"
         };
-        let line = if ghost.asleep > 0.5 {
+        let line = if world.taking_break() {
+            "손을 흔들어요. 함께 열심히 했어. 푹 쉬어!"
+        } else if ghost.asleep > 0.5 {
             "방석 위에서 자고 있어요. 좋은 꿈 꿔."
         } else {
             match ghost.mood {
@@ -467,6 +471,7 @@ impl App {
             }
             Key::Character('l') => self.mode = Mode::Life,
             Key::Character('p') => self.save_postcard(),
+            Key::Character('o') => self.world.toggle_focus(),
             Key::Character('g') => {
                 if !self.world.challenge() {
                     self.post("It's asleep.");
@@ -543,6 +548,12 @@ impl App {
     }
 
     pub fn doing(&self) -> String {
+        if let Some(focus) = &self.world.focus {
+            return format!(
+                "focusing · {} min left",
+                focus.minutes_left(self.world.time)
+            );
+        }
         if self.world.ghost.asleep > 0.5 {
             "asleep on the cushion".to_owned()
         } else if self.world.ghost.plan.activity == crate::world::Activity::Friend
@@ -558,7 +569,15 @@ impl App {
     pub fn title(&self) -> String {
         // A title is an escape sequence, so nothing in it may control the
         // terminal.
-        format!("{} · {}", self.world.ghost.name, self.doing())
+        let doing = if let Some(focus) = &self.world.focus {
+            format!(
+                "focusing with you · {} min left",
+                focus.minutes_left(self.world.time)
+            )
+        } else {
+            self.doing()
+        };
+        format!("{} · {}", self.world.ghost.name, doing)
             .chars()
             .filter(|character| !character.is_control())
             .collect()
@@ -880,6 +899,7 @@ impl App {
                 petting: world.petting(),
                 gaze,
                 reactions,
+                focusing: world.focus.is_some(),
             },
         );
         let energy = ghost.needs.energy;
@@ -1018,6 +1038,7 @@ impl App {
             return None;
         }
         if let Some((pointer, moved)) = self.pointer
+            && self.world.focus.is_none()
             && self.world.time - moved < WATCH_POINTER
         {
             return Some(((pointer - center) / 0.5, 0.85));
@@ -1136,6 +1157,27 @@ mod tests {
     use super::*;
     use crate::store::{Config, Memory};
     use crate::world::{Activity, EventKind};
+
+    #[test]
+    fn the_focus_key_starts_and_ends_company_and_titles_change_only_each_minute() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('o')));
+        assert_eq!(app.world.focus.as_ref().unwrap().length, 1500);
+        assert_eq!(app.world.ghost.plan.activity, Activity::Company);
+        let title = app.title();
+        assert!(title.contains("focusing with you · 25 min left"));
+        app.input(Input::Focus(false));
+        app.world.step(30.0);
+        assert!(app.world.viewer_present());
+        assert_eq!(app.title(), title);
+        app.world.step(31.0);
+        assert!(app.title().contains("24 min left"));
+        app.input(Input::Focus(true));
+        app.input(Input::Key(Key::Character('o')));
+        assert!(app.world.focus.is_none());
+        assert_eq!(app.world.life.total.focus_minutes, 1);
+        assert_eq!(app.world.life.total.focus_sessions, 0);
+    }
 
     fn app() -> App {
         let world = World::new(1, 12.0);

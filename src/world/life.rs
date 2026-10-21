@@ -171,6 +171,10 @@ pub struct Tally {
     pub sprouted_kinds: Vec<super::Flower>,
     #[serde(default)]
     pub flowered_kinds: Vec<super::Flower>,
+    #[serde(default)]
+    pub focus_sessions: u32,
+    #[serde(default)]
+    pub focus_minutes: u32,
 }
 
 impl Tally {
@@ -181,6 +185,10 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::FocusEnded { minutes, completed } => {
+                self.focus_minutes = self.focus_minutes.saturating_add(*minutes);
+                self.focus_sessions = self.focus_sessions.saturating_add(u32::from(*completed));
+            }
             EventKind::Began(activity) => {
                 let count = self
                     .activities
@@ -322,6 +330,28 @@ impl Tally {
             .iter()
             .map(|occasion| occasion.diary_words().to_owned())
             .collect();
+        if self.focus_sessions > 0 {
+            deeds.push(format!(
+                "kept you company through {} focus {}",
+                super::friend::count_words(self.focus_sessions),
+                if self.focus_sessions == 1 {
+                    "session"
+                } else {
+                    "sessions"
+                },
+            ));
+        }
+        if self.focus_minutes > 0 {
+            deeds.push(format!(
+                "focused together for {} {}",
+                super::friend::count_words(self.focus_minutes),
+                if self.focus_minutes == 1 {
+                    "minute"
+                } else {
+                    "minutes"
+                }
+            ));
+        }
         if let Some(name) = &self.friend_name {
             let visit = match self.friend_visits {
                 0 => String::new(),
@@ -739,6 +769,9 @@ impl Life {
             self.reach("My garden has three little pots.".to_owned());
         }
         let warmth = match kind {
+            EventKind::FocusEnded {
+                completed: true, ..
+            } => 0.01,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
             EventKind::LearnedPicture(_) => 0.005,
             EventKind::Heard(_) => 0.015,
@@ -996,6 +1029,8 @@ impl Life {
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
+            tally.focus_sessions = tally.focus_sessions.min(1_000_000);
+            tally.focus_minutes = tally.focus_minutes.min(100_000_000);
             tally.friend_visits = tally.friend_visits.min(1_000_000);
             tally.friend_games = tally.friend_games.min(100_000_000);
             tally.friend_name = tally.friend_name.take().filter(|name| {
@@ -1058,6 +1093,30 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if let EventKind::FocusEnded { completed, .. } = kind {
+            let reached = [
+                (
+                    *completed && self.total.focus_sessions >= 1,
+                    "We finished our first focus session together.",
+                ),
+                (
+                    *completed && self.total.focus_sessions >= 5,
+                    "We have finished five focus sessions together.",
+                ),
+                (
+                    self.total.focus_minutes >= 600,
+                    "We have focused together for ten hours.",
+                ),
+            ];
+            let mut first = None;
+            for (reached, text) in reached {
+                if reached {
+                    let milestone = self.reach(text.to_owned());
+                    first = first.or(milestone);
+                }
+            }
+            return first;
+        }
         if let EventKind::FriendArrived(name) = kind {
             return match self.friend.as_ref().map_or(0, |friend| friend.visits) {
                 1 => self.reach(format!(
@@ -1275,6 +1334,56 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focus_counts_load_from_old_saves_clamp_and_keep_all_landmarks_once() {
+        let mut life: Life = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(life.total.focus_sessions, 0);
+        assert_eq!(life.total.focus_minutes, 0);
+        for _ in 0..5 {
+            life.note(&EventKind::FocusEnded {
+                minutes: 120,
+                completed: true,
+            });
+        }
+        assert_eq!(life.total.focus_sessions, 5);
+        assert_eq!(life.total.focus_minutes, 600);
+        for text in [
+            "We finished our first focus session together.",
+            "We have finished five focus sessions together.",
+            "We have focused together for ten hours.",
+        ] {
+            assert_eq!(
+                life.milestones
+                    .iter()
+                    .filter(|entry| entry.text == text)
+                    .count(),
+                1
+            );
+        }
+        let marked = life.milestones.len();
+        life.note(&EventKind::FocusEnded {
+            minutes: 10,
+            completed: false,
+        });
+        assert_eq!(life.milestones.len(), marked);
+        assert_eq!(life.total.focus_sessions, 5);
+        assert_eq!(life.total.focus_minutes, 610);
+        let words = life.total.words();
+        assert!(
+            words
+                .to_lowercase()
+                .contains("kept you company through five focus sessions")
+        );
+        assert!(!words.chars().any(|character| character.is_ascii_digit()));
+        let loaded: Life = serde_json::from_str(&serde_json::to_string(&life).unwrap()).unwrap();
+        assert_eq!(loaded.total.focus_minutes, 610);
+        life.total.focus_sessions = u32::MAX;
+        life.today.focus_minutes = u32::MAX;
+        let life = life.sanitized();
+        assert_eq!(life.total.focus_sessions, 1_000_000);
+        assert_eq!(life.today.focus_minutes, 100_000_000);
+    }
 
     #[test]
     fn the_viewers_language_round_trips_defaults_and_clamps_saved_values() {

@@ -251,7 +251,7 @@ impl super::World {
     }
 
     pub(super) fn holiday_greeting(&mut self) {
-        if !self.viewer_present() || self.ghost.asleep >= 0.3 {
+        if self.focus.is_some() || !self.viewer_present() || self.ghost.asleep >= 0.3 {
             return;
         }
         let Some(occasion) = self.occasion() else {

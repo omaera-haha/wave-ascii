@@ -68,6 +68,7 @@ Keys:
   p            save a postcard        q, Esc   quit
   g            noughts and crosses    1-9      choose a square
   f            draw in the fog with left drags (f or Esc stops)
+  o            focus together for twenty-five minutes; o again ends it
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, a block to nudge it or a tower to topple it, and anywhere else in
