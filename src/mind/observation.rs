@@ -30,6 +30,7 @@ pub fn observe(world: &World) -> Value {
     json!({
         "ghost": {
             "name": ghost.name,
+            "wearing": world.wearing.map(|accessory| accessory.words()).unwrap_or_else(|| "no accessory".to_owned()),
             "nature": world.life.nature.unwrap_or_default().words(),
             "stage": world.stage().words(),
             "practice": Skill::for_activity(plan.activity)
@@ -500,6 +501,15 @@ mod tests {
     use super::*;
     use crate::world::EventKind;
     use glam::Vec3;
+
+    #[test]
+    fn observations_describe_the_worn_accessory_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.wearing = Some(crate::world::Accessory::Scarf { color: 2 });
+        assert_eq!(observe(&world)["ghost"]["wearing"], "a knitted scarf");
+        world.wearing = None;
+        assert_eq!(observe(&world)["ghost"]["wearing"], "no accessory");
+    }
 
     #[test]
     fn a_puzzle_observation_names_the_wait_and_counts_without_the_answer() {
@@ -1234,7 +1244,7 @@ mod tests {
 
     #[test]
     fn observations_name_the_visiting_friend_without_digits_or_a_flood_of_tags() {
-        let mut world = World::new(1, 20.0);
+        let mut world = World::new(2, 20.0);
         world.date = jiff::civil::Date::constant(2026, 10, 25);
         for _ in 0..3000 {
             world.step(0.1);

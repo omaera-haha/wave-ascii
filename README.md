@@ -430,6 +430,24 @@ nothing dies. Its garden and first seeds, sprouts, and flowers are in its
 life panel (`l`), thoughts, and diary. Pots and their ages are saved, and
 the garden ages while the app is closed, bounded to a week per absence.
 
+### Little things to wear
+
+The ghost sometimes chooses one small accessory from its life and the day:
+a flower from a flowering pot in its own garden, a feather borrowed from its
+keepsake shelf, or a warm knitted scarf for snow and cold winter evenings.
+Birthdays and New Year invite paper party hats; Halloween brings a little
+witch hat, Seollal a tiny lucky pouch (복주머니), and the winter holidays a
+sprig of holly. Its nature helps it choose, and sometimes it wears nothing.
+
+It visits the pots or shelf before borrowing something, waiting until it is
+free. Accessories lean and trail with its body, and fade when it hides.
+Flowers last until bedtime; a scarf stays on while it is cold. Its choice
+survives a restart on the same day. The visiting ghost friend notices, and
+its thoughts, diary, and minds remember what it wore.
+
+Ask “what are you wearing?” / “뭐 입었어?” / “그거 뭐야?” or say
+“take off your hat” / “모자 벗어”. These work offline, too.
+
 ### Special days
 
 From October 24–31, a grinning jack-o'-lantern warms the room with candlelight.

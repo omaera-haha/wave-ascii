@@ -429,6 +429,7 @@ impl World {
     /// interrupted plan does, without changing the running world's journey.
     pub fn saved_life(&self) -> Life {
         let mut life = self.life.clone();
+        life.wearing = self.wearing;
         if let Some(gift) = self.ghost.keepsake {
             life.keep(gift);
             life.note(&EventKind::Kept(gift));

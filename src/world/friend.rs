@@ -580,7 +580,7 @@ mod tests {
     use crate::world::{Life, Mood, Question, Understanding};
 
     fn evening() -> World {
-        let mut world = World::new(1, 20.0);
+        let mut world = World::new(2, 20.0);
         world.date = jiff::civil::Date::constant(2026, 10, 25);
         world.weather.until = f64::INFINITY;
         world.step(0.0);
@@ -1011,7 +1011,7 @@ mod tests {
     #[test]
     fn the_same_seed_repeats_the_visit_games_and_friendship() {
         let play = || {
-            let mut world = evening();
+            let mut world = visiting();
             for _ in 0..2400 {
                 if world.needs_decision() {
                     world.begin(if world.friend_is_open() {

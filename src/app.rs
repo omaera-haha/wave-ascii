@@ -992,6 +992,7 @@ impl App {
                     let poked = (1.0 - (world.time - friend.poked_at) / 1.2).clamp(0.0, 1.0) as f32;
                     let leaving = friend.state == crate::world::friend::State::Leaving;
                     Body {
+                        accessory: None,
                         position: friend.position,
                         scale: FRIEND_SCALE,
                         pose: Pose::new(
@@ -1264,6 +1265,7 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
         }
         world.record_return(away);
     }
+    world.restore_wardrobe();
     Journal {
         memories: save.memories.clone(),
         conversation: save.conversation.clone(),
@@ -1275,6 +1277,48 @@ mod tests {
     use super::*;
     use crate::store::{Config, Memory};
     use crate::world::{Activity, EventKind};
+
+    #[test]
+    fn restoring_keeps_todays_accessory_but_returns_yesterdays_feather() {
+        use crate::world::{Accessory, Keepsake};
+        let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2026, 6, 21);
+        world.step(0.0);
+        world.life.keepsakes.push(Keepsake::Feather);
+        world.life.wearing = Some(Accessory::Feather);
+        world.wearing = world.life.wearing;
+        let save = Save {
+            version: Save::VERSION,
+            name: "Boo".into(),
+            born: local_seconds("2026-05-21T12:00:00"),
+            last_seen: local_seconds("2026-06-21T12:00:00"),
+            needs: world.ghost.needs,
+            plant: world.plant,
+            lamp_on: world.lamp.on,
+            goal: None,
+            memories: Vec::new(),
+            conversation: Vec::new(),
+            life: world.saved_life(),
+            seedlings: Vec::new(),
+            room: None,
+        };
+        let save: Save = serde_json::from_str(&serde_json::to_string(&save).unwrap()).unwrap();
+        let mut restored = World::new(2, 12.0);
+        restore(&mut restored, &save, save.last_seen + 60);
+        assert_eq!(restored.wearing, Some(Accessory::Feather));
+        restored.step(0.0);
+        assert_eq!(restored.wearing, Some(Accessory::Feather));
+        assert_eq!(restored.life.shelved_keepsakes().count(), 0);
+        assert!(
+            !restored
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::PutOn(_)))
+        );
+        restore(&mut restored, &save, local_seconds("2026-06-22T12:00:00"));
+        assert!(restored.wearing.is_none());
+        assert_eq!(restored.life.shelved_keepsakes().count(), 1);
+    }
 
     #[test]
     fn the_focus_key_starts_and_ends_company_and_titles_change_only_each_minute() {

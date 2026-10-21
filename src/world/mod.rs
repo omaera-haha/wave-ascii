@@ -32,6 +32,7 @@ mod story;
 mod things;
 pub mod visitor;
 mod vocabulary;
+pub mod wardrobe;
 mod weather;
 
 use glam::Vec3;
@@ -65,6 +66,7 @@ pub use things::{
 };
 pub use visitor::{BirdPicture, Keepsake, Perch, Visitors};
 pub use vocabulary::{Tone, Vocabulary};
+pub use wardrobe::Accessory;
 use weather::Change;
 pub use weather::{Sky, Weather};
 
@@ -244,12 +246,16 @@ pub enum EventKind {
         word: String,
         solved: bool,
     },
+    PutOn(Accessory),
+    TookOff(Accessory),
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::PutOn(accessory) => format!("put on {}", accessory.words()),
+            Self::TookOff(accessory) => format!("took off {}", accessory.words()),
             Self::OpenedWindow => "opened the window for fresh air".to_owned(),
             Self::ClosedWindow => "closed the window".to_owned(),
             Self::Puddle => "noticed a puddle below the window".to_owned(),
@@ -461,6 +467,7 @@ pub enum Understanding {
         accepted: bool,
     },
     WordGame,
+    Undressing,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -624,6 +631,8 @@ pub struct World {
     windfall_random: Random,
     seen_passersby: [Option<u64>; Passerby::ALL.len()],
     pub puzzle: Option<Puzzle>,
+    pub wearing: Option<Accessory>,
+    wardrobe: wardrobe::Wardrobe,
 }
 
 impl World {
@@ -732,6 +741,8 @@ impl World {
             windfall_random: Random::new(seed ^ 0x6c65_6176_6573),
             seen_passersby: [None; Passerby::ALL.len()],
             puzzle: None,
+            wearing: None,
+            wardrobe: wardrobe::Wardrobe::default(),
         };
         world.scatter_blocks();
         world
@@ -749,6 +760,8 @@ impl World {
             self.mark_growth();
         }
         self.celebrate();
+        self.check_wardrobe();
+        self.dress_when_idle();
         let mut remaining = seconds.max(0.0);
         while remaining > 0.0 {
             let slice = remaining.min(0.1);
@@ -839,6 +852,7 @@ impl World {
 
         self.advance_blocks(seconds);
         self.advance_garden(seconds);
+        self.advance_wardrobe();
 
         let present = self.viewer_present();
         if present != self.viewer_present {
@@ -1482,6 +1496,12 @@ impl World {
                 korean,
             };
         }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_wardrobe(text, korean)
+        {
+            return heard;
+        }
         if let Some(heard) = self.hear_puzzle(text, korean) {
             return heard;
         }
@@ -1879,6 +1899,15 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        if kind == EventKind::FellAsleep {
+            self.undress_for_bed();
+        }
+        if matches!(
+            kind,
+            EventKind::Morning | EventKind::Flowered(_) | EventKind::SnowStarted
+        ) {
+            self.reconsider_wardrobe();
+        }
         if matches!(
             kind,
             EventKind::Poked { .. }

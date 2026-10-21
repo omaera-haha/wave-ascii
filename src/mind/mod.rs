@@ -506,7 +506,18 @@ impl Mind {
                     })
             })
             .flatten();
-        let lines = if let Some(kind) = passerby {
+        let friend_noticed = !asleep
+            && !focusing
+            && world.wearing.is_some()
+            && world
+                .events
+                .iter()
+                .rev()
+                .take_while(|event| event.time > since)
+                .any(|event| matches!(event.kind, EventKind::FriendArrived(_)));
+        let lines = if friend_noticed {
+            musing::friend_notices_outfit(world)
+        } else if let Some(kind) = passerby {
             kind.thoughts().to_vec()
         } else if world.time >= self.next_musing {
             self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
@@ -528,7 +539,7 @@ impl Mind {
             .thought
             .as_ref()
             .is_some_and(|thought| world.time - thought.time < THOUGHT_HOLDS);
-        if thinking || lines.is_empty() {
+        if (thinking && !friend_noticed) || lines.is_empty() {
             return;
         }
         if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
@@ -743,6 +754,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Focusing { .. }
                 | Understanding::Airing { .. }
                 | Understanding::WordGame
+                | Understanding::Undressing
         )
 }
 
@@ -767,6 +779,31 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn wardrobe_requests_stay_in_code_and_friend_arrivals_notice_an_outfit() {
+        let mut world = World::new(1, 12.0);
+        world.wearing = Some(crate::world::Accessory::WitchHat);
+        for message in [
+            "take off your hat",
+            "모자 벗어",
+            "what are you wearing?",
+            "뭐 입었어?",
+            "그거 뭐야?",
+        ] {
+            assert!(!routes_to_jev(&world.hear(message)));
+        }
+        let mut mind = Mind::new(&Config::default(), Journal::default(), true);
+        world.wearing = Some(crate::world::Accessory::Scarf { color: 0 });
+        world.time = 1.0;
+        world.think("Already thinking.");
+        world.events.push(crate::world::Event {
+            time: world.time,
+            kind: EventKind::FriendArrived("Pip".into()),
+        });
+        mind.muse(&mut world);
+        assert!(world.ghost.thought.as_ref().unwrap().text.contains("scarf"));
+    }
 
     #[test]
     fn puzzle_requests_and_guesses_bypass_jev_and_keep_the_worlds_reply() {

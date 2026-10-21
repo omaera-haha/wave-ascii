@@ -134,7 +134,7 @@ pub enum Furniture<'a> {
     Nook(Nook),
     Block(Block),
     Decoration(Decoration, f64),
-    Shelf(&'a [Keepsake]),
+    Shelf(&'a [Keepsake], Option<Keepsake>),
     Keepsake(Keepsake, Vec3),
     Seedling(&'a Seedling, Vec3, Season),
     Petal(Petal, f64),
@@ -170,7 +170,7 @@ impl Furniture<'_> {
                 (plant.position + Vec3::Y * height * 0.5, height * 0.5 + 0.28)
             }
             Self::Nook(nook) => (nook.position + Vec3::Y * 0.08, Nook::RADIUS + 0.06),
-            Self::Shelf(_) => (SHELF_POSITION, 0.58),
+            Self::Shelf(..) => (SHELF_POSITION, 0.58),
             Self::Keepsake(_, position) => (*position + Vec3::Y * 0.08, 0.14),
             Self::Decoration(decoration, _) => {
                 let half = decoration.height() * 0.5;
@@ -263,7 +263,9 @@ impl Furniture<'_> {
                     Material::Petal,
                 )
             }
-            Self::Shelf(keepsakes) => shelf_distance(point - SHELF_POSITION, keepsakes),
+            Self::Shelf(keepsakes, worn) => {
+                shelf_distance(point - SHELF_POSITION, keepsakes, *worn)
+            }
             Self::Keepsake(gift, position) => keepsake_distance(point - *position, *gift),
             Self::Nook(nook) => (
                 rounded_cylinder(point - nook.position, Nook::RADIUS, Nook::HEIGHT, 0.06),
@@ -310,7 +312,11 @@ impl Furniture<'_> {
 }
 
 // A plank and two diagonal brackets, with the gifts in a row above it.
-fn shelf_distance(point: Vec3, keepsakes: &[Keepsake]) -> (f32, Material) {
+fn shelf_distance(
+    point: Vec3,
+    keepsakes: &[Keepsake],
+    mut worn: Option<Keepsake>,
+) -> (f32, Material) {
     let outside = point.abs() - Vec3::new(0.5, 0.025, 0.12);
     let plank = outside.max(Vec3::ZERO).length() + outside.max_element().min(0.0) - 0.005;
     let mut nearest = (plank, Material::Wood);
@@ -328,6 +334,10 @@ fn shelf_distance(point: Vec3, keepsakes: &[Keepsake]) -> (f32, Material) {
         }
     }
     for (index, gift) in keepsakes.iter().take(8).enumerate() {
+        if Some(*gift) == worn {
+            worn = None;
+            continue;
+        }
         let local = point - Vec3::new(-0.42 + index as f32 * 0.12, 0.03, 0.01);
         if (local - Vec3::Y * 0.08).length() - 0.14 < nearest.0 {
             let surface = keepsake_distance(local, *gift);

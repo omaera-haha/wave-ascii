@@ -186,6 +186,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             face: scene.face,
             aura: scene.aura,
             opacity: 1.0,
+            accessory: scene.world.wearing,
         }),
         scene.friend,
     ];
@@ -211,7 +212,10 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             Furniture::Plant(world.plant)
         },
         Furniture::Nook(world.nook),
-        Furniture::Shelf(&world.life.keepsakes),
+        Furniture::Shelf(
+            &world.life.keepsakes,
+            world.wearing.and_then(|accessory| accessory.keepsake()),
+        ),
     ];
     if let Some(decoration) = world.decoration() {
         furniture.push(Furniture::Decoration(decoration, world.time));
