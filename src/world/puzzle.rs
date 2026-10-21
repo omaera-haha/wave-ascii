@@ -529,10 +529,16 @@ impl World {
         }
         puzzle.ended = Some(self.time);
         puzzle.solved = solved;
-        self.record(EventKind::WordGame {
-            word: puzzle.word.clone(),
-            solved,
-        });
+        // A board nobody guessed at was no game played together.
+        let unanswered = !solved && !reveal && puzzle.guesses.is_empty();
+        if unanswered {
+            self.invitation_ignored_at = Some(self.time);
+        } else {
+            self.record(EventKind::WordGame {
+                word: puzzle.word.clone(),
+                solved,
+            });
+        }
         if solved {
             self.suggest_mood(Mood::Excited, 6.0);
             self.ghost.needs.change(0.0, 0.15, 0.08);
@@ -769,13 +775,43 @@ mod tests {
         assert!(world.puzzle_active());
         assert!(world.viewer_present());
         world.step(1.1);
-        assert_eq!(results(&world), vec![("MOON".to_owned(), false)]);
-        assert_eq!(world.life.total.word_games, 1);
+        assert!(!world.puzzle_active());
+        assert_eq!(
+            world.ghost.speech.as_ref().unwrap().text,
+            "We can try again another time."
+        );
+        // Nobody guessed, so it was no game played together.
+        assert!(results(&world).is_empty());
+        assert_eq!(world.life.total.word_games, 0);
         assert_eq!(world.puzzle.as_ref().unwrap().shown(), 0);
         assert_eq!(world.puzzle.as_ref().unwrap().petals(), 6);
         world.step(40.0);
         assert!(world.puzzle.is_none());
-        assert_eq!(results(&world).len(), 1);
+        assert!(results(&world).is_empty());
+    }
+
+    #[test]
+    fn a_board_nobody_guessed_at_holds_off_the_next_invitation_for_a_while() {
+        let mut world = ready("MOON");
+        world.ghost.needs.fun = 0.2;
+        world.step(125.0);
+        world.notice_viewer();
+        assert!(!world.options().contains(&Activity::Puzzle));
+        assert!(!world.options().contains(&Activity::Game));
+        world.step(super::super::IGNORED_PAUSE as f32);
+        world.notice_viewer();
+        world.ghost.needs.energy = 0.9;
+        world.ghost.needs.fun = 0.2;
+        assert!(world.options().contains(&Activity::Puzzle));
+        assert!(world.options().contains(&Activity::Game));
+        // A guess, even a wrong one, makes it a game played together.
+        let mut world = ready("MOON");
+        world.hear("z");
+        world.step(125.0);
+        assert_eq!(results(&world), vec![("MOON".to_owned(), false)]);
+        world.notice_viewer();
+        world.ghost.needs.fun = 0.2;
+        assert!(world.options().contains(&Activity::Puzzle));
     }
 
     #[test]
@@ -789,7 +825,7 @@ mod tests {
         assert!(world.viewer_present());
         world.step(30.0);
         assert!(!world.puzzle_active());
-        assert_eq!(results(&world).len(), 1);
+        assert!(results(&world).is_empty());
     }
 
     #[test]

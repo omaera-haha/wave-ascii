@@ -2096,12 +2096,17 @@ mod tests {
         assert!(app.world.viewer_present(), "a glance away is no leaving");
         app.advance(15.0);
         assert!(!app.world.viewer_present());
-        assert!(
+        let left = |app: &App| {
             app.world
                 .events
                 .iter()
                 .any(|event| event.kind == EventKind::ViewerLeft)
-        );
+        };
+        assert!(!left(&app), "a few minutes elsewhere end no visit");
+        for _ in 0..31 {
+            app.advance(10.0);
+        }
+        assert!(left(&app));
         app.input(Input::Focus(true));
         assert!(app.focused());
         assert!(app.world.viewer_present());

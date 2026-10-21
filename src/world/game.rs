@@ -414,6 +414,9 @@ impl World {
             } else if game.turn == Mark::Cross {
                 self.ghost.plan.target = inside(game.center, 0.7);
                 if time - game.turn_started >= Game::VIEWER_TIMEOUT {
+                    if !game.cells.contains(&Some(Mark::Cross)) {
+                        self.invitation_ignored_at = Some(time);
+                    }
                     self.end_game(&mut game, Outcome::Abandoned);
                 }
             } else {
@@ -805,6 +808,11 @@ mod tests {
                 .count(),
             1
         );
+        // A game let pass without a move holds off the next invitation,
+        // though the viewer can still ask for one.
+        world.notice_viewer();
+        assert!(!world.options().contains(&Activity::Game));
+        assert!(world.challenge());
     }
 
     #[test]

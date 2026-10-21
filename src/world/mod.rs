@@ -78,6 +78,13 @@ const ARRIVED: f32 = 0.2;
 const GIVE_UP: f32 = 60.0;
 /// Seconds after the viewer's last input that they still count as present.
 const PRESENT_FOR: f64 = 90.0;
+/// Seconds the viewer must stay away before the ghost counts them gone, so
+/// a few quiet minutes or a glance at another window end no visit, and
+/// coming back from them is no new arrival to greet.
+pub const GONE_AFTER: f64 = 300.0;
+/// Seconds the ghost waits before inviting the viewer to another game on
+/// the glass after one they let pass without a move.
+const IGNORED_PAUSE: f64 = 1200.0;
 /// Pokes closer together than this many seconds count as one streak.
 const POKE_STREAK: f64 = 1.5;
 /// Seconds after the terminal loses the focus before the viewer counts as
@@ -577,6 +584,13 @@ pub struct World {
     next_mote: u32,
     next_mote_at: f64,
     viewer_present: bool,
+    /// Whether the viewer has stayed away long enough to have left, so
+    /// their next appearance is an arrival.
+    viewer_gone: bool,
+    /// When the viewer stopped counting as present, while they are away.
+    absent_since: Option<f64>,
+    /// When the viewer last let a game on the glass pass without a move.
+    invitation_ignored_at: Option<f64>,
     /// When a darting pointer last interrupted an idle plan.
     pointer_interrupted_at: Option<f64>,
     listening: Listening,
@@ -695,6 +709,9 @@ impl World {
             next_mote: 0,
             next_mote_at: 8.0,
             viewer_present: false,
+            viewer_gone: true,
+            absent_since: None,
+            invitation_ignored_at: None,
             pointer_interrupted_at: None,
             listening: Listening::default(),
             push: Vec3::X,
@@ -844,10 +861,24 @@ impl World {
         if present != self.viewer_present {
             self.viewer_present = present;
             if present {
-                self.viewer_arrived();
+                self.absent_since = None;
+                if self.viewer_gone {
+                    self.viewer_gone = false;
+                    self.viewer_arrived();
+                }
             } else {
-                self.record(EventKind::ViewerLeft);
+                self.absent_since = Some(self.time);
+                // A word game needs someone to guess.
+                self.abandon_puzzle();
             }
+        }
+        if !self.viewer_gone
+            && self
+                .absent_since
+                .is_some_and(|since| self.time - since >= GONE_AFTER)
+        {
+            self.viewer_gone = true;
+            self.record(EventKind::ViewerLeft);
         }
         if let Some(milestone) = self.life.pass(seconds, present) {
             self.record(EventKind::Milestone(milestone));
@@ -969,6 +1000,7 @@ impl World {
                 Activity::Pounce => self.pounce_is_open(),
                 Activity::Puzzle => {
                     self.viewer_present()
+                        && self.invitations_welcome()
                         && self.ghost.asleep < 0.3
                         && self.ghost.needs.energy > 0.25
                         && (self.life.nature.unwrap_or_default().playful >= 0.5
@@ -976,6 +1008,7 @@ impl World {
                 }
                 Activity::Game => {
                     self.viewer_present()
+                        && self.invitations_welcome()
                         && self.ghost.asleep < 0.3
                         && self.ghost.needs.energy > 0.25
                 }
@@ -993,6 +1026,13 @@ impl World {
                 | Activity::Window => true,
             })
             .collect()
+    }
+
+    /// Whether the viewer took up its last invitation to a game on the
+    /// glass, or let it pass long enough ago to ask again.
+    fn invitations_welcome(&self) -> bool {
+        self.invitation_ignored_at
+            .is_none_or(|at| self.time - at >= IGNORED_PAUSE)
     }
 
     /// What doing `activity` would mean right now, written for a mind
@@ -3525,6 +3565,32 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn a_few_quiet_minutes_end_no_visit_and_coming_back_from_them_is_no_arrival() {
+        let mut world = World::new(6, 12.0);
+        let count = |world: &World, kind: EventKind| {
+            world
+                .events
+                .iter()
+                .filter(|event| event.kind == kind)
+                .count()
+        };
+        world.notice_viewer();
+        world.step(0.1);
+        assert_eq!(count(&world, EventKind::ViewerArrived), 1);
+        world.step((PRESENT_FOR + 60.0) as f32);
+        assert!(!world.viewer_present());
+        world.notice_viewer();
+        world.step(0.1);
+        assert_eq!(count(&world, EventKind::ViewerArrived), 1);
+        assert_eq!(count(&world, EventKind::ViewerLeft), 0);
+        world.step((PRESENT_FOR + GONE_AFTER) as f32);
+        assert_eq!(count(&world, EventKind::ViewerLeft), 1);
+        world.notice_viewer();
+        world.step(0.1);
+        assert_eq!(count(&world, EventKind::ViewerArrived), 2);
     }
 
     #[test]

@@ -240,6 +240,13 @@ mod tests {
         world.step(0.1);
         assert_eq!(world.life.total.expected, 1);
         world.step(91.0);
+        world.notice_viewer();
+        world.step(0.1);
+        assert_eq!(
+            world.life.total.expected, 1,
+            "a quiet minute is no new arrival"
+        );
+        world.step(91.0 + super::super::GONE_AFTER as f32);
         assert!(!world.options().contains(&Activity::Wait));
         let arrivals = world.life.arrivals;
         world.notice_viewer();

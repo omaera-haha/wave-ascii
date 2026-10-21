@@ -117,6 +117,8 @@ impl World {
         });
         self.break_until = 0.0;
         self.viewer_present = true;
+        self.viewer_gone = false;
+        self.absent_since = None;
         self.quiet_routine();
         if self.ghost.asleep < 0.3 && self.ghost.plan.activity != Activity::Rest {
             self.begin(Activity::Company);
@@ -136,6 +138,9 @@ impl World {
         });
         // Starting and ending company aren't arrivals or departures.
         self.viewer_present = self.viewer_present();
+        if !self.viewer_present {
+            self.absent_since = Some(self.time);
+        }
         if focus.ended_early {
             if self.ghost.plan.activity == Activity::Company {
                 self.ghost.plan.done = true;
