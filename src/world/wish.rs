@@ -33,6 +33,8 @@ pub enum Wish {
     },
     /// For the viewer to teach it a tune.
     Tune,
+    /// For the viewer to tell it about themselves when it asks.
+    AboutYou,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +83,7 @@ impl Wish {
             Self::Breeze => "to feel the breeze with you".to_owned(),
             Self::Book { index } => format!("to finish reading {}", book_title(*index, false)),
             Self::Tune => "for you to teach me a tune".to_owned(),
+            Self::AboutYou => "to learn more about you".to_owned(),
         }
     }
 
@@ -137,6 +140,7 @@ impl Wish {
                 format!("《{title}》{} 끝까지 읽는 것", object_particle(title))
             }
             Self::Tune => "네가 노래를 가르쳐 주는 것".to_owned(),
+            Self::AboutYou => "너에 대해 더 알아 가는 것".to_owned(),
         }
     }
 
@@ -163,7 +167,8 @@ impl Wish {
                 },
             )
             | (Self::Breeze, EventKind::OpenedWindow)
-            | (Self::Tune, EventKind::LearnedTune(_)) => true,
+            | (Self::Tune, EventKind::LearnedTune(_))
+            | (Self::AboutYou, EventKind::LearnedAboutViewer(_)) => true,
             (Self::Book { index }, EventKind::FinishedBook(title)) => {
                 book_title(*index, false) == title
             }
@@ -188,6 +193,7 @@ impl Wish {
                 | Self::Company
                 | Self::Breeze
                 | Self::Tune
+                | Self::AboutYou
         )
     }
 
@@ -204,6 +210,7 @@ impl Wish {
             Self::Company => "press o",
             Self::Breeze => "click the window",
             Self::Tune => "type notes like \"do re mi\"",
+            Self::AboutYou => "answer when it asks about you",
             _ => return None,
         })
     }
@@ -262,6 +269,14 @@ impl Wish {
             Self::Friend { .. } => world.life.friend.is_some(),
             Self::ViewerName => world.life.viewer_name.is_none(),
             Self::GivenName => world.life.total.names == 0,
+            // Only while something about the viewer is still unknown, and
+            // only once it is close enough to ask.
+            Self::AboutYou => {
+                world.life.bond >= 0.35
+                    && super::acquaintance::Topic::ALL
+                        .into_iter()
+                        .any(|topic| world.life.viewer.answer(topic, false).is_none())
+            }
             Self::Book { index } => world
                 .life
                 .books
@@ -302,7 +317,7 @@ impl Wish {
         ) {
             weight *= 0.5 + nature.tender;
         }
-        if matches!(self, Self::Book { .. }) {
+        if matches!(self, Self::Book { .. } | Self::AboutYou) {
             weight *= 0.5 + 0.5 * (nature.curious + nature.tender);
         }
         if matches!(self, Self::ShootingStar | Self::Constellation | Self::Story) {
@@ -372,6 +387,7 @@ impl Wish {
                 "I wish you'd teach me a tune.",
                 "노래를 하나 가르쳐 주면 좋겠어.",
             ),
+            Self::AboutYou => ("I wish I knew more about you.", "너에 대해 더 알고 싶어."),
             _ => return "",
         };
         if korean { hangul } else { english }
@@ -390,6 +406,7 @@ impl Wish {
             Self::Company => "work with it beside you",
             Self::Breeze => "open the window together",
             Self::Tune => "teach it a tune",
+            Self::AboutYou => "tell it about yourself",
             _ => return None,
         };
         Some(format!("{name} wishes you'd {action} ({})", self.hint()?))
@@ -426,6 +443,7 @@ impl Wish {
             Self::Breeze => "I hope we feel the breeze together soon.",
             Self::Book { .. } => "I want to find out how my book ends.",
             Self::Tune => "Maybe someone will teach me a new tune.",
+            Self::AboutYou => "I wonder what their favorite things are.",
         }
     }
 
@@ -452,6 +470,7 @@ impl Wish {
             Self::Breeze => "…the breeze carries us both over the hills…",
             Self::Book { .. } => "…the last page of my book opens into a meadow…",
             Self::Tune => "…a tune of golden notes I've never heard before…",
+            Self::AboutYou => "…you tell me your favorite things and they bloom like flowers…",
         }
     }
 
@@ -514,6 +533,10 @@ impl Wish {
             Self::Tune => (
                 "You taught me a tune! My wish came true.",
                 "노래를 가르쳐 줬네! 소원이 이루어졌어.",
+            ),
+            Self::AboutYou => (
+                "Now I know you a little better! My wish came true.",
+                "너를 조금 더 알게 됐어! 소원이 이루어졌어.",
             ),
             _ => (
                 "You played with me! My wish came true.",
@@ -588,6 +611,7 @@ impl World {
             });
         }
         wishes.push(Wish::Tune);
+        wishes.push(Wish::AboutYou);
         // The first unread book on the pile.
         if let Some(owned) = self
             .life
@@ -1019,6 +1043,10 @@ mod tests {
                 EventKind::FinishedBook(super::super::books::LIBRARY[1].title.0.to_owned()),
             ),
             (Wish::Tune, EventKind::LearnedTune("do-re-mi".to_owned())),
+            (
+                Wish::AboutYou,
+                EventKind::LearnedAboutViewer(super::super::acquaintance::Topic::Color),
+            ),
         ]
     }
 
@@ -1055,6 +1083,10 @@ mod tests {
                 .iter()
                 .any(|wish| matches!(wish, Wish::Book { .. }))
         );
+        assert!(choices.contains(&Wish::AboutYou));
+        assert!(Wish::AboutYou.with_viewer());
+        world.life.bond = 0.2;
+        assert!(!world.wish_options().contains(&Wish::AboutYou));
         assert!(!Wish::Book { index: 99 }.valid(&world.life));
         assert!(!Wish::Tower { height: 6 }.valid(&world.life));
     }

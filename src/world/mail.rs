@@ -223,6 +223,49 @@ impl World {
             lines.push(signature);
             lines
         };
+        self.deliver(lines, korean);
+    }
+
+    /// A short birthday letter left by the glass on the viewer's birthday,
+    /// beside the greeting.
+    pub(super) fn write_birthday_letter(&mut self) {
+        if self.age_days().is_some_and(|days| days < 1.0) {
+            return;
+        }
+        let korean = self.speaks_korean();
+        let name = self.life.viewer_name.as_deref();
+        let mut lines = vec![match (korean, name) {
+            (false, Some(name)) => format!("Dear {name},"),
+            (false, None) => "Dear you,".to_owned(),
+            (true, Some(name)) => format!("{name}에게,"),
+            (true, None) => "소중한 너에게,".to_owned(),
+        }];
+        lines.push(language("Happy birthday!", "생일 축하해!", korean));
+        lines.push(language(
+            "I'm so glad you were born.",
+            "네가 태어나서 정말 기뻐.",
+            korean,
+        ));
+        let nature = self.life.nature.unwrap_or_default();
+        lines.push(if nature.playful >= 0.6 {
+            language("Let's play all day!", "오늘은 하루 종일 같이 놀자!", korean)
+        } else {
+            language(
+                "I made a wish just for you.",
+                "너를 위해 소원을 빌었어.",
+                korean,
+            )
+        });
+        let ghost_name = name_for_letter(&self.ghost.name, 34);
+        lines.push(if korean {
+            format!("— {ghost_name}")
+        } else {
+            format!("Love, {ghost_name}")
+        });
+        self.deliver(lines, korean);
+    }
+
+    fn deliver(&mut self, lines: Vec<String>, korean: bool) {
         let letter = Letter {
             day: self.date.to_string(),
             lines,

@@ -1311,10 +1311,21 @@ mod tests {
                         .count(),
                     said
                 );
+                // A birthday letter waits by the glass, once.
+                assert_eq!(world.life.letters.len(), 1);
+                assert!(world.unread_letter().is_some());
+                let letter = &world.life.letters[0];
+                assert_eq!(letter.korean, korean);
+                assert!(letter.lines.iter().any(|line| line.contains(if korean {
+                    "생일 축하해"
+                } else {
+                    "Happy birthday"
+                })));
                 let mut restored = visiting(5);
                 restored.life = world.life.clone();
                 restored.holiday_greeting();
                 assert!(restored.ghost.speech.is_none());
+                assert_eq!(restored.life.letters.len(), 1);
                 world.celebrate();
                 world.celebrate();
                 assert_eq!(world.life.total.celebrations, 1);

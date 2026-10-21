@@ -294,7 +294,7 @@ impl EventKind {
             Self::MetReflection => "met the ghost in the mirror".to_owned(),
             Self::RecognizedSelf => "learned the ghost in the mirror is me".to_owned(),
             Self::VisitedMirror => "looked in the mirror".to_owned(),
-            Self::WroteLetter => "wrote you a letter while you were away".to_owned(),
+            Self::WroteLetter => "wrote you a letter".to_owned(),
             Self::ReadLetter => "you read my letter".to_owned(),
             Self::AskedViewer(topic) => format!("asked about your {}", topic.name()),
             Self::LearnedAboutViewer(topic) => format!("learned about your {}", topic.name()),

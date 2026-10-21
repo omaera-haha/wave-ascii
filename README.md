@@ -229,7 +229,8 @@ Korean. Newborns old enough to write leave a tiny babbling note. They work
 without keys; with Claude enabled, a separate request can add its own words
 using the away story, skipped diary days, and memories. Opening the letter
 keeps its words fixed. Letters stay separate from the conversation. Reading
-one warms the bond and can leave a picture in the album.
+one warms the bond and can leave a picture in the album. On your birthday,
+once it knows it, a short birthday letter waits by the glass too.
 
 ### Focus together
 
@@ -393,8 +394,8 @@ color warms its arrival glow and colors future scarves; your favorite
 season gets a greeting on its first morning, and animals and foods wander
 into its thoughts and dreams. The life panel's **You** row keeps these details.
 
-Your birthday brings a cake, a greeting, birthday writing in the fog, and
-sometimes a party hat. February twenty-ninth is celebrated on the
+Your birthday brings a cake, a greeting, birthday writing in the fog, a
+short letter by the glass, and sometimes a party hat. February twenty-ninth is celebrated on the
 twenty-eighth in other years. Its own birthday takes precedence if you share
 the date.
 
@@ -625,7 +626,7 @@ change. Press `l` to see when it usually expects you. This needs no model.
 It holds one wish at a time: a rainbow or a shooting star, a bird's gift,
 a friend's return, a garden flower, a taller tower (up to five blocks),
 finishing an unread picture book, or something to do with you, such as
-teaching it a tune. Its nature helps choose, and it leans a little toward activities that
+teaching it a tune or telling it about yourself. Its nature helps choose, and it leans a little toward activities that
 could bring the wish about. At the glass it may tell you a wish in English
 or Korean, with a short hint on the words line: press `g` for a game,
 right-drag a picture, stroke it gently, ask for a story, or type notes such

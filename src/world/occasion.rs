@@ -328,6 +328,7 @@ impl super::World {
                 });
                 self.life.viewer.birthday_greeted = Some(self.date.to_string());
                 self.reconsider_wardrobe();
+                self.write_birthday_letter();
             }
             Occasion::Chuseok => self.say(self.spoken("Happy Chuseok!", "즐거운 한가위 보내!")),
             Occasion::HangulDay if self.speaks_korean() => self.say("한글은 그리는 것도 재밌어!"),

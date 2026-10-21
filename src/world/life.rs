@@ -442,7 +442,7 @@ impl Tally {
                 .map(|count| kind.diary(*count))
         }));
         if self.letters_written > 0 {
-            deeds.push("wrote you a letter while you were away".to_owned());
+            deeds.push("wrote you a letter".to_owned());
         }
         if self.letters_read > 0 {
             deeds.push("watched you read my letter".to_owned());
