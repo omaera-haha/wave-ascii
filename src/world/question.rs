@@ -224,11 +224,8 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
         &["뭐좋아해", "뭘좋아해", "제일좋아하는"],
         false,
     ),
-    (
-        Question::Weather,
-        &["날씨어때", "날씨는어때", "비와", "눈와"],
-        false,
-    ),
+    (Question::Weather, &["날씨어때", "날씨는어때"], false),
+    (Question::Weather, &["비와", "눈와"], true),
     (
         Question::Tired,
         &["졸려", "피곤해", "졸리니", "피곤하니"],
@@ -244,16 +241,10 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
     ),
     (
         Question::Feeling,
-        &[
-            "기분어때",
-            "기분은어때",
-            "잘지냈",
-            "잘지내",
-            "괜찮아",
-            "어떻게지내",
-        ],
+        &["기분어때", "기분은어때", "잘지냈", "어떻게지내"],
         false,
     ),
+    (Question::Feeling, &["잘지내", "괜찮아"], true),
 ];
 
 /// The question `text` asks, if it is one the ghost can answer by itself.
@@ -334,6 +325,8 @@ mod tests {
             ("지금 뭐 하고 있어", Question::Doing),
             ("기분 어때?", Question::Feeling),
             ("잘 지냈어?", Question::Feeling),
+            ("괜찮아?", Question::Feeling),
+            ("비 와?", Question::Weather),
             ("이름이 뭐야?", Question::Name),
             ("내 이름이 뭐야?", Question::ViewerName),
             ("내 이름 알아?", Question::ViewerName),
@@ -363,6 +356,9 @@ mod tests {
             "졸려",
             "배고파",
             "사랑해",
+            "괜찮아",
+            "잘 지내",
+            "비 와",
             "how about a dance",
             "show me what you can do",
             "you are so cute",
