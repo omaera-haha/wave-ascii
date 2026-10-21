@@ -31,12 +31,23 @@ pub enum Question {
     /// How it gets on with the bird at the window.
     Bird,
     Friend,
+    /// A story from its life.
+    Story,
 }
 
 // Questions in English, as runs of words to find in the message, compared
 // lowercased and without apostrophes. More particular questions come first,
 // so "are you tired" is not taken for "are you okay".
 const ENGLISH: &[(Question, &[&[&str]])] = &[
+    (
+        Question::Story,
+        &[
+            &["tell", "me", "a", "story"],
+            &["tell", "a", "story"],
+            &["story", "please"],
+            &["bedtime", "story"],
+        ],
+    ),
     (
         Question::Friend,
         &[
@@ -199,6 +210,18 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
     (
+        Question::Story,
+        &[
+            "이야기해줘",
+            "이야기들려줘",
+            "얘기해줘",
+            "옛날이야기",
+            "동화들려줘",
+        ],
+        false,
+    ),
+    (Question::Story, &["이야기", "얘기", "동화"], true),
+    (
         Question::Friend,
         &[
             "친구는누구",
@@ -295,6 +318,11 @@ pub fn ask(text: &str) -> Option<Question> {
         return Some(*question);
     }
     let asked = text.trim_end().ends_with(['?', '？']);
+    if asked && matches!(words.as_slice(), [word] if word == "story")
+        || asked && matches!(words.as_slice(), [article, word] if article == "a" && word == "story")
+    {
+        return Some(Question::Story);
+    }
     let joined: String = text
         .chars()
         .filter(|character| !character.is_whitespace())
@@ -310,6 +338,45 @@ pub fn ask(text: &str) -> Option<Question> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn story_requests_use_word_runs_and_korean_pieces() {
+        for text in [
+            "tell me a story",
+            "story please",
+            "a story?",
+            "story?",
+            "bedtime story",
+            "can you tell me a story",
+            "tell a story",
+            "Please, TELL me a story!",
+            "이야기 해줘",
+            "이야기해 줘",
+            "이야기 들려줘",
+            "얘기해줘",
+            "옛날 이야기",
+            "동화 들려줘",
+            "이야기?",
+            "동화？",
+        ] {
+            assert_eq!(ask(text), Some(Question::Story), "{text}");
+        }
+        for text in [
+            "story",
+            "a story",
+            "history please",
+            "storytime",
+            "I read a story",
+            "a storybook?",
+            "tell me a store",
+            "이야기",
+            "얘기",
+            "동화",
+            "동화책을 읽었어",
+        ] {
+            assert_eq!(ask(text), None, "{text}");
+        }
+    }
 
     #[test]
     fn everyday_questions_in_english_are_recognized() {

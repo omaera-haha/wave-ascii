@@ -104,7 +104,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Danced
         | EventKind::Doodled(_)
         | EventKind::Wrote { .. } => Expression::Smile,
-        EventKind::BirdSang => Expression::Smile,
+        EventKind::BirdSang | EventKind::ToldStory => Expression::Smile,
         EventKind::BirdFlewOff { startled: true } => glance(0.0, -0.6),
         EventKind::WokeUp | EventKind::KickedBall | EventKind::Jumped | EventKind::Thunder => {
             Expression::Surprise

@@ -136,6 +136,9 @@ piped output never saves them.
 
 ### Playing with it
 
+- **Stories.** Ask "tell me a story" or "이야기 들려줘" and it tells a little tale
+  from its life, a sentence at a time; at bedtime it says goodnight and
+  floats to its cushion to sleep. Poking it or saying no stops the tale.
 - **Stroking.** Press on the ghost and drag gently back and forth across it.
   It slows down, closes its eyes in happy arcs, leans into your hand, and
   puffs little hearts. Strokes soothe even a grumpy ghost, keep it company,
@@ -232,7 +235,8 @@ piped output never saves them.
   gets on with the bird, the weather outside, and whether it's tired, hungry,
   bored, or lonely. It answers from its mood, needs, habits, and bond, in
   Korean when you ask in Korean, and learns no words from a question. With a
-  Claude key, Claude answers instead.
+  Claude key, Claude answers instead. It also answers "tell me a story"
+  offline, weaving its own memories into a short tale in either language.
 
 ### What you see
 
