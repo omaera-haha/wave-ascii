@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Write as _;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -259,6 +260,18 @@ impl Album {
         album
     }
 
+    /// All valid saved pages, oldest first, without pruning files on disk.
+    pub fn read_only(paths: &Paths, milestones: &[String]) -> Vec<Page> {
+        entries(&paths.album())
+            .into_iter()
+            .rev()
+            .map(|(_, mut page)| {
+                page.milestone |= milestones.contains(&page.caption);
+                page
+            })
+            .collect()
+    }
+
     /// App time keeps expiry moving even when the simulation is paused.
     pub fn elapse(&mut self, seconds: f32) {
         if seconds.is_finite() && seconds > 0.0 {
@@ -504,6 +517,122 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
         _ => return None,
     };
     Some((caption, daily))
+}
+
+/// A self-contained memory book. Equal capture times retain their input order.
+pub fn html(name: &str, pages: &[Page]) -> String {
+    let capacity = 4096
+        + name.len() * 6
+        + pages
+            .iter()
+            .map(|page| {
+                page.characters.len() + page.colors.len() * 80 + page.caption.len() * 6 + 256
+            })
+            .sum::<usize>();
+    let mut output = String::with_capacity(capacity);
+    output.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>");
+    escape_html(&mut output, name);
+    output.push_str("&#39;s album</title>\n<style>\n\
+        :root { color-scheme: dark; }\n\
+        * { box-sizing: border-box; }\n\
+        body { margin: 0; background: #211d1b; color: #eee2d1; font-family: Georgia, serif; }\n\
+        main { width: fit-content; max-width: 100%; margin: auto; padding: 2rem 1rem; }\n\
+        h1 { margin: 0 0 2rem; font-weight: normal; text-align: center; }\n\
+        figure { margin: 0 0 2rem; padding: 1rem; background: #2b2521; border: 1px solid #514337; border-radius: .4rem; }\n\
+        pre { margin: 0; padding: 1rem; overflow-x: auto; background: #181615; color: #eee2d1; font-family: \"DejaVu Sans Mono\", \"Noto Sans Mono\", \"Noto Sans Mono CJK KR\", \"Cascadia Mono\", Menlo, Consolas, monospace; font-size: 12px; line-height: 1; font-variant-ligatures: none; white-space: pre; }\n\
+        figcaption { max-width: 70ch; margin: 1rem auto 0; overflow-wrap: anywhere; }\n\
+        .caption { margin: 0 0 .5rem; }\n\
+        .date { color: #c7b59f; font-size: .85rem; }\n\
+        .milestone { margin-left: .75rem; color: #e6bd7d; font-size: .8rem; }\n\
+        @media print {\n\
+          :root { color-scheme: light; }\n\
+          body { background: white; color: #211d1b; }\n\
+          main { padding: 0; }\n\
+          figure { break-inside: avoid; page-break-inside: avoid; background: white; border-color: #ccc; }\n\
+          pre { overflow: visible; font-size: 6pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }\n\
+          .date, .milestone { color: #514337; }\n\
+        }\n\
+        </style>\n</head>\n<body>\n<main>\n<h1>");
+    escape_html(&mut output, name);
+    output.push_str("&#39;s album</h1>\n");
+    let mut ordered: Vec<_> = pages.iter().collect();
+    ordered.sort_by_key(|page| page.captured);
+    for page in ordered {
+        output.push_str("<figure>\n<pre>");
+        let colors = page
+            .colors
+            .iter()
+            .flat_map(|run| std::iter::repeat_n((run.foreground, run.background), run.length));
+        let mut cells = page.characters.chars().zip(colors);
+        let mut previous = None;
+        for row in 0..page.rows {
+            for _ in 0..page.columns {
+                let Some((character, colors)) = cells.next() else {
+                    break;
+                };
+                if character.is_control() {
+                    continue;
+                }
+                if previous != Some(colors) {
+                    if previous.is_some() {
+                        output.push_str("</span>");
+                    }
+                    output.push_str("<span style=\"color:");
+                    html_color(&mut output, colors.0, "inherit");
+                    output.push_str(";background:");
+                    html_color(&mut output, colors.1, "transparent");
+                    output.push_str("\">");
+                    previous = Some(colors);
+                }
+                escape_character(&mut output, character);
+            }
+            if row + 1 < page.rows {
+                output.push('\n');
+            }
+        }
+        if previous.is_some() {
+            output.push_str("</span>");
+        }
+        output.push_str("</pre>\n<figcaption><p class=\"caption\">");
+        escape_html(&mut output, &page.caption);
+        output.push_str("</p><span class=\"date\">");
+        escape_html(&mut output, &page.name);
+        output.push_str(" · ");
+        escape_html(&mut output, &page.date_words());
+        output.push_str("</span>");
+        if page.milestone {
+            output.push_str("<span class=\"milestone\">✦ Milestone</span>");
+        }
+        output.push_str("</figcaption>\n</figure>\n");
+    }
+    output.push_str("</main>\n</body>\n</html>\n");
+    output
+}
+
+fn html_color(output: &mut String, color: Option<[u8; 3]>, fallback: &str) {
+    if let Some([red, green, blue]) = color {
+        let _ = write!(output, "#{red:02x}{green:02x}{blue:02x}");
+    } else {
+        output.push_str(fallback);
+    }
+}
+
+fn escape_html(output: &mut String, text: &str) {
+    for character in text.chars() {
+        escape_character(output, character);
+    }
+}
+
+fn escape_character(output: &mut String, character: char) {
+    match character {
+        '&' => output.push_str("&amp;"),
+        '<' => output.push_str("&lt;"),
+        '>' => output.push_str("&gt;"),
+        '"' => output.push_str("&quot;"),
+        '\'' => output.push_str("&#39;"),
+        character if !character.is_control() => output.push(character),
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -1006,5 +1135,179 @@ mod tests {
             })
             .is_none()
         );
+    }
+
+    #[test]
+    fn html_keeps_memories_in_order_with_escaped_text_and_merged_wide_character_runs() {
+        let mut canvas = Canvas::blank(8, 2);
+        let ink = Cell {
+            glyph: ' ',
+            foreground: Some(Rgb([21, 87, 245])),
+            background: Some(Rgb([7, 15, 31])),
+        };
+        for row in 0..2 {
+            for column in 0..8 {
+                canvas.set(column, row, ink);
+            }
+        }
+        for (column, glyph) in ['한', '\0', '&', '<', '>', '"', '\'', 'A']
+            .into_iter()
+            .enumerate()
+        {
+            canvas.set(
+                column,
+                0,
+                if glyph == '\0' {
+                    Cell::CONTINUATION
+                } else {
+                    Cell { glyph, ..ink }
+                },
+            );
+        }
+        let world = World::new(1, 12.0);
+        let mut older = Page::new(
+            &canvas,
+            &world,
+            100,
+            "First 뽀삐 & < > \" '\n\u{1b}".to_owned(),
+        );
+        older.name = "Old & < > \" '\r".to_owned();
+        older.milestone = true;
+        let mut newer = Page::new(
+            &Canvas::blank(1, 1),
+            &world,
+            200,
+            "Later <script>alert('hi')</script>".to_owned(),
+        );
+        newer.name = "New Pip".to_owned();
+        let output = html("Pip & < > \" '\t", &[newer, older]);
+        assert!(output.contains("<title>Pip &amp; &lt; &gt; &quot; &#39;&#39;s album</title>"));
+        assert!(output.contains("First 뽀삐 &amp; &lt; &gt; &quot; &#39;</p>"));
+        assert!(output.contains("Old &amp; &lt; &gt; &quot; &#39; · 21 June 2026"));
+        assert!(output.contains("Later &lt;script&gt;alert(&#39;hi&#39;)&lt;/script&gt;"));
+        assert!(output.find("First 뽀삐").unwrap() < output.find("Later &lt;script&gt;").unwrap());
+        assert!(output.contains("<pre><span style=\"color:#1557f5;background:#070f1f\">한&amp;&lt;&gt;&quot;&#39;A\n        </span></pre>"));
+        assert_eq!(output.matches('한').count(), 1);
+        assert_eq!(output.matches("<span style=").count(), 2);
+        assert_eq!(output.matches("✦ Milestone").count(), 1);
+        assert_eq!(output.matches("<figure>").count(), 2);
+        assert!(!output.contains(['\0', '\r', '\t', '\u{1b}']));
+        assert!(!output.contains("<script"));
+        assert!(!output.contains("src="));
+        assert!(!output.contains("href="));
+        for tag in [
+            "html",
+            "head",
+            "title",
+            "style",
+            "body",
+            "main",
+            "h1",
+            "figure",
+            "pre",
+            "figcaption",
+            "p",
+            "span",
+        ] {
+            assert_eq!(
+                output.matches(&format!("<{tag}>")).count()
+                    + output.matches(&format!("<{tag} ")).count(),
+                output.matches(&format!("</{tag}>")).count(),
+                "unbalanced {tag}"
+            );
+        }
+        let mut nesting = Vec::new();
+        for tag in output.split('<').skip(1) {
+            let tag = tag.split_once('>').unwrap().0;
+            let name = tag.split_whitespace().next().unwrap();
+            if let Some(name) = name.strip_prefix('/') {
+                assert_eq!(nesting.pop(), Some(name));
+            } else if name != "!doctype" && name != "meta" {
+                nesting.push(name);
+            }
+        }
+        assert!(nesting.is_empty());
+    }
+
+    #[test]
+    fn html_resets_missing_colors_and_strips_control_cells() {
+        let mut canvas = Canvas::blank(4, 1);
+        canvas.set(
+            0,
+            0,
+            Cell {
+                glyph: 'a',
+                foreground: Some(Rgb([1, 2, 3])),
+                background: None,
+            },
+        );
+        canvas.set(
+            1,
+            0,
+            Cell {
+                glyph: 'b',
+                foreground: None,
+                background: Some(Rgb([4, 5, 6])),
+            },
+        );
+        canvas.set(
+            2,
+            0,
+            Cell {
+                glyph: '\u{1b}',
+                ..Cell::BLANK
+            },
+        );
+        let page = Page::new(&canvas, &World::new(1, 12.0), 100, "Quiet.".to_owned());
+        let output = html("Pip", &[page]);
+        assert!(output.contains("<span style=\"color:#010203;background:transparent\">a</span>"));
+        assert!(output.contains("<span style=\"color:inherit;background:#040506\">b</span>"));
+        assert!(output.contains("<span style=\"color:inherit;background:transparent\"> </span>"));
+        assert!(!output.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn reading_for_export_keeps_every_file_and_remembers_older_milestones() {
+        let directory = scratch("read-only");
+        let paths = Paths::in_directory(&directory);
+        let world = World::new(1, 12.0);
+        let canvas = Canvas::blank(1, 1);
+        let first = Page::new(&canvas, &world, 0, "My first memory.".to_owned());
+        first.save(&paths, "2026-06-21-120000").unwrap();
+        for captured in 1..=PAGES_KEPT as i64 {
+            Page::new(&canvas, &world, captured, "An ordinary moment.".to_owned())
+                .save(&paths, &format!("page-{captured}"))
+                .unwrap();
+        }
+        Page::new(
+            &canvas,
+            &world,
+            PAGES_KEPT as i64,
+            "Later in the same second.".to_owned(),
+        )
+        .save(&paths, "page-60")
+        .unwrap();
+        fs::write(paths.album().join("damaged.json"), "{").unwrap();
+        let snapshot = || {
+            let mut files: Vec<_> = fs::read_dir(paths.album())
+                .unwrap()
+                .map(|file| {
+                    let path = file.unwrap().path();
+                    let bytes = fs::read(&path).unwrap();
+                    (path, bytes)
+                })
+                .collect();
+            files.sort();
+            files
+        };
+        let before = snapshot();
+        let pages = Album::read_only(&paths, std::slice::from_ref(&first.caption));
+        assert_eq!(pages.len(), PAGES_KEPT + 2);
+        assert_eq!(pages[0].caption, first.caption);
+        assert!(pages[0].milestone);
+        assert_eq!(pages.last().unwrap().caption, "Later in the same second.");
+        assert_eq!(snapshot(), before);
+        assert_eq!(html("Pip", &pages).matches("<figure>").count(), pages.len());
+        fs::remove_dir_all(directory).unwrap();
     }
 }
