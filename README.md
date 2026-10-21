@@ -7,7 +7,7 @@ little pots its seeds grow in, a ball, five bright toy blocks, a cushion to
 sleep on, a little shelf of keepsakes, specks of light that drift in, and a
 window onto hills where the seasons turn, birds come to perch, storms roll
 through, snow falls in winter, rain can leave a rainbow, and shooting stars
-fall on clear nights. On lit nights, a little moth sometimes flutters in and
+fall on clear nights. On lit nights with the window open, a little moth sometimes flutters in and
 circles the lamp. The ghost is a point in that room with a body, needs, a
 mood, and a gaze: it sees what lies within sixty degrees of where it faces,
 and furniture hides what's behind it. You see it as an abstract shape made of
@@ -108,7 +108,8 @@ the next requests use them at once.
 
 With the mouse, click the ghost to poke it (poke it a few times and it gets
 grumpy), click the ball to flick it, click a loose block to nudge it or a
-tower to knock it down, and click anywhere else in the room to drop in a
+tower to knock it down, click the window to ask it to open or shut, and click
+anywhere else in the room to drop in a
 light mote. Press on the ghost and drag back and forth across it to
 stroke it. Drag anywhere else to turn the view, and scroll to zoom. The
 ghost's eyes follow the pointer. Right-drag on the glass to draw in its fog,
@@ -284,6 +285,23 @@ spent together, including early endings. Quitting silently ends the timer.
   previous title comes back on quit in terminals that support title saving.
 
 ### The world outside
+
+The ghost lifts the lower window sash for fresh air on mild, dry days in
+spring, summer, and autumn, and shuts it against rain, snow, blustery wind,
+and bedtime. Click the window to ask it to open or shut, or say “open the
+window” / “창문 열어” or “close the window” / “창문 닫아”. It refuses to open
+in unsuitable weather and lets a sleeping ghost sleep. The sash starts shut
+in a new room and stays as it was left between runs.
+
+Wind comes in seasonal spells, gustier in storms and softer in snow and on
+summer nights. The tree sways, clouds hurry, and blossom, leaves, and snow
+slant in it. An open window billows the light curtains, stirs motes, petals,
+plant leaves, and the ghost's hem, and lifts its spirits nearby. Spring
+blossom sometimes blows inside; autumn leaves tumble in, settle, and fade.
+If rain or snow blows through while it sleeps, a small puddle forms below
+the window. It frets and shuts the sash when it wakes; the wet floor dries
+over ten minutes. Moths enter only through an open window, then finish their
+visit even if it shuts. Its ghost friend can still pass through a shut pane.
 
 The room follows your local time and date: daylight by day, warm at dawn and
 dusk, and dark at night unless the lamp is on. A wooden window in the back

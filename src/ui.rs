@@ -575,7 +575,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "o          focus (o ends it)   drag ghost    stroke it",
         "g          noughts and crosses 1-9, click    choose a square",
         "f          finger in the fog   right-drag    draw on glass",
-        "           f or Esc stops      left-click    still interacts",
+        "           f or Esc stops      click window  open or shut",
         "arrows     turn the view       drag          turn the view",
         "+ -, wheel zoom                r             reset the view",
         "m  c       style, color        space         pause",

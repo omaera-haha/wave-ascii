@@ -16,6 +16,18 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
     let weights: Vec<f32> = options
         .iter()
         .map(|activity| match activity {
+            Activity::Air => {
+                if world.ghost.asleep >= 0.3
+                    || (!world.window_open && !world.fresh_air_is_fair())
+                    || (world.window_open && !world.wants_window_shut())
+                {
+                    0.0
+                } else if world.window_open {
+                    30.0
+                } else {
+                    0.25 + 0.8 * (1.0 - needs.fun) + 0.5 * (1.0 - needs.energy)
+                }
+            }
             Activity::Friend => {
                 if !world.friend_is_open() {
                     0.0
@@ -541,6 +553,34 @@ mod tests {
         world.notice_viewer();
         let together = weigh(&world, &world.options());
         assert!(chance(&together, Activity::Rest) < rest);
+    }
+
+    #[test]
+    fn fresh_air_draws_a_bored_or_tired_ghost_and_bad_weather_demands_shutting() {
+        let mut world = World::new(7, 12.0);
+        let options = [Activity::Float, Activity::Air];
+        let ordinary = chance(&weigh(&world, &options), Activity::Air);
+        world.ghost.needs.fun = 0.1;
+        world.ghost.needs.energy = 0.3;
+        assert!(chance(&weigh(&world, &options), Activity::Air) > ordinary);
+        world.window_open = true;
+        assert_eq!(chance(&weigh(&world, &options), Activity::Air), 0.0);
+        for reason in 0..4 {
+            world.hour = 12.0;
+            world.weather.sky = Sky::Clear;
+            world.wind.strength = 0.2;
+            match reason {
+                0 => world.weather.sky = Sky::Rain,
+                1 => world.weather.sky = Sky::Snow,
+                2 => world.hour = 22.0,
+                _ => world.wind.strength = 0.9,
+            }
+            assert!(world.options().contains(&Activity::Air));
+            assert!(chance(&weigh(&world, &options), Activity::Air) > 0.95);
+            world.window_open = false;
+            assert!(!world.options().contains(&Activity::Air));
+            world.window_open = true;
+        }
     }
 
     #[test]

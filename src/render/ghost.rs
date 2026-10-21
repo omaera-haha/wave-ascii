@@ -59,6 +59,12 @@ impl Pose {
         }
     }
 
+    pub fn in_breeze(mut self, sideways: f32, shake: f32) -> Self {
+        self.trail = (self.trail - sideways * 0.6).clamp(-0.44, 0.44);
+        self.lean += shake * 0.08;
+        self
+    }
+
     /// Moves a point of the billboard into the body's frame, where it stands
     /// upright with its head at `HEAD_CENTER`.
     fn place(&self, point: Vec2) -> Vec2 {
@@ -268,6 +274,21 @@ mod tests {
         assert_eq!(middle.cover, 1.0);
         let far = shade(Vec2::new(0.0, 1.5), 0.02, 3.0, &pose, &Face::REST, &aura());
         assert_eq!(far, Glow::NONE);
+    }
+
+    #[test]
+    fn extreme_wind_and_head_shakes_keep_the_pose_math_finite() {
+        for wind in [-1.0, 0.0, 1.0] {
+            for shake in [-1.0, 0.0, 1.0] {
+                let pose = Pose::new(1e12, 4.0, -4.0, 0.0).in_breeze(wind, shake);
+                for column in -20..=20 {
+                    for row in -15..=15 {
+                        let local = pose.place(Vec2::new(column as f32 * 0.1, row as f32 * 0.1));
+                        assert!(local.is_finite() && pose.silhouette(local).is_finite());
+                    }
+                }
+            }
+        }
     }
 
     #[test]

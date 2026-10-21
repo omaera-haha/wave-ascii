@@ -18,6 +18,8 @@ pub fn observe(world: &World) -> Value {
         "carrying a seed to a little pot".to_owned()
     } else if let Some(gift) = ghost.keepsake {
         format!("carrying {} to the shelf of keepsakes", gift.name())
+    } else if plan.activity == Activity::Air {
+        world.air_doing().to_owned()
     } else if plan.done {
         format!("just finished {}", plan.activity.doing())
     } else if plan.activity == Activity::Hide && plan.arrived.is_some() {
@@ -48,6 +50,9 @@ pub fn observe(world: &World) -> Value {
         "outside_the_window": outside_the_window(world),
         "sight": sight(world),
         "room": {
+            "window": if world.window_open { "open" } else { "shut" },
+            "wind": world.wind.words(),
+            "floor_below_window": if world.puddle > 0.0 { "a small puddle below the window" } else { "dry" },
             "light": light(world),
             "lamp": if world.lamp.on { "on" } else { "off" },
             "plant": plant(&world.plant),

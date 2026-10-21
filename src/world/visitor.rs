@@ -400,7 +400,7 @@ impl World {
 
         if self.visitors.moth.is_none() && time >= self.visitors.next_moth {
             self.visitors.next_moth = time + f64::from(self.random.range(300.0, 600.0));
-            if self.is_night() && self.lamp.on {
+            if self.is_night() && self.lamp.on && self.window_open {
                 self.visitors.moth = Some(Moth::new(time, &mut self.random));
                 self.record(EventKind::MothArrived);
             }
@@ -684,20 +684,23 @@ mod tests {
     }
 
     #[test]
-    fn moths_arrive_only_on_lit_nights_orbit_the_bulb_and_leave() {
-        for (hour, lamp_on, expected) in [
-            (12.0, true, false),
-            (22.0, false, false),
-            (22.0, true, true),
+    fn moths_arrive_only_through_open_windows_on_lit_nights_orbit_the_bulb_and_leave() {
+        for (hour, lamp_on, window_open, expected) in [
+            (12.0, true, true, false),
+            (22.0, false, true, false),
+            (22.0, true, true, true),
+            (22.0, true, false, false),
         ] {
             let mut world = quiet_world(hour);
             world.lamp.on = lamp_on;
+            world.window_open = window_open;
             let mut arrived = false;
             let mut visits = 0;
             let mut departures = 0;
             for _ in 0..36_000 {
                 let before = world.time;
-                world.step(0.1);
+                world.time += 0.1;
+                world.advance_visitors(0.1);
                 for event in world.events.iter().filter(|event| event.time > before) {
                     match event.kind {
                         EventKind::MothArrived => {

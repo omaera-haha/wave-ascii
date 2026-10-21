@@ -108,7 +108,8 @@ impl Nature {
             | Activity::Chase
             | Activity::Lamp
             | Activity::Wait
-            | Activity::Company => 0.0,
+            | Activity::Company
+            | Activity::Air => 0.0,
         };
         let strength = if inclination > 0.0 { 0.35 } else { 0.25 };
         (1.0 + strength * inclination).clamp(0.75, 1.35)

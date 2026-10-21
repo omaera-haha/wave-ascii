@@ -1,6 +1,7 @@
 mod activity;
 pub mod away;
 pub mod blocks;
+pub mod breeze;
 pub mod calendar;
 mod doodle;
 pub mod dream;
@@ -35,6 +36,7 @@ use glam::Vec3;
 
 pub use activity::{Activity, Plan};
 pub use blocks::Block;
+pub use breeze::{Leaf, Wind};
 pub use calendar::Season;
 pub use doodle::{Doodle, Picture, Sketch, Writing};
 pub use dream::Dream;
@@ -230,12 +232,18 @@ pub enum EventKind {
     },
     ToldStory,
     FoundConstellation(String),
+    OpenedWindow,
+    ClosedWindow,
+    Puddle,
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::OpenedWindow => "opened the window for fresh air".to_owned(),
+            Self::ClosedWindow => "closed the window".to_owned(),
+            Self::Puddle => "noticed a puddle below the window".to_owned(),
             Self::ToldStory => "told the viewer a story".to_owned(),
             Self::FoundConstellation(name) => format!("found a constellation: {name}"),
             Self::Began(activity) => format!("started {}", activity.doing()),
@@ -430,6 +438,10 @@ pub enum Understanding {
     Focusing {
         minutes: u32,
     },
+    Airing {
+        open: bool,
+        accepted: bool,
+    },
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -583,6 +595,14 @@ pub struct World {
     /// The story of its time alone, kept only for this session.
     pub away: Option<away::Away>,
     found_constellation_at: Option<f64>,
+    pub window_open: bool,
+    pub wind: Wind,
+    pub puddle: f32,
+    pub leaves: Vec<Leaf>,
+    saw_puddle: bool,
+    window_refused_at: Option<f64>,
+    next_windfall_at: f64,
+    windfall_random: Random,
 }
 
 impl World {
@@ -681,6 +701,14 @@ impl World {
             telling: None,
             away: None,
             found_constellation_at: None,
+            window_open: false,
+            wind: Wind::new(seed),
+            puddle: 0.0,
+            leaves: Vec::new(),
+            saw_puddle: false,
+            window_refused_at: None,
+            next_windfall_at: 8.0,
+            windfall_random: Random::new(seed ^ 0x6c65_6176_6573),
         };
         world.scatter_blocks();
         world
@@ -726,7 +754,11 @@ impl World {
         }
 
         for mote in &mut self.motes {
-            mote.drift(self.time, seconds);
+            mote.drift(
+                self.time,
+                seconds,
+                breeze::breeze(self.window_open, &self.wind, self.time, mote.position),
+            );
         }
         let time = self.time;
         self.motes.retain(|mote| time - mote.born < Mote::LIFETIME);
@@ -770,6 +802,7 @@ impl World {
             self.record(EventKind::Thunder);
             self.hear_thunder();
         }
+        self.advance_breeze(seconds);
         self.advance_visitors(seconds);
         self.advance_friend();
 
@@ -873,6 +906,7 @@ impl World {
                         && self.ghost.needs.energy >= 0.22
                         && self.ghost.needs.fun >= 0.08
                 }
+                Activity::Air => self.air_is_open(),
                 Activity::Look => self.look_is_open(),
                 Activity::Chase => self.nearest_mote().is_some(),
                 Activity::Rest => self.ghost.needs.energy < 0.85 || self.bedtime(),
@@ -923,6 +957,7 @@ impl World {
     /// choosing among the options.
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
+            Activity::Air => format!("Float to the window and {}. Close it against wet weather, cold nights and blustery wind.", if self.window_open { "push the sash shut" } else { "lift the sash for fresh air" }),
             Activity::Company => "Settle quietly beside the front glass while the viewer works. Stay nearby until the focus session ends, resting or tending to needs when necessary.".to_owned(),
             Activity::Friend => "Play tag, twirl together, or gaze at the moon with your visiting ghost friend. Fits especially when lonely or playful.".to_owned(),
             Activity::Look => "Study the picture the viewer drew in the fog on the glass, and perhaps draw an answer beside it.".to_owned(),
@@ -1027,6 +1062,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Air && self.ghost.asleep >= 0.3 {
+            return;
+        }
         if self.telling.is_some() && activity != Activity::Visit {
             return;
         }
@@ -1081,6 +1119,7 @@ impl World {
             Activity::Visit => self.glass_spot(),
             Activity::Wait => Vec3::new(0.0, 1.2, ROOM_MAX.z - 0.45),
             Activity::Pounce => self.glass_spot(),
+            Activity::Air => WINDOW_CENTER + Vec3::new(0.0, -0.2, 0.4),
             Activity::Window => WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.55),
             Activity::Fetch => self.ball.position + Vec3::Y * 0.42,
             Activity::Dance => position.clamp(
@@ -1101,6 +1140,9 @@ impl World {
             | Activity::Friend => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
+        if activity == Activity::Air {
+            plan.window = Some(!self.window_open);
+        }
         plan.overnight = activity == Activity::Rest && self.bedtime();
         if activity == Activity::Chase {
             plan.mote = self.nearest_mote().map(|mote| mote.id);
@@ -1357,6 +1399,24 @@ impl World {
             return Heard {
                 tone: None,
                 understanding: Understanding::Focusing { minutes },
+                named: false,
+                learned: Vec::new(),
+                stopped: false,
+                learned_name: None,
+                given_name: None,
+                korean,
+            };
+        }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(open) = breeze::requested(text)
+        {
+            self.listening = Listening::default();
+            self.record(EventKind::Heard(text.to_owned()));
+            let accepted = self.ask_window(open);
+            return Heard {
+                tone: None,
+                understanding: Understanding::Airing { open, accepted },
                 named: false,
                 learned: Vec::new(),
                 stopped: false,
@@ -1988,6 +2048,7 @@ impl World {
 
         let mut look = None;
         match self.ghost.plan.activity {
+            Activity::Air => look = self.carry_out_air(),
             Activity::Company => look = self.keep_company(),
             Activity::Friend => {
                 self.play_with_friend();
@@ -2411,6 +2472,7 @@ impl World {
         let nature = self.life.nature.unwrap_or_default();
         let tiring = 0.85 + 0.3 * nature.sleepy;
         let newborn = self.stage() == Stage::Newborn;
+        let fresh_air = self.enjoying_air();
         let ghost = &mut self.ghost;
         if ghost.asleep > 0.5 {
             ghost.needs.change(
@@ -2422,6 +2484,9 @@ impl World {
         }
         let effort = (ghost.velocity.length() / 1.3).min(1.0);
         let mut fun = -0.0016 * (0.8 + 0.4 * nature.playful);
+        if fresh_air {
+            fun += 0.003;
+        }
         let mut company = -0.0012 * (1.15 - 0.3 * nature.shy);
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
@@ -2558,6 +2623,7 @@ impl World {
         if recent(12.0)
             .any(|event| matches!(event.kind, EventKind::Praised | EventKind::Planted(_)))
             || self.garden_recovering()
+            || self.enjoying_air()
         {
             return Mood::Cheerful;
         }

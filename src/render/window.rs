@@ -31,6 +31,9 @@ pub struct Outside {
     pub constellations: Vec<StarSegment>,
     pub constellation_base: f32,
     pub constellation_glow: f32,
+    pub wind: f32,
+    pub window_lift: f32,
+    pub wind_travel: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -82,6 +85,9 @@ impl Outside {
             constellations: Vec::new(),
             constellation_base: 0.018,
             constellation_glow: 0.0,
+            wind: 0.0,
+            window_lift: 0.0,
+            wind_travel: 0.0,
         }
     }
 }
@@ -102,11 +108,33 @@ pub fn window(point: Vec2, footprint: f32, outside: &Outside) -> Option<WindowHi
     // A point sample still needs a nonzero edge at exact shape boundaries.
     let footprint = footprint.max(1e-5);
     let border = (point - WINDOW_LOW).min(WINDOW_HIGH - point).min_element();
+    let middle = WINDOW_LOW.y + size.y * 0.5;
+    let lift = outside.window_lift.clamp(0.0, 1.0);
+    let bottom = WINDOW_LOW.y + size.y * 0.5 * lift;
+    let glazed = point.y >= bottom;
     let distance = (border - 0.05)
-        .min((point.x - (WINDOW_LOW.x + size.x * 0.5)).abs() - 0.0175)
-        .min((point.y - (WINDOW_LOW.y + size.y * 0.6)).abs() - 0.0175);
+        .min(if glazed {
+            (point.x - (WINDOW_LOW.x + size.x * 0.5)).abs() - 0.0175
+        } else {
+            1.0
+        })
+        .min((point.y - middle).abs() - 0.02)
+        .min((point.y - bottom).abs() - 0.02)
+        .min((point.y - middle - size.y * 0.5 * lift).abs() - 0.02);
+    let sky = landscape(coordinates, footprint / size.min_element(), outside);
+    let sheen = if glazed {
+        let stripe = 1.0
+            - smoothstep(
+                0.0,
+                0.07,
+                (coordinates.x + coordinates.y * 0.3 - 0.62).abs(),
+            );
+        0.02 + stripe * 0.07
+    } else {
+        0.0
+    };
     Some(WindowHit {
-        sky: landscape(coordinates, footprint / size.min_element(), outside),
+        sky: sky.lerp(Vec3::new(0.76, 0.87, 1.0), sheen),
         frame: coverage(distance, footprint * 0.5),
     })
 }
@@ -227,7 +255,8 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
         + (-sun_distance.powi(2) / 0.018).exp() * 0.35;
     color += Vec3::new(1.0, 0.77, 0.38) * sunlight * sky.day * (1.0 - cloud * 0.9);
 
-    let drift = phase(outside.time, 0.012, 64.0);
+    let drift =
+        phase(outside.time, 0.012, 64.0) + (outside.wind_travel * 0.035).rem_euclid(64.0) as f32;
     let clouds = noise(coordinates * Vec2::new(4.5, 6.0) - Vec2::X * drift) * 0.65
         + noise(coordinates * Vec2::new(9.0, 12.0) - Vec2::X * drift * 2.0) * 0.35;
     let clouds = smoothstep(0.5 - storm * 0.15, 0.74 - storm * 0.15, clouds)
@@ -312,8 +341,8 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     }
 
     color = tree(color, coordinates, footprint, outside, land_light, cloud);
-    if outside.season == Season::Autumn {
-        color = falling_leaves(color, coordinates, footprint, outside.time, land_light);
+    if matches!(outside.season, Season::Autumn | Season::Spring) {
+        color = falling_leaves(color, coordinates, footprint, outside, land_light);
     }
     if outside.season == Season::Summer {
         color += fireflies(coordinates, footprint, outside.time) * night;
@@ -338,12 +367,19 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
         }
     }
     if snow > 0.0 {
-        color = snowfall(color, coordinates, footprint, outside.time, snow);
+        color = snowfall(
+            color,
+            coordinates,
+            footprint,
+            outside.time,
+            snow,
+            outside.wind,
+        );
     }
 
     let falling = phase(outside.time, 0.85, 64.0);
     let drops = Vec2::new(
-        (coordinates.x + coordinates.y * 0.18) * 36.0,
+        (coordinates.x + coordinates.y * (0.18 + outside.wind * 0.3)) * 36.0,
         (coordinates.y + falling) * 7.0,
     );
     let cell = drops.floor();
@@ -531,7 +567,8 @@ fn tree(
     light: f32,
     cloud: f32,
 ) -> Vec3 {
-    let point = coordinates - Vec2::new(0.25, 0.145);
+    let mut point = coordinates - Vec2::new(0.25, 0.145);
+    point.x -= outside.wind * 0.24 * point.y.max(0.0).powi(2);
     let edge = footprint * 0.5;
     let branches = [
         (Vec2::ZERO, Vec2::new(0.012, 0.31), 0.009),
@@ -594,20 +631,26 @@ fn falling_leaves(
     mut color: Vec3,
     coordinates: Vec2,
     footprint: f32,
-    time: f64,
+    outside: &Outside,
     light: f32,
 ) -> Vec3 {
+    let time = outside.time;
     for index in 0..6 {
         let seed = hash(Vec2::new(index as f32, 23.0));
         let fall = (phase(time, 0.035, 1.0) + seed).fract();
         let sway = (phase(time, 0.4, TAU) + seed * TAU).sin();
         let center = Vec2::new(
-            (0.18 + seed * 0.24 + fall * 0.5 + sway * 0.035).rem_euclid(1.0),
+            (0.18 + seed * 0.24 + fall * (0.25 + outside.wind * 0.8) + sway * 0.035)
+                .rem_euclid(1.0),
             0.58 - fall * 0.65,
         );
         let offset = coordinates - center;
         let distance = (offset * Vec2::new(1.0, 1.7)).length() - 0.0055;
-        let leaf = Vec3::new(0.9, 0.3, 0.18).lerp(Vec3::new(1.0, 0.8, 0.3), seed);
+        let leaf = if outside.season == Season::Spring {
+            Vec3::new(1.0, 0.78, 0.88)
+        } else {
+            Vec3::new(0.9, 0.3, 0.18).lerp(Vec3::new(1.0, 0.8, 0.3), seed)
+        };
         color = color.lerp(leaf * light, coverage(distance, footprint * 0.5));
     }
     color
@@ -631,11 +674,18 @@ fn fireflies(coordinates: Vec2, footprint: f32, time: f64) -> Vec3 {
     Vec3::new(0.75, 1.0, 0.27) * glow
 }
 
-fn snowfall(mut color: Vec3, coordinates: Vec2, footprint: f32, time: f64, snow: f32) -> Vec3 {
+fn snowfall(
+    mut color: Vec3,
+    coordinates: Vec2,
+    footprint: f32,
+    time: f64,
+    snow: f32,
+    wind: f32,
+) -> Vec3 {
     for layer in [0.0, 1.0] {
         let grid = Vec2::new(19.0 + layer * 12.0, 12.0 + layer * 8.0);
         let falling = phase(time, 0.035 + f64::from(layer) * 0.015, 64.0);
-        let flakes = (coordinates + Vec2::Y * falling) * grid;
+        let flakes = (coordinates + Vec2::new(coordinates.y * wind * 0.45, falling)) * grid;
         let cell = flakes.floor();
         let seed = hash(cell + Vec2::splat(layer * 17.0));
         let sway = (phase(time, 0.45, TAU) + seed * TAU).sin() * 0.15;
@@ -791,7 +841,7 @@ mod tests {
             point(0.25, 0.01),
             point(0.25, 0.99),
             point(0.5, 0.3),
-            point(0.25, 0.6),
+            point(0.25, 0.5),
         ] {
             assert_eq!(window(point, 0.005, &outside).unwrap().frame, 1.0);
         }
@@ -800,6 +850,42 @@ mod tests {
         }
         let edge = Vec2::new(WINDOW_LOW.x + 0.05, 1.3);
         assert!((window(edge, 0.01, &outside).unwrap().frame - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn open_and_shut_window_samples_stay_finite_in_extreme_gusts() {
+        for wind in [-1.0, 0.0, 1.0] {
+            for window_open in [false, true] {
+                for season in [
+                    Season::Spring,
+                    Season::Summer,
+                    Season::Autumn,
+                    Season::Winter,
+                ] {
+                    let outside = Outside {
+                        wind,
+                        window_lift: if window_open { 1.0 } else { 0.0 },
+                        season,
+                        rain: 1.0,
+                        snow: 1.0,
+                        wind_travel: 1e12,
+                        ..Outside::clear(12.0, 1e12)
+                    };
+                    for column in 0..=16 {
+                        for row in 0..=12 {
+                            let sample = window(
+                                point(column as f32 / 16.0, row as f32 / 12.0),
+                                0.0,
+                                &outside,
+                            )
+                            .unwrap();
+                            assert!(sample.sky.is_finite() && sample.frame.is_finite());
+                            assert!((0.0..=1.0).contains(&sample.frame));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

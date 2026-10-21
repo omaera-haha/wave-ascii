@@ -13,6 +13,8 @@ pub struct Room {
     pub blocks: Vec<Cube>,
     #[serde(default)]
     pub tower: Option<[f32; 3]>,
+    #[serde(default)]
+    pub window_open: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -142,10 +144,12 @@ impl World {
                 })
                 .collect(),
             tower: self.tower.map(|base| base.to_array()),
+            window_open: self.window_open,
         }
     }
 
     pub fn restore_room(&mut self, room: &Room) {
+        self.window_open = room.window_open;
         let restored = self.checked_room(room);
         let (ball, blocks, tower) = restored.unwrap_or_else(|| {
             let seeded = World::new(self.meteor_seed, self.hour);

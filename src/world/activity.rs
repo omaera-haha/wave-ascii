@@ -28,10 +28,11 @@ pub enum Activity {
     Friend,
     Look,
     Company,
+    Air,
 }
 
 impl Activity {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Float,
         Self::Explore,
         Self::Chase,
@@ -52,6 +53,7 @@ impl Activity {
         Self::Friend,
         Self::Look,
         Self::Company,
+        Self::Air,
     ];
 
     pub fn name(self) -> &'static str {
@@ -76,6 +78,7 @@ impl Activity {
             Self::Friend => "friend",
             Self::Look => "look",
             Self::Company => "company",
+            Self::Air => "air",
         }
     }
 
@@ -107,6 +110,7 @@ impl Activity {
             Self::Build => "stacking the toy blocks into a tower",
             Self::Friend => "playing with its ghost friend",
             Self::Look => "looking at what the viewer drew on the glass",
+            Self::Air => "seeing to the window",
             Self::Company => "keeping the viewer company while they work",
         }
     }
@@ -135,6 +139,7 @@ pub struct Plan {
     pub done: bool,
     /// A rest that lasts until morning, even when energy is full.
     pub overnight: bool,
+    pub window: Option<bool>,
 }
 
 impl Plan {
@@ -151,6 +156,7 @@ impl Plan {
             length,
             done: false,
             overnight: false,
+            window: None,
         }
     }
 

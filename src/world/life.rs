@@ -179,6 +179,8 @@ pub struct Tally {
     pub stories: u32,
     #[serde(default)]
     pub constellations: u32,
+    #[serde(default)]
+    pub airings: u32,
 }
 
 impl Tally {
@@ -193,6 +195,7 @@ impl Tally {
                 self.focus_minutes = self.focus_minutes.saturating_add(*minutes);
                 self.focus_sessions = self.focus_sessions.saturating_add(u32::from(*completed));
             }
+            EventKind::OpenedWindow => self.airings = self.airings.saturating_add(1),
             EventKind::ToldStory => self.stories = self.stories.saturating_add(1),
             EventKind::FoundConstellation(_) => {
                 self.constellations = self.constellations.saturating_add(1);
@@ -348,6 +351,9 @@ impl Tally {
                     "sessions"
                 },
             ));
+        }
+        if self.airings > 0 {
+            deeds.push("opened the window for fresh air".to_owned());
         }
         if self.focus_minutes > 0 {
             deeds.push(format!(
@@ -1075,6 +1081,7 @@ impl Life {
             tally.focus_sessions = tally.focus_sessions.min(1_000_000);
             tally.focus_minutes = tally.focus_minutes.min(100_000_000);
             tally.stories = tally.stories.min(100_000_000);
+            tally.airings = tally.airings.min(100_000_000);
             tally.friend_visits = tally.friend_visits.min(1_000_000);
             tally.friend_games = tally.friend_games.min(100_000_000);
             tally.friend_name = tally.friend_name.take().filter(|name| {
