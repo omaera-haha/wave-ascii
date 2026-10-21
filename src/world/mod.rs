@@ -1518,21 +1518,31 @@ impl World {
     // A wish on a shooting star, kept secret, or about the viewer when a
     // close friend is there to share the night.
     fn wish(&mut self) {
-        let lines: &[&str] = if self.life.bond >= 0.55 && self.viewer_present() {
-            &[
-                "I wished you'd stay a little longer.",
-                "I made a wish. It was about you.",
-                "I wished for more nights like this one.",
+        let friend = self
+            .friend
+            .as_ref()
+            .and(self.life.friend.as_ref())
+            .map(|friend| friend.name.clone());
+        let lines: Vec<String> = if let Some(name) = friend {
+            vec![
+                format!("{name} saw it too! We made a wish together."),
+                format!("I wished {name} could stay all night."),
+            ]
+        } else if self.life.bond >= 0.55 && self.viewer_present() {
+            vec![
+                "I wished you'd stay a little longer.".to_owned(),
+                "I made a wish. It was about you.".to_owned(),
+                "I wished for more nights like this one.".to_owned(),
             ]
         } else {
-            &[
-                "A shooting star! I made a wish.",
-                "Quick, a wish! …There.",
-                "I made a wish. It's a secret.",
+            vec![
+                "A shooting star! I made a wish.".to_owned(),
+                "Quick, a wish! …There.".to_owned(),
+                "I made a wish. It's a secret.".to_owned(),
             ]
         };
         let index = ((self.random.unit() * lines.len() as f32) as usize).min(lines.len() - 1);
-        self.think(lines[index]);
+        self.think(&lines[index]);
     }
 
     /// A mind's suggestion of how the ghost feels, which holds for `seconds`.

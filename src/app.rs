@@ -334,6 +334,9 @@ impl App {
             .chars()
             .filter(|character| !character.is_control())
             .collect();
+        if world.speaks_korean() {
+            return self.farewell_in_korean(&name);
+        }
         let line = if ghost.asleep > 0.5 {
             "is asleep on its cushion. Sweet dreams."
         } else {
@@ -350,6 +353,39 @@ impl App {
             }
         };
         format!("{name} {line}")
+    }
+
+    // The same farewell for a viewer who talks to it in Korean.
+    fn farewell_in_korean(&self, name: &str) -> String {
+        let world = &self.world;
+        let ghost = &world.ghost;
+        // 이 follows a last syllable with a final consonant, 가 any other.
+        let subject = if name
+            .chars()
+            .last()
+            .filter(|last| ('가'..='힣').contains(last))
+            .is_some_and(|last| (u32::from(last) - u32::from('가')) % 28 != 0)
+        {
+            "이"
+        } else {
+            "가"
+        };
+        let line = if ghost.asleep > 0.5 {
+            "방석 위에서 자고 있어요. 좋은 꿈 꿔."
+        } else {
+            match ghost.mood {
+                Mood::Grumpy => "가는 걸 못 본 척해요.",
+                Mood::Lonely => "가는 모습을 바라봐요. 또 올 거지?",
+                Mood::Sleepy => "하품하며 손을 흔들어요.",
+                _ if world.bedtime() => "유리 너머에서 잘 자라고 손을 흔들어요.",
+                Mood::Excited | Mood::Cheerful if world.life.bond >= 0.55 => {
+                    "유리에 바짝 붙어 안 보일 때까지 손을 흔들어요."
+                }
+                _ if world.life.bond >= 0.55 => "유리 너머에서 손을 흔들어요. 또 만나!",
+                _ => "유리 너머에서 손을 흔들어요.",
+            }
+        };
+        format!("{name}{subject} {line}")
     }
 
     /// Whether the terminal has the focus; while it is elsewhere, frames
@@ -1698,6 +1734,20 @@ mod tests {
             app.farewell(),
             "Pip is asleep on its cushion. Sweet dreams."
         );
+    }
+
+    #[test]
+    fn a_korean_speaking_viewer_is_seen_off_in_korean_with_the_right_particle() {
+        let mut app = app();
+        app.world.life.korean = 0.8;
+        app.world.ghost.mood = Mood::Content;
+        app.world.ghost.name = "뽀삐".into();
+        assert_eq!(app.farewell(), "뽀삐가 유리 너머에서 손을 흔들어요.");
+        app.world.ghost.name = "콩".into();
+        assert_eq!(app.farewell(), "콩이 유리 너머에서 손을 흔들어요.");
+        app.world.ghost.name = "Pip".into();
+        app.world.ghost.asleep = 1.0;
+        assert_eq!(app.farewell(), "Pip가 방석 위에서 자고 있어요. 좋은 꿈 꿔.");
     }
 
     #[test]

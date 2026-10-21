@@ -503,7 +503,7 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
 pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
     let mut lines = reply_in_words(world, heard, guessed);
     if !matches!(heard.understanding, Understanding::Asked { .. }) && heard.learned_name.is_none() {
-        babble(world, &mut lines, heard.korean);
+        babble(world, &mut lines, heard.korean || world.speaks_korean());
     }
     lines
 }
@@ -527,7 +527,7 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
         };
     }
     if let Some(name) = &heard.given_name {
-        return if heard.korean {
+        return if korean {
             vec![
                 format!("{name}? 마음에 들어!"),
                 format!("{name}! 이제 내 이름이야."),
