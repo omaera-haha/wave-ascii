@@ -87,7 +87,7 @@ impl Visitors {
         Self {
             bird: None,
             moth: None,
-            next_bird: f64::from(random.range(180.0, 360.0)),
+            next_bird: f64::from(random.range(300.0, 900.0)),
             next_moth: f64::from(random.range(300.0, 600.0)),
             next_friend: f64::INFINITY,
             friend_evening: None,
@@ -140,7 +140,7 @@ impl Bird {
             noticed: false,
             landed: false,
             arrived_at,
-            leaves_at: arrived_at + f64::from(random.range(30.0, 90.0)),
+            leaves_at: arrived_at + f64::from(random.range(45.0, 120.0)),
             departing: None,
             side: if random.unit() < 0.5 { -1.0 } else { 1.0 },
             phase: random.range(0.0, TAU),
@@ -318,7 +318,7 @@ impl World {
             };
             self.visitors.next_bird = time
                 + f64::from(visit_interval(
-                    self.random.range(180.0, 360.0) * snow,
+                    self.random.range(720.0, 1800.0) * snow,
                     self.life.bird_trust,
                 ));
             if daytime && bird_weather {
@@ -591,7 +591,8 @@ mod tests {
                 }
             }
         }
-        assert!(visits >= 100, "{visits}");
+        // A visit every quarter hour or so, more as it comes to trust.
+        assert!((15..80).contains(&visits), "{visits}");
         world.hour = 22.0;
         world.step(4.0);
         assert!(world.visitors.bird.is_none());
@@ -630,7 +631,7 @@ mod tests {
             let mut world = quiet_world(12.0);
             world.weather.sky = sky;
             let mut visits = 0;
-            for _ in 0..100_000 {
+            for _ in 0..400_000 {
                 world.time += 0.1;
                 world.advance_visitors(0.1);
                 visits += world
