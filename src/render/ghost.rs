@@ -113,6 +113,22 @@ pub struct Aura {
     pub beat: f32,
 }
 
+/// A camera-facing body, shared by the resident and its smaller visitor.
+#[derive(Clone, Copy, Debug)]
+pub struct Body {
+    pub position: Vec3,
+    pub scale: f32,
+    pub pose: Pose,
+    pub face: Face,
+    pub aura: Aura,
+    pub opacity: f32,
+}
+
+/// A soft mint-to-lavender glow, distinct from the resident's mood palette.
+pub fn friend_color(hue: f32) -> Vec3 {
+    Vec3::new(0.55, 1.0, 0.78).lerp(Vec3::new(0.88, 0.68, 1.0), hue.clamp(0.0, 1.0))
+}
+
 /// Light from the ghost at one point: its color, already weighted by how
 /// much of the point it covers, and that coverage.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -135,7 +151,18 @@ impl Glow {
 
 /// The ghost at `point` of its billboard, in its own units, where a pixel
 /// spans `pixel` units.
-pub fn shade(point: Vec2, pixel: f32, time: f64, pose: &Pose, face: &Face, aura: &Aura) -> Glow {
+pub fn shade(point: Vec2, pixel: f32, time: f64, body: &Body) -> Glow {
+    let glow = body_shade(point, pixel, time, body);
+    Glow {
+        light: glow.light * body.opacity,
+        cover: glow.cover * body.opacity,
+    }
+}
+
+fn body_shade(point: Vec2, pixel: f32, time: f64, body: &Body) -> Glow {
+    let Body {
+        pose, face, aura, ..
+    } = body;
     let point = pose.place(point);
     let silhouette = pose.silhouette(point);
     let gap = GAP.max(1.5 * pixel);
@@ -208,6 +235,22 @@ fn phase(time: f64, period: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn shade(point: Vec2, pixel: f32, time: f64, pose: &Pose, face: &Face, aura: &Aura) -> Glow {
+        super::shade(
+            point,
+            pixel,
+            time,
+            &Body {
+                position: Vec3::ZERO,
+                scale: 1.0,
+                pose: *pose,
+                face: *face,
+                aura: *aura,
+                opacity: 1.0,
+            },
+        )
+    }
 
     fn aura() -> Aura {
         Aura {

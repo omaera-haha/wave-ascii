@@ -2,6 +2,7 @@ mod activity;
 pub mod blocks;
 pub mod calendar;
 mod doodle;
+pub mod friend;
 pub mod game;
 pub mod growth;
 mod letters;
@@ -27,6 +28,7 @@ pub use activity::{Activity, Plan};
 pub use blocks::Block;
 pub use calendar::Season;
 pub use doodle::{Doodle, Picture, Sketch, Writing};
+pub use friend::{Companion, Friend};
 pub use game::{Game, Mark, Outcome};
 pub use growth::{Skill, Skills, Stage};
 pub use life::{Entry, Life};
@@ -190,6 +192,13 @@ pub enum EventKind {
     Named(String),
     /// It saw a shooting star through the window and made a wish.
     ShootingStar,
+    FriendArrived(String),
+    FriendLeft(String),
+    Tagged {
+        by_friend: bool,
+    },
+    PokedFriend,
+    PlayedWithFriend(friend::Game),
 }
 
 impl EventKind {
@@ -292,6 +301,18 @@ impl EventKind {
             Self::Named(name) => format!("the viewer named you {name}"),
             Self::ShootingStar => {
                 "saw a shooting star through the window and made a wish".to_owned()
+            }
+            Self::FriendArrived(name) => {
+                format!("your friend {name}, another ghost, floated in through the window")
+            }
+            Self::FriendLeft(name) => format!("{name} floated away through the window"),
+            Self::Tagged { by_friend: true } => "your friend tagged you; you are it now".to_owned(),
+            Self::Tagged { by_friend: false } => {
+                "you tagged your friend; they are it now".to_owned()
+            }
+            Self::PokedFriend => "the viewer poked your friend".to_owned(),
+            Self::PlayedWithFriend(game) => {
+                format!("finished {} with your ghost friend", game.words())
             }
         }
     }
@@ -467,6 +488,8 @@ pub struct World {
     meteor_seed: u64,
     /// The slot of the last shooting star it saw.
     seen_meteor: Option<u64>,
+    pub friend: Option<Friend>,
+    first_friend_at: Option<f64>,
 }
 
 impl World {
@@ -547,6 +570,8 @@ impl World {
             routine: routine::Routine::default(),
             meteor_seed: seed,
             seen_meteor: None,
+            friend: None,
+            first_friend_at: None,
         };
         world.scatter_blocks();
         world
@@ -636,6 +661,7 @@ impl World {
             self.hear_thunder();
         }
         self.advance_visitors(seconds);
+        self.advance_friend();
 
         self.advance_blocks(seconds);
         self.plant.thirst = (self.plant.thirst + seconds / Plant::THIRST_TIME).min(1.0);
@@ -660,6 +686,7 @@ impl World {
         let fade = if hiding { 0.85 } else { 0.0 };
         self.ghost.fade += (fade - self.ghost.fade) * (1.0 - (-seconds / 0.4).exp());
         self.move_ghost(seconds);
+        self.move_friend(seconds);
         if self.ball.held {
             self.ball.position = (self.ghost.position - Vec3::Y * 0.42).clamp(
                 ROOM_MIN + Vec3::splat(Ball::RADIUS),
@@ -759,6 +786,7 @@ impl World {
                         && self.blocks.iter().filter(|block| block.on_floor()).count() >= 2
                         && self.tower_height() < self.blocks.len()
                 }
+                Activity::Friend => self.friend_is_open(),
                 Activity::Float
                 | Activity::Explore
                 | Activity::Play
@@ -772,6 +800,7 @@ impl World {
     /// choosing among the options.
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
+            Activity::Friend => "Play tag, twirl together, or gaze at the moon with your visiting ghost friend. Fits especially when lonely or playful.".to_owned(),
             Activity::Float => {
                 "Float gently in place and look around. Fits when nothing in particular calls."
                     .to_owned()
@@ -880,6 +909,9 @@ impl World {
         self.drop_ball();
         self.drop_block();
         self.building = None;
+        if let Some(friend) = &mut self.friend {
+            friend.game = None;
+        }
         let position = self.ghost.position;
         let length = match activity {
             Activity::Float => self.random.range(5.0, 11.0),
@@ -916,7 +948,11 @@ impl World {
                 self.random.range(1.0, 1.6),
                 ROOM_MAX.z - 0.35,
             ),
-            Activity::Float | Activity::Chase | Activity::Play | Activity::Build => position,
+            Activity::Float
+            | Activity::Chase
+            | Activity::Play
+            | Activity::Build
+            | Activity::Friend => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         plan.overnight = activity == Activity::Rest && self.bedtime();
@@ -935,6 +971,9 @@ impl World {
         self.ghost.plan = plan;
         if activity == Activity::Build {
             self.begin_build();
+        }
+        if activity == Activity::Friend {
+            self.begin_friend_game();
         }
         self.record(EventKind::Began(activity));
     }
@@ -1693,6 +1732,10 @@ impl World {
 
         let mut look = None;
         match self.ghost.plan.activity {
+            Activity::Friend => {
+                self.play_with_friend();
+                look = self.friend.as_ref().map(|friend| friend.position);
+            }
             Activity::Float => {
                 let anchor = self.ghost.plan.target;
                 let phase = time as f32;
@@ -2015,7 +2058,7 @@ impl World {
             Activity::Wait => 0.3,
             Activity::Rest => 0.5,
             Activity::Explore => 0.7,
-            Activity::Dance => 1.5,
+            Activity::Dance | Activity::Friend => 1.5,
             Activity::Pounce => 1.6,
             _ => 0.8,
         } * (0.6 + 0.4 * ghost.needs.energy)
@@ -2096,6 +2139,10 @@ impl World {
 
     fn update_needs(&mut self, seconds: f32) {
         let present = self.viewer_present();
+        let nearby_friend = self.friend.as_ref().is_some_and(|friend| {
+            friend.state != friend::State::Leaving
+                && friend.position.distance(self.ghost.position) < 1.2
+        });
         let night = if self.is_night() { 1.4 } else { 1.0 };
         let nature = self.life.nature.unwrap_or_default();
         let tiring = 0.85 + 0.3 * nature.sleepy;
@@ -2114,7 +2161,7 @@ impl World {
         let mut company = -0.0012 * (1.15 - 0.3 * nature.shy);
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
-            Activity::Game if !ghost.plan.done => fun += 0.004,
+            Activity::Game | Activity::Friend if !ghost.plan.done => fun += 0.004,
             Activity::Visit if present => company += 0.01,
             Activity::Window if ghost.plan.arrived.is_some() => {
                 fun += 0.004 + 0.02 * self.weather.rainbow(self.time)
@@ -2123,6 +2170,9 @@ impl World {
         }
         if present {
             company += 0.004;
+        }
+        if nearby_friend {
+            company += 0.002;
         }
         // Being stroked is company, and a little fun while awake.
         company += 0.03 * self.petting;
@@ -2148,6 +2198,24 @@ impl World {
         // Strokes soothe even a grumpy ghost.
         if self.petting >= PETTED {
             return Mood::Cheerful;
+        }
+        if let Some(event) = self
+            .events
+            .iter()
+            .rev()
+            .take_while(|event| self.time - event.time < 20.0)
+            .find(|event| {
+                matches!(
+                    event.kind,
+                    EventKind::FriendArrived(_) | EventKind::FriendLeft(_)
+                )
+            })
+        {
+            match event.kind {
+                EventKind::FriendArrived(_) => return Mood::Excited,
+                EventKind::FriendLeft(_) if !self.viewer_present() => return Mood::Lonely,
+                _ => {}
+            }
         }
         if let Some((mood, until)) = ghost.suggested_mood
             && self.time < until

@@ -220,6 +220,10 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Praised => Emote::Heart,
         EventKind::ExpectedArrival => Emote::Heart,
         EventKind::MissedVisit => Emote::Longing,
+        EventKind::FriendArrived(_) => Emote::Sparkle,
+        EventKind::FriendLeft(_) => Emote::Longing,
+        EventKind::Tagged { .. } => Emote::Alarm,
+        EventKind::PokedFriend | EventKind::PlayedWithFriend(_) => Emote::Note,
         EventKind::Scolded => Emote::Sigh,
         EventKind::Puzzled(_) => Emote::Question,
         EventKind::LearnedWord { .. } | EventKind::LearnedName(_) | EventKind::Named(_) => {

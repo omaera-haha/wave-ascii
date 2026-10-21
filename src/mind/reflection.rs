@@ -182,6 +182,14 @@ pub fn request(
     };
     let good = bullets(&skills(true));
     let learning = bullets(&skills(false));
+    let friend = life.friend.as_ref().map_or_else(String::new, |friend| {
+        format!(
+            "\nYour ghost friend is {}. They have visited {} and are {}.",
+            friend.name,
+            friend.visit_words(),
+            friend.closeness_words()
+        )
+    });
     let block = |text: String| Block { text, cache };
     Request {
         system: vec![
@@ -190,7 +198,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\n\
                  You are {stage}.{voice}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}\n\n\
+                 Your bond with the viewer: {}.{routine}{name}{friend}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}",
@@ -422,5 +430,23 @@ mod tests {
         assert_eq!(reflection.write, "HI");
         assert_eq!(reflection.mood, Some(Mood::Content));
         assert!(read(json!({"thought": 3})).is_none());
+    }
+    #[test]
+    fn reflections_remember_the_friends_name_and_visits_in_words() {
+        let life = Life {
+            friend: Some(crate::world::Companion {
+                name: "Lumi".to_owned(),
+                hue: 0.4,
+                visits: 25,
+                closeness: 0.85,
+            }),
+            ..Life::default()
+        };
+        let request = request(&json!({}), &[], &life, &[], None, None, None);
+        let text = &request.system[1].text;
+        assert!(text.contains(
+            "Your ghost friend is Lumi. They have visited twenty five times and are an old friend."
+        ));
+        assert!(!text.chars().any(|character| character.is_ascii_digit()));
     }
 }

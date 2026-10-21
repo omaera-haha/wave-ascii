@@ -379,11 +379,7 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
             Some(BAR),
         );
     }
-    let doing = if ghost.asleep > 0.5 {
-        "asleep"
-    } else {
-        ghost.plan.activity.doing()
-    };
+    let doing = app.doing();
     column = write(
         screen,
         column,
@@ -549,6 +545,7 @@ fn help_panel(screen: &mut Canvas) {
         "k          keys and models     click ball    flick it",
         "j          journal and diary   click room    drop a light mote",
         "                               click blocks  nudge or topple",
+        "                               click friend  make it giggle",
         "l          life, growth, skills p             save a postcard",
         "g          noughts and crosses 1-9, click    choose a square",
         "arrows     turn the view       drag          turn the view",
@@ -558,6 +555,8 @@ fn help_panel(screen: &mut Canvas) {
         "",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "While a reading panel is open, the mouse selects text.",
+        "A ghost friend sometimes visits on clear evenings to play.",
+        "Moonlight and loneliness invite it; it remembers their friendship.",
         "Any key closes this.",
     ];
     let lines: Vec<(String, Rgb)> = lines
@@ -913,6 +912,24 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
                 .into_iter()
                 .map(|line| (line, TEXT)),
         );
+    }
+    if let Some(friend) = &life.friend {
+        header.push((
+            format!(
+                "Friend: {} · {} · visited {}",
+                friend.name,
+                friend.closeness_words(),
+                friend.visit_words()
+            ),
+            TEXT,
+        ));
+        header.push((
+            format!(
+                "  Games together: {}",
+                crate::world::friend::count_words(life.total.friend_games)
+            ),
+            TEXT,
+        ));
     }
     let total = &life.total;
     let mut bird = vec![(format!("The bird: {}", life.bird_words()), TEXT)];

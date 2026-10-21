@@ -16,6 +16,20 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
     let weights: Vec<f32> = options
         .iter()
         .map(|activity| match activity {
+            Activity::Friend => {
+                if !world.friend_is_open() {
+                    0.0
+                } else {
+                    (5.0 + 3.0 * (1.0 - needs.company)
+                        + 2.0 * world.life.nature.unwrap_or_default().playful)
+                        * needs.energy
+                        * if present {
+                            1.0 - 0.25 * world.life.bond
+                        } else {
+                            1.0
+                        }
+                }
+            }
             Activity::Float => 0.45,
             Activity::Explore => 0.25 + 0.9 * (1.0 - needs.fun) * needs.energy,
             Activity::Chase => {
@@ -700,5 +714,29 @@ mod tests {
             ratio(&weigh(&world, &options), Activity::Window),
             ratio(&ordinary, Activity::Window)
         );
+    }
+    #[test]
+    fn a_visiting_friend_draws_play_more_when_lonely_and_less_when_tired_or_with_a_close_viewer() {
+        let mut world = World::new(1, 20.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 25);
+        for _ in 0..3000 {
+            world.step(0.1);
+            if world.friend.is_some() {
+                break;
+            }
+        }
+        let options = [Activity::Float, Activity::Friend];
+        let usual = chance(&weigh(&world, &options), Activity::Friend);
+        assert!(usual > 0.85);
+        world.ghost.needs.company = 0.0;
+        assert!(chance(&weigh(&world, &options), Activity::Friend) > usual);
+        world.ghost.needs.energy = 0.2;
+        assert!(chance(&weigh(&world, &options), Activity::Friend) < usual);
+        world.ghost.needs.energy = 0.85;
+        world.ghost.needs.company = 0.6;
+        let alone = chance(&weigh(&world, &options), Activity::Friend);
+        world.notice_viewer();
+        world.life.bond = 0.9;
+        assert!(chance(&weigh(&world, &options), Activity::Friend) < alone);
     }
 }

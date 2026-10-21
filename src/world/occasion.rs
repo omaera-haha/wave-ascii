@@ -169,6 +169,11 @@ impl super::World {
 
     /// The evening's New Year celebration comes before midnight.
     pub fn event_words(&self, event: &super::Event) -> String {
+        if matches!(event.kind, super::EventKind::FriendArrived(_))
+            && self.first_friend_at == Some(event.time)
+        {
+            return "a ghost you've never met floated in through the window".to_owned();
+        }
         if event.kind == super::EventKind::Celebrated(Occasion::NewYear)
             && self.new_year_at != Some(event.time)
         {
