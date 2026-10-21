@@ -426,7 +426,7 @@ impl World {
         self.feeling_heard(Understanding::Felt(feeling), korean)
     }
 
-    fn remember_feeling(&mut self, feeling: Feeling) {
+    pub(super) fn remember_feeling(&mut self, feeling: Feeling) {
         self.life.feelings.push(FeelingNote {
             feeling,
             day: self.date.to_string(),

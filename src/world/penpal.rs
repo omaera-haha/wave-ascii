@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use unicode_width::UnicodeWidthStr;
 
 use super::{
-    Activity, EventKind, Life, Mood, Question, SHELF_POSITION, Stage, Thing, World, books, mail,
+    Activity, EventKind, Feeling, Life, Mood, Question, SHELF_POSITION, Stage, Thing, World, books,
+    mail, question,
     vocabulary::{self, Tone},
 };
 use crate::face::expression::Expression;
@@ -82,31 +83,67 @@ fn valid_lines(lines: &[String]) -> bool {
         })
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Feeling {
-    Tired,
-    Sad,
-    Happy,
-    Busy,
-}
-
-/// Kept separate so the viewer-feelings module can supply this later.
+/// How the viewer says they feel in a letter: a sentence saying it plainly,
+/// as a message would, or a few words letters often use, in sentences that
+/// neither ask nor deny.
 pub fn feelings(text: &str) -> Vec<Feeling> {
-    let lower = text.to_lowercase();
-    let words: Vec<_> = lower
-        .split(|character: char| !character.is_alphabetic())
-        .collect();
-    [
-        (Feeling::Tired, "tired", "피곤"),
-        (Feeling::Sad, "sad", "슬퍼"),
-        (Feeling::Happy, "happy", "행복"),
-        (Feeling::Busy, "busy", "바빠"),
-    ]
-    .into_iter()
-    .filter_map(|(feeling, english, korean)| {
-        (words.contains(&english) || lower.contains(korean)).then_some(feeling)
-    })
-    .collect()
+    const WORDS: [(Feeling, &[&str], &[&str]); 8] = [
+        (
+            Feeling::Tired,
+            &["tired", "exhausted"],
+            &["피곤", "지쳤", "지쳐"],
+        ),
+        (
+            Feeling::Sad,
+            &["sad", "down"],
+            &["슬퍼", "슬펐", "우울", "속상"],
+        ),
+        (Feeling::Lonely, &["lonely"], &["외로"]),
+        (
+            Feeling::Stressed,
+            &["stressed", "worried", "anxious"],
+            &["스트레스", "걱정", "불안"],
+        ),
+        (Feeling::Unwell, &["sick"], &["아파", "아팠", "감기"]),
+        (Feeling::Bored, &["bored"], &["심심"]),
+        (
+            Feeling::Happy,
+            &["happy", "glad"],
+            &["행복", "기뻐", "기뻤"],
+        ),
+        (Feeling::Proud, &["proud"], &["뿌듯"]),
+    ];
+    let mut found = Vec::new();
+    for sentence in text.split_inclusive(['.', '!', '?', '。', '！', '？', '\n']) {
+        let sentence = sentence.trim();
+        let feeling = super::feelings::felt(sentence).or_else(|| {
+            let lower = sentence.to_lowercase();
+            let words: Vec<&str> = lower
+                .split(|character: char| !character.is_alphabetic())
+                .collect();
+            let asks_or_denies = sentence.contains(['?', '？'])
+                || question::ask(sentence).is_some()
+                || words
+                    .iter()
+                    .any(|word| matches!(*word, "not" | "never" | "dont" | "안" | "못"))
+                || lower.contains("not ")
+                || lower.contains('않');
+            if asks_or_denies {
+                return None;
+            }
+            WORDS.iter().find_map(|(feeling, english, korean)| {
+                (english.iter().any(|word| words.contains(word))
+                    || korean.iter().any(|word| lower.contains(word)))
+                .then_some(*feeling)
+            })
+        });
+        if let Some(feeling) = feeling
+            && !found.contains(&feeling)
+        {
+            found.push(feeling);
+        }
+    }
+    found
 }
 
 pub fn korean(text: &str) -> bool {
@@ -389,6 +426,11 @@ impl World {
         if let Some(name) = understood.ghost_name {
             self.take_name(&name);
         }
+        // How the letter says the viewer feels is remembered as if said, so
+        // the ghost asks after them later.
+        if let Some(feeling) = understood.feelings.first() {
+            self.remember_feeling(*feeling);
+        }
         let now = self.letter_now();
         let delay = self.random.range(1200.0, 2400.0);
         let morning = if now.hour() < 7 {
@@ -547,8 +589,22 @@ impl World {
             body.push(match feeling {
                 Feeling::Tired => say("Rest with me a little.", "나랑 조금 쉬자."),
                 Feeling::Sad => say("I'll sit beside you.", "네 곁에 있을게."),
+                Feeling::Lonely => say(
+                    "You're not alone. I'm right here.",
+                    "외로워하지 마. 내가 여기 있어.",
+                ),
+                Feeling::Stressed => say(
+                    "Let's breathe slowly together.",
+                    "우리 같이 천천히 숨 쉬자.",
+                ),
+                Feeling::Angry => say(
+                    "I hope your heart feels calm soon.",
+                    "마음이 곧 편안해지길 바라.",
+                ),
+                Feeling::Unwell => say("Get well soon. Rest lots.", "얼른 나아. 푹 쉬어."),
+                Feeling::Bored => say("Come play with me!", "나랑 같이 놀자!"),
                 Feeling::Happy => say("Your happiness makes me glow!", "네가 행복하면 나도 빛나!"),
-                Feeling::Busy => say("I'll keep you quiet company.", "조용히 곁에 있을게."),
+                Feeling::Proud => say("You did it! I'm proud of you.", "해냈구나! 정말 대단해."),
             });
         }
         if let Some((word, activity)) = understood.activities.first() {
@@ -715,15 +771,20 @@ mod tests {
         }
         for (text, tone, feeling) in [
             ("Bye! I am sad.", Tone::Farewell, Feeling::Sad),
-            ("No! Busy today.", Tone::Scolding, Feeling::Busy),
+            ("No! So tired today.", Tone::Scolding, Feeling::Tired),
             ("잘가! 오늘 행복해.", Tone::Farewell, Feeling::Happy),
-            ("안돼! 바빠.", Tone::Scolding, Feeling::Busy),
+            ("안돼! 피곤해.", Tone::Scolding, Feeling::Tired),
         ] {
             let understood = understand(text, &Life::default(), "Pip");
             assert!(understood.tones.contains(&tone), "{text}");
             assert_eq!(understood.feelings, vec![feeling]);
         }
         assert!(feelings("A tiredness test with busywork and a happyish word").is_empty());
+        assert!(feelings("Are you tired? I'm not sad. 안 슬퍼.").is_empty());
+        assert_eq!(
+            feelings("I was so stressed this week. But today I'm happy!"),
+            vec![Feeling::Stressed, Feeling::Happy]
+        );
     }
 
     #[test]
@@ -839,6 +900,28 @@ mod tests {
         assert!(world.life.received[0].read, "{:?}", world.ghost.plan);
         assert!(world.time - held_at.unwrap() >= 6.0);
         assert!(world.time - started < 60.0);
+    }
+
+    #[test]
+    fn a_letter_saying_how_the_viewer_feels_is_remembered_for_asking_after_them() {
+        let mut world = World::new(13, 12.0);
+        world.receive_letter("Dear Ghost,\nWork was long.\nI'm so tired today.", false);
+        for _ in 0..1200 {
+            world.step(0.1);
+            if world.life.received[0].read {
+                break;
+            }
+        }
+        assert!(world.life.received[0].read);
+        let note = world.life.feelings.last().unwrap();
+        assert_eq!(note.feeling, Feeling::Tired);
+        assert_eq!(note.day, world.date.to_string());
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::ViewerFelt(Feeling::Tired))
+        );
     }
 
     #[test]
