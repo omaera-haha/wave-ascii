@@ -4,6 +4,7 @@ mod decision;
 mod instinct;
 #[allow(dead_code, reason = "a general client, of which the ghost uses a part")]
 pub mod jev;
+mod mail;
 mod musing;
 mod observation;
 mod reflection;
@@ -76,6 +77,11 @@ enum Answer {
         activity: Result<Option<Activity>, String>,
     },
     Reflected(Result<Option<Reflection>, String>),
+    LetterWritten {
+        index: usize,
+        original: crate::world::mail::Letter,
+        lines: Result<Option<Vec<String>>, String>,
+    },
 }
 
 struct HeardMessage {
@@ -222,6 +228,47 @@ impl Mind {
     /// Whether the ghost can answer in words.
     pub fn can_talk(&self) -> bool {
         self.claude.is_some()
+    }
+
+    pub fn write_letter(&self, world: &World) {
+        let Some(claude) = self.claude.clone() else {
+            return;
+        };
+        if !world
+            .events
+            .iter()
+            .any(|event| event.kind == EventKind::WroteLetter)
+        {
+            return;
+        }
+        let Some(index) = world.life.letters.len().checked_sub(1) else {
+            return;
+        };
+        let original = world.life.letters[index].clone();
+        if original.read || original.claude {
+            return;
+        }
+        let request = mail::request(
+            world,
+            &original,
+            &self.journal.memories,
+            self.effort,
+            self.cache,
+        );
+        self.spawn(async move {
+            let lines = match claude.structured(&request).await {
+                Ok(Reply::Json { value, .. }) => serde_json::from_value::<mail::Written>(value)
+                    .map(|written| Some(written.lines))
+                    .map_err(|error| error.to_string()),
+                Ok(_) => Ok(None),
+                Err(error) => Err(error.to_string()),
+            };
+            Answer::LetterWritten {
+                index,
+                original,
+                lines,
+            }
+        });
     }
 
     /// One frame of thinking: applies whatever the minds have answered, and
@@ -623,6 +670,26 @@ impl Mind {
 
     fn apply(&mut self, answer: Answer, world: &mut World) {
         match answer {
+            Answer::LetterWritten {
+                index,
+                original,
+                lines,
+            } => {
+                if let Ok(Some(lines)) = lines
+                    && crate::world::mail::Letter::valid_lines(&lines)
+                    && if original.lines.len() == 2 {
+                        lines.len() == 2
+                    } else {
+                        lines.len() >= 3
+                    }
+                    && let Some(letter) = world.life.letters.get_mut(index)
+                    && !letter.read
+                    && *letter == original
+                {
+                    letter.lines = lines;
+                    letter.claude = true;
+                }
+            }
             Answer::Decided { id, decision } => {
                 if self.deciding.map(|(waiting, _)| waiting) != Some(id) {
                     return;
@@ -837,6 +904,207 @@ pub fn now() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    fn offline_letter() -> crate::world::mail::Letter {
+        crate::world::mail::Letter {
+            day: "2026-06-21".to_owned(),
+            lines: vec![
+                "Dear you,".to_owned(),
+                "I missed you.".to_owned(),
+                "Love, Pip".to_owned(),
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn claude_letter_answers_replace_only_the_same_unopened_offline_letter() {
+        let original = offline_letter();
+        let replacement = vec![
+            "Dear you,".to_owned(),
+            "The rain kept me company.".to_owned(),
+            "Love, Pip".to_owned(),
+        ];
+        for opened in [false, true] {
+            let mut world = World::new(4, 12.0);
+            world.life.letters.push(original.clone());
+            let mut mind = offline();
+            if opened {
+                world.read_letter(0);
+            }
+            mind.apply(
+                Answer::LetterWritten {
+                    index: 0,
+                    original: original.clone(),
+                    lines: Ok(Some(replacement.clone())),
+                },
+                &mut world,
+            );
+            assert_eq!(world.life.letters[0].claude, !opened);
+            assert_eq!(
+                world.life.letters[0].lines,
+                if opened {
+                    original.lines.clone()
+                } else {
+                    replacement.clone()
+                }
+            );
+            assert!(mind.journal.conversation.is_empty());
+        }
+        for answer in [
+            Err("offline".to_owned()),
+            Ok(None),
+            Ok(Some(Vec::new())),
+            Ok(Some(vec!["".to_owned(); 3])),
+            Ok(Some(vec!["has 2 digits".to_owned(); 3])),
+        ] {
+            let mut world = World::new(4, 12.0);
+            world.life.letters.push(original.clone());
+            let mut mind = offline();
+            mind.apply(
+                Answer::LetterWritten {
+                    index: 0,
+                    original: original.clone(),
+                    lines: answer,
+                },
+                &mut world,
+            );
+            assert_eq!(world.life.letters[0], original);
+        }
+        let mut world = World::new(4, 12.0);
+        let mut newer = original.clone();
+        newer.day = "2026-06-22".to_owned();
+        world.life.letters.push(newer.clone());
+        offline().apply(
+            Answer::LetterWritten {
+                index: 0,
+                original,
+                lines: Ok(Some(replacement)),
+            },
+            &mut world,
+        );
+        assert_eq!(world.life.letters[0], newer);
+    }
+
+    #[test]
+    fn a_letter_waiting_reaches_observations_and_offline_thoughts() {
+        let mut world = World::new(1, 12.0);
+        world.life.letters.push(offline_letter());
+        assert!(
+            observation::observe(&world)["letter"]
+                .as_str()
+                .unwrap()
+                .contains("waits unread")
+        );
+        assert!(musing::idle(&world).contains(&"I hope they find my letter."));
+        world.read_letter(0);
+        assert_eq!(
+            observation::observe(&world)["letter"],
+            "no unread letter waiting"
+        );
+        assert!(!musing::idle(&world).contains(&"I hope they find my letter."));
+    }
+
+    #[test]
+    fn claude_writes_a_letter_over_the_network_only_before_the_envelope_is_opened() {
+        for (opened, outcome) in [
+            (false, "success"),
+            (true, "success"),
+            (false, "refusal"),
+            (false, "empty"),
+            (false, "error"),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = format!("http://{}", listener.local_addr().unwrap());
+            let (sent, received) = mpsc::channel();
+            let (release, waiting) = mpsc::channel();
+            let lines = vec![
+                "Dear you,".to_owned(),
+                "The rain kept me company.".to_owned(),
+                "Love, Pip".to_owned(),
+            ];
+            let content = if outcome == "empty" {
+                serde_json::json!({"lines": []}).to_string()
+            } else {
+                serde_json::json!({"lines": lines}).to_string()
+            };
+            let reply = serde_json::json!({
+                "model": "test-model", "stop_reason": if outcome == "refusal" { "refusal" } else { "end_turn" },
+                "usage": {"input_tokens": 50, "output_tokens": 30},
+                "content": [{"type": "text", "text": content}]
+            })
+            .to_string();
+            let server = std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut first = String::new();
+                reader.read_line(&mut first).unwrap();
+                assert!(first.starts_with("POST /v1/messages "));
+                let mut length = 0;
+                loop {
+                    let mut header = String::new();
+                    reader.read_line(&mut header).unwrap();
+                    if header.trim().is_empty() {
+                        break;
+                    }
+                    if let Some(value) = header.to_ascii_lowercase().strip_prefix("content-length:")
+                    {
+                        length = value.trim().parse().unwrap();
+                    }
+                }
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
+                sent.send(serde_json::from_slice::<serde_json::Value>(&body).unwrap())
+                    .unwrap();
+                waiting.recv_timeout(Duration::from_secs(10)).unwrap();
+                let status = if outcome == "error" {
+                    "401 Unauthorized"
+                } else {
+                    "200 OK"
+                };
+                write!(reader.into_inner(), "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}", reply.len()).unwrap();
+            });
+            let config = Config {
+                anthropic_api_key: Some("letter-test-key".to_owned()),
+                claude_base_url: Some(address),
+                ..Config::default()
+            };
+            let mut mind = Mind::new(&config, Journal::default(), false);
+            let mut world = World::new(4, 12.0);
+            let original = offline_letter();
+            world.life.letters.push(original.clone());
+            world.events.push(crate::world::Event {
+                time: world.time,
+                kind: EventKind::WroteLetter,
+            });
+            mind.write_letter(&world);
+            let request = received.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert_eq!(
+                request["output_config"]["format"]["schema"]["required"][0],
+                "lines"
+            );
+            assert_eq!(request["messages"].as_array().unwrap().len(), 1);
+            if opened {
+                world.read_letter(0);
+            }
+            release.send(()).unwrap();
+            let answer = mind.receiver.recv_timeout(Duration::from_secs(10)).unwrap();
+            mind.apply(answer, &mut world);
+            server.join().unwrap();
+            assert_eq!(
+                world.life.letters[0].lines,
+                if opened || outcome != "success" {
+                    original.lines
+                } else {
+                    lines
+                }
+            );
+            assert_eq!(
+                world.life.letters[0].claude,
+                !opened && outcome == "success"
+            );
+            assert!(mind.journal.conversation.is_empty());
+        }
+    }
     #[test]
     fn a_reading_request_preserves_a_story_still_waiting_for_its_words() {
         let config = crate::store::Config::default();

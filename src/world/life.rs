@@ -218,6 +218,9 @@ pub struct Tally {
     pub met_reflection: bool,
     #[serde(default)]
     pub recognized_self: bool,
+    pub letters_written: u32,
+    #[serde(default)]
+    pub letters_read: u32,
 }
 
 impl Tally {
@@ -231,6 +234,8 @@ impl Tally {
             EventKind::VisitedMirror => self.mirror_visits = self.mirror_visits.saturating_add(1),
             EventKind::MetReflection => self.met_reflection = true,
             EventKind::RecognizedSelf => self.recognized_self = true,
+            EventKind::WroteLetter => self.letters_written = self.letters_written.saturating_add(1),
+            EventKind::ReadLetter => self.letters_read = self.letters_read.saturating_add(1),
             EventKind::Quirk(quirk) => {
                 let count = self.quirks.entry(*quirk).or_default();
                 *count = count.saturating_add(1);
@@ -432,6 +437,12 @@ impl Tally {
                 .filter(|count| **count > 0)
                 .map(|count| kind.diary(*count))
         }));
+        if self.letters_written > 0 {
+            deeds.push("wrote you a letter while you were away".to_owned());
+        }
+        if self.letters_read > 0 {
+            deeds.push("watched you read my letter".to_owned());
+        }
         if self.outfits > 0 {
             deeds.push("wore a little accessory".to_owned());
         }
@@ -888,6 +899,7 @@ pub struct Life {
     pub granted: Vec<super::Granted>,
     #[serde(default)]
     pub mirror: super::mirror::MirrorLife,
+    pub letters: Vec<super::mail::Letter>,
 }
 
 impl Life {
@@ -1039,7 +1051,7 @@ impl Life {
             EventKind::FocusEnded {
                 completed: true, ..
             } => 0.01,
-            EventKind::ToldStory => 0.005,
+            EventKind::ToldStory | EventKind::ReadLetter => 0.005,
             EventKind::LearnedTune(_) => 0.005,
             EventKind::WordGame { .. } => 0.003,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
@@ -1263,6 +1275,10 @@ impl Life {
         self.mirror.sanitize(&self.day);
         self.total.met_reflection |= self.mirror.sessions > 0 || self.mirror.recognizes_self();
         self.total.recognized_self |= self.mirror.recognizes_self();
+        self.letters.retain(super::mail::Letter::valid);
+        if self.letters.len() > super::mail::KEPT {
+            self.letters.drain(..self.letters.len() - super::mail::KEPT);
+        }
         self.books.sanitize();
         self.tunes = self
             .tunes
@@ -1367,6 +1383,8 @@ impl Life {
                 *count = (*count).min(100_000_000);
                 *count > 0
             });
+            tally.letters_written = tally.letters_written.min(100_000_000);
+            tally.letters_read = tally.letters_read.min(100_000_000);
             tally.outfits = tally.outfits.min(100_000_000);
             tally.pages = tally.pages.min(100_000_000);
             tally.books_finished = tally.books_finished.min(100_000_000);
@@ -1550,6 +1568,9 @@ impl Life {
             }
             EventKind::FinishedBook(_) if total.books_finished == 1 => {
                 "I finished my first picture book.".to_owned()
+            }
+            EventKind::WroteLetter if total.letters_written == 1 => {
+                "I wrote you my first letter.".to_owned()
             }
             EventKind::ToldStory if total.stories == 1 => "I told you my first story.".to_owned(),
             EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {

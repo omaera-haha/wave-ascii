@@ -250,6 +250,9 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
                 .map_or(0.0, |playing| playing.beat(world.time) * PI),
         ),
     ];
+    if world.unread_letter().is_some() {
+        furniture.push(Furniture::Envelope);
+    }
     if let Some((index, position, turning)) = held_book {
         furniture.push(Furniture::OpenBook {
             index,

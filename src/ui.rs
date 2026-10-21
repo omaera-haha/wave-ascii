@@ -43,6 +43,7 @@ pub fn draw(app: &mut App, screen: &mut Canvas, scene_rows: usize) {
         Mode::Journal => journal_panel(app, screen),
         Mode::Life => life_panel(app, screen),
         Mode::Album => album_panel(app, screen),
+        Mode::Letter => letter_panel(app, screen),
         Mode::Watching | Mode::Talking => {}
     }
 }
@@ -418,8 +419,18 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
             column = write(screen, column, row, columns, &text, color, Some(BAR));
         }
     }
+    if app.world.unread_letter().is_some() {
+        let hint = " ✉ e ";
+        let column = columns.saturating_sub(width(hint));
+        fill(screen, row, column, columns, BAR);
+        write(screen, column, row, columns, hint, ACCENT, Some(BAR));
+    }
     if app.drawing_mode {
-        let hint = " f fog · Esc stop ";
+        let hint = if app.world.unread_letter().is_some() {
+            " f fog · Esc stop · ✉ e "
+        } else {
+            " f fog · Esc stop "
+        };
         let column = columns.saturating_sub(width(hint));
         fill(screen, row, column, columns, BAR);
         write(screen, column, row, columns, hint, ACCENT, Some(BAR));
@@ -461,6 +472,55 @@ fn panel(screen: &mut Canvas, title: &str, lines: &[(String, Rgb)]) {
         .max(width(title) + 4)
         .min(screen.columns().saturating_sub(6));
     draw_panel(screen, title, lines, inner);
+}
+
+fn letter_panel(app: &App, screen: &mut Canvas) {
+    let Some(letter) = app.world.life.letters.get(app.letter_index) else {
+        return;
+    };
+    if screen.columns() < 5 || screen.rows() < 4 {
+        return;
+    }
+    let paper = Rgb([250, 240, 215]);
+    let ink = Rgb([70, 56, 62]);
+    let inner = 40.min(screen.columns().saturating_sub(6)).max(1);
+    let mut lines = vec![letter.date_words(), String::new()];
+    for line in &letter.lines {
+        lines.extend(wrap(line, inner));
+    }
+    let hint = if app.world.life.letters.len() > 1 {
+        "older ←  → newer · Esc, Enter, e close"
+    } else {
+        "Esc, Enter, e close"
+    };
+    let height = (lines.len() + 4).min(screen.rows());
+    let box_width = (inner + 4).min(screen.columns());
+    let left = (screen.columns() - box_width) / 2;
+    let top = (screen.rows() - height) / 2;
+    let end = left + box_width - 2;
+    for row in top..top + height {
+        fill(screen, row, left, left + box_width, paper);
+    }
+    for (offset, line) in lines.iter().take(height.saturating_sub(3)).enumerate() {
+        write(
+            screen,
+            left + 2,
+            top + 1 + offset,
+            end,
+            line,
+            ink,
+            Some(paper),
+        );
+    }
+    write(
+        screen,
+        left + 2,
+        top + height - 2,
+        end,
+        hint,
+        ink,
+        Some(paper),
+    );
 }
 
 struct PanelBounds {
@@ -576,7 +636,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "o          focus (o ends it)    drag ghost    stroke it",
         "g          noughts and crosses  1-9, click    choose a square",
         "f          draw (f/Esc stops)   right-drag    draw on glass",
-        "b          album of moments     click window  open or shut",
+        "b, e       album, letters       click window  open or shut",
         "arrows     turn the view        drag          turn the view",
         "+ -, wheel zoom                 r             reset the view",
         "m  c       style, color         space         pause",
@@ -586,7 +646,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "Ask for a word game; type a letter to guess in talk mode.",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "Click the music box to wind a tune; teach it do re mi.",
-        "In the album: left/right, Home/End · Esc or b closes it.",
+        "Album: ←/→, Home/End; letters: ←/→ · Esc, b/e close.",
     ];
     let room = rows.saturating_sub(3);
     let mut lines = keys.to_vec();
@@ -735,6 +795,11 @@ impl JournalPanel {
         }
         for entry in diary {
             append(&format!("  {}  ", entry.day), &entry.text, TEXT);
+        }
+        append("", "", TEXT);
+        append("", "Letters", ACCENT);
+        for letter in &app.world.life.letters {
+            append(&format!("  {}  ", letter.day), &letter.lines[0], TEXT);
         }
         append("", "", TEXT);
         append("", "Said lately", ACCENT);

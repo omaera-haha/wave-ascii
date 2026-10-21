@@ -14,6 +14,7 @@ pub mod garden;
 pub mod growth;
 mod letters;
 mod life;
+pub mod mail;
 pub mod meteor;
 pub mod mirror;
 pub mod music;
@@ -279,6 +280,8 @@ pub enum EventKind {
     MetReflection,
     RecognizedSelf,
     VisitedMirror,
+    WroteLetter,
+    ReadLetter,
 }
 
 impl EventKind {
@@ -288,6 +291,8 @@ impl EventKind {
             Self::MetReflection => "met the ghost in the mirror".to_owned(),
             Self::RecognizedSelf => "learned the ghost in the mirror is me".to_owned(),
             Self::VisitedMirror => "looked in the mirror".to_owned(),
+            Self::WroteLetter => "wrote you a letter while you were away".to_owned(),
+            Self::ReadLetter => "you read my letter".to_owned(),
             Self::Quirk(kind) => kind.words().to_owned(),
             Self::PutOn(accessory) => format!("put on {}", accessory.words()),
             Self::TookOff(accessory) => format!("took off {}", accessory.words()),
