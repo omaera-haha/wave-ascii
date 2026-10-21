@@ -3,7 +3,7 @@ use std::f32::consts::TAU;
 use glam::{Vec2, Vec3};
 
 use super::mood::random;
-use crate::world::{Activity, EventKind, Mood, World};
+use crate::world::{Activity, EventKind, Mood, Thing, World};
 
 /// Seconds a symbol takes to rise and drift away.
 const LIFETIME: f64 = 2.2;
@@ -118,6 +118,17 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 
     if ghost.asleep <= 0.5 {
         for event in &world.events {
+            if event.kind == EventKind::BirdSang {
+                let watching = world.sight().in_view.iter().any(|seen| {
+                    seen.thing == Thing::Bird
+                        && seen.hidden_behind.is_none()
+                        && seen.off_center < 0.3
+                });
+                if watching {
+                    add(event.time, Emote::Note);
+                }
+                continue;
+            }
             if let Some(emote) = reaction(&event.kind, world.life.bond) {
                 add(event.time, emote);
             }

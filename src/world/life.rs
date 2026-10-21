@@ -75,6 +75,9 @@ pub struct Tally {
     pub together: f64,
     /// Times it set out on each activity, by the activity's name.
     pub activities: BTreeMap<String, u32>,
+    /// Visits it saw at the window and the lamp.
+    pub birds: u32,
+    pub moths: u32,
 }
 
 impl Tally {
@@ -111,6 +114,8 @@ impl Tally {
             EventKind::StormStarted => self.storms += 1,
             EventKind::SnowStarted => self.snowfalls += 1,
             EventKind::Noticed(thing) if thing.starts_with("the rainbow") => self.rainbows += 1,
+            EventKind::Noticed(thing) if thing == "a bird at the window" => self.birds += 1,
+            EventKind::Noticed(thing) if thing == "a moth at the lamp" => self.moths += 1,
             EventKind::Heard(_) => self.heard += 1,
             EventKind::Poked { .. } => self.pokes += 1,
             _ => {}
@@ -174,6 +179,12 @@ impl Tally {
         }
         if self.snowfalls > 0 {
             deeds.push("watched the snow fall".to_owned());
+        }
+        if self.birds > 0 {
+            deeds.push("watched a bird at the window".to_owned());
+        }
+        if self.moths > 0 {
+            deeds.push("saw a moth at the lamp".to_owned());
         }
         if self.storms > 0 {
             deeds.push("sat out a thunderstorm".to_owned());
@@ -419,6 +430,12 @@ impl Life {
             }
             EventKind::StormStarted if total.storms == 1 => {
                 "Sat out my first thunderstorm.".to_owned()
+            }
+            EventKind::Noticed(thing) if thing == "a bird at the window" && total.birds == 1 => {
+                "Saw my first bird.".to_owned()
+            }
+            EventKind::Noticed(thing) if thing == "a moth at the lamp" && total.moths == 1 => {
+                "A moth came to visit my lamp.".to_owned()
             }
             EventKind::SnowStarted if total.snowfalls == 1 => {
                 "Saw snow fall for the first time.".to_owned()
@@ -859,6 +876,32 @@ mod tests {
         assert_eq!(listed(&items(1)), "a");
         assert_eq!(listed(&items(2)), "a and b");
         assert_eq!(listed(&items(3)), "a, b, and c");
+    }
+
+    #[test]
+    fn visitor_sightings_are_remembered_with_firsts_and_diary_words_and_load_from_old_saves() {
+        let mut life: Life = serde_json::from_str(r#"{"total":{"motes":2},"today":{}}"#).unwrap();
+        assert_eq!((life.total.birds, life.total.moths), (0, 0));
+        for (kind, first) in [
+            (
+                EventKind::Noticed("a bird at the window".to_owned()),
+                "Saw my first bird.",
+            ),
+            (
+                EventKind::Noticed("a moth at the lamp".to_owned()),
+                "A moth came to visit my lamp.",
+            ),
+        ] {
+            assert_eq!(life.note(&kind).as_deref(), Some(first));
+            assert_eq!(life.note(&kind), None);
+        }
+        assert_eq!((life.total.birds, life.total.moths), (2, 2));
+        assert_eq!((life.today.birds, life.today.moths), (2, 2));
+        let words = life.today.words().to_lowercase();
+        assert!(words.contains("watched a bird at the window"));
+        assert!(words.contains("saw a moth at the lamp"));
+        let restored: Life = serde_json::from_str(&serde_json::to_string(&life).unwrap()).unwrap();
+        assert_eq!(restored, life);
     }
 
     #[test]

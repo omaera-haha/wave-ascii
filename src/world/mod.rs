@@ -7,6 +7,7 @@ pub mod occasion;
 mod random;
 mod sight;
 mod things;
+pub mod visitor;
 mod weather;
 
 use glam::{Vec2, Vec3};
@@ -20,6 +21,7 @@ pub use occasion::{Decoration, Occasion};
 pub use random::Random;
 pub use sight::{Seen, Thing};
 pub use things::{Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, WINDOW_CENTER, flat};
+pub use visitor::{BirdPicture, Perch, Visitors};
 use weather::Change;
 pub use weather::{Sky, Weather};
 
@@ -97,6 +99,13 @@ pub enum EventKind {
     Jumped,
     Doodled(&'static str),
     Celebrated(Occasion),
+    BirdLanded,
+    BirdSang,
+    BirdFlewOff {
+        startled: bool,
+    },
+    MothArrived,
+    MothLeft,
 }
 
 impl EventKind {
@@ -148,6 +157,12 @@ impl EventKind {
             Self::Doodled(name) => format!("drew a {name} on the glass"),
             Self::Celebrated(Occasion::NewYear) => "a new year began".to_owned(),
             Self::Celebrated(occasion) => format!("it is {}", occasion.words()),
+            Self::BirdLanded => "a little bird landed outside the window".to_owned(),
+            Self::BirdSang => "the bird outside sang".to_owned(),
+            Self::BirdFlewOff { startled: false } => "the bird flew away".to_owned(),
+            Self::BirdFlewOff { startled: true } => "the bird took fright and flew away".to_owned(),
+            Self::MothArrived => "a moth fluttered in to the lamp".to_owned(),
+            Self::MothLeft => "the moth fluttered away".to_owned(),
         }
     }
 }
@@ -226,6 +241,7 @@ pub struct World {
     pub events: Vec<Event>,
     pub viewer: Viewer,
     pub weather: Weather,
+    pub visitors: Visitors,
     /// Its life over days: its bond with the viewer, habits, and diary.
     pub life: Life,
     last_celebrated: Option<(jiff::civil::Date, Occasion)>,
@@ -244,6 +260,7 @@ impl World {
         let start = Vec3::new(0.2, 1.1, 0.0);
         let mut random = Random::new(seed);
         let weather = Weather::new(&mut random);
+        let visitors = Visitors::new(&mut random);
         Self {
             time: 0.0,
             hour,
@@ -287,6 +304,7 @@ impl World {
             events: Vec::new(),
             viewer: Viewer::default(),
             weather,
+            visitors,
             life: Life::default(),
             last_celebrated: None,
             calendar_at: None,
@@ -361,6 +379,7 @@ impl World {
             self.record(EventKind::Thunder);
             self.hear_thunder();
         }
+        self.advance_visitors();
 
         let obstacles = self.obstacles();
         self.ball.roll(seconds, &obstacles);
@@ -907,6 +926,14 @@ impl World {
                 let phase = time as f32;
                 self.ghost.plan.arrived.get_or_insert(time);
                 look = Some(anchor + Vec3::new((phase * 0.3).sin(), 0.0, 1.0));
+                if self
+                    .sight()
+                    .in_view
+                    .iter()
+                    .any(|seen| seen.thing == Thing::Moth && seen.hidden_behind.is_none())
+                {
+                    look = self.position_of(Thing::Moth);
+                }
                 if self.ghost.plan.elapsed(time) > self.ghost.plan.length {
                     self.ghost.plan.done = true;
                 }
@@ -997,7 +1024,7 @@ impl World {
                 }
             }
             Activity::Window => {
-                look = Some(WINDOW_CENTER);
+                look = self.position_of(Thing::Bird).or(Some(WINDOW_CENTER));
                 if self.ghost.plan.stayed(time) > self.ghost.plan.length {
                     self.ghost.plan.done = true;
                 }

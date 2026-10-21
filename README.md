@@ -10,6 +10,9 @@ mood, and a gaze: it sees what lies within sixty degrees of where it faces,
 and furniture hides what's behind it. You see it as an abstract shape made of
 dots, and its glow shows how it is.
 
+On lit nights, a little moth sometimes flutters in and circles the lamp. The
+ghost watches it pass; if it drifts too close, the moth darts gently away.
+
 It floats about, chases and eats the light motes it has spotted, plays with
 the ball and brings it back after a throw, waters the plant, switches the
 lamp, gazes out of the window, naps when tired, and comes to the glass to look
@@ -136,6 +139,11 @@ hemisphere seasons: spring blossom, summer green, autumn gold and drifting
 leaves, and bare winter branches. The sun crosses the sky, clouds drift,
 stars twinkle, and the moon waxes and wanes with the calendar. A few fireflies
 blink over the hills on summer nights.
+
+By day, a little bird sometimes lands on a branch or the outer sill, hops,
+pecks, and sings. Winter brings a robin, even in snow; rain sends it away.
+The ghost likes to watch quietly. Coming too close or rushing at the window
+startles the bird, and the ghost wishes it hadn't scared its visitor.
 
 Showers come more often in spring and less often in summer; rain that ends by
 day leaves a rainbow for a couple of minutes. Some showers become

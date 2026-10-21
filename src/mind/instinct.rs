@@ -52,6 +52,16 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + 0.6 * outside.rain(world.time)
                     + 0.6 * outside.snow(world.time)
                     + 2.5 * outside.rainbow(world.time)
+                    + if world
+                        .visitors
+                        .bird
+                        .as_ref()
+                        .is_some_and(|bird| bird.noticed && bird.perched(world.time))
+                    {
+                        1.2
+                    } else {
+                        0.0
+                    }
                     + if world.fireworks() { 1.5 } else { 0.0 };
                 weight * if shelter { 0.2 } else { 1.0 }
             }
@@ -321,6 +331,27 @@ mod tests {
         let bored = weigh(&world, &options);
         assert!(ratio(&bored, Activity::Hide) > ratio(&together, Activity::Hide));
         assert!(ratio(&bored, Activity::Doodle) > ratio(&together, Activity::Doodle));
+    }
+
+    #[test]
+    fn a_perched_bird_draws_the_ghost_to_the_window_only_after_it_has_been_noticed() {
+        use crate::world::{Random, visitor::Bird};
+
+        let mut world = World::new(1, 12.0);
+        let options = [Activity::Float, Activity::Window];
+        let ordinary = weigh(&world, &options);
+        let mut bird = Bird::new(0.0, &mut Random::new(1));
+        world.time = 5.0;
+        world.visitors.bird = Some(bird);
+        assert_eq!(weigh(&world, &options), ordinary);
+        bird.noticed = true;
+        world.visitors.bird = Some(bird);
+        assert!(
+            chance(&weigh(&world, &options), Activity::Window)
+                > chance(&ordinary, Activity::Window)
+        );
+        world.time = 0.0;
+        assert_eq!(weigh(&world, &options), ordinary);
     }
 
     #[test]
