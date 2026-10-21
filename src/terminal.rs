@@ -198,7 +198,7 @@ impl Terminal {
         Ok(())
     }
 
-    /// Changes the window title only when the ghost's name or activity changes.
+    /// Writes the window title only when its text changes, including focus minutes.
     pub fn set_title(&mut self, title: &str) -> io::Result<()> {
         if self.title.as_deref() != Some(title) {
             execute!(io::stdout(), SetTitle(title))?;

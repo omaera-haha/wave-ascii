@@ -64,6 +64,7 @@ Keys:
   m, c         style, color mode      ?        help
   r            reset the view         space    pause
   p            save a postcard        q, Esc   quit
+  o            focus together for twenty-five minutes; o again ends it
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, and anywhere else in the room to drop in a light mote. Drag to turn

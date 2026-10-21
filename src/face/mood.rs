@@ -35,13 +35,19 @@ pub struct Cues {
     /// Recent events to react to: when each happened and the expression it
     /// answers with.
     pub reactions: Vec<(f64, Expression)>,
+    pub focusing: bool,
 }
 
 /// The face at `time`. Each mood holds a base face and makes its own kind of
 /// expressions at irregular moments; the gaze, sleep, and blinks are laid
 /// over them, and reactions to events take over the face last.
 pub fn face(time: f64, cues: &Cues) -> Face {
-    let repertoire = Repertoire::of(cues.mood);
+    let quiet = cues.focusing && cues.mood == Mood::Content;
+    let repertoire = if quiet {
+        &QUIET
+    } else {
+        Repertoire::of(cues.mood)
+    };
     let mut face = repertoire.base.layer(repertoire.at(time));
 
     if let Some((gaze, firmness)) = cues.gaze {
@@ -54,8 +60,10 @@ pub fn face(time: f64, cues: &Cues) -> Face {
         smoothstep(0.1, 0.5, cues.petting) * (1.0 - cues.asleep),
     );
     // A blink doesn't suit eyes that have become other shapes.
-    let blink =
-        BLINKS.at(time).shut[0] * (1.0 - cues.asleep) * (1.0 - face.prompt) * (1.0 - face.smile);
+    let blink = BLINKS.at(if quiet { time / 2.0 } else { time }).shut[0]
+        * (1.0 - cues.asleep)
+        * (1.0 - face.prompt)
+        * (1.0 - face.smile);
     face.shut = face.shut.map(|shut| shut.max(blink));
 
     for (start, expression) in &cues.reactions {
@@ -73,6 +81,12 @@ pub fn face(time: f64, cues: &Cues) -> Face {
 /// The expression the face answers an event with, if any.
 pub fn reaction(event: &EventKind) -> Option<Expression> {
     Some(match event {
+        EventKind::FocusEnded {
+            completed: true, ..
+        } => Expression::Sparkle,
+        EventKind::FocusEnded {
+            completed: false, ..
+        } => glance(0.0, -0.35),
         EventKind::FriendArrived(_) => Expression::Sparkle,
         EventKind::FriendLeft(_) => Expression::Worry,
         EventKind::Tagged { .. } => Expression::Surprise,
@@ -167,6 +181,17 @@ const BLINKS: Repertoire = Repertoire {
     slot: 3.2,
     rest: 0.15,
     seed: 1,
+};
+
+const QUIET: Repertoire = Repertoire {
+    base: Face {
+        lid: [0.08; 2],
+        ..Face::REST
+    },
+    expressions: &[(Expression::Smile, 1.0)],
+    slot: 16.0,
+    rest: 0.8,
+    seed: 10,
 };
 
 const CONTENT: Repertoire = Repertoire {

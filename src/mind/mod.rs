@@ -108,6 +108,8 @@ pub struct Mind {
     /// The id of the latest message's request routing; answers to earlier
     /// messages that arrive later are dropped.
     latest_request: u64,
+    musing_focus: bool,
+    reflecting_for_viewer: bool,
 }
 
 impl Mind {
@@ -136,6 +138,8 @@ impl Mind {
             dreaming: false,
             heard: VecDeque::new(),
             latest_request: 0,
+            musing_focus: false,
+            reflecting_for_viewer: false,
         };
         mind.reconfigure(config);
         mind
@@ -250,7 +254,7 @@ impl Mind {
                 None => world.time > FIRST_REFLECTION,
                 Some(last) => world.time - last > interval,
             };
-            if due || !self.heard.is_empty() {
+            if (due && world.focus.is_none()) || !self.heard.is_empty() {
                 let heard = self.heard.pop_front();
                 let request = reflection::request(
                     &observation::observe(world),
@@ -262,6 +266,7 @@ impl Mind {
                     self.cache,
                 );
                 self.reflecting = true;
+                self.reflecting_for_viewer = heard.is_some();
                 self.last_reflection = Some(world.time);
                 self.two = Status::Busy;
                 let claude = claude.clone();
@@ -317,7 +322,9 @@ impl Mind {
             && heard.tone != Some(Tone::Scolding)
             && !matches!(
                 heard.understanding,
-                Understanding::Asked { .. } | Understanding::Named { .. }
+                Understanding::Asked { .. }
+                    | Understanding::Named { .. }
+                    | Understanding::Focusing { .. }
             )
         {
             let jev = jev.clone();
@@ -343,7 +350,18 @@ impl Mind {
         let since = self.mused_at;
         self.mused_at = world.time;
         let asleep = world.ghost.asleep > 0.9;
+        let focusing = world.focus.is_some();
+        if self.musing_focus != focusing && !asleep {
+            let remaining = (self.next_musing - world.time).max(0.0);
+            self.next_musing = world.time + remaining * if focusing { 3.0 } else { 1.0 / 3.0 };
+        }
+        self.musing_focus = focusing;
         let (low, high) = if asleep { DREAMS_EVERY } else { MUSES_EVERY };
+        let (low, high) = if world.focus.is_some() && !asleep {
+            (low * 3.0, high * 3.0)
+        } else {
+            (low, high)
+        };
         if asleep != self.dreaming {
             self.dreaming = asleep;
             self.next_musing = world.time + f64::from(low);
@@ -439,7 +457,11 @@ impl Mind {
                 match result {
                     Ok(reflection) => {
                         self.two = Status::Ready;
-                        if let Some(reflection) = reflection {
+                        if let Some(mut reflection) = reflection {
+                            if world.focus.is_some() && !self.reflecting_for_viewer {
+                                reflection.say.clear();
+                                reflection.write.clear();
+                            }
                             self.take_in(reflection, world);
                         }
                     }
@@ -538,6 +560,60 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn focus_requests_bypass_jev_and_reply_offline_in_the_viewers_language() {
+        let config = Config {
+            typesafe_api_key: Some("test-key".to_owned()),
+            jev_base_url: Some("http://127.0.0.1:9".to_owned()),
+            ..Config::default()
+        };
+        for (text, reply) in [
+            ("focus 40", "Let's do it. I'll be right here."),
+            ("40분 집중", "좋아, 옆에 있을게."),
+        ] {
+            let mut mind = Mind::new(&config, Journal::default(), false);
+            let mut world = World::new(3, 12.0);
+            mind.hear(&mut world, text);
+            assert_eq!(mind.latest_request, 0);
+            assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
+            assert_eq!(world.focus.as_ref().unwrap().length, 2400);
+        }
+    }
+
+    #[test]
+    fn focus_slows_idle_musings_and_quietly_holds_timer_reflections() {
+        let mut mind = offline();
+        let mut world = World::new(1, 12.0);
+        world.start_focus(25);
+        mind.next_musing = 100.0;
+        mind.muse(&mut world);
+        assert_eq!(mind.next_musing, 300.0);
+        world.time = 301.0;
+        mind.muse(&mut world);
+        assert!(mind.next_musing >= world.time + f64::from(MUSES_EVERY.0 * 3.0));
+        let config = Config {
+            anthropic_api_key: Some("test-key".to_owned()),
+            claude_base_url: Some("http://127.0.0.1:9".to_owned()),
+            ..Config::default()
+        };
+        let mut mind = Mind::new(&config, Journal::default(), false);
+        mind.think(&mut world);
+        assert!(!mind.reflecting);
+        assert!(mind.last_reflection.is_none());
+        mind.apply(
+            Answer::Reflected(Ok(Some(Reflection {
+                say: "Hello!".to_owned(),
+                ..Reflection::default()
+            }))),
+            &mut world,
+        );
+        assert!(world.ghost.speech.is_none());
+        mind.hear(&mut world, "hi");
+        mind.think(&mut world);
+        assert!(mind.reflecting);
+        assert!(mind.reflecting_for_viewer);
+    }
 
     const DECISION: &str = r#"{"model": "jev-1.13.0", "answers": {
         "activity": {"type": "choice", "choice": "play", "confidence": 0.8,

@@ -413,6 +413,12 @@ fn motes(world: &World) -> String {
 }
 
 fn viewer(world: &World) -> String {
+    if let Some(focus) = &world.focus {
+        return format!(
+            "the viewer is focusing on their work; the ghost keeps them company quietly; {}",
+            focus.words_left(world.time)
+        );
+    }
     if world.petting() >= 0.35 {
         return "stroking you gently through the glass".to_owned();
     }
@@ -440,6 +446,29 @@ fn viewer(world: &World) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::EventKind;
+    use glam::Vec3;
+
+    #[test]
+    fn focus_observations_describe_quiet_work_and_remaining_time_without_digits() {
+        let mut world = World::new(1, 12.0);
+        world.hear("focus for 40 minutes");
+        world.time += 20.0 * 60.0;
+        let words = observe(&world).to_string();
+        assert!(words.contains("the viewer is focusing on their work"));
+        assert!(words.contains("company quietly"));
+        assert!(words.contains("about twenty minutes left"));
+        assert!(
+            !words.chars().any(|character| character.is_ascii_digit()),
+            "{words}"
+        );
+        world.end_focus();
+        let words = observe(&world).to_string();
+        assert!(
+            !words.chars().any(|character| character.is_ascii_digit()),
+            "{words}"
+        );
+    }
 
     #[test]
     fn the_observation_remembers_that_the_viewer_speaks_korean() {
@@ -451,8 +480,6 @@ mod tests {
             "the viewer speaks Korean"
         );
     }
-    use crate::world::EventKind;
-    use glam::Vec3;
 
     #[test]
     fn stage_and_relevant_practice_reach_both_minds_in_words() {

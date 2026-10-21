@@ -14,6 +14,10 @@ pub(super) struct Routine {
 }
 
 impl World {
+    pub(super) fn quiet_routine(&mut self) {
+        self.routine.waiting = None;
+    }
+
     pub(super) fn wait_is_open(&self) -> bool {
         !self.viewer_present()
             && self.ghost.asleep < 0.3
@@ -57,6 +61,9 @@ impl World {
     }
 
     pub(super) fn viewer_arrived(&mut self) {
+        if self.focus.is_some() {
+            return;
+        }
         let expected = self.life.expectation(self.hour) >= 0.5;
         let waiting = self.ghost.plan.activity == Activity::Wait && !self.ghost.plan.done;
         self.record(EventKind::ViewerArrived);
@@ -366,6 +373,22 @@ mod tests {
         assert!(!world.options().contains(&Activity::Wait));
         world.step(300.0);
         assert_eq!(world.life.total.expected, 0);
+        assert_eq!(world.life.total.missed, 0);
+    }
+
+    #[test]
+    fn focus_cancels_a_routine_wait_without_turning_work_into_a_missed_visit() {
+        let mut world = expecting(20.0, 20.0);
+        world.begin(Activity::Wait);
+        world.start_focus(25);
+        assert!(!world.wait_is_open());
+        world.hour = 21.0;
+        world.step(0.1);
+        assert_eq!(world.life.total.missed, 0);
+        assert_eq!(world.life.total.expected, 0);
+        assert_eq!(world.ghost.plan.activity, Activity::Company);
+        world.end_focus();
+        world.step(0.1);
         assert_eq!(world.life.total.missed, 0);
     }
 }

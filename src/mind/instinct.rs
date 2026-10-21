@@ -30,6 +30,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         }
                 }
             }
+            Activity::Company => {
+                if world.focus.is_some() {
+                    10.0 * needs.energy
+                } else {
+                    0.0
+                }
+            }
             Activity::Float => 0.45,
             Activity::Look => {
                 if world.options().contains(&Activity::Look) {
@@ -279,7 +286,32 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
         })
         .zip(options)
         .map(|(weight, activity)| {
+            let quiet = if world.focus.is_some() {
+                if crate::world::focus::seeks_attention(*activity) {
+                    0.0
+                } else if matches!(
+                    activity,
+                    Activity::Play | Activity::Build | Activity::Friend | Activity::Doodle
+                ) {
+                    0.15
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+            let playful = if world.taking_break()
+                && matches!(
+                    activity,
+                    Activity::Play | Activity::Dance | Activity::Game | Activity::Fetch
+                ) {
+                4.0
+            } else {
+                1.0
+            };
             weight
+                * quiet
+                * playful
                 * world.life.habit(*activity)
                 * world
                     .life
@@ -313,6 +345,47 @@ pub fn blend(model: &[(Activity, f32)], own: &[(Activity, f32)]) -> Vec<(Activit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focus_favors_company_and_a_finished_session_favors_play_for_five_minutes() {
+        let mut world = World::new(1, 12.0);
+        world.start_focus(25);
+        let options = world.options();
+        let focused = weigh(&world, &options);
+        assert!(chance(&focused, Activity::Company) > 0.7);
+        for activity in [
+            Activity::Float,
+            Activity::Tend,
+            Activity::Window,
+            Activity::Lamp,
+            Activity::Explore,
+        ] {
+            assert!(chance(&focused, activity) > 0.0);
+        }
+        world.time = 1500.0;
+        world.end_focus();
+        let options = [
+            Activity::Float,
+            Activity::Play,
+            Activity::Dance,
+            Activity::Game,
+            Activity::Fetch,
+        ];
+        let playful = weigh(&world, &options);
+        world.time += 300.0;
+        let usual = weigh(&world, &options);
+        for activity in [
+            Activity::Play,
+            Activity::Dance,
+            Activity::Game,
+            Activity::Fetch,
+        ] {
+            let ratio = |weights: &[(Activity, f32)]| {
+                chance(weights, activity) / chance(weights, Activity::Float)
+            };
+            assert!(ratio(&playful) >= ratio(&usual) * 3.9, "{activity:?}");
+        }
+    }
 
     #[test]
     fn clear_chuseok_evenings_pull_the_ghost_toward_the_window() {

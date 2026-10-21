@@ -87,6 +87,7 @@ the next requests use them at once.
 | `j`             | Journal: memories, moments, diary, conversation            |
 | `l`             | Its life: age, growth, skills, bond, today so far           |
 | `p`             | Save a postcard of the moment                             |
+| `o`             | Focus together for twenty-five minutes; `o` again ends it |
 | `g`             | Invite it to noughts and crosses on the glass              |
 | `f`             | Toggle finger drawing in the fog; `f` or Esc stops         |
 | Right drag      | Draw on the outside of the glass                          |
@@ -133,6 +134,20 @@ second gets `-2`, then `-3`. Use `cat` to view an `.ans` file in a truecolor
 terminal. In plain block mode, the ANSI copy uses colored blocks from the
 same rendered moment. A ghost without a saved life cannot save postcards;
 piped output never saves them.
+
+### Focus together
+
+Press `o` to work beside the ghost for twenty-five minutes, or tell it
+“let's focus”, “focus for 40 minutes”, or “40분 집중”. Requests default to
+twenty-five minutes and stay between five and one hundred twenty. It settles
+low beside the glass to keep you quiet company, with fewer thoughts and no
+unprompted model reflections or invitations to play. It still rests and
+cares for its needs; a sleeping ghost stays asleep. You count as nearby even
+while another window has focus. The status and window title show the time
+left. When time is up it gently wakes, cheers, and suggests a break, then
+favors play for five minutes. Press `o` again to end early without a fuss.
+Its life panel and diary remember completed sessions and whole minutes
+spent together, including early endings. Quitting silently ends the timer.
 
 ### Playing with it
 

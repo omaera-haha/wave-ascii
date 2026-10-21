@@ -104,7 +104,11 @@ impl Nature {
                 -signed(self.shy) * (1.0 - bond / 0.3).clamp(0.0, 1.0)
                     + signed(self.tender) * ((bond - 0.3) / 0.5).clamp(0.0, 1.0)
             }
-            Activity::Float | Activity::Chase | Activity::Lamp | Activity::Wait => 0.0,
+            Activity::Float
+            | Activity::Chase
+            | Activity::Lamp
+            | Activity::Wait
+            | Activity::Company => 0.0,
         };
         let strength = if inclination > 0.0 { 0.35 } else { 0.25 };
         (1.0 + strength * inclination).clamp(0.75, 1.35)

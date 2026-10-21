@@ -17,6 +17,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             "Two ghosts, one moon.",
         ],
         Activity::Float => Vec::new(),
+        Activity::Company => vec!["I'll stay right here."],
         Activity::Look => vec!["What did you draw?", "Let me have a look."],
         Activity::Explore => vec![
             "I wonder what's in that corner.",
@@ -154,6 +155,13 @@ pub fn named_friend_line(world: &World, line: &str) -> String {
 
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<&'static str> {
+    if world.focus.is_some() {
+        return vec![
+            "Shh… they're working.",
+            "I'll keep the light low.",
+            "I'm right here.",
+        ];
+    }
     let ghost = &world.ghost;
     let needs = ghost.needs;
     let present = world.viewer_present();
@@ -351,6 +359,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Game => "Another game on the glass?",
             Activity::Doodle => "I should draw on the glass again.",
             Activity::Look => "I like seeing what you draw.",
+            Activity::Company => "I like working quietly beside you.",
         });
     }
     if lines.is_empty() {
@@ -389,6 +398,9 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if today.focus_minutes > 0 || today.focus_sessions > 0 || world.focus.is_some() {
+        lines.push("…we work side by side, and the little room holds its breath…");
+    }
     for skill in Skill::ALL {
         if world.life.skills.practice(skill) > 0.0 && world.life.skills.level(skill) < 0.65 {
             lines.push(match skill {
@@ -546,7 +558,11 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
 /// understood or wonders about, so the viewer can see it learning.
 pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
     let mut lines = reply_in_words(world, heard, guessed);
-    if !matches!(heard.understanding, Understanding::Asked { .. }) && heard.learned_name.is_none() {
+    if !matches!(
+        heard.understanding,
+        Understanding::Asked { .. } | Understanding::Focusing { .. }
+    ) && heard.learned_name.is_none()
+    {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
     }
     lines
@@ -560,6 +576,9 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             .map(|&(english, hangul)| if korean { hangul } else { english }.to_owned())
             .collect()
     };
+    if matches!(heard.understanding, Understanding::Focusing { .. }) {
+        return lines(&[("Let's do it. I'll be right here.", "좋아, 옆에 있을게.")]);
+    }
     if let Some(name) = &heard.learned_name {
         return if korean {
             vec![format!("반가워, {name}!"), format!("{name}! 기억할게.")]
@@ -804,6 +823,10 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
             ),
         },
         Question::Doing => match doing {
+            Some(Activity::Company) => lines(
+                &["Keeping you company while you work."],
+                &["네가 일하는 동안 옆에 있어 주는 중이야."],
+            ),
             None => lines(
                 &["I was asleep!", "Sleeping… until now."],
                 &["자고 있었어!", "자는 중이었어… 방금까지."],
@@ -1056,6 +1079,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Build => "블록으로 탑 쌓는 중",
         Activity::Friend => "유령 친구와 노는 중",
         Activity::Look => "네가 그린 그림을 보는 중",
+        Activity::Company => "네가 일하는 동안 옆에 있어 주는 중",
     }
 }
 
@@ -1081,6 +1105,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Build => "블록 쌓기",
         Activity::Friend => "유령 친구와 놀기",
         Activity::Look => "네 그림 보기",
+        Activity::Company => "일하는 네 옆에 있기",
     }
 }
 
@@ -1159,6 +1184,33 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn company_answers_what_it_is_doing_in_both_languages_and_dreams_of_work() {
+        for (question, answer) in [
+            ("what are you doing?", "Keeping you company while you work."),
+            ("뭐 하고 있어?", "네가 일하는 동안 옆에 있어 주는 중이야."),
+        ] {
+            let mut world = World::new(1, 12.0);
+            world.start_focus(25);
+            assert!(idle(&world).iter().all(|line| !line.contains("Watch")));
+            assert_eq!(
+                setting_out(&world, Activity::Company),
+                vec!["I'll stay right here."]
+            );
+            let heard = world.hear(question);
+            assert_eq!(world.ghost.plan.activity, Activity::Company);
+            assert_eq!(reply(&world, &heard, None), vec![answer.to_owned()]);
+            world.time = 120.0;
+            world.end_focus();
+            assert!(
+                dreams(&world)
+                    .iter()
+                    .any(|line| line.contains("work side by side"))
+            );
+        }
+    }
+
     use crate::world::EventKind;
 
     #[test]

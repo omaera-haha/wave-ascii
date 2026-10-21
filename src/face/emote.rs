@@ -228,6 +228,9 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Doodled(_) | EventKind::Wrote { .. } => Emote::Note,
         EventKind::Praised => Emote::Heart,
         EventKind::ExpectedArrival => Emote::Heart,
+        EventKind::FocusEnded {
+            completed: true, ..
+        } => Emote::Heart,
         EventKind::MissedVisit => Emote::Longing,
         EventKind::FriendArrived(_) => Emote::Sparkle,
         EventKind::FriendLeft(_) => Emote::Longing,

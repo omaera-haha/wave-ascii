@@ -554,6 +554,7 @@ fn help_panel(screen: &mut Canvas) {
         "                               click blocks  nudge or topple",
         "                               click friend  make it giggle",
         "l          life and growth     p             save a postcard",
+        "o          focus together      o again       end focus early",
         "g          noughts and crosses 1-9, click    choose a square",
         "f          finger in the fog   right-drag    draw on glass",
         "           f or Esc stops      left-click    still interacts",
@@ -916,6 +917,16 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             })
             .collect()
     };
+    if life.total.focus_sessions > 0 || life.total.focus_minutes > 0 {
+        header.extend(labeled(
+            "Focus",
+            format!(
+                "{} sessions · {} together",
+                life.total.focus_sessions,
+                hours_and_minutes(f64::from(life.total.focus_minutes) * 60.0)
+            ),
+        ));
+    }
     let korean = app.world.speaks_korean();
     match (&life.viewer_name, korean) {
         (Some(name), true) => {

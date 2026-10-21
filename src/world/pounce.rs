@@ -34,7 +34,7 @@ impl World {
         self.viewer.pointer = pointer;
         // Darting the pointer right after speaking may be what the words
         // were about.
-        if !was_lively && self.viewer.pointer_is_lively() {
+        if self.focus.is_none() && !was_lively && self.viewer.pointer_is_lively() {
             self.shown(Activity::Pounce);
         }
 
@@ -56,7 +56,10 @@ impl World {
     }
 
     pub(super) fn pounce_is_open(&self) -> bool {
-        self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.25 && self.viewer.pointer_is_lively()
+        self.focus.is_none()
+            && self.ghost.asleep < 0.3
+            && self.ghost.needs.energy > 0.25
+            && self.viewer.pointer_is_lively()
     }
 
     // Trails the finger, with a little time to spring back after each catch.

@@ -2,6 +2,7 @@ mod activity;
 pub mod blocks;
 pub mod calendar;
 mod doodle;
+pub mod focus;
 pub mod fog;
 pub mod friend;
 pub mod game;
@@ -31,6 +32,7 @@ pub use activity::{Activity, Plan};
 pub use blocks::Block;
 pub use calendar::Season;
 pub use doodle::{Doodle, Picture, Sketch, Writing};
+pub use focus::Focus;
 pub use fog::{Drawing, LearnedPicture};
 pub use friend::{Companion, Friend};
 pub use game::{Game, Mark, Outcome};
@@ -214,6 +216,10 @@ pub enum EventKind {
     Sprouted(Flower),
     Flowered(Flower),
     Drooped,
+    FocusEnded {
+        minutes: u32,
+        completed: bool,
+    },
 }
 
 impl EventKind {
@@ -249,7 +255,13 @@ impl EventKind {
             Self::FellAsleep => "fell asleep".to_owned(),
             Self::WokeUp => "woke up".to_owned(),
             Self::Morning => "woke up to a new morning".to_owned(),
-            Self::Heard(text) => format!("the viewer said: {text}"),
+            Self::Heard(text) => match focus::requested(text) {
+                Some(minutes) => format!(
+                    "the viewer asked to focus together for {} minutes",
+                    friend::count_words(minutes)
+                ),
+                None => format!("the viewer said: {text}"),
+            },
             Self::Said(text) => format!("you said: {text}"),
             Self::ViewerArrived => "the viewer came to the glass".to_owned(),
             Self::ViewerLeft => "the viewer went away".to_owned(),
@@ -339,6 +351,16 @@ impl EventKind {
                 "you tagged your friend; they are it now".to_owned()
             }
             Self::PokedFriend => "the viewer poked your friend".to_owned(),
+            Self::FocusEnded { minutes, completed } => format!(
+                "{} after {} {} of focusing together",
+                if *completed {
+                    "finished a focus session"
+                } else {
+                    "ended a focus session early"
+                },
+                friend::count_words(*minutes),
+                if *minutes == 1 { "minute" } else { "minutes" },
+            ),
             Self::PlayedWithFriend(game) => {
                 format!("finished {} with your ghost friend", game.words())
             }
@@ -392,6 +414,9 @@ pub enum Understanding {
     },
     Named {
         picture: String,
+    },
+    Focusing {
+        minutes: u32,
     },
 }
 
@@ -539,6 +564,8 @@ pub struct World {
     pub seedlings: Vec<Seedling>,
     pub petals: Vec<Petal>,
     tending: Option<garden::Tending>,
+    pub focus: Option<Focus>,
+    break_until: f64,
 }
 
 impl World {
@@ -631,6 +658,8 @@ impl World {
             seedlings: Vec::new(),
             petals: Vec::new(),
             tending: None,
+            focus: None,
+            break_until: 0.0,
         };
         world.scatter_blocks();
         world
@@ -658,6 +687,7 @@ impl World {
 
     fn advance(&mut self, seconds: f32) {
         self.time += f64::from(seconds);
+        self.advance_focus();
         self.viewer.liveliness *= (-seconds / 0.7).exp();
         self.petting *= (-seconds / PETTING_FADES).exp();
         if self.petting < 0.05 {
@@ -769,12 +799,13 @@ impl World {
     /// Whether the viewer did anything recently and hasn't turned to
     /// another window for long.
     pub fn viewer_present(&self) -> bool {
-        self.viewer.active_at > 0.0
-            && self.time - self.viewer.active_at < PRESENT_FOR
-            && self
-                .viewer
-                .looked_away_at
-                .is_none_or(|at| self.time - at < LOOKED_AWAY_FOR)
+        self.focus.is_some()
+            || (self.viewer.active_at > 0.0
+                && self.time - self.viewer.active_at < PRESENT_FOR
+                && self
+                    .viewer
+                    .looked_away_at
+                    .is_none_or(|at| self.time - at < LOOKED_AWAY_FOR))
     }
 
     /// The meteor shower of a dark night, if it is one.
@@ -811,7 +842,14 @@ impl World {
     pub fn options(&self) -> Vec<Activity> {
         Activity::ALL
             .into_iter()
+            .filter(|activity| self.focus.is_none() || !focus::seeks_attention(*activity))
             .filter(|activity| match activity {
+                Activity::Company => {
+                    self.focus.is_some()
+                        && self.ghost.asleep < 0.3
+                        && self.ghost.needs.energy >= 0.22
+                        && self.ghost.needs.fun >= 0.08
+                }
                 Activity::Look => self.look_is_open(),
                 Activity::Chase => self.nearest_mote().is_some(),
                 Activity::Rest => self.ghost.needs.energy < 0.85 || self.bedtime(),
@@ -862,6 +900,7 @@ impl World {
     /// choosing among the options.
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
+            Activity::Company => "Settle quietly beside the front glass while the viewer works. Stay nearby until the focus session ends, resting or tending to needs when necessary.".to_owned(),
             Activity::Friend => "Play tag, twirl together, or gaze at the moon with your visiting ghost friend. Fits especially when lonely or playful.".to_owned(),
             Activity::Look => "Study the picture the viewer drew in the fog on the glass, and perhaps draw an answer beside it.".to_owned(),
             Activity::Float => {
@@ -978,6 +1017,11 @@ impl World {
         }
         let position = self.ghost.position;
         let length = match activity {
+            Activity::Company => {
+                self.focus
+                    .as_ref()
+                    .map_or(0.0, |focus| focus.remaining(self.time)) as f32
+            }
             Activity::Float => self.random.range(5.0, 11.0),
             Activity::Visit => self.random.range(8.0, 15.0),
             Activity::Wait => self.random.range(60.0, 120.0),
@@ -993,6 +1037,10 @@ impl World {
             _ => 0.0,
         };
         let target = match activity {
+            Activity::Company => {
+                let side = if self.random.unit() < 0.5 { -1.0 } else { 1.0 };
+                Vec3::new(side * 1.05, 0.7, ROOM_MAX.z - 0.5)
+            }
             Activity::Look => self.position_of(Thing::Drawing).map_or(position, |point| {
                 (point - Vec3::Z * 0.45).clamp(
                     ROOM_MIN + Vec3::new(0.35, 0.5, 0.35),
@@ -1269,6 +1317,24 @@ impl World {
             .is_none()
             .then(|| vocabulary::given_name(text))
             .flatten();
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(minutes) = focus::requested(text)
+        {
+            self.listening = Listening::default();
+            self.record(EventKind::Heard(text.to_owned()));
+            self.start_focus(minutes);
+            return Heard {
+                tone: None,
+                understanding: Understanding::Focusing { minutes },
+                named: false,
+                learned: Vec::new(),
+                stopped: false,
+                learned_name: None,
+                given_name: None,
+                korean,
+            };
+        }
         let question = naming.is_none().then(|| question::ask(text)).flatten();
         // A drawing just looked at may be what the words name.
         if introduction.is_none() && naming.is_none() && question.is_none() {
@@ -1419,7 +1485,7 @@ impl World {
                     && self.options().contains(&Activity::Rest);
                 if goodnight {
                     self.begin(Activity::Rest);
-                } else if self.ghost.plan.activity != Activity::Visit {
+                } else if self.focus.is_none() && self.ghost.plan.activity != Activity::Visit {
                     self.begin(Activity::Visit);
                 }
             }
@@ -1674,6 +1740,9 @@ impl World {
     // Once it knows the viewer, the ghost leaves whatever it was idly doing
     // to come to the glass when they arrive.
     fn greet(&mut self) {
+        if self.focus.is_some() {
+            return;
+        }
         let idle = matches!(
             self.ghost.plan.activity,
             Activity::Float | Activity::Explore | Activity::Window
@@ -1859,7 +1928,7 @@ impl World {
         // Waiting at the glass keeps its full length. Resting, hiding, and
         // games have their own waits after arrival, but give up on the way
         // there.
-        let waiting = self.ghost.plan.activity == Activity::Wait
+        let waiting = matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
             || (matches!(
                 self.ghost.plan.activity,
                 Activity::Rest | Activity::Hide | Activity::Game
@@ -1875,6 +1944,7 @@ impl World {
 
         let mut look = None;
         match self.ghost.plan.activity {
+            Activity::Company => look = self.keep_company(),
             Activity::Friend => {
                 self.play_with_friend();
                 look = self.friend.as_ref().map(|friend| friend.position);
@@ -2193,7 +2263,7 @@ impl World {
                 0.8 * growth::carrying_speed(self.life.skills.level(Skill::Fetching))
             }
             Activity::Float => 0.35,
-            Activity::Wait => 0.3,
+            Activity::Wait | Activity::Company => 0.3,
             Activity::Rest => 0.5,
             Activity::Explore => 0.7,
             Activity::Dance | Activity::Friend => 1.5,
@@ -2341,8 +2411,21 @@ impl World {
     // its state and the latest events say.
     fn feeling(&self) -> Mood {
         let ghost = &self.ghost;
+        if self.taking_break()
+            && ghost.asleep <= 0.5
+            && let Some((mood, until)) = ghost.suggested_mood
+            && self.time < until
+        {
+            return mood;
+        }
         if ghost.asleep > 0.5 || ghost.needs.energy < 0.2 {
             return Mood::Sleepy;
+        }
+        if self.focus.is_some() {
+            return ghost
+                .suggested_mood
+                .filter(|(_, until)| self.time < *until)
+                .map_or(Mood::Content, |(mood, _)| mood);
         }
         // Strokes soothe even a grumpy ghost.
         if self.petting >= PETTED {
