@@ -331,7 +331,7 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
 }
 
 /// Tips for a quiet words line, the basics first.
-const TIPS: [&str; 14] = [
+const TIPS: [&str; 15] = [
     "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around",
     "drag across the ghost to stroke it · right drag draws in the fog on the glass",
     "e reads its letters, and w there writes it one back",
@@ -346,6 +346,7 @@ const TIPS: [&str; 14] = [
     "ask “fold a crane” or “종이학 접어줘” · little paper wishes grow above the plant",
     "ask for “bubbles!” or “비눗방울 불어줘”, then click the bubbles to pop them",
     "draw in the fog and it may keep a copy on its wall · ask “what's on your wall?”",
+    "ask “show me something” or “보물 보여줘” to hear about one of its treasures",
 ];
 /// Seconds the basics show first, and each later tip after them.
 const BASICS_SHOW: f64 = 90.0;

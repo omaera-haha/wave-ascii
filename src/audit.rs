@@ -445,6 +445,12 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
         world.life.milestones.len(),
         world.life.yesterday.len()
     );
+    println!(
+        "-- show and tell: {} finished ({:.2}/day), {:?}",
+        world.life.total.things_shown,
+        f64::from(world.life.total.things_shown) / days,
+        world.life.total.shown_kinds
+    );
     println!("-- diary");
     for entry in &world.life.diary {
         println!("  {}: {}", entry.day, entry.in_language(korean));

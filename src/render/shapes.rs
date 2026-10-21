@@ -172,7 +172,7 @@ pub enum Furniture<'a> {
     Nook(Nook),
     Block(Block),
     Decoration(Decoration, f64),
-    Shelf(&'a [Keepsake], Option<Keepsake>),
+    Shelf(&'a [Keepsake], Option<Keepsake>, Option<usize>),
     Keepsake(Keepsake, Vec3),
     Seedling(&'a Seedling, Vec3, Season),
     Petal(Petal, f64),
@@ -205,6 +205,7 @@ pub enum Furniture<'a> {
     BubbleWand(Vec3),
     Gallery(&'a [crate::world::gallery::Pin]),
     GalleryCard(Vec3),
+    SongSheet(Vec3, Quat),
 }
 
 impl Furniture<'_> {
@@ -259,6 +260,7 @@ impl Furniture<'_> {
             Self::BubbleWand(position) => (*position - Vec3::Y * 0.07, 0.19),
             Self::Gallery(_) => (crate::world::gallery::CENTER, 0.54),
             Self::GalleryCard(position) => (*position, 0.21),
+            Self::SongSheet(position, _) => (*position, 0.21),
         }
     }
 
@@ -449,8 +451,8 @@ impl Furniture<'_> {
                     Material::Petal,
                 )
             }
-            Self::Shelf(keepsakes, worn) => {
-                shelf_distance(point - SHELF_POSITION, keepsakes, *worn)
+            Self::Shelf(keepsakes, worn, borrowed) => {
+                shelf_distance(point - SHELF_POSITION, keepsakes, *worn, *borrowed)
             }
             Self::Keepsake(gift, position) => keepsake_distance(point - *position, *gift),
             Self::Nook(nook) => (
@@ -483,6 +485,28 @@ impl Furniture<'_> {
             }
             Self::Gallery(pins) => gallery_distance(point, pins),
             Self::GalleryCard(position) => gallery_card(point - *position, None, 0),
+            Self::SongSheet(position, rotation) => {
+                let local = rotation.conjugate() * (point - *position);
+                let distance = box_distance(local, Vec3::new(0.15, 0.10, 0.008));
+                let note = capsule(
+                    local,
+                    Vec3::new(0.025, -0.04, 0.0),
+                    Vec3::new(0.025, 0.06, 0.0),
+                    0.006,
+                )
+                .min((local - Vec3::new(0.005, -0.04, 0.0)).length() - 0.022);
+                let fold = (local.x + local.y - 0.17).abs();
+                (
+                    distance,
+                    if note < 0.012 {
+                        Material::Wood
+                    } else if fold < 0.006 {
+                        Material::EnvelopeFlap
+                    } else {
+                        Material::Envelope
+                    },
+                )
+            }
         }
     }
 
@@ -551,6 +575,10 @@ struct CraneThread {
 
 impl Garland {
     pub fn of(world: &crate::world::World) -> Self {
+        let borrowed = world.shown_token().and_then(|(token, _)| match token {
+            crate::world::show::Token::Crane(_, index) => Some(index),
+            _ => None,
+        });
         let mut threads = Vec::new();
         for (index, colors) in world.life.cranes.colors.chunks(10).take(8).enumerate() {
             let last = crate::world::cranes::slot(index * 10 + colors.len() - 1);
@@ -565,6 +593,7 @@ impl Garland {
             let cranes: Vec<_> = colors
                 .iter()
                 .enumerate()
+                .filter(|(level, _)| Some(index * 10 + level) != borrowed)
                 .map(|(level, color)| {
                     let position = crate::world::cranes::slot(index * 10 + level);
                     let sway = sway * ((top.y - position.y) / (top.y - last.y));
@@ -908,6 +937,7 @@ fn shelf_distance(
     point: Vec3,
     keepsakes: &[Keepsake],
     mut worn: Option<Keepsake>,
+    borrowed: Option<usize>,
 ) -> (f32, Material) {
     let outside = point.abs() - Vec3::new(0.5, 0.025, 0.12);
     let plank = outside.max(Vec3::ZERO).length() + outside.max_element().min(0.0) - 0.005;
@@ -928,6 +958,9 @@ fn shelf_distance(
     for (index, gift) in keepsakes.iter().take(8).enumerate() {
         if Some(*gift) == worn {
             worn = None;
+            continue;
+        }
+        if Some(index) == borrowed {
             continue;
         }
         let local = point - Vec3::new(-0.42 + index as f32 * 0.12, 0.03, 0.01);
@@ -1867,6 +1900,34 @@ mod tests {
                     .trace(center + Vec3::X * 2.0, -Vec3::X, 4.0)
                     .is_some()
             );
+        }
+    }
+
+    #[test]
+    fn a_song_sheet_has_finite_distances_normals_and_bounded_ray_hits() {
+        for angle in [0.0, 0.7, 2.4] {
+            let sheet =
+                Furniture::SongSheet(Vec3::new(0.2, 0.8, 0.4), Quat::from_rotation_y(angle));
+            let (center, radius) = sheet.bounds();
+            for across in -6..=6 {
+                for up in -6..=6 {
+                    for depth in -6..=6 {
+                        let point =
+                            center + Vec3::new(across as f32, up as f32, depth as f32) * 0.04;
+                        let distance = sheet.distance(point).0;
+                        assert!(distance.is_finite());
+                        assert!(sheet.normal(point).is_finite());
+                        if distance <= 0.0 {
+                            assert!(point.distance(center) <= radius);
+                        }
+                    }
+                }
+            }
+            let origin = center + Vec3::Z * 2.0;
+            if let Some((distance, _)) = sheet.trace(origin, -Vec3::Z, 4.0) {
+                assert!(distance.is_finite());
+                assert!((0.0..4.0).contains(&distance));
+            }
         }
     }
 }

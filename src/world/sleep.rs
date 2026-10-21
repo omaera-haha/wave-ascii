@@ -38,6 +38,7 @@ impl World {
             return;
         }
         self.cancel_hunt();
+        self.stop_show();
         self.abandon_comfort();
         self.undress_for_bed();
         self.telling = None;

@@ -391,6 +391,10 @@ pub struct Tally {
     #[serde(default)]
     /// Paired names and remembered deeds supplied by their typed events.
     pub korean_details: BTreeMap<String, String>,
+    #[serde(default)]
+    pub things_shown: u32,
+    #[serde(default)]
+    pub shown_kinds: Vec<super::show::Kind>,
 }
 
 impl Tally {
@@ -738,6 +742,12 @@ impl Tally {
                     super::gallery::Kind::Constellation => &mut self.constellation_pins,
                 };
                 *count = count.saturating_add(1).min(100_000_000);
+            }
+            EventKind::ShowedThing(kind) => {
+                self.things_shown = self.things_shown.saturating_add(1).min(100_000_000);
+                if !self.shown_kinds.contains(kind) && self.shown_kinds.len() < 15 {
+                    self.shown_kinds.push(*kind);
+                }
             }
             _ => {}
         }
@@ -1838,6 +1848,17 @@ impl Tally {
                 "내가 찾은 별자리를 벽에 붙였어".to_owned(),
             ));
         }
+        deeds.extend(self.shown_kinds.iter().map(|kind| {
+            (
+                Salience::Small,
+                format!("showed you my {}", kind.name()),
+                format!(
+                    "너에게 내 {}{} 보여 줬어",
+                    kind.korean(),
+                    super::writing::particle(kind.korean(), "을", "를")
+                ),
+            )
+        }));
         deeds
     }
 
@@ -2057,6 +2078,8 @@ pub struct Life {
     /// The Sunday its latest letter about the week was written.
     #[serde(default)]
     pub weekly_letter: Option<String>,
+    #[serde(default)]
+    pub showing: super::show::ShowingLife,
 }
 
 impl Life {
@@ -2311,6 +2334,7 @@ impl Life {
                 kind: super::gallery::Kind::ViewerDrawing,
                 ..
             } => 0.005,
+            EventKind::ShowedThing(_) => 0.004,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -2513,15 +2537,20 @@ impl Life {
     pub fn habit(&self, activity: Activity) -> f32 {
         if matches!(
             activity,
-            Activity::Float | Activity::Comfort | Activity::Fold
+            Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show
         ) {
             return 1.0;
         }
-        // Comfort follows a message; folding already has its daily allowance.
-        let kinds = Activity::ALL.len() as f32 - 3.0;
+        // Comfort follows a message; folding and showing have their own pacing.
+        let kinds = Activity::ALL.len() as f32 - 4.0;
         let total: u32 = Activity::ALL
             .into_iter()
-            .filter(|other| !matches!(other, Activity::Float | Activity::Comfort | Activity::Fold))
+            .filter(|other| {
+                !matches!(
+                    other,
+                    Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show
+                )
+            })
             .map(|other| self.total.times(other))
             .sum();
         let share = (self.total.times(activity) as f32 + PRIOR) / (total as f32 + PRIOR * kinds);
@@ -2609,6 +2638,7 @@ impl Life {
         }
         super::breaks::sanitize(&mut self);
         self.cranes.sanitize(&self.day);
+        self.showing.sanitize(&self.day);
         for (tally, maximum) in [
             (&mut self.today, 3),
             (&mut self.total, super::cranes::MAXIMUM),
@@ -2883,6 +2913,17 @@ impl Life {
             tally.luck_wished = tally.luck_wished.min(100_000_000);
             tally.plans_went_well = tally.plans_went_well.min(100_000_000);
             tally.plans_went_badly = tally.plans_went_badly.min(100_000_000);
+            tally.things_shown = tally.things_shown.min(100_000_000);
+            tally.shown_kinds.truncate(15);
+            let mut shown = Vec::new();
+            tally.shown_kinds.retain(|kind| {
+                if shown.contains(kind) {
+                    false
+                } else {
+                    shown.push(*kind);
+                    true
+                }
+            });
             tally.bubble_sessions = tally.bubble_sessions.min(1_000_000);
             tally.bubbles_blown = tally.bubbles_blown.min(tally.bubble_sessions * 10);
             tally.bubbles_popped = tally.bubbles_popped.min(tally.bubbles_blown);
@@ -3383,6 +3424,10 @@ impl Life {
             EventKind::Photographed { .. } if total.photos == 1 => (
                 "You took my picture for the first time.".to_owned(),
                 "네가 처음으로 내 사진을 찍어 줬어.".to_owned(),
+            ),
+            EventKind::ShowedThing(_) if total.things_shown == 1 => (
+                "I showed you one of my treasures for the first time.".to_owned(),
+                "처음으로 내 보물을 너에게 보여 줬어.".to_owned(),
             ),
             _ => return None,
         };

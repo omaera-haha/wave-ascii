@@ -198,6 +198,10 @@ mod tests {
                     .pending_pins
                     .push(super::super::gallery::Pin::default());
             }
+            if activity == Activity::Show {
+                world.life.keepsakes.push(super::super::Keepsake::Acorn);
+                world.notice_viewer();
+            }
             world.begin(activity);
             wiggle(&mut world);
             assert_eq!(

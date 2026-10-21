@@ -90,6 +90,7 @@ pub fn observe(world: &World) -> Value {
         }).unwrap_or_else(|| "no ghost friend visiting just now".to_owned()),
         "viewer": viewer(world),
         "treasure_hunt": world.hunt_words(),
+        "show_and_tell": world.show_words(),
         "viewer_language": if world.speaks_korean() { "the viewer speaks Korean" } else { "not known yet" },
         "viewer_facts": world.life.viewer.words(),
         "viewer_feelings": world.feeling_words(),

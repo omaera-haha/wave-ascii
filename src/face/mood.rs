@@ -201,6 +201,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::FoldedCrane { .. } => Expression::Smile,
         EventKind::BlewBubbles { .. } => Expression::Smile,
         EventKind::Pinned { .. } => Expression::Smile,
+        EventKind::ShowedThing(_) => Expression::Sparkle,
         _ => return None,
     })
 }

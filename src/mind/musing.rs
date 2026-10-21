@@ -141,6 +141,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Fold => vec!["Fold, crease, fold again.", "A little paper wish for you."],
         Activity::Bubbles => vec!["A little breath, and off they go.", "Want to pop them?"],
         Activity::Pin => vec!["This picture belongs on my wall."],
+        Activity::Show => vec!["I have something precious to show you."],
     };
     if activity == Activity::Window {
         for passing in world.passersby().into_iter().flatten() {
@@ -595,6 +596,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Fold => "Another crane, another little wish for you.",
             Activity::Bubbles => "That one is the biggest yet.",
             Activity::Pin => "I should pin that picture to my wall.",
+            Activity::Show => "I like sharing my little treasures with you.",
         });
     }
     if lines.is_empty() {
@@ -911,6 +913,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::PlanAnswered { .. }
             | Understanding::Folding
             | Understanding::Bubbles { .. }
+            | Understanding::Showing
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -942,6 +945,7 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             | Understanding::Unanswered(_)
             | Understanding::OwnSong
             | Understanding::Folding
+            | Understanding::Showing
     ) {
         return world
             .ghost
@@ -1976,6 +1980,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Fold => "종이학 접는 중",
         Activity::Bubbles => "비눗방울 부는 중",
         Activity::Pin => "벽에 그림 붙이는 중",
+        Activity::Show => "보물을 보여주는 중",
     }
 }
 
@@ -2013,6 +2018,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Fold => "종이학 접기",
         Activity::Bubbles => "비눗방울 불기",
         Activity::Pin => "벽에 그림 붙이기",
+        Activity::Show => "보물 보여주기",
     }
 }
 

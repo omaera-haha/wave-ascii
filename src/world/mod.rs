@@ -45,6 +45,7 @@ mod random;
 mod recognizer;
 mod room;
 mod routine;
+pub mod show;
 mod sight;
 mod sleep;
 pub mod stars;
@@ -360,6 +361,7 @@ pub enum EventKind {
         kind: gallery::Kind,
         name: String,
     },
+    ShowedThing(show::Kind),
 }
 
 impl EventKind {
@@ -629,6 +631,7 @@ impl EventKind {
                 friend::count_words(*popped_by_viewer)
             ),
             Self::Pinned { kind, name } => kind.pinned(name),
+            Self::ShowedThing(kind) => format!("showed the viewer my {}", kind.name()),
         }
     }
 }
@@ -714,6 +717,7 @@ pub enum Understanding {
     Bubbles {
         accepted: bool,
     },
+    Showing,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -931,6 +935,8 @@ pub struct World {
     bubble_session: Option<bubbles::Session>,
     bubbles_finished_at: Option<f64>,
     pending_pins: Vec<gallery::Pin>,
+    pub showing: Option<show::Showing>,
+    show_praise_until: Option<f64>,
 }
 
 impl World {
@@ -1082,6 +1088,8 @@ impl World {
             bubble_session: None,
             bubbles_finished_at: None,
             pending_pins: Vec::new(),
+            showing: None,
+            show_praise_until: None,
         };
         world.scatter_blocks();
         world
@@ -1116,6 +1124,7 @@ impl World {
         self.ask_viewer();
         self.follow_up_agenda();
         self.advance_rhythm();
+        self.offer_show(seconds.max(0.0));
     }
 
     fn advance(&mut self, seconds: f32) {
@@ -1430,6 +1439,7 @@ impl World {
                             .is_none_or(|at| self.time - at >= 3600.0)
                 }
                 Activity::Pin => self.pin_is_open(),
+                Activity::Show => self.show_is_open(),
             })
             .collect()
     }
@@ -1557,6 +1567,7 @@ impl World {
             Activity::Pin => "Carry a waiting picture to the gallery on the left wall, pin it up, and admire it. Wait for a quiet moment after games, stories, and work.".to_owned(),
 
             Activity::Fold => "Fold a colored paper crane for the viewer, then hang it on the ceiling garland. A quiet pastime, a few cranes each day.".to_owned(),
+            Activity::Show => "Fetch a treasure from your life, show it at the glass, tell its little story, and put it back. Only during a quiet visit.".to_owned(),
         }
     }
 
@@ -1573,6 +1584,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Show && !self.show_can_begin() {
+            return;
+        }
         if activity == Activity::Bubbles && !self.bubbles_are_open() {
             return;
         }
@@ -1652,6 +1666,7 @@ impl World {
             self.asking = None;
             self.agenda_answer = None;
         }
+        self.stop_show();
         self.abandon_comfort();
         self.abandon_game();
         self.abandon_puzzle();
@@ -1764,6 +1779,7 @@ impl World {
             Activity::Fold => cranes::SEAT,
             Activity::Bubbles => self.bubble_spot(),
             Activity::Pin => gallery::APPROACH,
+            Activity::Show => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         if activity == Activity::Explore
@@ -1824,6 +1840,9 @@ impl World {
         }
         if activity == Activity::Bubbles {
             self.begin_bubbles();
+        }
+        if activity == Activity::Show {
+            self.begin_show();
         }
         self.record(EventKind::Began(activity));
     }
@@ -2088,6 +2107,9 @@ impl World {
         if let Some(heard) = self.hear_hunt(text, korean) {
             return heard;
         }
+        if let Some(heard) = self.hear_show(text, korean) {
+            return heard;
+        }
         if let Some(heard) = self.answer_plan(text, korean) {
             return heard;
         }
@@ -2271,6 +2293,13 @@ impl World {
                 }
                 self.ghost.needs.change(0.0, 0.05, 0.05);
                 self.record(EventKind::Praised);
+                if self
+                    .show_praise_until
+                    .take()
+                    .is_some_and(|until| self.time <= until)
+                {
+                    self.suggest_mood(Mood::Excited, 10.0);
+                }
             }
             Some(Tone::Scolding) => {
                 if let Some((activity, _, _)) = acted {
@@ -2346,6 +2375,7 @@ impl World {
                 } else if self.focus.is_none()
                     && !self.puzzle_active()
                     && self.ghost.plan.activity != Activity::Visit
+                    && !(reading.tone == Some(Tone::Praise) && self.showing.is_some())
                 {
                     self.begin(Activity::Visit);
                 }
@@ -2589,6 +2619,15 @@ impl World {
             EventKind::ViewerLeft | EventKind::Scolded | EventKind::FellAsleep
         ) {
             self.cancel_hunt();
+        }
+        if matches!(
+            kind,
+            EventKind::Poked { .. }
+                | EventKind::Scolded
+                | EventKind::ViewerLeft
+                | EventKind::FellAsleep
+        ) {
+            self.stop_show();
         }
         self.note_rhythm(&kind);
         if kind == EventKind::ViewerLeft {
@@ -2867,6 +2906,7 @@ impl World {
             self.ghost.asleep = (self.ghost.asleep - seconds / 1.2).max(0.0);
         }
         if plan.done {
+            self.stop_show();
             self.abandon_comfort();
             self.abandon_puzzle();
             self.abandon_game();
@@ -2890,7 +2930,7 @@ impl World {
         let waiting = self.telling.is_some()
             || matches!(
                 self.ghost.plan.activity,
-                Activity::Wait | Activity::Company | Activity::Seek
+                Activity::Wait | Activity::Company | Activity::Seek | Activity::Show
             )
             || (self.ghost.plan.activity == Activity::Visit && self.asking.is_some())
             || (self.ghost.plan.activity == Activity::Fold && self.ghost.plan.count > 0)
@@ -3215,6 +3255,7 @@ impl World {
             Activity::Bubbles => look = self.carry_out_bubbles(),
             Activity::Pin => look = self.carry_out_pin(),
             Activity::Explore => look = self.visit_gallery(),
+            Activity::Show => look = self.carry_out_show(),
         }
         self.ghost.look = look;
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
@@ -3343,7 +3384,9 @@ impl World {
             low.z = ROOM_MIN.z - 0.04;
         }
         let mut high = ROOM_MAX - Vec3::new(0.3, 0.35, 0.3);
-        if ghost.plan.activity == Activity::Fold && ghost.plan.count > 0 {
+        if (ghost.plan.activity == Activity::Fold && ghost.plan.count > 0)
+            || ghost.plan.activity == Activity::Show
+        {
             low.z = ROOM_MIN.z + 0.08;
             high.x = ROOM_MAX.x - 0.08;
             high.y = ROOM_MAX.y - 0.06;

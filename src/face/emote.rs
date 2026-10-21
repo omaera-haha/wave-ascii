@@ -344,6 +344,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
             ..
         } => Emote::Heart,
         EventKind::Pinned { .. } => Emote::Sparkle,
+        EventKind::ShowedThing(_) => Emote::Sparkle,
         _ => return None,
     })
 }
