@@ -73,6 +73,7 @@ pub fn observe(world: &World) -> Value {
             "ball": ball(world),
             "music_box": world.music_words(),
             "mirror": thing(world, Thing::Mirror),
+            "gallery": thing(world, Thing::Gallery),
             "learned_tunes": world.learned_tune_words(),
             "own_songs": world.composition_words(false),
             "own_books": world.written_words(false),
@@ -384,6 +385,7 @@ fn thing(world: &World, thing: Thing) -> String {
         }
         Thing::Moth => "a moth fluttering around the lamp".to_owned(),
         Thing::Treasure => "a treasure the viewer hid".to_owned(),
+        Thing::Gallery => world.life.gallery_words(),
     }
 }
 

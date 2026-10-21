@@ -303,6 +303,17 @@ impl World {
                 format!(" Like my {}!", flower.name())
             });
         }
+        if self.keep_viewer_drawing(
+            recognition
+                .as_ref()
+                .map(|recognized| (recognized.name.as_str(), recognized.korean.as_str())),
+        ) {
+            line.push_str(if korean {
+                " 이거 간직할래!"
+            } else {
+                " I'll keep this one!"
+            });
+        }
         self.say(&line);
         let mood = match &recognition {
             Some(recognized) if recognized.learned => Mood::Excited,
@@ -394,6 +405,7 @@ impl World {
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
         self.record(EventKind::LearnedPicture(name.clone()));
+        self.name_gallery_drawing(&name);
         Some(Heard {
             tone: None,
             understanding: Understanding::Named { picture: name },
@@ -584,7 +596,11 @@ mod tests {
         tulip.growth = 1.0;
         world.seedlings.push(tulip);
         studied(&mut world, &Sketch::Flower.strokes());
-        assert!(said(&world).contains(&"A flower! Like my tulip!".to_owned()));
+        assert!(
+            said(&world)
+                .iter()
+                .any(|line| line.starts_with("A flower! Like my tulip!"))
+        );
 
         let mut world = World::new(1, 12.0);
         world.life.korean = 0.9;
@@ -592,11 +608,19 @@ mod tests {
         sunflower.growth = 1.0;
         world.seedlings.push(sunflower);
         studied(&mut world, &Sketch::Flower.strokes());
-        assert!(said(&world).contains(&"꽃! 내 해바라기처럼!".to_owned()));
+        assert!(
+            said(&world)
+                .iter()
+                .any(|line| line.starts_with("꽃! 내 해바라기처럼!"))
+        );
 
         let mut world = World::new(1, 12.0);
         studied(&mut world, &Sketch::Flower.strokes());
-        assert!(said(&world).contains(&"A flower!".to_owned()));
+        assert!(
+            said(&world)
+                .iter()
+                .any(|line| line.starts_with("A flower!"))
+        );
         assert_eq!(with_article("owl"), "An owl");
         assert_eq!(with_article("cat"), "A cat");
         assert_eq!(with_article("고양이"), "고양이");
@@ -978,10 +1002,26 @@ mod tests {
         let mut world = World::new(1, 12.0);
         world.hear("안녕");
         studied(&mut world, &Sketch::Heart.strokes());
-        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "하트!");
+        assert!(
+            world
+                .ghost
+                .speech
+                .as_ref()
+                .unwrap()
+                .text
+                .starts_with("하트!")
+        );
         world.hear("hello");
         studied(&mut world, &Sketch::Heart.strokes());
-        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "A heart!");
+        assert!(
+            world
+                .ghost
+                .speech
+                .as_ref()
+                .unwrap()
+                .text
+                .starts_with("A heart!")
+        );
     }
 
     #[test]

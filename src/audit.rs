@@ -78,6 +78,7 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     let mut agenda_shared = false;
     let mut hunt_day = None;
     let mut rhythm_break = None;
+    let mut gallery_drawing_day = None;
     let mut thought_count = 0u32;
     let mut speech_count = 0u32;
     let mut max_speed = 0.0f32;
@@ -161,6 +162,21 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             hunt_day = Some(clock.date());
             world.hide_treasure(world.lamp.position + Vec3::new(0.25, 0.0, -0.3));
             log.push(format!("{clock} viewer hides a treasure"));
+        }
+        if here
+            && gallery_drawing_day != Some(clock.date())
+            && (18.5..18.6).contains(&hour)
+            && world.hunt.is_none()
+            && world.focus.is_none()
+        {
+            gallery_drawing_day = Some(clock.date());
+            let center = glam::Vec2::new(0.0, 1.3);
+            for index in 0..=48 {
+                let point = crate::world::Sketch::Heart.point_at(index as f32 / 48.0);
+                world.draw_on_glass((point * 0.35 + center).extend(ROOM_MAX.z));
+            }
+            world.lift_finger();
+            log.push(format!("{clock} viewer draws a heart"));
         }
         if let Some(hunt) = &world.hunt
             && hunt.phase == crate::world::hunt::Phase::Searching
@@ -312,6 +328,13 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             seen = seen.max(last.time);
         }
     }
+    println!(
+        "gallery: viewer pins {}, doodle pins {}, constellation pins {}, cards kept {}",
+        world.life.total.viewer_pins,
+        world.life.total.doodle_pins,
+        world.life.total.constellation_pins,
+        world.life.gallery.len()
+    );
     println!("==== seed {seed} days {days} born {born:?} korean {korean}");
     println!(
         "switches {switches} ({:.1}/h), thoughts {thought_count}, speeches {speech_count}, max speed {max_speed:.2}, outside steps {outside}",

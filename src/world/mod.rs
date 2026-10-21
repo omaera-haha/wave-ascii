@@ -16,6 +16,7 @@ pub mod focus;
 pub mod fog;
 pub mod forecast;
 pub mod friend;
+pub mod gallery;
 pub mod game;
 pub mod garden;
 pub mod growth;
@@ -340,6 +341,10 @@ pub enum EventKind {
     NoticedLateNight,
     SaidGoodnightTogether,
     TookBreak,
+    Pinned {
+        kind: gallery::Kind,
+        name: String,
+    },
 }
 
 impl EventKind {
@@ -595,6 +600,7 @@ impl EventKind {
             Self::NoticedLateNight => "you stayed up very late".to_owned(),
             Self::SaidGoodnightTogether => "we said goodnight together late at night".to_owned(),
             Self::TookBreak => "you took a break when I asked".to_owned(),
+            Self::Pinned { kind, name } => kind.pinned(name),
         }
     }
 }
@@ -887,6 +893,7 @@ pub struct World {
     agenda_visit_question: bool,
     pub hunt: Option<hunt::Hunt>,
     pub rhythm: breaks::Rhythm,
+    pending_pins: Vec<gallery::Pin>,
 }
 
 impl World {
@@ -1032,6 +1039,7 @@ impl World {
             agenda_visit_question: false,
             hunt: None,
             rhythm: breaks::Rhythm::default(),
+            pending_pins: Vec::new(),
         };
         world.scatter_blocks();
         world
@@ -1368,6 +1376,7 @@ impl World {
                     .hunt
                     .as_ref()
                     .is_some_and(|hunt| hunt.phase == hunt::Phase::Searching),
+                Activity::Pin => self.pin_is_open(),
             })
             .collect()
     }
@@ -1491,6 +1500,7 @@ impl World {
                                 something good happened, or to show off for the viewer."
                 .to_owned(),
             Activity::Seek => "Search by sight for the treasure the viewer hid, following their warmer and colder hints.".to_owned(),
+            Activity::Pin => "Carry a waiting picture to the gallery on the left wall, pin it up, and admire it. Wait for a quiet moment after games, stories, and work.".to_owned(),
 
         }
     }
@@ -1508,6 +1518,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Pin && !self.pin_is_open() {
+            return;
+        }
         if activity == Activity::Seek
             && self.ghost.plan.activity == Activity::Seek
             && !self.ghost.plan.done
@@ -1616,6 +1629,7 @@ impl World {
             Activity::Pounce => 25.0,
             Activity::Puzzle => Puzzle::SILENCE as f32 + 15.0,
             Activity::Look => self.random.range(2.0, 3.0),
+            Activity::Pin => 6.0,
             _ => 0.0,
         };
         let target = match activity {
@@ -1676,8 +1690,18 @@ impl World {
             | Activity::Build
             | Activity::Friend => position,
             Activity::Seek => position,
+            Activity::Pin => gallery::APPROACH,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
+        if activity == Activity::Explore
+            && !self.life.gallery.is_empty()
+            && self.random.unit() < 0.04
+        {
+            plan.gallery_visit = true;
+            plan.target = gallery::VIEW;
+            plan.anchor = gallery::VIEW;
+            plan.length = self.random.range(12.0, 20.0);
+        }
         if activity == Activity::Air {
             plan.window = Some(!self.window_open);
         }
@@ -2790,6 +2814,7 @@ impl World {
                     | Activity::Mirror
                     | Activity::Letter
                     | Activity::Comfort
+                    | Activity::Pin
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -2835,7 +2860,7 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
-            Activity::Explore => {
+            Activity::Explore if !self.ghost.plan.gallery_visit => {
                 look = Some(self.ghost.plan.target);
                 if arrived_now {
                     self.ghost.plan.count += 1;
@@ -3092,6 +3117,8 @@ impl World {
             }
             Activity::Doodle => look = self.carry_out_doodle(),
             Activity::Seek => look = self.seek_treasure(),
+            Activity::Pin => look = self.carry_out_pin(),
+            Activity::Explore => look = self.visit_gallery(),
         }
         self.ghost.look = look;
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
@@ -3140,7 +3167,14 @@ impl World {
                             watched: self.viewer_present(),
                         },
                     };
+                    let sketch = match doodle.picture {
+                        Picture::Sketch(sketch) => Some(sketch),
+                        _ => None,
+                    };
                     self.record(event);
+                    if let Some(sketch) = sketch {
+                        self.keep_doodle(sketch);
+                    }
                     self.ghost.needs.change(0.0, 0.1, 0.0);
                     self.ghost.plan.done = true;
                 }

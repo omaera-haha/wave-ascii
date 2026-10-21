@@ -261,6 +261,10 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
                 .map_or(0.0, |playing| playing.beat(world.time) * PI),
         ),
     ];
+    furniture.push(Furniture::Gallery(&world.life.gallery));
+    if let Some(position) = world.carried_pin() {
+        furniture.push(Furniture::GalleryCard(position));
+    }
     if let Some((position, brightness)) = world.treasure() {
         let twinkle = 0.75 + 0.25 * (world.time as f32 * 4.0).sin().powi(8);
         let light = if world.lamp.on { 1.0 } else { 0.3 };
