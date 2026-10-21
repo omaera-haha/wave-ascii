@@ -754,7 +754,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "p, P       postcard, posed      click friend  make it giggle",
         "o          focus (o ends it)    drag ghost    stroke it",
         "g          noughts and crosses  1-9, click    choose a square",
-        "f          draw (f/Esc stops)   x          hide on floor (x/Esc)",
+        "f          draw (f/Esc stops)   x             hide a treasure",
         "b, e       album, letters       click window  open or shut",
         "arrows     turn the view        drag          turn the view",
         "+ -, wheel zoom                 r             reset the view",
@@ -762,7 +762,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "?          this help            q, Esc        quit",
     ];
     let notes = [
-        "Ask for a word game; type a letter to guess in talk mode.",
+        "Ask for a word game, bubbles, a crane, treasures, a tidy-up.",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "Click bubbles to pop them; click the music box for a tune.",
         "Letters: ←/→ browse · w write, Ctrl+S sends · v sent",
