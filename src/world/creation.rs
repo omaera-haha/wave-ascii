@@ -27,6 +27,15 @@ pub const COMPOSES_AFTER_TUNES: u32 = 40;
 pub const COMPOSES_AFTER_DAYS: usize = 5;
 pub const WRITES_AFTER_DAYS: usize = 14;
 
+// Whether Korean `text` ends in a syllable with a final consonant, which
+// takes "을" rather than "를".
+fn final_consonant(text: &str) -> bool {
+    text.chars()
+        .last()
+        .filter(|syllable| ('가'..='힣').contains(syllable))
+        .is_some_and(|syllable| (u32::from(syllable) - u32::from('가')) % 28 != 0)
+}
+
 pub fn elapsed_days(day: Option<&str>, today: Date) -> Option<i32> {
     day.and_then(|day| day.parse::<Date>().ok())
         .map(|day| (today - day).get_days())
@@ -284,10 +293,15 @@ pub fn compose_book(random: &mut Random, life: &Life, season: Season, day: Strin
         threads.push((
             pair("A Song of My Own", "내가 만든 노래"),
             [
-                (
-                    format!("The ghost hummed {}.", name(&song.title)),
-                    format!("유령은 {} 노래를 흥얼거렸어.", name(&song.korean_title)),
-                ),
+                (format!("The ghost hummed {}.", name(&song.title)), {
+                    let title = name(&song.korean_title);
+                    let particle = if final_consonant(&title) {
+                        "을"
+                    } else {
+                        "를"
+                    };
+                    format!("유령은 ‘{title}’{particle} 흥얼거렸어.")
+                }),
                 pair(
                     "The music box carried its song around the room.",
                     "오르골이 그 노래를 방 안 가득 퍼뜨렸어.",

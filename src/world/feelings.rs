@@ -765,7 +765,7 @@ pub fn replies(world: &World, feeling: Feeling, korean: bool) -> Vec<String> {
         Feeling::Bored => &[
             ("We could play something!", "우리 뭐 하고 놀까!"),
             ("Want a little game?", "작은 놀이 하나 할래?"),
-            ("I have a few tiny ideas.", "내게 작은 생각들이 있어."),
+            ("I have a few tiny ideas.", "재밌는 생각이 몇 개 있어."),
         ],
         Feeling::Happy => &[
             ("Your happiness makes me glow!", "네가 행복하니 나도 빛나!"),
