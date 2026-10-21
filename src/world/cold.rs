@@ -234,7 +234,12 @@ impl World {
         self.chill.amount = 0.0;
         self.record(EventKind::Recovered { cared });
         self.reconsider_wardrobe();
-        if present && self.ghost.asleep < 0.3 && self.focus.is_none() && self.telling.is_none() {
+        if present
+            && self.ghost.asleep < 0.3
+            && self.focus.is_none()
+            && self.telling.is_none()
+            && !self.reading_viewer_letter()
+        {
             self.chill.recovered_at = Some(self.time);
             self.ghost.velocity.y += 0.3;
             self.suggest_mood(Mood::Cheerful, 10.0);
@@ -341,7 +346,10 @@ impl World {
         }
         self.listening = Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
-        if !self.receive_cold_care(Care::Words, Some(korean)) && self.ghost.asleep < 0.3 {
+        if !self.receive_cold_care(Care::Words, Some(korean))
+            && self.ghost.asleep < 0.3
+            && self.telling.is_none()
+        {
             self.say(if korean {
                 "응, 조금 쉬면 나을 거야. 고마워."
             } else {
@@ -452,6 +460,23 @@ mod tests {
         world.ghost.position = WINDOW_CENTER;
         world.time += 1.0;
         world.advance_cold(1.0);
+    }
+
+    #[test]
+    fn kind_words_for_a_sick_ghost_are_never_taken_as_another_answer() {
+        let mut world = sick();
+        world.asking = Some((super::super::acquaintance::Topic::Food, world.time + 180.0));
+        let heard = world.hear("get well soon");
+        assert_eq!(heard.understanding, Understanding::Cared);
+        assert!(world.life.viewer.food.is_none());
+
+        let mut world = sick();
+        world.hour = 1.0;
+        world.tuck_in();
+        world.step(30.0);
+        assert!(world.ghost.asleep > 0.5);
+        world.hear("are you okay?");
+        assert!(world.ghost.asleep > 0.5);
     }
 
     #[test]

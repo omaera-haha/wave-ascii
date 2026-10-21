@@ -450,7 +450,12 @@ impl World {
         // Cards still waiting to be pinned go straight onto the saved board,
         // as a carried gift goes onto the shelf.
         for pin in &self.pending_pins {
+            let pinned = EventKind::Pinned {
+                kind: pin.kind,
+                name: pin.name.clone(),
+            };
             life.pin(pin.clone());
+            life.note(&pinned);
         }
         life
     }
