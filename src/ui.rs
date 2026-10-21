@@ -541,19 +541,37 @@ fn draw_panel(
 }
 
 fn help_panel(screen: &mut Canvas) {
-    let lines = [
+    let lines: Vec<(String, Rgb)> = help_lines(screen.rows())
+        .iter()
+        .map(|line| {
+            (
+                (*line).to_owned(),
+                if line.starts_with("Any key") {
+                    DIM
+                } else {
+                    TEXT
+                },
+            )
+        })
+        .collect();
+    panel(screen, "Help", &lines);
+}
+
+/// The help that fits `rows`: short screens keep the keys and leave out the
+/// words around them.
+fn help_lines(rows: usize) -> Vec<&'static str> {
+    let introduction = [
         "A ghost lives in this glass box. Jev (System One) makes its quick",
-        "choices, and Claude (System Two) gives it thoughts and words.",
-        "Without keys it lives on instinct, and learns words you teach it.",
-        "Speak Korean and it remembers; it can write Hangul in the fog.",
-        "Press k to add keys; models, effort, and caching change there too.",
+        "choices, and Claude (System Two) gives it thoughts and words; without",
+        "keys (k) it lives on instinct. Speak Korean and it answers in Korean.",
         "",
+    ];
+    let keys = [
         "t, Enter   talk to it          click ghost   poke or find it",
         "k          keys and models     click ball    flick it",
         "j          journal and diary   click room    drop a light mote",
-        "                               click blocks  nudge or topple",
-        "                               click friend  make it giggle",
-        "l          life and growth     p             save a postcard",
+        "l          life and growth     click blocks  nudge or topple",
+        "p          save a postcard     click friend  make it giggle",
         "g          noughts and crosses 1-9, click    choose a square",
         "f          finger in the fog   right-drag    draw on glass",
         "           f or Esc stops      left-click    still interacts",
@@ -561,22 +579,23 @@ fn help_panel(screen: &mut Canvas) {
         "+ -, wheel zoom                drag ghost    stroke it",
         "m  c       style, color        space         pause",
         "r          reset the view      q, Esc        quit",
+    ];
+    let notes = [
         "",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "While a reading panel is open, the mouse selects text.",
         "On clear evenings, most of all by moonlight, a ghost friend may visit.",
-        "Any key closes this.",
     ];
-    let lines: Vec<(String, Rgb)> = lines
-        .iter()
-        .map(|line| {
-            (
-                (*line).to_owned(),
-                if line.starts_with("Any") { DIM } else { TEXT },
-            )
-        })
-        .collect();
-    panel(screen, "Help", &lines);
+    let room = rows.saturating_sub(3);
+    let mut lines = keys.to_vec();
+    if lines.len() + notes.len() <= room {
+        lines.extend(notes);
+    }
+    if lines.len() + introduction.len() <= room {
+        lines.splice(0..0, introduction);
+    }
+    lines.push("Any key closes this.");
+    lines
 }
 
 fn settings_panel(app: &App, screen: &mut Canvas) {
@@ -1289,6 +1308,19 @@ mod tests {
                 .any(|(line, _)| line == "Today so far")
         );
         assert!(life_lines(&app, 100, 4).is_empty());
+    }
+
+    #[test]
+    fn help_fits_a_standard_terminal_and_keeps_its_keys_on_short_ones() {
+        let full = help_lines(60);
+        assert!(full.len() + 2 <= 24);
+        assert_eq!(help_lines(24), full);
+        for rows in [20, 16, 15] {
+            let lines = help_lines(rows);
+            assert!(lines.len() + 2 <= rows, "{rows}: {}", lines.len());
+            assert!(lines.iter().any(|line| line.starts_with("t, Enter")));
+            assert!(lines.iter().any(|line| line.starts_with("r ")));
+        }
     }
 
     #[test]

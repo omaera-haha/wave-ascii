@@ -403,7 +403,10 @@ fn motes(world: &World) -> String {
     let count = match known {
         0 => return "none".to_owned(),
         1 => "one light mote drifting".to_owned(),
-        count => format!("{count} light motes drifting"),
+        count => format!(
+            "{} light motes drifting",
+            crate::world::friend::count_words(count as u32)
+        ),
     };
     let nearest = world
         .nearest_mote()
@@ -416,16 +419,19 @@ fn viewer(world: &World) -> String {
     if world.petting() >= 0.35 {
         return "stroking you gently through the glass".to_owned();
     }
-    let words = if world.viewer.typing {
+    // Typing and a pointer left on the glass say nothing once the viewer
+    // has gone.
+    let present = world.viewer_present();
+    let words = if !present {
+        "away"
+    } else if world.viewer.typing {
         "typing a message to the ghost"
     } else if world.viewer.pointer.is_some() {
         "watching through the glass"
-    } else if world.viewer_present() {
-        "nearby"
     } else {
-        "away"
+        "nearby"
     };
-    if world.viewer.pointer.is_some() {
+    if present && world.viewer.pointer.is_some() {
         let motion = if world.viewer.pointer_is_lively() {
             "darting about"
         } else {
@@ -1156,6 +1162,21 @@ mod tests {
                 .any(|line| line.contains("floated in through the window"))
         );
         assert!(!recent.iter().any(|line| line.contains("tagged")));
+    }
+
+    #[test]
+    fn a_viewer_who_left_reads_as_away_despite_a_pointer_or_unsent_words() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.viewer.pointer = Some(glam::Vec3::new(0.0, 1.0, 1.5));
+        world.viewer.typing = true;
+        assert_eq!(
+            viewer(&world),
+            "typing a message to the ghost, pointer still"
+        );
+        world.look_away(true);
+        world.step(25.0);
+        assert_eq!(viewer(&world), "away");
     }
 
     #[test]

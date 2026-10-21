@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 
 use crate::store::{Config, Memory, Remark, Speaker};
-use crate::world::{Activity, EventKind, Tone, Understanding, World};
+use crate::world::{Activity, EventKind, Heard, Tone, Understanding, World};
 use claude::{Cache, Claude, Effort, Reply};
 use decision::Decision;
 use jev::Jev;
@@ -108,6 +108,11 @@ pub struct Mind {
     /// The id of the latest message's request routing; answers to earlier
     /// messages that arrive later are dropped.
     latest_request: u64,
+    /// How many times the viewer has named the ghost, and how many times
+    /// when the reflection on its way was asked for: a reflection can't undo
+    /// a newer name.
+    renamed: u64,
+    reflection_renamed: u64,
 }
 
 impl Mind {
@@ -136,6 +141,8 @@ impl Mind {
             dreaming: false,
             heard: VecDeque::new(),
             latest_request: 0,
+            renamed: 0,
+            reflection_renamed: 0,
         };
         mind.reconfigure(config);
         mind
@@ -262,6 +269,7 @@ impl Mind {
                     self.cache,
                 );
                 self.reflecting = true;
+                self.reflection_renamed = self.renamed;
                 self.last_reflection = Some(world.time);
                 self.two = Status::Busy;
                 let claude = claude.clone();
@@ -311,21 +319,20 @@ impl Mind {
                 trim(&mut self.journal.conversation, REMARKS_KEPT);
             }
         }
-        // A no asks for nothing to be done, and a question only for an
-        // answer.
+        if heard.given_name.is_some() {
+            self.renamed += 1;
+        }
+        // Every message supersedes a request still on its way, even one that
+        // asks for nothing, so a late answer can't undo a no.
+        self.next_id += 1;
+        self.latest_request = self.next_id;
         if let Some(jev) = &self.jev
-            && heard.tone != Some(Tone::Scolding)
-            && !matches!(
-                heard.understanding,
-                Understanding::Asked { .. } | Understanding::Named { .. }
-            )
+            && routes_to_jev(&heard)
         {
             let jev = jev.clone();
             let questions = decision::request_questions(&Activity::ALL);
             let state = serde_json::Value::String(text.to_owned());
-            self.next_id += 1;
-            let id = self.next_id;
-            self.latest_request = id;
+            let id = self.latest_request;
             self.spawn(async move {
                 let activity = match jev.ask(&state, &questions).await {
                     Ok(answers) => Ok(decision::read_request(&answers)),
@@ -486,7 +493,9 @@ impl Mind {
             });
             trim(&mut self.journal.memories, MEMORIES_KEPT);
         }
-        world.take_name(&reflection.name);
+        if self.reflection_renamed == self.renamed {
+            world.take_name(&reflection.name);
+        }
         if !reflection.write.is_empty() {
             world.write(&reflection.write);
         }
@@ -519,6 +528,17 @@ fn decide(world: &mut World, decision: Option<&Decision>) {
     if let Some(index) = world.pick(&chances) {
         world.begin(weights[index].0);
     }
+}
+
+/// Whether to ask System One what the viewer's words ask for: a no asks
+/// for nothing to be done, a question only for an answer, and naming a
+/// drawing only names it.
+fn routes_to_jev(heard: &Heard) -> bool {
+    heard.tone != Some(Tone::Scolding)
+        && !matches!(
+            heard.understanding,
+            Understanding::Asked { .. } | Understanding::Named { .. }
+        )
 }
 
 fn trim<Item>(items: &mut Vec<Item>, keep: usize) {
@@ -677,7 +697,15 @@ mod tests {
     }
 
     #[test]
-    fn questions_are_answered_rather_than_sent_to_jev_as_requests() {
+    fn questions_and_noes_are_answered_rather_than_sent_to_jev_as_requests() {
+        let mut world = World::new(3, 12.0);
+        assert!(!routes_to_jev(&world.hear("what are you doing?")));
+        assert!(routes_to_jev(&world.hear("dance!")));
+        assert!(!routes_to_jev(&world.hear("no")));
+    }
+
+    #[test]
+    fn a_no_cancels_a_request_still_on_its_way() {
         let config = Config {
             typesafe_api_key: Some("test-key".to_owned()),
             jev_base_url: Some("http://127.0.0.1:9".to_owned()),
@@ -685,10 +713,37 @@ mod tests {
         };
         let mut mind = Mind::new(&config, Journal::default(), false);
         let mut world = World::new(3, 12.0);
-        mind.hear(&mut world, "what are you doing?");
-        assert_eq!(mind.latest_request, 0);
         mind.hear(&mut world, "dance!");
-        assert_eq!(mind.latest_request, 1);
+        let sent = mind.latest_request;
+        mind.hear(&mut world, "no");
+        world.begin(Activity::Float);
+        mind.apply(
+            Answer::Requested {
+                id: sent,
+                activity: Ok(Some(Activity::Dance)),
+            },
+            &mut world,
+        );
+        assert_eq!(world.ghost.plan.activity, Activity::Float);
+    }
+
+    #[test]
+    fn a_reflection_asked_for_before_a_new_name_cannot_rename_the_ghost_back() {
+        let mut mind = offline();
+        let mut world = World::new(3, 12.0);
+        mind.hear(&mut world, "your name is Pip");
+        mind.reflection_renamed = mind.renamed;
+        mind.hear(&mut world, "your name is Luna");
+        assert_eq!(world.ghost.name, "Luna");
+        let reflection = Reflection {
+            name: "Pip".to_owned(),
+            ..Reflection::default()
+        };
+        mind.apply(Answer::Reflected(Ok(Some(reflection.clone()))), &mut world);
+        assert_eq!(world.ghost.name, "Luna");
+        mind.reflection_renamed = mind.renamed;
+        mind.apply(Answer::Reflected(Ok(Some(reflection))), &mut world);
+        assert_eq!(world.ghost.name, "Pip");
     }
 
     #[test]

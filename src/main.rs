@@ -308,11 +308,11 @@ fn print_frame(options: &Options) -> io::Result<()> {
     world.step(0.0);
     let mind = Mind::new(&Config::default(), Journal::default(), true);
     let mut app = App::new(world, mind, Config::default(), options.style, color);
-    let mut remaining = options.time;
-    while remaining > 0.0 {
-        let step = remaining.min(0.05);
-        app.advance(step);
-        remaining -= step;
+    // Counted in whole steps so long previews don't drift with rounding.
+    let time = f64::from(options.time);
+    let steps = (time / 0.05 - 1e-9).ceil().max(0.0) as u64;
+    for step in 0..steps {
+        app.advance((time - step as f64 * 0.05).min(0.05) as f32);
     }
     let canvas = app.frame(size.columns, size.rows);
     io::stdout().lock().write_all(canvas.ansi(color).as_bytes())
