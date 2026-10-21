@@ -125,6 +125,60 @@ pub(super) fn name_for_letter(name: &str, columns: usize) -> String {
         .collect()
 }
 
+/// The hour on Sunday from which the week's letter is written.
+const WEEKLY_LETTER_HOUR: f32 = 18.0;
+
+/// A letter about the week: a greeting, up to three of the week's
+/// milestones, newest last, and a goodbye. Births and mote counts aren't
+/// news, and a line a letter can't hold is left out; a week without
+/// milestones gets no letter.
+fn weekly_lines(
+    milestones: &[super::Entry],
+    today: Date,
+    viewer: Option<&str>,
+    ghost: &str,
+    korean: bool,
+) -> Option<Vec<String>> {
+    let since = today.checked_sub(jiff::Span::new().days(6)).ok()?;
+    let mut news: Vec<String> = milestones
+        .iter()
+        .filter(|entry| {
+            entry
+                .day
+                .parse::<Date>()
+                .is_ok_and(|day| (since..=today).contains(&day))
+        })
+        .filter(|entry| {
+            entry.text != "I came into being in a glass box." && !entry.text.contains("light mote")
+        })
+        .map(|entry| entry.in_language(korean).to_owned())
+        .filter(|line| Letter::valid_lines(&[line.clone(), line.clone()]))
+        .collect();
+    if news.is_empty() {
+        return None;
+    }
+    news.drain(..news.len().saturating_sub(3));
+    let mut lines = vec![match (korean, viewer) {
+        (false, Some(name)) => format!("Dear {},", name_for_letter(name, 40)),
+        (false, None) => "Dear you,".to_owned(),
+        (true, Some(name)) => format!("{}에게,", name_for_letter(name, 40)),
+        (true, None) => "소중한 너에게,".to_owned(),
+    }];
+    lines.push(language(
+        "Here is what happened in my week:",
+        "이번 주에 있었던 일을 적어 볼게.",
+        korean,
+    ));
+    lines.extend(news);
+    let ghost = name_for_letter(ghost, 34);
+    lines.push(if korean {
+        format!("다음 주에도 같이 있자. — {ghost}")
+    } else {
+        format!("Let's have another good week. Love, {ghost}")
+    });
+    Letter::valid_lines(&lines).then_some(lines)
+}
+
 fn language(english: &str, korean: &str, use_korean: bool) -> String {
     if use_korean { korean } else { english }.to_owned()
 }
@@ -312,6 +366,33 @@ impl World {
         self.deliver(lines, korean);
     }
 
+    /// On Sunday evenings a ghost at least a week old writes about the
+    /// week's milestones, once a week, if the week held any.
+    pub(super) fn write_weekly_letter(&mut self) {
+        if self.date.weekday() != jiff::civil::Weekday::Sunday
+            || self.hour < WEEKLY_LETTER_HOUR
+            || self.age_days().is_none_or(|days| days < 7.0)
+        {
+            return;
+        }
+        let today = self.date.to_string();
+        if self.life.weekly_letter.as_deref() == Some(today.as_str()) {
+            return;
+        }
+        self.life.weekly_letter = Some(today);
+        let korean = self.speaks_korean();
+        let lines = weekly_lines(
+            &self.life.milestones,
+            self.date,
+            self.life.viewer_name.as_deref(),
+            &self.ghost.name,
+            korean,
+        );
+        if let Some(lines) = lines {
+            self.deliver(lines, korean);
+        }
+    }
+
     pub(super) fn deliver(&mut self, lines: Vec<String>, korean: bool) -> bool {
         let letter = Letter {
             day: self.date.to_string(),
@@ -352,6 +433,72 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_week_with_milestones_brings_one_sunday_evening_letter() {
+        let mut world = World::new(5, 12.0);
+        // 2026-10-25 is a Sunday.
+        world.date = Date::constant(2026, 10, 25);
+        world.birthday = Some(Date::constant(2026, 10, 1));
+        world.life.viewer_name = Some("Mina".to_owned());
+        for (day, text) in [
+            ("2026-10-12", "Saw my first rainbow."),
+            ("2026-10-20", "I came into being in a glass box."),
+            ("2026-10-21", "Ate my hundredth light mote."),
+            ("2026-10-22", "I built my first tower of blocks."),
+            ("2026-10-24", "You told me your exam went well."),
+        ] {
+            world.life.milestones.push(super::super::Entry {
+                day: day.to_owned(),
+                text: text.to_owned(),
+                korean: None,
+            });
+        }
+        let letters = world.life.letters.len();
+        world.write_weekly_letter();
+        assert_eq!(world.life.letters.len(), letters, "not before evening");
+        world.hour = 19.0;
+        world.write_weekly_letter();
+        world.write_weekly_letter();
+        assert_eq!(world.life.letters.len(), letters + 1);
+        let letter = world.life.letters.last().unwrap();
+        assert_eq!(letter.lines[0], "Dear Mina,");
+        assert_eq!(
+            &letter.lines[2..4],
+            [
+                "I built my first tower of blocks.",
+                "You told me your exam went well."
+            ]
+        );
+        assert!(letter.lines.last().unwrap().ends_with(&world.ghost.name));
+
+        // A quiet week, a weekday, or a young ghost writes nothing.
+        world.date = Date::constant(2026, 11, 1);
+        world.write_weekly_letter();
+        assert_eq!(world.life.letters.len(), letters + 1);
+        world.life.milestones.push(super::super::Entry {
+            day: "2026-10-30".to_owned(),
+            text: "I folded my first paper crane for you.".to_owned(),
+            korean: Some("너를 위해 첫 종이학을 접었어.".to_owned()),
+        });
+        world.date = Date::constant(2026, 10, 31);
+        world.write_weekly_letter();
+        assert_eq!(world.life.letters.len(), letters + 1);
+        world.date = Date::constant(2026, 11, 1);
+        world.life.weekly_letter = None;
+        world.life.korean = 1.0;
+        world.write_weekly_letter();
+        let letter = world.life.letters.last().unwrap();
+        assert!(letter.korean);
+        assert_eq!(letter.lines[2], "너를 위해 첫 종이학을 접었어.");
+        let mut young = World::new(5, 19.0);
+        young.date = Date::constant(2026, 10, 25);
+        young.birthday = Some(Date::constant(2026, 10, 22));
+        young.life.milestones = world.life.milestones.clone();
+        let before = young.life.letters.len();
+        young.write_weekly_letter();
+        assert_eq!(young.life.letters.len(), before);
+    }
+
     #[test]
     fn return_letters_remember_promised_trips_in_both_languages_without_digits() {
         for korean in [false, true] {

@@ -2054,6 +2054,9 @@ pub struct Life {
     #[serde(default)]
     /// The previous day's three most notable deeds, kept without parsing prose.
     pub yesterday: Vec<Entry>,
+    /// The Sunday its latest letter about the week was written.
+    #[serde(default)]
+    pub weekly_letter: Option<String>,
 }
 
 impl Life {
@@ -2568,6 +2571,13 @@ impl Life {
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
         super::gallery::sanitize(&mut self);
+        if self
+            .weekly_letter
+            .as_deref()
+            .is_some_and(|day| day.parse::<jiff::civil::Date>().is_err())
+        {
+            self.weekly_letter = None;
+        }
         for entry in self
             .diary
             .iter_mut()

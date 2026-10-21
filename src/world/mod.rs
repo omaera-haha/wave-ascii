@@ -1098,6 +1098,7 @@ impl World {
             self.deliver_books();
         }
         self.celebrate();
+        self.write_weekly_letter();
         self.check_wardrobe();
         self.dress_when_idle();
         if calendar_check {

@@ -321,7 +321,10 @@ without keys; with Claude enabled, a separate request can add its own words
 using the away story, skipped diary days, and memories. Opening the letter
 keeps its words fixed. Letters stay separate from the conversation. Reading
 one warms the bond and can leave a picture in the album. On your birthday,
-once it knows it, a short birthday letter waits by the glass too.
+once it knows it, a short birthday letter waits by the glass too. And on
+Sunday evenings a ghost at least a week old writes about its week: up to
+three of the week's milestones, in the language you speak to it. A quiet
+week with no milestones gets no letter.
 
 ### How you feel
 

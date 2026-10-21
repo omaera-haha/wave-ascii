@@ -1971,6 +1971,9 @@ mod tests {
                 Style::Ascii,
                 ColorMode::Plain,
             );
+            // Only the letter about time away; a Sunday's weekly letter is
+            // counted elsewhere.
+            app.world.life.weekly_letter = Some(app.world.date.to_string());
             app.advance(10.0);
             assert_eq!(app.world.life.letters.len(), expected);
             let mut saved = garden_save(&app.world);
