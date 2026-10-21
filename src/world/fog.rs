@@ -342,6 +342,19 @@ impl World {
         }
         drawing.naming = false;
         let name = picture_name(text)?;
+        // A bare word the ghost already knows asks for something; "it's a
+        // fetch" would still name the picture.
+        let explicit = name != text.trim().to_lowercase();
+        if !explicit
+            && self
+                .life
+                .vocabulary
+                .meaning(&super::vocabulary::tokens(text))
+                .is_some()
+        {
+            return None;
+        }
+        let drawing = self.drawing.as_mut()?;
         let mut strokes = recognizer::normalized(&drawing.strokes);
         for point in strokes.iter_mut().flatten() {
             *point = (*point * 1000.0).round() / 1000.0;
@@ -576,6 +589,34 @@ mod tests {
         assert_eq!(with_article("owl"), "An owl");
         assert_eq!(with_article("cat"), "A cat");
         assert_eq!(with_article("고양이"), "고양이");
+    }
+
+    #[test]
+    fn a_known_command_after_a_drawing_is_obeyed_rather_than_taken_for_its_name() {
+        let mut world = World::new(1, 12.0);
+        world
+            .life
+            .vocabulary
+            .teach(&["twirl".to_owned()], Activity::Dance, 4.0);
+        studied(&mut world, &Sketch::Heart.strokes());
+        let heard = world.hear("twirl");
+        assert!(matches!(
+            heard.understanding,
+            Understanding::Doing {
+                activity: Activity::Dance,
+                ..
+            }
+        ));
+        assert!(world.life.pictures.is_empty());
+
+        let mut world = World::new(1, 12.0);
+        world
+            .life
+            .vocabulary
+            .teach(&["twirl".to_owned()], Activity::Dance, 4.0);
+        studied(&mut world, &Sketch::Heart.strokes());
+        world.hear("it's a twirl");
+        assert_eq!(world.life.pictures[0].name, "twirl");
     }
 
     #[test]

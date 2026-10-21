@@ -147,9 +147,9 @@ impl Seedling {
             .min(maturity.max(self.growth));
     }
 
-    fn advance(&mut self, seconds: f32, season: Season) {
+    fn advance(&mut self, seconds: f32, season: Season, drying: f32) {
         self.age = (self.age + f64::from(seconds)).min(100.0 * 366.0 * f64::from(DAY));
-        let growing = care(&mut self.thirst, &mut self.droop, seconds);
+        let growing = care(&mut self.thirst, &mut self.droop, seconds, drying);
         if season != Season::Winter {
             self.grow(growing / (6.0 * DAY) * spring(season));
             if self.pending_growth && self.droop == 0.0 && self.thirst < 0.6 {
@@ -207,13 +207,15 @@ fn spring(season: Season) -> f32 {
     if season == Season::Spring { 1.2 } else { 1.0 }
 }
 
-// Returns well-watered time after any droop has lifted.
-fn care(thirst: &mut f32, droop: &mut f32, seconds: f32) -> f32 {
+// Returns well-watered time after any droop has lifted. Plants droop from
+// thirst at `drying` times the daytime pace: not at all by night, while the
+// ghost sleeps, and at half pace over a long absence of days and nights.
+fn care(thirst: &mut f32, droop: &mut f32, seconds: f32, drying: f32) -> f32 {
     let wet = ((0.6 - *thirst) * Plant::THIRST_TIME).clamp(0.0, seconds);
     let dry = (seconds - (1.0 - *thirst) * Plant::THIRST_TIME).max(0.0);
     let recovery = *droop * 60.0;
     *droop = (*droop - wet / 60.0).max(0.0);
-    *droop = (*droop + dry / (6.0 * HOUR)).min(1.0);
+    *droop = (*droop + dry * drying / (6.0 * HOUR)).min(1.0);
     *thirst = (*thirst + seconds / Plant::THIRST_TIME).min(1.0);
     (wet - recovery).max(0.0)
 }
@@ -247,22 +249,26 @@ impl Plant {
 
     /// Advances the plant without any random draws. Returns bloom, droop, and
     /// petal crossings; the world records events and gives petals their drift.
-    fn advance(&mut self, seconds: f32, season: Season) -> (bool, bool, u32) {
+    fn advance(&mut self, seconds: f32, season: Season, drying: f32) -> (bool, bool, u32) {
         if self.thirst >= 1.0 && self.blossom == 0.0 {
             let before = self.droop;
-            self.droop = (self.droop + seconds / (6.0 * HOUR)).min(1.0);
-            self.bloom_age = -REST;
+            self.droop = (self.droop + seconds * drying / (6.0 * HOUR)).min(1.0);
+            // A resting plant goes on resting; one about to open waits for water.
+            if self.bloom_age < 0.0 {
+                self.bloom_age = (self.bloom_age + seconds).min(0.0);
+            }
             return (false, before <= 0.5 && self.droop > 0.5, 0);
         }
         let before_droop = self.droop;
-        let growing = care(&mut self.thirst, &mut self.droop, seconds);
+        let growing = care(&mut self.thirst, &mut self.droop, seconds, drying);
         let drooped = before_droop <= 0.5 && self.droop > 0.5;
         if season != Season::Winter {
             self.growth = (self.growth + growing * 0.003 / HOUR * spring(season)).min(1.0);
         }
         let before = self.blossom;
         let age = self.bloom_age;
-        if season == Season::Winter || self.droop > 0.0 {
+        // Open flowers outlast a dry spell; only real drooping closes them.
+        if season == Season::Winter || self.droop > 0.5 {
             self.blossom = (self.blossom - seconds / HOUR).max(0.0);
             if self.blossom < 1e-6 {
                 self.blossom = 0.0;
@@ -471,7 +477,8 @@ impl World {
             return;
         }
         let season = self.season();
-        let (bloomed, drooped, petals) = self.plant.advance(seconds, season);
+        let drying = if self.is_night() { 0.0 } else { 1.0 };
+        let (bloomed, drooped, petals) = self.plant.advance(seconds, season, drying);
         if bloomed {
             self.record(EventKind::Bloomed);
         }
@@ -502,7 +509,7 @@ impl World {
         }
         for index in 0..self.seedlings.len() {
             let before = self.seedlings[index].growth;
-            self.seedlings[index].advance(seconds, season);
+            self.seedlings[index].advance(seconds, season, drying);
             self.note_growth(index, before);
         }
     }
@@ -515,7 +522,7 @@ impl World {
         while remaining > 0.0 {
             let slice = remaining.min(60.0);
             remaining -= slice;
-            let (bloomed, drooped, _) = self.plant.advance(slice, season);
+            let (bloomed, drooped, _) = self.plant.advance(slice, season, 0.5);
             if bloomed {
                 self.record(EventKind::Bloomed);
             }
@@ -524,7 +531,7 @@ impl World {
             }
             for index in 0..self.seedlings.len() {
                 let before = self.seedlings[index].growth;
-                self.seedlings[index].advance(slice, season);
+                self.seedlings[index].advance(slice, season, 0.5);
                 self.note_growth(index, before);
             }
         }
@@ -544,7 +551,7 @@ mod tests {
             let slice = remaining.min(60.0);
             remaining -= slice;
             plant.thirst = 0.0;
-            let (bloomed, _, dropped) = plant.advance(slice, season);
+            let (bloomed, _, dropped) = plant.advance(slice, season, 1.0);
             blooms += u32::from(bloomed);
             petals += dropped;
         }
@@ -593,25 +600,61 @@ mod tests {
     }
 
     #[test]
+    fn a_plant_watered_by_day_and_left_overnight_still_sets_seeds() {
+        let mut plant = grown();
+        for day in 0..4 {
+            for minute in 0..24 * 60 {
+                let hour = minute as f32 / 60.0;
+                let awake = (6.5..22.0).contains(&hour);
+                if awake {
+                    plant.water(Season::Summer);
+                }
+                let night = !(6.5..19.5).contains(&hour);
+                plant.advance(60.0, Season::Summer, if night { 0.0 } else { 1.0 });
+            }
+            assert!(plant.droop < 0.5, "day {day}");
+        }
+        assert!(plant.seeds >= 1, "four ordinary days set no seed");
+    }
+
+    #[test]
+    fn a_short_dry_spell_leaves_open_flowers_and_a_resting_plant_keeps_resting() {
+        let mut plant = grown();
+        plant.bloom_age = 3.0 * HOUR;
+        plant.blossom = 1.0;
+        plant.thirst = 1.0;
+        plant.advance(2.0 * HOUR, Season::Summer, 1.0);
+        assert!(plant.droop > 0.0 && plant.droop <= 0.5);
+        assert_eq!(plant.blossom, 1.0);
+        assert!(plant.bloom_age > 3.0 * HOUR);
+        let mut resting = grown();
+        resting.bloom_age = -REST;
+        resting.thirst = 1.0;
+        resting.advance(HOUR, Season::Summer, 0.0);
+        assert_eq!(resting.bloom_age, -REST + HOUR);
+        assert_eq!(resting.droop, 0.0);
+    }
+
+    #[test]
     fn only_full_thirst_causes_droop_and_water_lifts_it_over_a_minute() {
         let mut plant = Plant {
             thirst: 0.9,
             growth: 0.5,
             ..Plant::default()
         };
-        plant.advance(60.0, Season::Summer);
+        plant.advance(60.0, Season::Summer, 1.0);
         assert_eq!(plant.droop, 0.0);
         plant.thirst = 1.0;
         let growth = plant.growth;
-        plant.advance(6.0 * HOUR, Season::Summer);
+        plant.advance(6.0 * HOUR, Season::Summer, 1.0);
         assert_eq!(plant.droop, 1.0);
         assert_eq!(plant.growth, growth);
         plant.water(Season::Spring);
         assert_eq!(plant.growth, growth);
-        plant.advance(30.0, Season::Summer);
+        plant.advance(30.0, Season::Summer, 1.0);
         assert!((plant.droop - 0.5).abs() < 1e-5);
         assert_eq!(plant.growth, growth);
-        plant.advance(30.0, Season::Summer);
+        plant.advance(30.0, Season::Summer, 1.0);
         assert_eq!(plant.droop, 0.0);
     }
 
@@ -793,12 +836,12 @@ mod tests {
                 .any(|entry| entry.text == "The first flower I grew from a seed is blooming.")
         );
         world.seedlings[0].thirst = 1.0;
-        world.seedlings[0].advance(6.0 * HOUR, Season::Summer);
+        world.seedlings[0].advance(6.0 * HOUR, Season::Summer, 1.0);
         assert_eq!(world.seedlings[0].droop, 1.0);
         let growth = world.seedlings[0].growth;
         world.seedlings[0].water(Season::Summer);
         assert_eq!(world.seedlings[0].growth, growth);
-        world.seedlings[0].advance(60.0, Season::Summer);
+        world.seedlings[0].advance(60.0, Season::Summer, 1.0);
         assert_eq!(world.seedlings[0].droop, 0.0);
         assert!(!world.seedlings[0].flowering(Season::Winter));
         assert!(world.seedlings[0].flowering(Season::Summer));

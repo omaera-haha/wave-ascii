@@ -402,6 +402,35 @@ const NOT_NAMES: &[&str] = &[
     "뭐라고",
 ];
 
+// Words before "call you" that deny the name or ask about it instead.
+const NOT_NAMING: &[&str] = &[
+    "not",
+    "never",
+    "no",
+    "don't",
+    "dont",
+    "won't",
+    "wont",
+    "can't",
+    "cant",
+    "cannot",
+    "shouldn't",
+    "wouldn't",
+    "didn't",
+    "doesn't",
+    "why",
+    "who",
+    "what",
+    "where",
+    "when",
+    "how",
+    "they",
+    "people",
+    "everyone",
+    "does",
+    "did",
+];
+
 /// Finds the viewer giving the ghost a name ("your name is Pip", "I'll call
 /// you Pip", "너의 이름은 뽀삐야", "뽀삐라고 부를게") without guessing one
 /// from an ordinary sentence. A question about its name gives none.
@@ -430,14 +459,22 @@ pub fn given_name(text: &str) -> Option<String> {
         };
         // "Can I call you Pip?" asks to name it; "your name is Pip?" asks
         // what its name is.
-        let offset = if starts(&["call", "you"])
+        let denied = || {
+            words[..index]
+                .iter()
+                .any(|word| NOT_NAMING.contains(&word.as_str()))
+        };
+        let offset = if (starts(&["call", "you"])
             || starts(&["name", "you"])
             || starts(&["naming", "you"])
             || starts(&["you're", "called"])
-            || starts(&["you're", "named"])
+            || starts(&["you're", "named"]))
+            && !denied()
         {
             2
-        } else if starts(&["you", "are", "called"]) || starts(&["you", "are", "named"]) {
+        } else if (starts(&["you", "are", "called"]) || starts(&["you", "are", "named"]))
+            && !denied()
+        {
             3
         } else if tail.first().is_some_and(|word| word.ends_with("라고"))
             && tail.get(1).is_some_and(|word| {
@@ -977,6 +1014,11 @@ mod tests {
             "your name is",
             "your name is Pip123",
             "you are cute",
+            "I will not call you Pip",
+            "I'd never call you Pip",
+            "Why do they call you Pip?",
+            "who are you called after?",
+            "people call you Pip",
         ] {
             assert_eq!(given_name(text), None, "{text}");
         }

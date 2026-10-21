@@ -182,31 +182,34 @@ impl Tally {
     fn note(&mut self, kind: &EventKind) {
         match kind {
             EventKind::Began(activity) => {
-                *self
+                let count = self
                     .activities
                     .entry(activity.name().to_owned())
-                    .or_default() += 1;
+                    .or_default();
+                *count = count.saturating_add(1);
             }
-            EventKind::AteMote => self.motes += 1,
-            EventKind::NudgedBall => self.nudges += 1,
-            EventKind::Fetched => self.fetches += 1,
-            EventKind::Pounced => self.pounces += 1,
-            EventKind::Danced => self.dances += 1,
-            EventKind::MoonWish => self.moon_wishes += 1,
+            EventKind::AteMote => self.motes = self.motes.saturating_add(1),
+            EventKind::NudgedBall => self.nudges = self.nudges.saturating_add(1),
+            EventKind::Fetched => self.fetches = self.fetches.saturating_add(1),
+            EventKind::Pounced => self.pounces = self.pounces.saturating_add(1),
+            EventKind::Danced => self.dances = self.dances.saturating_add(1),
+            EventKind::MoonWish => self.moon_wishes = self.moon_wishes.saturating_add(1),
             EventKind::Built { height } => {
-                self.towers += 1;
+                self.towers = self.towers.saturating_add(1);
                 self.tallest = self.tallest.max(*height);
             }
-            EventKind::Toppled { by_viewer: true } => self.toppled += 1,
+            EventKind::Toppled { by_viewer: true } => self.toppled = self.toppled.saturating_add(1),
             EventKind::Celebrated(occasion) => {
-                self.celebrations += 1;
+                self.celebrations = self.celebrations.saturating_add(1);
                 if !self.occasions.contains(occasion) {
                     self.occasions.push(*occasion);
                 }
             }
-            EventKind::Found => self.finds += 1,
-            EventKind::Jumped => self.jumps += 1,
-            EventKind::Doodled(_) | EventKind::Copied(_) => self.doodles += 1,
+            EventKind::Found => self.finds = self.finds.saturating_add(1),
+            EventKind::Jumped => self.jumps = self.jumps.saturating_add(1),
+            EventKind::Doodled(_) | EventKind::Copied(_) => {
+                self.doodles = self.doodles.saturating_add(1)
+            }
             EventKind::SawDrawing { .. } => {
                 self.drawings_seen = self.drawings_seen.saturating_add(1)
             }
@@ -214,11 +217,11 @@ impl Tally {
                 self.pictures_learned = self.pictures_learned.saturating_add(1)
             }
             EventKind::GameOver(outcome) if outcome.finished() => {
-                self.games += 1;
+                self.games = self.games.saturating_add(1);
                 match outcome {
-                    Outcome::GhostWon { .. } => self.wins += 1,
-                    Outcome::ViewerWon { .. } => self.losses += 1,
-                    Outcome::Draw => self.draws += 1,
+                    Outcome::GhostWon { .. } => self.wins = self.wins.saturating_add(1),
+                    Outcome::ViewerWon { .. } => self.losses = self.losses.saturating_add(1),
+                    Outcome::Draw => self.draws = self.draws.saturating_add(1),
                     Outcome::Abandoned => unreachable!(),
                 }
             }
@@ -255,37 +258,43 @@ impl Tally {
                 }
             }
             EventKind::Drooped => self.drooped = self.drooped.saturating_add(1),
-            EventKind::Tended => self.waterings += 1,
-            EventKind::Bloomed => self.blooms += 1,
-            EventKind::FellAsleep => self.naps += 1,
-            EventKind::Morning => self.nights += 1,
-            EventKind::RainStarted => self.showers += 1,
-            EventKind::StormStarted => self.storms += 1,
-            EventKind::SnowStarted => self.snowfalls += 1,
-            EventKind::Noticed(thing) if thing.starts_with("the rainbow") => self.rainbows += 1,
+            EventKind::Tended => self.waterings = self.waterings.saturating_add(1),
+            EventKind::Bloomed => self.blooms = self.blooms.saturating_add(1),
+            EventKind::FellAsleep => self.naps = self.naps.saturating_add(1),
+            EventKind::Morning => self.nights = self.nights.saturating_add(1),
+            EventKind::RainStarted => self.showers = self.showers.saturating_add(1),
+            EventKind::StormStarted => self.storms = self.storms.saturating_add(1),
+            EventKind::SnowStarted => self.snowfalls = self.snowfalls.saturating_add(1),
+            EventKind::Noticed(thing) if thing.starts_with("the rainbow") => {
+                self.rainbows = self.rainbows.saturating_add(1)
+            }
             EventKind::ShootingStar => {
                 self.shooting_stars = self.shooting_stars.saturating_add(1);
             }
-            EventKind::Noticed(thing) if thing == "a bird at the window" => self.birds += 1,
-            EventKind::Noticed(thing) if thing == "a moth at the lamp" => self.moths += 1,
-            EventKind::Heard(_) => self.heard += 1,
-            EventKind::Praised => self.praises += 1,
+            EventKind::Noticed(thing) if thing == "a bird at the window" => {
+                self.birds = self.birds.saturating_add(1)
+            }
+            EventKind::Noticed(thing) if thing == "a moth at the lamp" => {
+                self.moths = self.moths.saturating_add(1)
+            }
+            EventKind::Heard(_) => self.heard = self.heard.saturating_add(1),
+            EventKind::Praised => self.praises = self.praises.saturating_add(1),
             EventKind::LearnedWord { word, .. } => {
-                self.learned += 1;
+                self.learned = self.learned.saturating_add(1);
                 if self.words.len() < WORDS_NAMED && !self.words.contains(word) {
                     self.words.push(word.clone());
                 }
             }
-            EventKind::Poked { .. } => self.pokes += 1,
-            EventKind::Petted => self.pets += 1,
+            EventKind::Poked { .. } => self.pokes = self.pokes.saturating_add(1),
+            EventKind::Petted => self.pets = self.pets.saturating_add(1),
             EventKind::Kept(gift) => {
-                self.gifts += 1;
+                self.gifts = self.gifts.saturating_add(1);
                 if !self.keepsakes.contains(gift) {
                     self.keepsakes.push(*gift);
                 }
             }
-            EventKind::ExpectedArrival => self.expected += 1,
-            EventKind::MissedVisit => self.missed += 1,
+            EventKind::ExpectedArrival => self.expected = self.expected.saturating_add(1),
+            EventKind::MissedVisit => self.missed = self.missed.saturating_add(1),
             EventKind::FriendArrived(name) => {
                 self.friend_visits = self.friend_visits.saturating_add(1);
                 self.friend_name = Some(name.clone());
@@ -1686,6 +1695,29 @@ mod tests {
         assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().pounces, 0);
         let saved = serde_json::to_string(&life).unwrap();
         assert_eq!(serde_json::from_str::<Life>(&saved).unwrap(), life);
+    }
+
+    #[test]
+    fn counts_at_their_limit_from_a_damaged_save_stay_there() {
+        let mut tally = Tally {
+            motes: u32::MAX,
+            moon_wishes: u32::MAX,
+            planted: u32::MAX,
+            ..Tally::default()
+        };
+        tally.activities.insert("dance".to_owned(), u32::MAX);
+        for kind in [
+            EventKind::AteMote,
+            EventKind::MoonWish,
+            EventKind::Planted(super::super::Flower::Daisy),
+            EventKind::Began(Activity::Dance),
+        ] {
+            tally.note(&kind);
+        }
+        assert_eq!(tally.motes, u32::MAX);
+        assert_eq!(tally.moon_wishes, u32::MAX);
+        assert_eq!(tally.planted, u32::MAX);
+        assert_eq!(tally.activities["dance"], u32::MAX);
     }
 
     #[test]
