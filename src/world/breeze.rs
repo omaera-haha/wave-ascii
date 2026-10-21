@@ -104,6 +104,10 @@ impl Leaf {
 
 impl World {
     pub fn wants_window_shut(&self) -> bool {
+        self.life.cold.is_some() || self.window_needs_shelter()
+    }
+
+    fn window_needs_shelter(&self) -> bool {
         matches!(self.weather.sky, Sky::Rain | Sky::Snow)
             || self.weather.storm
             || self.bedtime()
@@ -115,7 +119,7 @@ impl World {
     /// that before opening it seems fair, so a gusty spell doesn't swing it
     /// back and forth.
     pub fn fresh_air_is_fair(&self) -> bool {
-        !self.wants_window_shut()
+        !self.window_needs_shelter()
             && self.wind.strength < CALM_ENOUGH
             && !self.is_night()
             && self.season() != Season::Winter
@@ -154,6 +158,9 @@ impl World {
         {
             self.begin(Activity::Air);
             self.ghost.plan.window = Some(open);
+        }
+        if !open {
+            self.note_cold_request(Activity::Air);
         }
         true
     }
@@ -205,6 +212,7 @@ impl World {
                 } else {
                     EventKind::ClosedWindow
                 });
+                self.cold_window_moved();
             }
             self.ghost.plan.done = true;
         }

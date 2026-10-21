@@ -298,6 +298,7 @@ pub fn request(
             pin.words()
         )
     });
+    let cold = life.cold_words();
     let creations = format!(
         "\n\nSongs you composed yourself:\n{}\n\nPicture books you wrote:\n{}",
         bullets(
@@ -331,7 +332,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\nHow shared days are changing you: {}.\n\
                  You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}{gallery}\nPaper cranes folded for the viewer: {cranes}.
+                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}{gallery}\nYour health: {cold}.\nPaper cranes folded for the viewer: {cranes}.
 Recent feelings the viewer shared: {feelings}\nViewer plans you remember: {agenda}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
@@ -875,5 +876,22 @@ pub(crate) mod tests {
         assert!(prompt.contains("Saw my first rainbow."));
         assert!(!prompt.contains("일기만을 위한 한국어"));
         assert!(!prompt.contains("이정표만을 위한 한국어"));
+    }
+    #[test]
+    fn reflections_remember_a_cold_and_the_viewers_care_in_words() {
+        let life = Life {
+            cold: Some(crate::world::cold::Cold {
+                day: "2026-12-05".to_owned(),
+                hour: 12.0,
+                severity: 0.5,
+                care: vec![crate::world::cold::Care::Stroke],
+                remaining: 80_000.0,
+            }),
+            ..Life::default()
+        };
+        let request = request(&json!({}), &[], &life, &[], None, None, None);
+        let text = &request.system[1].text;
+        assert!(text.contains("you have a little cold"));
+        assert!(text.contains("the viewer stroked you and you feel a bit better"));
     }
 }

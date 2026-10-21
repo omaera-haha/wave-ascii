@@ -1311,6 +1311,7 @@ impl App {
             ),
             visibility: 1.0 - ghost.fade,
             brightness: (0.25 + 0.75 * energy)
+                * world.cold_glow()
                 * comfort_breath.map_or(1.0, |phase| 0.9 + 0.1 * phase),
             beat: beat(ghost.mood) * (0.6 + 0.4 * energy),
         };
@@ -1340,7 +1341,7 @@ impl App {
             Some((_, Expression::Glance { .. }))
         ))
         .with_comfort(comfort_breath)
-        .with_stretch(world.stretch_amount())
+        .with_stretch(world.stretch_amount().max(world.cold_stretch()))
         .with_bubbles(blowing);
         let friend =
             world
@@ -1618,6 +1619,7 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
     }
     let away = now.saturating_sub(save.last_seen).max(0) as f32;
     world.life.miss_at(away, world.hour);
+    world.elapse_cold(f64::from(away), false);
     world.age_garden(away);
     world
         .ghost
@@ -3793,5 +3795,39 @@ mod tests {
         app.click(point);
         assert!(app.world.bubbles[0].popping.is_none());
         assert!(app.world.motes.is_empty());
+    }
+    #[test]
+    fn restoring_a_cold_counts_the_absence_once_and_remembers_recovery() {
+        let mut original = World::new(3, 12.0);
+        original.begin_life(&original.date.to_string());
+        original.life.cold = Some(crate::world::cold::Cold {
+            day: original.date.to_string(),
+            hour: 11.0,
+            severity: 0.5,
+            care: vec![crate::world::cold::Care::Words],
+            remaining: 20.0 * 3600.0,
+        });
+        original.life.last_cold = Some(original.date.to_string());
+        let save = garden_save(&original);
+        let mut restored = World::new(4, 12.0);
+        restore(&mut restored, &save, save.last_seen + 3600);
+        assert_eq!(
+            restored.life.cold.as_ref().unwrap().remaining,
+            19.0 * 3600.0
+        );
+        assert_eq!(
+            restored.life.cold.as_ref().unwrap().care,
+            [crate::world::cold::Care::Words]
+        );
+        let mut restored = World::new(4, 12.0);
+        restore(&mut restored, &save, save.last_seen + 25 * 3600);
+        assert!(restored.life.cold.is_none());
+        assert_eq!(restored.life.total.recoveries, 1);
+        assert!(restored.life.cold_recovered);
+        let mut recovered = save;
+        recovered.life = restored.saved_life();
+        recovered.last_seen += 25 * 3600;
+        restore(&mut restored, &recovered, recovered.last_seen + 3600);
+        assert_eq!(restored.life.total.recoveries, 1);
     }
 }

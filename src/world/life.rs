@@ -391,6 +391,12 @@ pub struct Tally {
     #[serde(default)]
     /// Paired names and remembered deeds supplied by their typed events.
     pub korean_details: BTreeMap<String, String>,
+    #[serde(default)]
+    pub colds: u32,
+    #[serde(default)]
+    pub care_received: u32,
+    #[serde(default)]
+    pub recoveries: u32,
 }
 
 impl Tally {
@@ -738,6 +744,13 @@ impl Tally {
                     super::gallery::Kind::Constellation => &mut self.constellation_pins,
                 };
                 *count = count.saturating_add(1).min(100_000_000);
+            }
+            EventKind::CaughtCold => self.colds = self.colds.saturating_add(1).min(100_000_000),
+            EventKind::CaredForMe(_) => {
+                self.care_received = self.care_received.saturating_add(1).min(100_000_000)
+            }
+            EventKind::Recovered { .. } => {
+                self.recoveries = self.recoveries.saturating_add(1).min(100_000_000)
             }
             _ => {}
         }
@@ -1838,6 +1851,27 @@ impl Tally {
                 "내가 찾은 별자리를 벽에 붙였어".to_owned(),
             ));
         }
+        if self.colds > 0 {
+            deeds.push((
+                Salience::Notable,
+                "caught a little cold".to_owned(),
+                "감기에 살짝 걸렸어".to_owned(),
+            ));
+        }
+        if self.care_received > 0 {
+            deeds.push((
+                Salience::Special,
+                "you looked after me while I was sick".to_owned(),
+                "아플 때 네가 돌봐 줬어".to_owned(),
+            ));
+        }
+        if self.recoveries > 0 {
+            deeds.push((
+                Salience::Notable,
+                "got over my cold".to_owned(),
+                "감기가 다 나았어".to_owned(),
+            ));
+        }
         deeds
     }
 
@@ -2054,6 +2088,12 @@ pub struct Life {
     #[serde(default)]
     /// The previous day's three most notable deeds, kept without parsing prose.
     pub yesterday: Vec<Entry>,
+    #[serde(default, deserialize_with = "super::cold::deserialize")]
+    pub cold: Option<super::cold::Cold>,
+    #[serde(default)]
+    pub last_cold: Option<String>,
+    #[serde(default)]
+    pub cold_recovered: bool,
 }
 
 impl Life {
@@ -2308,6 +2348,8 @@ impl Life {
                 kind: super::gallery::Kind::ViewerDrawing,
                 ..
             } => 0.005,
+            EventKind::CaredForMe(_) => 0.003,
+            EventKind::Recovered { cared: true } => 0.006,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -2568,6 +2610,7 @@ impl Life {
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
         super::gallery::sanitize(&mut self);
+        super::cold::sanitize(&mut self);
         for entry in self
             .diary
             .iter_mut()
@@ -3373,6 +3416,14 @@ impl Life {
             EventKind::Photographed { .. } if total.photos == 1 => (
                 "You took my picture for the first time.".to_owned(),
                 "네가 처음으로 내 사진을 찍어 줬어.".to_owned(),
+            ),
+            EventKind::CaughtCold => (
+                "I caught my first little cold.".to_owned(),
+                "처음으로 감기에 살짝 걸렸어.".to_owned(),
+            ),
+            EventKind::Recovered { cared: true } => (
+                "You looked after me when I had a cold.".to_owned(),
+                "감기에 걸렸을 때 네가 돌봐 줬어.".to_owned(),
             ),
             _ => return None,
         };

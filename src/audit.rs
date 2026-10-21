@@ -47,7 +47,11 @@ const MESSAGES: [&str; 14] = [
 ];
 
 fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
-    let start = jiff::civil::date(2026, 10, 21).at(7, 0, 0, 0);
+    let start = std::env::var("AUDIT_DATE")
+        .ok()
+        .and_then(|day| day.parse::<jiff::civil::Date>().ok())
+        .unwrap_or(jiff::civil::date(2026, 10, 21))
+        .at(7, 0, 0, 0);
     let mut world = World::new(seed, 7.0);
     world.date = start.date();
     world.birthday = born;
@@ -123,7 +127,20 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
                 ROOM_MAX.z,
             );
             world.point_at(Some(pointer));
-            if roll < 0.05 {
+            if world
+                .life
+                .cold
+                .as_ref()
+                .is_some_and(|cold| !cold.care.contains(&crate::world::cold::Care::Words))
+            {
+                let text = if korean {
+                    "빨리 나아"
+                } else {
+                    "get well soon"
+                };
+                mind.hear(&mut world, text);
+                log.push(format!("{clock} viewer says {text:?}"));
+            } else if roll < 0.05 {
                 world.poke();
                 log.push(format!("{clock} viewer pokes"));
             } else if roll < 0.15 {

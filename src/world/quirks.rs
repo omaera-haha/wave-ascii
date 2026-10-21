@@ -298,7 +298,11 @@ impl World {
             remaining: if twice { 2 } else { 1 },
             twice,
         });
-        let (low, high) = rest_after(kind);
+        let (low, high) = if kind == Quirk::Sneeze && self.life.cold.is_some() {
+            (90.0, 180.0)
+        } else {
+            rest_after(kind)
+        };
         self.quirk_triggers.ready_at =
             self.time + f64::from(duration + self.random.range(low, high));
         self.quirk_triggers.yawn_at = None;
@@ -309,6 +313,14 @@ impl World {
             self.quirk_triggers.yawned_until = self.time + 60.0;
         }
         self.record(EventKind::Quirk(kind));
+        if kind == Quirk::Sneeze
+            && self.life.cold.is_some()
+            && self.viewer_present()
+            && self.focus.is_none()
+            && self.random.unit() < 0.1
+        {
+            self.say(self.spoken("Sniff… I’ll be better soon.", "훌쩍… 곧 나을 거야."));
+        }
         true
     }
 
@@ -511,7 +523,9 @@ impl World {
         if self.behind_furniture() {
             self.quirk_triggers.dust_until = self.time + 20.0;
         }
-        let candidate = if self.pollen_tickles() || self.time < self.quirk_triggers.dust_until {
+        let candidate = if self.life.cold.is_some() {
+            Some((Quirk::Sneeze, 0.35))
+        } else if self.pollen_tickles() || self.time < self.quirk_triggers.dust_until {
             Some((Quirk::Sneeze, 0.25))
         } else if self.chilly() {
             Some((Quirk::Shiver, 0.35))
@@ -1199,5 +1213,36 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn cold_sneezes_keep_one_spell_and_the_shared_pause_between_spells() {
+        let mut world = World::new(2, 12.0);
+        world.life.cold = Some(super::super::cold::Cold {
+            day: world.date.to_string(),
+            hour: 12.0,
+            severity: 0.5,
+            care: Vec::new(),
+            remaining: 80_000.0,
+        });
+        assert!(world.start_quirk(Quirk::Sneeze));
+        assert!(!world.start_quirk(Quirk::Sneeze));
+        let ends = world.quirk.unwrap().ends;
+        let ready = world.quirk_triggers.ready_at;
+        assert!((90.0..=180.0).contains(&(ready - ends)));
+        world.time = ends + 1.0;
+        world.advance_quirks();
+        assert!(world.quirk.is_none());
+        world.time = ready - 0.01;
+        world.advance_quirks();
+        assert!(world.quirk.is_none());
+        for _ in 0..100 {
+            world.time += 10.0;
+            world.advance_quirks();
+            if world.quirk.is_some() {
+                break;
+            }
+        }
+        assert_eq!(world.quirk.unwrap().kind, Quirk::Sneeze);
+        assert!(world.quirk.unwrap().started >= ready);
     }
 }

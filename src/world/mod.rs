@@ -9,6 +9,7 @@ pub mod breaks;
 pub mod breeze;
 pub mod bubbles;
 pub mod calendar;
+pub mod cold;
 pub mod cranes;
 pub mod creation;
 mod doodle;
@@ -360,6 +361,11 @@ pub enum EventKind {
         kind: gallery::Kind,
         name: String,
     },
+    CaughtCold,
+    CaredForMe(cold::Care),
+    Recovered {
+        cared: bool,
+    },
 }
 
 impl EventKind {
@@ -629,6 +635,14 @@ impl EventKind {
                 friend::count_words(*popped_by_viewer)
             ),
             Self::Pinned { kind, name } => kind.pinned(name),
+            Self::CaughtCold => "caught a little cold".to_owned(),
+            Self::CaredForMe(kind) => {
+                format!("the viewer {} while you had a little cold", kind.words())
+            }
+            Self::Recovered { cared: true } => {
+                "got over my cold after the viewer looked after me".to_owned()
+            }
+            Self::Recovered { cared: false } => "got over my little cold".to_owned(),
         }
     }
 }
@@ -714,6 +728,7 @@ pub enum Understanding {
     Bubbles {
         accepted: bool,
     },
+    Cared,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -931,6 +946,7 @@ pub struct World {
     bubble_session: Option<bubbles::Session>,
     bubbles_finished_at: Option<f64>,
     pending_pins: Vec<gallery::Pin>,
+    chill: cold::Chill,
 }
 
 impl World {
@@ -1082,6 +1098,7 @@ impl World {
             bubble_session: None,
             bubbles_finished_at: None,
             pending_pins: Vec::new(),
+            chill: cold::Chill::default(),
         };
         world.scatter_blocks();
         world
@@ -1115,6 +1132,7 @@ impl World {
         self.ask_viewer();
         self.follow_up_agenda();
         self.advance_rhythm();
+        self.mention_cold_recovery();
     }
 
     fn advance(&mut self, seconds: f32) {
@@ -1264,6 +1282,7 @@ impl World {
         self.advance_fog();
         self.advance_story();
         self.advance_quirks();
+        self.advance_cold(seconds);
         self.advance_letters(seconds);
         self.carry_out(seconds);
         self.advance_dream();
@@ -2012,6 +2031,9 @@ impl World {
             self.petted = true;
             self.record(EventKind::Petted);
         }
+        if self.petting >= PETTED && travel.is_finite() && travel > 0.0 {
+            self.receive_cold_care(cold::Care::Stroke, None);
+        }
     }
 
     /// How much the ghost is being petted, from 0 to 1.
@@ -2188,6 +2210,12 @@ impl World {
         if introduction.is_none()
             && naming.is_none()
             && let Some(heard) = self.hear_feelings(text, korean, feeling_follow_up)
+        {
+            return heard;
+        }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_cold_care(text, korean)
         {
             return heard;
         }
@@ -2419,6 +2447,7 @@ impl World {
             .collect();
         let activity = candidates[self.random.pick(&weights)?];
         self.begin(activity);
+        self.note_cold_request(activity);
         self.listening.acted = Some((activity, self.time, true));
         Some(activity)
     }
@@ -2439,6 +2468,7 @@ impl World {
             if plan.done || plan.activity != activity {
                 self.begin(activity);
             }
+            self.note_cold_request(activity);
             // Praise or a no for it later is about these words, if it had
             // any of its own.
             if !words.is_empty() {
@@ -2542,6 +2572,7 @@ impl World {
         if plan.done || plan.activity != activity {
             self.begin(activity);
         }
+        self.note_cold_request(activity);
         self.listening.acted = Some((activity, self.time, false));
     }
 
@@ -3082,6 +3113,7 @@ impl World {
                 if self.ghost.plan.stayed(time) > 0.6 {
                     self.lamp.on = !self.lamp.on;
                     self.record(EventKind::SwitchedLamp { on: self.lamp.on });
+                    self.cold_lamp_switched();
                     self.ghost.plan.done = true;
                 }
             }
@@ -3424,12 +3456,15 @@ impl World {
         let tiring = 0.85 + 0.3 * nature.sleepy;
         let newborn = self.stage() == Stage::Newborn;
         let fresh_air = self.enjoying_air();
+        let unwell = self.life.cold.is_some();
         let ghost = &mut self.ghost;
         // A day awake tires it out slowly; motes are snacks, and a nap of
         // a quarter hour or so restores it.
         if ghost.asleep > 0.5 {
             ghost.needs.change(
-                0.0006 * seconds / tiring * if newborn { 1.2 } else { 1.0 },
+                0.0006 * seconds / tiring
+                    * if newborn { 1.2 } else { 1.0 }
+                    * if unwell { 0.9 } else { 1.0 },
                 0.0,
                 0.03 * self.petting * seconds,
             );
@@ -3469,6 +3504,7 @@ impl World {
                 * night
                 * tiring
                 * if newborn { 1.3 } else { 1.0 }
+                * if unwell { 1.12 } else { 1.0 }
                 * seconds,
             fun * seconds,
             company * seconds,

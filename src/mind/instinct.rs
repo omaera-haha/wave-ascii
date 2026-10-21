@@ -501,6 +501,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             weight
                 * caring
                 * world.quirk_leaning(*activity)
+                * world.cold_leaning(*activity)
                 * wishing
                 * quiet
                 * playful
@@ -1264,5 +1265,24 @@ mod tests {
             world.hear("bubbles!").understanding,
             Understanding::Bubbles { accepted: true }
         );
+    }
+    #[test]
+    fn a_little_cold_damps_play_and_favors_rest_and_reading_until_recovery() {
+        let mut world = World::new(1, 12.0);
+        let choices = [Activity::Play, Activity::Read, Activity::Rest];
+        let healthy = weigh(&world, &choices);
+        world.life.cold = Some(crate::world::cold::Cold {
+            day: world.date.to_string(),
+            hour: 12.0,
+            severity: 0.5,
+            care: Vec::new(),
+            remaining: 80_000.0,
+        });
+        let sick = weigh(&world, &choices);
+        assert!(sick[0].1 < healthy[0].1);
+        assert!(sick[1].1 > healthy[1].1);
+        assert!(sick[2].1 > healthy[2].1);
+        world.elapse_cold(100_000.0, false);
+        assert_eq!(weigh(&world, &choices), healthy);
     }
 }

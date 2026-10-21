@@ -84,6 +84,13 @@ and it may yawn back. Shivers draw it toward warmth or a shut window. These
 moments move its face and body and leave small diary memories, while sleep,
 stories, and games stay quiet.
 
+After a chilly spell, a grown ghost may rarely catch a little cold. It
+sniffles, sneezes, rests more, and keeps its light a little softer for about
+a day. A stroke, “get well” or “빨리 나아”, asking it to turn on the lamp
+at night, or clicking the window to shut it helps it recover sooner. It
+remembers your care. Colds always pass, including while you are away;
+`--peek` mentions a cold while it lasts. They are never your fault.
+
 A small wooden music box sits by the right wall. The ghost winds its crank,
 then listens with closed eyes, sways, or dances little loops to the beat.
 Golden notes rise from its open lid and fade as the tune winds down. There
@@ -967,11 +974,13 @@ live three days offline beside a simulated viewer and prints how it spent
 them: activity shares by hour, how long plans last, every kind of event,
 its most repeated thoughts and speech, its diary, its milestones, and its
 bond and library at the end of each day. `AUDIT_DAYS` lets it live longer,
-for pacing that only shows over weeks.
+for pacing that only shows over weeks. `AUDIT_DATE` sets the starting local
+date for seasonal checks.
 
 ```bash
 cargo test --release audit -- --ignored --nocapture
 AUDIT_DAYS=40 cargo test --release audit -- --ignored --nocapture
+AUDIT_DATE=2026-12-01 AUDIT_DAYS=40 cargo test --release audit_a_grown -- --ignored --nocapture
 ```
 
 Dependencies: `crossterm` for the terminal, `glam` for vector math, `tokio`
