@@ -155,6 +155,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::KickedBall
         | EventKind::DroppedMote
         | EventKind::WokeUp
+        | EventKind::Thunder
         | EventKind::Poked { count: 1 } => Emote::Alarm,
         EventKind::Poked { count } if *count >= 3 => Emote::Anger,
         EventKind::Jumped => Emote::Alarm,

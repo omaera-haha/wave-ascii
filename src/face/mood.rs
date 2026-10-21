@@ -73,7 +73,9 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::PickedUpBall
         | EventKind::Danced
         | EventKind::Doodled(_) => Expression::Smile,
-        EventKind::WokeUp | EventKind::KickedBall | EventKind::Jumped => Expression::Surprise,
+        EventKind::WokeUp | EventKind::KickedBall | EventKind::Jumped | EventKind::Thunder => {
+            Expression::Surprise
+        }
         EventKind::ViewerArrived => Expression::Wink,
         EventKind::Noticed(thing)
             if thing.starts_with("the rainbow") || thing == "the falling snow" =>

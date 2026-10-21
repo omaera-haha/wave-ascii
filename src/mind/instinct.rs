@@ -1,4 +1,4 @@
-use crate::world::{Activity, EventKind, World, flat};
+use crate::world::{Activity, EventKind, GREETS_FROM, World, flat};
 
 /// How much the ghost's needs, surroundings, and habits pull it toward each
 /// of the activities open to it, as chances that add up to 1. This is the mind it
@@ -7,6 +7,7 @@ use crate::world::{Activity, EventKind, World, flat};
 pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
     let needs = world.ghost.needs;
     let night = world.is_night();
+    let shelter = world.weather.storm && world.life.bond < GREETS_FROM;
     let weights: Vec<f32> = options
         .iter()
         .map(|activity| match activity {
@@ -18,7 +19,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 });
                 0.2 + 1.1 * (1.0 - needs.energy) + 0.4 * (1.0 - needs.fun) + close
             }
-            Activity::Rest => 2.2 * (1.0 - needs.energy).powi(2) + if night { 0.5 } else { 0.0 },
+            Activity::Rest => {
+                2.2 * (1.0 - needs.energy).powi(2)
+                    + if night { 0.5 } else { 0.0 }
+                    + if shelter { 0.6 } else { 0.0 }
+            }
             Activity::Play => {
                 let close = (1.5 - flat(world.ball.position - world.ghost.position).length())
                     .max(0.0)
@@ -42,10 +47,12 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             }
             Activity::Window => {
                 let outside = &world.weather;
-                0.2 + 0.5 * (1.0 - needs.fun)
+                let weight = 0.2
+                    + 0.5 * (1.0 - needs.fun)
                     + 0.6 * outside.rain(world.time)
                     + 0.6 * outside.snow(world.time)
-                    + 2.5 * outside.rainbow(world.time)
+                    + 2.5 * outside.rainbow(world.time);
+                weight * if shelter { 0.2 } else { 1.0 }
             }
             Activity::Fetch => {
                 let thrown = world
@@ -192,6 +199,24 @@ mod tests {
         world.life.bond = 0.9;
         let friend = weigh(&world, &world.options());
         assert!(chance(&friend, Activity::Visit) > chance(&stranger, Activity::Visit));
+    }
+
+    #[test]
+    fn a_storm_draws_an_unfamiliar_ghost_to_the_cushion_and_away_from_the_window() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.needs.energy = 0.7;
+        world.time = 40.0;
+        world.weather.sky = Sky::Rain;
+        world.weather.until = 300.0;
+        let options = world.options();
+        let rain = weigh(&world, &options);
+        world.weather.storm = true;
+        let storm = weigh(&world, &options);
+        assert!(chance(&storm, Activity::Rest) > chance(&rain, Activity::Rest));
+        assert!(chance(&storm, Activity::Window) < chance(&rain, Activity::Window));
+        assert!(chance(&storm, Activity::Rest) > chance(&storm, Activity::Window));
+        world.life.bond = GREETS_FROM;
+        assert_eq!(weigh(&world, &options), rain);
     }
 
     #[test]

@@ -130,10 +130,17 @@ autumn gold and drifting leaves, and bare winter branches. The sun crosses
 the sky, clouds drift, stars twinkle, and the moon waxes and wanes with the
 calendar. A few fireflies blink over the hills on summer nights.
 Showers come more often in spring and less often in summer; rain that ends
-by day leaves a rainbow for a couple of minutes. Winter brings soft falling
-snow instead, whitening the hills and dusting the branches. Snow builds in
-about two minutes and melts over about twenty minutes by day or an hour at
-night. The ghost lights up when it spots a rainbow or falling snow.
+by day leaves a rainbow for a couple of minutes. Some showers become
+thunderstorms, especially in summer: jagged lightning flashes across the
+window and lights the room, followed a moment later by thunder. The ghost
+flinches and may wake from a nap. While it barely knows you, it favors the
+cushion and shies away from the window; once it trusts you, it comes to the
+glass to be near you when thunder rolls, unless it is resting, tending the
+plant, or fetching the ball. Storms find their way into its diary and dreams.
+Winter brings soft falling snow instead, whitening the hills and dusting
+the branches. Snow builds in about two minutes and melts over about twenty
+minutes by day or an hour at night. The ghost lights up when it spots a
+rainbow or falling snow.
 
 - **Its eyes** follow where it faces, so its face shows what it's looking at,
   except while your pointer moves, which it watches instead.

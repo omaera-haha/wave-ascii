@@ -316,6 +316,31 @@ mod tests {
     }
 
     #[test]
+    fn storms_and_thunder_reach_the_minds_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.weather.sky = Sky::Rain;
+        world.weather.storm = true;
+        world.weather.until = 300.0;
+        world.weather.thunder_at = Some(0.05);
+        world.events.push(crate::world::Event {
+            time: 0.0,
+            kind: crate::world::EventKind::StormStarted,
+        });
+        world.step(0.1);
+        let observation = observe(&world);
+        assert_eq!(observation["outside_the_window"], "a thunderstorm");
+        let events = recent(&world, 8);
+        assert!(events.contains(&"a thunderstorm rolled in (just now)".to_owned()));
+        assert!(events.contains(&"thunder rumbled outside (just now)".to_owned()));
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+
+    #[test]
     fn the_ghost_reports_what_it_sees_where() {
         let mut world = World::new(1, 12.0);
         world.ghost.position = Vec3::new(0.0, 1.2, 0.0);
