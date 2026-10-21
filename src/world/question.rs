@@ -8,6 +8,8 @@ pub enum Question {
     Doing,
     /// What it is called.
     Name,
+    /// Whether it knows the viewer's name.
+    ViewerName,
     /// Whether it likes the viewer.
     Liking,
     /// How old it is.
@@ -30,6 +32,16 @@ pub enum Question {
 // lowercased and without apostrophes. More particular questions come first,
 // so "are you tired" is not taken for "are you okay".
 const ENGLISH: &[(Question, &[&[&str]])] = &[
+    (
+        Question::ViewerName,
+        &[
+            &["whats", "my", "name"],
+            &["what", "is", "my", "name"],
+            &["do", "you", "know", "my", "name"],
+            &["remember", "my", "name"],
+            &["who", "am", "i"],
+        ],
+    ),
     (
         Question::Name,
         &[
@@ -150,6 +162,17 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
     (
+        Question::ViewerName,
+        &[
+            "내이름이뭐",
+            "내이름뭐",
+            "내이름알",
+            "내이름기억",
+            "내가누구",
+        ],
+        false,
+    ),
+    (
         Question::Name,
         &[
             "이름이뭐",
@@ -253,6 +276,8 @@ mod tests {
             ("whatcha doing", Question::Doing),
             ("what's up", Question::Doing),
             ("What's your name?", Question::Name),
+            ("what's my name?", Question::ViewerName),
+            ("do you know my name", Question::ViewerName),
             ("who are you", Question::Name),
             ("Do you like me?", Question::Liking),
             ("do you love me", Question::Liking),
@@ -279,6 +304,8 @@ mod tests {
             ("기분 어때?", Question::Feeling),
             ("잘 지냈어?", Question::Feeling),
             ("이름이 뭐야?", Question::Name),
+            ("내 이름이 뭐야?", Question::ViewerName),
+            ("내 이름 알아?", Question::ViewerName),
             ("너 누구야", Question::Name),
             ("몇 살이야?", Question::Age),
             ("나 좋아해?", Question::Liking),

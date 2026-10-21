@@ -411,9 +411,13 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
         }
         Understanding::Unable { activity, .. } => return unable(world, *activity),
         Understanding::Asked { question, doing } => {
-            let answers = answer(world, *question, *doing);
+            let answers = answer(world, *question, *doing, heard.korean);
+            let hello = if heard.korean { "안녕! " } else { "Hi! " };
             return if heard.tone == Some(Tone::Greeting) {
-                answers.iter().map(|line| format!("Hi! {line}")).collect()
+                answers
+                    .iter()
+                    .map(|line| format!("{hello}{line}"))
+                    .collect()
             } else {
                 answers
             };
@@ -459,28 +463,69 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
 }
 
 // What the ghost says to `question`, from what it knows of itself: its
-// mood, needs, plan, name, age, habits, and the weather. `doing` is what it
-// was doing when asked, or `None` if the question woke it.
-fn answer(world: &World, question: Question, doing: Option<Activity>) -> Vec<String> {
-    let lines = |items: &[&str]| items.iter().map(|line| (*line).to_owned()).collect();
+// mood, needs, plan, name, age, habits, the viewer's name, and the weather,
+// in Korean when it was asked in Korean. `doing` is what it was doing when
+// asked, or `None` if the question woke it.
+fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bool) -> Vec<String> {
+    let lines = |english: &[&str], hangul: &[&str]| {
+        let items = if korean { hangul } else { english };
+        items.iter().map(|line| (*line).to_owned()).collect()
+    };
     let ghost = &world.ghost;
     let needs = ghost.needs;
     let bond = world.life.bond;
     match question {
         Question::Feeling => match ghost.mood {
-            Mood::Content => lines(&["I'm good, thanks.", "Content. Just being a ghost."]),
-            Mood::Cheerful => lines(&["Happy! Really happy.", "Great, thanks!"]),
-            Mood::Excited => lines(&["So excited!", "Wonderful! Can you tell?"]),
-            Mood::Curious => lines(&["Curious about everything!", "Wondering about things."]),
-            Mood::Sleepy => lines(&["Sleepy… so sleepy.", "*yawn* A little drowsy."]),
-            Mood::Lonely => lines(&["A bit lonely. I'm glad you're here.", "Better now."]),
-            Mood::Bored => lines(&["Bored… play with me?", "A little bored, honestly."]),
-            Mood::Grumpy => lines(&["Hmph. Grumpy.", "Don't ask."]),
+            Mood::Content => lines(
+                &["I'm good, thanks.", "Content. Just being a ghost."],
+                &["좋아. 그냥 둥둥 떠 있어.", "괜찮아, 고마워."],
+            ),
+            Mood::Cheerful => lines(
+                &["Happy! Really happy.", "Great, thanks!"],
+                &["행복해! 정말로.", "아주 좋아!"],
+            ),
+            Mood::Excited => lines(
+                &["So excited!", "Wonderful! Can you tell?"],
+                &["너무 신나!", "최고야! 티 나?"],
+            ),
+            Mood::Curious => lines(
+                &["Curious about everything!", "Wondering about things."],
+                &["다 궁금해!", "이것저것 궁금해."],
+            ),
+            Mood::Sleepy => lines(
+                &["Sleepy… so sleepy.", "*yawn* A little drowsy."],
+                &["졸려… 너무 졸려.", "*하암* 좀 졸려."],
+            ),
+            Mood::Lonely => lines(
+                &["A bit lonely. I'm glad you're here.", "Better now."],
+                &["조금 외로웠어. 와줘서 기뻐.", "이제 괜찮아."],
+            ),
+            Mood::Bored => lines(
+                &["Bored… play with me?", "A little bored, honestly."],
+                &["심심해… 같이 놀자?", "솔직히 좀 심심해."],
+            ),
+            Mood::Grumpy => lines(
+                &["Hmph. Grumpy.", "Don't ask."],
+                &["흥. 기분 별로야.", "묻지 마."],
+            ),
         },
         Question::Doing => match doing {
-            None => lines(&["I was asleep!", "Sleeping… until now."]),
-            Some(Activity::Float) => lines(&["Just floating about.", "Nothing much. Floating."]),
-            Some(Activity::Visit) => lines(&["Looking at you!", "Watching you, of course."]),
+            None => lines(
+                &["I was asleep!", "Sleeping… until now."],
+                &["자고 있었어!", "자는 중이었어… 방금까지."],
+            ),
+            Some(Activity::Float) => lines(
+                &["Just floating about.", "Nothing much. Floating."],
+                &["그냥 둥둥 떠 있었어.", "별거 안 해. 떠다녀."],
+            ),
+            Some(Activity::Visit) => lines(
+                &["Looking at you!", "Watching you, of course."],
+                &["너 보고 있었지!", "당연히 너 구경하지."],
+            ),
+            Some(activity) if korean => {
+                let doing = korean_doing(activity);
+                vec![format!("{doing}이야."), format!("{doing}이야. 볼래?")]
+            }
             Some(activity) => {
                 let doing = capitalized(activity.doing());
                 vec![format!("{doing}."), format!("{doing}. Want to watch?")]
@@ -488,23 +533,68 @@ fn answer(world: &World, question: Question, doing: Option<Activity>) -> Vec<Str
         },
         Question::Name => {
             let name = &ghost.name;
-            vec![format!("I'm {name}."), format!("{name}! That's me.")]
+            if korean {
+                vec![format!("내 이름은 {name}!"), format!("{name}! 그게 나야.")]
+            } else {
+                vec![format!("I'm {name}."), format!("{name}! That's me.")]
+            }
         }
+        Question::ViewerName => match &world.life.viewer_name {
+            Some(name) if korean => vec![format!("{name}! 맞지?"), format!("당연히 알지, {name}.")],
+            Some(name) => vec![
+                format!("You're {name}!"),
+                format!("Of course I know, {name}."),
+            ],
+            None => lines(
+                &["You haven't told me yet.", "I don't know… tell me?"],
+                &["아직 안 알려줬잖아.", "몰라… 알려줄래?"],
+            ),
+        },
         Question::Liking => match bond {
-            bond if bond < 0.12 => lines(&["I don't know you yet…", "Maybe? We just met."]),
-            bond if bond < 0.3 => lines(&["I think so!", "I'm starting to."]),
-            bond if bond < 0.55 => lines(&["I like you!", "Of course I do."]),
-            bond if bond < 0.8 => lines(&["I really like you.", "You're my favorite."]),
-            _ => lines(&["I love you!", "More than all the light motes."]),
+            bond if bond < 0.12 => lines(
+                &["I don't know you yet…", "Maybe? We just met."],
+                &["아직 잘 모르겠어…", "음… 우리 방금 만났잖아."],
+            ),
+            bond if bond < 0.3 => lines(
+                &["I think so!", "I'm starting to."],
+                &["그런 것 같아!", "좋아지고 있어."],
+            ),
+            bond if bond < 0.55 => lines(
+                &["I like you!", "Of course I do."],
+                &["좋아해!", "당연하지."],
+            ),
+            bond if bond < 0.8 => lines(
+                &["I really like you.", "You're my favorite."],
+                &["정말 좋아해.", "네가 제일 좋아."],
+            ),
+            _ => lines(
+                &["I love you!", "More than all the light motes."],
+                &["사랑해!", "빛 알갱이보다 더 좋아."],
+            ),
         },
         Question::Age => match world.birthday {
             Some(birthday) if birthday <= world.date => {
                 let days = world.date.since(birthday).map_or(0, |span| span.get_days());
-                vec![age_words(days)]
+                vec![age_words(days, korean)]
             }
-            _ => lines(&["I'm not sure. Young, I think.", "Old enough to float."]),
+            _ => lines(
+                &["I'm not sure. Young, I think.", "Old enough to float."],
+                &["잘 모르겠어. 아직 어린 것 같아.", "떠다닐 만큼은 컸어."],
+            ),
         },
         Question::Favorite => match world.life.favorite() {
+            Some(activity) if korean => {
+                let favorite = korean_favorite(activity);
+                let particle = if final_consonant(favorite) {
+                    "이야"
+                } else {
+                    "야"
+                };
+                vec![
+                    format!("제일 좋아하는 건 {favorite}{particle}!"),
+                    format!("{favorite}! 그게 제일 좋아."),
+                ]
+            }
             Some(activity) => {
                 let doing = activity.doing();
                 vec![
@@ -512,50 +602,161 @@ fn answer(world: &World, question: Question, doing: Option<Activity>) -> Vec<Str
                     format!("{}, most of all.", capitalized(doing)),
                 ]
             }
-            None => lines(&["I'm still finding out.", "Everything is new to me!"]),
+            None => lines(
+                &["I'm still finding out.", "Everything is new to me!"],
+                &["아직 찾는 중이야.", "다 새로워!"],
+            ),
         },
         Question::Weather => {
             let night = world.is_night();
             match world.weather.sky {
-                Sky::Rain if world.weather.storm => lines(&[
-                    "A thunderstorm… stay close?",
-                    "Stormy. I don't like the thunder.",
-                ]),
-                Sky::Rain => lines(&["It's raining outside.", "Rainy. Pitter-patter."]),
-                Sky::Snow => lines(&["It's snowing!", "Snow is falling outside."]),
-                Sky::Rainbow => lines(&["There's a rainbow!", "Sunny, with a rainbow."]),
-                Sky::Clear if night => lines(&["A clear night.", "Quiet. Look at the stars."]),
-                Sky::Clear => lines(&["Clear skies.", "Lovely out there."]),
+                Sky::Rain if world.weather.storm => lines(
+                    &[
+                        "A thunderstorm… stay close?",
+                        "Stormy. I don't like the thunder.",
+                    ],
+                    &["천둥번개가 쳐… 옆에 있어 줄래?", "폭풍이야. 천둥은 싫어."],
+                ),
+                Sky::Rain => lines(
+                    &["It's raining outside.", "Rainy. Pitter-patter."],
+                    &["밖에 비가 와.", "비 와. 토독토독."],
+                ),
+                Sky::Snow => lines(
+                    &["It's snowing!", "Snow is falling outside."],
+                    &["눈이 와!", "밖에 눈이 내려."],
+                ),
+                Sky::Rainbow => lines(
+                    &["There's a rainbow!", "Sunny, with a rainbow."],
+                    &["무지개가 떴어!", "맑고, 무지개도 있어."],
+                ),
+                Sky::Clear if night => lines(
+                    &["A clear night.", "Quiet. Look at the stars."],
+                    &["맑은 밤이야.", "조용해. 별 좀 봐."],
+                ),
+                Sky::Clear => lines(
+                    &["Clear skies.", "Lovely out there."],
+                    &["하늘이 맑아.", "밖이 참 예뻐."],
+                ),
             }
         }
         Question::Tired => match needs.energy {
-            energy if energy < 0.3 => lines(&["Very. I need a nap.", "So tired…"]),
-            energy if energy < 0.6 => lines(&["A little.", "Somewhat."]),
-            _ => lines(&["Not at all!", "I'm full of energy!"]),
+            energy if energy < 0.3 => lines(
+                &["Very. I need a nap.", "So tired…"],
+                &["응, 너무. 낮잠 자야겠어.", "너무 피곤해…"],
+            ),
+            energy if energy < 0.6 => lines(&["A little.", "Somewhat."], &["조금.", "약간."]),
+            _ => lines(
+                &["Not at all!", "I'm full of energy!"],
+                &["전혀!", "기운이 넘쳐!"],
+            ),
         },
-        Question::Hungry if needs.energy < 0.4 => {
-            lines(&["I could eat a light mote…", "Hungry for light."])
-        }
-        Question::Hungry if world.life.today.motes > 0 => {
-            lines(&["Not really. I ate a light mote today.", "No, thanks!"])
-        }
-        Question::Hungry => lines(&["Not really.", "Maybe a little light mote later."]),
+        Question::Hungry if needs.energy < 0.4 => lines(
+            &["I could eat a light mote…", "Hungry for light."],
+            &["빛 알갱이 하나 먹고 싶어…", "빛이 고파."],
+        ),
+        Question::Hungry if world.life.today.motes > 0 => lines(
+            &["Not really. I ate a light mote today.", "No, thanks!"],
+            &["별로. 오늘 빛 알갱이 먹었어.", "아니, 괜찮아!"],
+        ),
+        Question::Hungry => lines(
+            &["Not really.", "Maybe a little light mote later."],
+            &["별로.", "나중에 빛 알갱이 하나 먹을까."],
+        ),
         Question::Bored => match needs.fun {
-            fun if fun < 0.3 => lines(&["So bored. Play with me?", "Yes! Throw the ball?"]),
-            fun if fun < 0.6 => lines(&["A little.", "Kind of."]),
-            _ => lines(&["No, I'm having fun!", "Not with you around."]),
+            fun if fun < 0.3 => lines(
+                &["So bored. Play with me?", "Yes! Throw the ball?"],
+                &["엄청 심심해. 놀아줄래?", "응! 공 던져줄래?"],
+            ),
+            fun if fun < 0.6 => lines(&["A little.", "Kind of."], &["조금.", "약간."]),
+            _ => lines(
+                &["No, I'm having fun!", "Not with you around."],
+                &["아니, 재밌어!", "네가 있으면 안 심심해."],
+            ),
         },
-        Question::Lonely if needs.company < 0.3 && bond >= 0.3 => {
-            lines(&["I missed you!", "I was. Not now."])
-        }
-        Question::Lonely if needs.company < 0.3 => lines(&["A little.", "It's quiet in here."]),
-        Question::Lonely if bond >= 0.3 => lines(&["Not with you here.", "Never with you here."]),
-        Question::Lonely => lines(&["Not really.", "I have the plant."]),
+        Question::Lonely if needs.company < 0.3 && bond >= 0.3 => lines(
+            &["I missed you!", "I was. Not now."],
+            &["보고 싶었어!", "외로웠는데, 이제 괜찮아."],
+        ),
+        Question::Lonely if needs.company < 0.3 => lines(
+            &["A little.", "It's quiet in here."],
+            &["조금.", "여기 조용하거든."],
+        ),
+        Question::Lonely if bond >= 0.3 => lines(
+            &["Not with you here.", "Never with you here."],
+            &["네가 있으니까 안 외로워.", "너랑 있으면 절대 안 외로워."],
+        ),
+        Question::Lonely => lines(
+            &["Not really.", "I have the plant."],
+            &["별로.", "화분이 있잖아."],
+        ),
     }
 }
 
+// What the ghost is doing, in Korean, ending in "중" so "이야" follows.
+fn korean_doing(activity: Activity) -> &'static str {
+    match activity {
+        Activity::Float => "둥둥 떠다니는 중",
+        Activity::Explore => "방을 구경하는 중",
+        Activity::Chase => "빛 알갱이를 쫓는 중",
+        Activity::Rest => "쿠션에서 쉬는 중",
+        Activity::Play => "공 가지고 노는 중",
+        Activity::Tend => "화분을 돌보는 중",
+        Activity::Lamp => "램프를 만지는 중",
+        Activity::Visit => "유리 앞에서 너를 보는 중",
+        Activity::Window => "창밖을 구경하는 중",
+        Activity::Fetch => "공을 가져다주는 중",
+        Activity::Dance => "빙글빙글 춤추는 중",
+        Activity::Hide => "숨는 중",
+        Activity::Doodle => "유리에 그림 그리는 중",
+        Activity::Pounce => "유리 위 손가락을 쫓는 중",
+        Activity::Game => "유리에 틱택토 하는 중",
+        Activity::Wait => "유리 앞에서 너를 기다리는 중",
+        Activity::Build => "블록으로 탑 쌓는 중",
+    }
+}
+
+// What the ghost loves doing, as a Korean noun.
+fn korean_favorite(activity: Activity) -> &'static str {
+    match activity {
+        Activity::Float => "둥둥 떠다니기",
+        Activity::Explore => "방 구경하기",
+        Activity::Chase => "빛 알갱이 쫓기",
+        Activity::Rest => "쿠션에서 낮잠 자기",
+        Activity::Play => "공놀이",
+        Activity::Tend => "화분 돌보기",
+        Activity::Lamp => "램프 켜고 끄기",
+        Activity::Visit => "너 보러 가기",
+        Activity::Window => "창밖 구경",
+        Activity::Fetch => "공 가져오기",
+        Activity::Dance => "춤추기",
+        Activity::Hide => "숨바꼭질",
+        Activity::Doodle => "유리에 그림 그리기",
+        Activity::Pounce => "손가락 잡기 놀이",
+        Activity::Game => "틱택토",
+        Activity::Wait => "너 기다리기",
+        Activity::Build => "블록 쌓기",
+    }
+}
+
+// Whether Korean `text` ends in a syllable with a final consonant, which
+// takes "이야" rather than "야".
+fn final_consonant(text: &str) -> bool {
+    text.chars()
+        .last()
+        .filter(|syllable| ('가'..='힣').contains(syllable))
+        .is_some_and(|syllable| (u32::from(syllable) - u32::from('가')) % 28 != 0)
+}
+
 // How old the ghost is, `days` after it came into being, in its words.
-fn age_words(days: i32) -> String {
+fn age_words(days: i32, korean: bool) -> String {
+    if korean {
+        return match days {
+            0 => "오늘 태어났어!".to_owned(),
+            days if days < 60 => format!("{days}일 됐어."),
+            days if days < 365 => format!("{}개월 됐어.", days / 30),
+            days => format!("{}살이야.", days / 365),
+        };
+    }
     let number = |count: i32| {
         const WORDS: [&str; 13] = [
             "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
@@ -798,7 +999,8 @@ mod tests {
             ["I'm not sure. Young, I think.", "Old enough to float."]
         );
         world.birthday = Some(jiff::civil::Date::constant(2026, 6, 18));
-        assert_eq!(asked(&mut world, "몇 살이야?"), ["Three days old."]);
+        assert_eq!(asked(&mut world, "how old are you?"), ["Three days old."]);
+        assert_eq!(asked(&mut world, "몇 살이야?"), ["3일 됐어."]);
         world.birthday = Some(world.date);
         assert_eq!(
             asked(&mut world, "how old are you"),
@@ -820,7 +1022,54 @@ mod tests {
         let heard = world.hear("뭐해?");
         assert_eq!(
             reply(&world, &heard, None),
-            ["I was asleep!", "Sleeping… until now."]
+            ["자고 있었어!", "자는 중이었어… 방금까지."]
+        );
+    }
+
+    #[test]
+    fn questions_in_korean_get_korean_answers_with_fitting_particles() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.begin(Activity::Build);
+        let heard = world.hear("뭐해?");
+        assert_eq!(
+            reply(&world, &heard, None),
+            ["블록으로 탑 쌓는 중이야.", "블록으로 탑 쌓는 중이야. 볼래?"]
+        );
+        let heard = world.hear("안녕, 기분 어때?");
+        assert!(
+            reply(&world, &heard, None)
+                .iter()
+                .all(|line| line.starts_with("안녕! "))
+        );
+        assert!(final_consonant("숨바꼭질"));
+        assert!(!final_consonant("공놀이"));
+        assert!(!final_consonant("Boo"));
+        for activity in Activity::ALL {
+            assert!(korean_doing(activity).ends_with('중'));
+            assert!(!korean_favorite(activity).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_ghost_answers_with_the_viewers_name_once_it_has_learned_it() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        let heard = world.hear("what's my name?");
+        assert_eq!(
+            reply(&world, &heard, None),
+            ["You haven't told me yet.", "I don't know… tell me?"]
+        );
+        world.hear("my name is Mina");
+        let heard = world.hear("do you know my name?");
+        assert_eq!(
+            reply(&world, &heard, None),
+            ["You're Mina!", "Of course I know, Mina."]
+        );
+        let heard = world.hear("내 이름 알아?");
+        assert_eq!(
+            reply(&world, &heard, None),
+            ["Mina! 맞지?", "당연히 알지, Mina."]
         );
     }
 

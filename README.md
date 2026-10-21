@@ -181,9 +181,10 @@ piped output never saves them.
   it in the life panel. A later "call me …" changes it.
 - **Asking it things.** Without keys it still answers simple questions about
   itself, in English or Korean: how it feels ("how are you?", "기분 어때?"),
-  what it's doing ("뭐해?"), its name, its age, whether it likes you, what it
-  loves most, the weather outside, and whether it's tired, hungry, bored, or
-  lonely. It answers from its mood, needs, habits, and bond, and learns no
+  what it's doing ("뭐해?"), its name, your name once you've told it, its
+  age, whether it likes you, what it loves most, the weather outside, and
+  whether it's tired, hungry, bored, or lonely. It answers from its mood,
+  needs, habits, and bond, in Korean when you ask in Korean, and learns no
   words from a question. With a Claude key, Claude answers instead.
 
 ### What you see
