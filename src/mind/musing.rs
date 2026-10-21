@@ -764,6 +764,7 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
     let needs = ghost.needs;
     let bond = world.life.bond;
     match question {
+        Question::Story => Vec::new(),
         Question::Friend => match &world.life.friend {
             Some(friend) if korean => vec![format!(
                 "내 유령 친구 이름은 {}! {}",
@@ -1057,6 +1058,202 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
     }
 }
 
+type StoryBeat = (&'static str, &'static str);
+
+fn story_threads(world: &World) -> Vec<[StoryBeat; 2]> {
+    let mut threads = Vec::new();
+    let life = &world.life;
+    if !life.keepsakes.is_empty() && life.bird_trust > 0.0 {
+        threads.push([
+            (
+                "A bird left me a little gift.",
+                "새가 작은 선물을 두고 갔어.",
+            ),
+            (
+                "I put it on my shelf, safe as a tiny treasure.",
+                "선반에 작은 보물처럼 소중히 두었지.",
+            ),
+        ]);
+    }
+    if life.friend.as_ref().is_some_and(|friend| friend.visits > 0) && life.total.friend_games > 0 {
+        threads.push([
+            (
+                "One evening, {friend} came to play.",
+                "어느 저녁, {friend} 친구가 놀러 왔어.",
+            ),
+            (
+                "We shared a little game beneath the moon.",
+                "우리는 달 아래서 작은 놀이를 함께했어.",
+            ),
+        ]);
+    }
+    if life.total.towers > 0 {
+        threads.push([
+            (
+                "I built a tower that wobbled toward the ceiling.",
+                "천장을 향해 흔들흔들 탑을 쌓았어.",
+            ),
+            if life.skills.level(Skill::Stacking) >= 0.65 {
+                (
+                    "My practice helped the little blocks stay still.",
+                    "연습한 덕에 작은 블록들이 가만히 버텼지.",
+                )
+            } else {
+                (
+                    "Each block felt like a brave little step upward.",
+                    "블록 하나마다 용감한 작은 걸음 같았어.",
+                )
+            },
+        ]);
+    }
+    if life.total.flowered > 0
+        || world
+            .seedlings
+            .iter()
+            .any(|seedling| seedling.growth >= 1.0)
+    {
+        threads.push([
+            (
+                "A seed in my little pot became a flower.",
+                "내 작은 화분의 씨앗이 꽃이 되었어.",
+            ),
+            (
+                "Something so small had been holding a whole bloom.",
+                "그 작은 것 안에 꽃 한 송이가 숨어 있었지.",
+            ),
+        ]);
+    }
+    if life.total.shooting_stars > 0 {
+        threads.push([
+            (
+                "A shooting star slipped past my window.",
+                "별똥별이 내 창문 밖을 스쳐 갔어.",
+            ),
+            (
+                "I made a wish and kept it warm inside me.",
+                "소원을 빌고 마음속에 따뜻하게 간직했지.",
+            ),
+        ]);
+    }
+    if life
+        .milestones
+        .iter()
+        .any(|entry| entry.text == "I came into being in a glass box.")
+        && life.total.heard > 0
+    {
+        threads.push([
+            (
+                "I first woke inside this glass box.",
+                "처음 이 유리 상자 안에서 눈을 떴어.",
+            ),
+            (
+                "Then you arrived, and the room felt warmer.",
+                "그러다 네가 와서 방이 더 따뜻해졌지.",
+            ),
+        ]);
+    }
+    threads
+}
+
+/// A little tale whose memories belong to this ghost, picked by its own random source.
+pub fn story(world: &mut World, korean: bool) -> Vec<String> {
+    let newborn = world.stage() == Stage::Newborn;
+    let threads = story_threads(world);
+    let opening = if newborn {
+        (
+            "I'm {ghost}. Here is my little light.",
+            "나는 {ghost}. 여기 작은 빛이 있어.",
+        )
+    } else if world.random_unit() < 0.5 {
+        (
+            "Once, {ghost} had a little tale to tell.",
+            "어느 날, {ghost}에게 작은 이야기가 생겼어.",
+        )
+    } else {
+        (
+            "Come close. I'm {ghost}, and this is my tale.",
+            "가까이 와. 나는 {ghost}, 내 이야기야.",
+        )
+    };
+    let mut parts = vec![opening];
+    if newborn {
+        parts.push(if world.life.friend.is_some() {
+            (
+                "{friend} is my friend. We glow.",
+                "{friend} 친구도 있어. 같이 반짝여.",
+            )
+        } else {
+            (
+                "It wants to be a star. Twinkle, little light.",
+                "별이 되고 싶대. 반짝, 작은 빛.",
+            )
+        });
+    } else if let Some(index) = world.pick(&vec![1.0; threads.len()]) {
+        parts.extend(threads[index]);
+    } else {
+        parts.extend([
+            (
+                "Imagine a little light that wanted to be a star.",
+                "별이 되고 싶은 작은 빛을 상상해 봐.",
+            ),
+            (
+                "It found that a warm little home could shine too.",
+                "따뜻한 작은 집도 빛날 수 있다는 걸 알았대.",
+            ),
+        ]);
+    }
+    if !newborn
+        && world.life.friend.is_some()
+        && !parts
+            .iter()
+            .any(|(english, _)| english.contains("{friend}"))
+    {
+        parts.push((
+            "Maybe I'll tell {friend} this tale too.",
+            "{friend} 친구에게도 이 이야기를 들려줄까 봐.",
+        ));
+    }
+    parts.push(if world.bedtime() {
+        (
+            "Now rest, {viewer}. The little room is sleepy.",
+            "이제 쉬자, {viewer}. 작은 방도 졸리대.",
+        )
+    } else if world.random_unit() < 0.5 {
+        (
+            "And {viewer} was here to hear it. That's my happy ending.",
+            "{viewer}, 네가 들어 줘서 행복한 끝이야.",
+        )
+    } else {
+        (
+            "I kept the warmest part for you, {viewer}.",
+            "가장 따뜻한 부분은 너에게 줄게, {viewer}.",
+        )
+    });
+    parts
+        .into_iter()
+        .map(|(english, hangul)| {
+            (if korean { hangul } else { english })
+                .replace("{ghost}", &world.ghost.name)
+                .replace(
+                    "{viewer}",
+                    world.life.viewer_name.as_deref().unwrap_or(if korean {
+                        "친구야"
+                    } else {
+                        "my friend"
+                    }),
+                )
+                .replace(
+                    "{friend}",
+                    world
+                        .life
+                        .friend
+                        .as_ref()
+                        .map_or("", |friend| friend.name.as_str()),
+                )
+        })
+        .collect()
+}
+
 // What the ghost is doing, in Korean, ending in "중" so "이야" follows.
 fn korean_doing(activity: Activity) -> &'static str {
     match activity {
@@ -1213,6 +1410,131 @@ mod tests {
 
     use crate::world::EventKind;
 
+    #[test]
+    fn story_threads_require_the_memories_they_recount() {
+        use crate::world::{Companion, Flower, Keepsake, Seedling};
+        let mut world = World::new(1, 12.0);
+        assert!(story_threads(&world).is_empty());
+        world.life.keepsakes.push(Keepsake::Feather);
+        assert!(story_threads(&world).is_empty());
+        world.life.bird_trust = 0.6;
+        assert_eq!(story_threads(&world).len(), 1);
+        world.life.friend = Some(Companion {
+            name: "Lumi".to_owned(),
+            hue: 0.4,
+            visits: 1,
+            closeness: 0.5,
+        });
+        assert_eq!(story_threads(&world).len(), 1);
+        world.life.total.friend_games = 1;
+        assert_eq!(story_threads(&world).len(), 2);
+        world.life.skills.stacking = 100.0;
+        assert_eq!(story_threads(&world).len(), 2);
+        world.life.total.towers = 1;
+        assert_eq!(story_threads(&world).len(), 3);
+        world.seedlings.push(Seedling::new(Flower::Daisy));
+        assert_eq!(story_threads(&world).len(), 3);
+        world.seedlings[0].growth = 1.0;
+        assert_eq!(story_threads(&world).len(), 4);
+        world.seedlings.clear();
+        world.life.total.flowered = 1;
+        assert_eq!(story_threads(&world).len(), 4);
+        world.life.total.shooting_stars = 1;
+        assert_eq!(story_threads(&world).len(), 5);
+        world.begin_life("2026-06-21");
+        assert_eq!(story_threads(&world).len(), 5);
+        world.hear("hello");
+        assert_eq!(story_threads(&world).len(), 6);
+        let threads = story_threads(&world);
+        let text = threads
+            .iter()
+            .flat_map(|thread| thread.iter())
+            .map(|beat| beat.0)
+            .collect::<Vec<_>>()
+            .join(" ");
+        for part in [
+            "bird",
+            "{friend}",
+            "tower",
+            "flower",
+            "shooting star",
+            "first woke",
+        ] {
+            assert!(text.contains(part), "{part}");
+        }
+    }
+
+    #[test]
+    fn stories_are_short_deterministic_bilingual_and_name_the_people_it_knows() {
+        for seed in 0..80 {
+            for korean in [false, true] {
+                let prepare = || {
+                    let mut world = World::new(seed, if seed % 2 == 0 { 23.0 } else { 12.0 });
+                    world.ghost.name = "Pip".to_owned();
+                    world.life.viewer_name = Some("Mina".to_owned());
+                    world.life.friend = Some(crate::world::Companion {
+                        name: "Lumi".to_owned(),
+                        hue: 0.4,
+                        visits: 3,
+                        closeness: 0.5,
+                    });
+                    world.life.total.friend_games = 1;
+                    world.life.total.towers = 2;
+                    world.life.total.shooting_stars = 1;
+                    world
+                };
+                let lines = story(&mut prepare(), korean);
+                assert_eq!(lines, story(&mut prepare(), korean));
+                assert!((3..=5).contains(&lines.len()));
+                assert!(lines.iter().all(|line| line.chars().count() <= 70));
+                let text = lines.join(" ");
+                for name in ["Pip", "Mina", "Lumi"] {
+                    assert!(text.contains(name), "{text}");
+                }
+                assert!(!text.chars().any(|character| character.is_ascii_digit()));
+                if korean {
+                    assert!(lines.iter().all(|line| {
+                        line.chars()
+                            .any(|character| ('가'..='힣').contains(&character))
+                    }));
+                    let without_names = text
+                        .replace("Pip", "")
+                        .replace("Mina", "")
+                        .replace("Lumi", "");
+                    assert!(
+                        !without_names
+                            .chars()
+                            .any(|character| character.is_ascii_alphabetic())
+                    );
+                }
+                if seed % 2 == 0 {
+                    assert!(lines.last().unwrap().contains(if korean {
+                        "졸리"
+                    } else {
+                        "sleepy"
+                    }));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn newborn_and_empty_lives_have_gentle_tales_without_borrowed_memories() {
+        for korean in [false, true] {
+            let mut world = World::new(3, 12.0);
+            let lines = story(&mut world, korean);
+            assert_eq!(lines.len(), 4);
+            assert!(lines[1].contains(if korean {
+                "별이 되고"
+            } else {
+                "wanted to be a star"
+            }));
+            world.birthday = Some(world.date);
+            let lines = story(&mut world, korean);
+            assert_eq!(lines.len(), 3);
+            assert!(lines.iter().all(|line| line.chars().count() <= 65));
+        }
+    }
     #[test]
     fn newborns_babble_beside_their_usual_words_including_korean() {
         let mut world = World::new(1, 12.0);

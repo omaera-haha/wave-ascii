@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::claude::{Block, Cache, Effort, Message, Request, Role};
 use crate::store::{Memory, Remark, Speaker};
-use crate::world::{Entry, Life, Mood, Skill, Stage, Thing};
+use crate::world::{Entry, Life, Mood, Question, Skill, Stage, Thing};
 
 /// At most this many memories, milestones, diary days, and lines of
 /// conversation go into a request.
@@ -168,6 +168,9 @@ pub fn request(
         })
         .collect();
     let prompt = match heard {
+        Some(text) if crate::world::asked_question(text) == Some(Question::Story) => format!(
+            "The person just said: {text}\nThe viewer asked for a story. In say, tell a short story from the ghost's life in three to five short sentences, each under seventy characters. Use only memories and facts you know, or a gentle imagined tale for a new ghost. At bedtime end softly and sleepily. This story may be longer than your usual reply."
+        ),
         Some(text) => format!("The person just said: {text}"),
         None => "Nobody said anything just now. Think over the moment quietly.".to_owned(),
     };
@@ -243,6 +246,32 @@ pub fn request(
     }
 }
 
+/// Keep sentence punctuation, including Korean sentences and trailing quotes.
+pub fn story_lines(speech: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut ended = false;
+    for character in speech.chars() {
+        let mark = matches!(character, '.' | '!' | '?' | '…' | '。' | '！' | '？');
+        let closing = matches!(character, '\'' | '"' | '”' | '’' | '」' | '』');
+        if ended
+            && !mark
+            && (!closing || line.ends_with(char::is_whitespace))
+            && !character.is_whitespace()
+        {
+            lines.push(line.trim().to_owned());
+            line.clear();
+            ended = false;
+        }
+        line.push(character);
+        ended |= mark;
+    }
+    if !line.trim().is_empty() {
+        lines.push(line.trim().to_owned());
+    }
+    lines
+}
+
 fn bullets<Line: AsRef<str>>(lines: &[Line]) -> String {
     if lines.is_empty() {
         return "(nothing yet)".to_owned();
@@ -274,6 +303,42 @@ pub fn read(value: Value) -> Option<Reflection> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn story_sentences_keep_punctuation_in_english_and_korean() {
+        assert_eq!(
+            story_lines("A light! It waited… Then you came. Happy? Yes"),
+            ["A light!", "It waited…", "Then you came.", "Happy?", "Yes"]
+        );
+        assert_eq!(
+            story_lines("작은 빛이 있었어. ‘누굴까?’ 반짝였지… 함께였어!"),
+            ["작은 빛이 있었어.", "‘누굴까?’", "반짝였지…", "함께였어!"]
+        );
+        assert_eq!(
+            story_lines("A light... Really?! \"Yes!\""),
+            ["A light...", "Really?!", "\"Yes!\""]
+        );
+        assert!(story_lines("   ").is_empty());
+    }
+
+    #[test]
+    fn a_story_request_asks_for_several_short_sentences_from_its_life() {
+        for heard in ["tell me a story", "이야기 들려줘"] {
+            let request = request(
+                &json!({}),
+                &[],
+                &Life::default(),
+                &[],
+                Some(heard),
+                None,
+                None,
+            );
+            let prompt = &request.messages[0].content[1].text;
+            assert!(prompt.contains("viewer asked for a story"));
+            assert!(prompt.contains("three to five short sentences"));
+            assert!(prompt.contains("from the ghost's life"));
+        }
+    }
 
     #[test]
     fn reflections_know_the_stage_and_separate_practiced_skills_from_learning() {

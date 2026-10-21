@@ -22,6 +22,7 @@ mod recognizer;
 mod routine;
 mod sight;
 mod sleep;
+mod story;
 mod things;
 pub mod visitor;
 mod vocabulary;
@@ -44,9 +45,10 @@ pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
-pub use question::Question;
+pub use question::{Question, ask as asked_question};
 pub use random::Random;
 pub use sight::{Seen, Thing};
+pub use story::Telling;
 pub use things::{
     Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, SHELF_POSITION, SILL_POSITION,
     WINDOW_CENTER, flat,
@@ -222,12 +224,14 @@ pub enum EventKind {
         minutes: u32,
         completed: bool,
     },
+    ToldStory,
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::ToldStory => "told the viewer a story".to_owned(),
             Self::Began(activity) => format!("started {}", activity.doing()),
             Self::Poked { count: 1 } => "the viewer poked you".to_owned(),
             Self::Poked { count } => format!("the viewer poked you {count} times in a row"),
@@ -569,6 +573,7 @@ pub struct World {
     pub dream: Option<Dream>,
     pub focus: Option<Focus>,
     break_until: f64,
+    pub telling: Option<Telling>,
 }
 
 impl World {
@@ -664,6 +669,7 @@ impl World {
             dream: None,
             focus: None,
             break_until: 0.0,
+            telling: None,
         };
         world.scatter_blocks();
         world
@@ -774,6 +780,7 @@ impl World {
 
         self.holiday_greeting();
         self.advance_fog();
+        self.advance_story();
         self.carry_out(seconds);
         self.advance_dream();
         let hiding = !self.ghost.plan.done
@@ -840,7 +847,7 @@ impl World {
 
     /// Whether the ghost has finished its plan and waits for a decision.
     pub fn needs_decision(&self) -> bool {
-        self.ghost.plan.done
+        self.telling.is_none() && self.ghost.plan.done
     }
 
     /// The activities that make sense right now, in a fixed order.
@@ -1009,6 +1016,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if self.telling.is_some() && activity != Activity::Visit {
+            return;
+        }
         if activity != Activity::Visit {
             self.sebae = None;
         }
@@ -1107,6 +1117,9 @@ impl World {
 
     /// Begins writing a supported word when it has the energy to draw.
     pub fn write(&mut self, text: &str) -> bool {
+        if self.telling.is_some() {
+            return false;
+        }
         let text = doodle::sanitize(text);
         if text.is_empty() || self.ghost.asleep >= 0.3 || self.ghost.needs.energy <= 0.25 {
             return false;
@@ -1495,6 +1508,9 @@ impl World {
                 }
             }
         }
+        if question == Some(Question::Story) && !scolded && self.telling.is_none() {
+            self.tell(Vec::new());
+        }
         Heard {
             tone: reading.tone,
             understanding,
@@ -1727,6 +1743,15 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        if matches!(
+            kind,
+            EventKind::Poked { .. }
+                | EventKind::Scolded
+                | EventKind::ViewerLeft
+                | EventKind::FellAsleep
+        ) {
+            self.telling = None;
+        }
         let remembered = self.life.milestones.len();
         self.life.note(&kind);
         let milestones: Vec<String> = self.life.milestones[remembered..]
@@ -1934,7 +1959,8 @@ impl World {
         // Waiting at the glass keeps its full length. Resting, hiding, and
         // games have their own waits after arrival, but give up on the way
         // there.
-        let waiting = matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
+        let waiting = self.telling.is_some()
+            || matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
             || (matches!(
                 self.ghost.plan.activity,
                 Activity::Rest | Activity::Hide | Activity::Game
@@ -2091,7 +2117,7 @@ impl World {
                 }
                 // Toward the viewer, on the other side of the glass.
                 look = Some(self.ghost.plan.target + Vec3::Z * 3.0);
-                if self.ghost.plan.stayed(time) > self.ghost.plan.length {
+                if self.telling.is_none() && self.ghost.plan.stayed(time) > self.ghost.plan.length {
                     self.ghost.plan.done = true;
                 }
             }

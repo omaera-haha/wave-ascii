@@ -11,7 +11,9 @@ use crate::world::{
 pub fn observe(world: &World) -> Value {
     let ghost = &world.ghost;
     let plan = &ghost.plan;
-    let doing = if world.carried_seed().is_some() {
+    let doing = if world.telling.is_some() {
+        "telling the viewer a story".to_owned()
+    } else if world.carried_seed().is_some() {
         "carrying a seed to a little pot".to_owned()
     } else if let Some(gift) = ghost.keepsake {
         format!("carrying {} to the shelf of keepsakes", gift.name())

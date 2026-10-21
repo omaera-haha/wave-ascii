@@ -175,6 +175,8 @@ pub struct Tally {
     pub focus_sessions: u32,
     #[serde(default)]
     pub focus_minutes: u32,
+    #[serde(default)]
+    pub stories: u32,
 }
 
 impl Tally {
@@ -189,6 +191,7 @@ impl Tally {
                 self.focus_minutes = self.focus_minutes.saturating_add(*minutes);
                 self.focus_sessions = self.focus_sessions.saturating_add(u32::from(*completed));
             }
+            EventKind::ToldStory => self.stories = self.stories.saturating_add(1),
             EventKind::Began(activity) => {
                 let count = self
                     .activities
@@ -542,6 +545,14 @@ impl Tally {
             1 => deeds.push("wished on a shooting star".to_owned()),
             stars => deeds.push(format!("wished on {stars} shooting stars")),
         }
+        match self.stories {
+            0 => {}
+            1 => deeds.push("told you a story".to_owned()),
+            count => deeds.push(format!(
+                "told you {} stories",
+                super::friend::count_words(count)
+            )),
+        }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
             (0, _) => deeds.push("listened to the rain".to_owned()),
@@ -772,6 +783,7 @@ impl Life {
             EventKind::FocusEnded {
                 completed: true, ..
             } => 0.01,
+            EventKind::ToldStory => 0.005,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
             EventKind::LearnedPicture(_) => 0.005,
             EventKind::Heard(_) => 0.015,
@@ -1031,6 +1043,7 @@ impl Life {
         for tally in [&mut self.total, &mut self.today] {
             tally.focus_sessions = tally.focus_sessions.min(1_000_000);
             tally.focus_minutes = tally.focus_minutes.min(100_000_000);
+            tally.stories = tally.stories.min(100_000_000);
             tally.friend_visits = tally.friend_visits.min(1_000_000);
             tally.friend_games = tally.friend_games.min(100_000_000);
             tally.friend_name = tally.friend_name.take().filter(|name| {
@@ -1152,6 +1165,7 @@ impl Life {
             return first;
         }
         let text = match kind {
+            EventKind::ToldStory if total.stories == 1 => "I told you my first story.".to_owned(),
             EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {
                 format!("You taught me to draw a {name}.")
             }
@@ -1383,6 +1397,50 @@ mod tests {
         let life = life.sanitized();
         assert_eq!(life.total.focus_sessions, 1_000_000);
         assert_eq!(life.today.focus_minutes, 100_000_000);
+    }
+
+    #[test]
+    fn completed_stories_warm_the_bond_keep_one_first_and_load_in_old_lives() {
+        let mut life = Life::default();
+        life.begin_day("2026-06-21");
+        assert_eq!(
+            life.note(&EventKind::ToldStory).as_deref(),
+            Some("I told you my first story.")
+        );
+        assert!(life.bond > 0.0);
+        life.note(&EventKind::ToldStory);
+        assert_eq!(life.total.stories, 2);
+        assert_eq!(life.today.stories, 2);
+        assert_eq!(life.milestones.len(), 1);
+        assert!(life.today.words().contains("two stories"));
+        assert!(
+            !life
+                .today
+                .words()
+                .chars()
+                .any(|letter| letter.is_ascii_digit())
+        );
+        let encoded = serde_json::to_value(&life).unwrap();
+        assert_eq!(
+            serde_json::from_value::<Life>(encoded.clone())
+                .unwrap()
+                .sanitized(),
+            life
+        );
+        let mut old = encoded;
+        for tally in ["total", "today"] {
+            old[tally].as_object_mut().unwrap().remove("stories");
+        }
+        let restored: Life = serde_json::from_value(old).unwrap();
+        assert_eq!(restored.total.stories, 0);
+        assert_eq!(restored.today.stories, 0);
+        life.total.stories = u32::MAX;
+        life.today.stories = u32::MAX;
+        life.note(&EventKind::ToldStory);
+        assert_eq!(life.total.stories, u32::MAX);
+        let clean = life.sanitized();
+        assert_eq!(clean.total.stories, 100_000_000);
+        assert_eq!(clean.today.stories, 100_000_000);
     }
 
     #[test]

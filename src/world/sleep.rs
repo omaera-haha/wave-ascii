@@ -37,6 +37,7 @@ impl World {
         if !self.bedtime() {
             return;
         }
+        self.telling = None;
         self.abandon_game();
         self.drop_ball();
         let bed = self.nook.bed(self.size());

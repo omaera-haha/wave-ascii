@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 
 use crate::store::{Config, Memory, Remark, Speaker};
-use crate::world::{Activity, EventKind, Heard, Tone, Understanding, World};
+use crate::world::{Activity, EventKind, Heard, Question, Tone, Understanding, World};
 use claude::{Cache, Claude, Effort, Reply};
 use decision::Decision;
 use jev::Jev;
@@ -73,6 +73,11 @@ enum Answer {
     Reflected(Result<Option<Reflection>, String>),
 }
 
+struct HeardMessage {
+    text: String,
+    story: Option<(u64, bool)>,
+}
+
 /// The ghost's two minds. System One (Jev) makes the quick choices of what
 /// to do next; System Two (Claude) thinks things over now and then, sets
 /// goals, and talks. Without keys the ghost lives on instinct alone. Requests
@@ -104,7 +109,7 @@ pub struct Mind {
     next_musing: f64,
     dreaming: bool,
     /// Messages from the viewer still waiting for a reply.
-    heard: VecDeque<String>,
+    heard: VecDeque<HeardMessage>,
     /// The id of the latest message's request routing; answers to earlier
     /// messages that arrive later are dropped.
     latest_request: u64,
@@ -115,6 +120,9 @@ pub struct Mind {
     reflection_renamed: u64,
     musing_focus: bool,
     reflecting_for_viewer: bool,
+    pending_story: Option<u64>,
+    reflecting_story: Option<(u64, bool)>,
+    said_through: Option<(f64, usize)>,
 }
 
 impl Mind {
@@ -147,6 +155,9 @@ impl Mind {
             reflection_renamed: 0,
             musing_focus: false,
             reflecting_for_viewer: false,
+            pending_story: None,
+            reflecting_story: None,
+            said_through: None,
         };
         mind.reconfigure(config);
         mind
@@ -208,6 +219,10 @@ impl Mind {
     /// One frame of thinking: applies whatever the minds have answered, and
     /// asks them again when it is time.
     pub fn think(&mut self, world: &mut World) {
+        self.remember_speech(world);
+        if world.telling.is_none() {
+            self.pending_story = None;
+        }
         while let Ok(answer) = self.receiver.try_recv() {
             self.apply(answer, world);
         }
@@ -263,12 +278,13 @@ impl Mind {
             };
             if (due && world.focus.is_none()) || !self.heard.is_empty() {
                 let heard = self.heard.pop_front();
+                self.reflecting_story = heard.as_ref().and_then(|heard| heard.story);
                 let request = reflection::request(
                     &observation::observe(world),
                     &self.journal.memories,
                     &world.life,
                     &self.journal.conversation,
-                    heard.as_deref(),
+                    heard.as_ref().map(|heard| heard.text.as_str()),
                     self.effort,
                     self.cache,
                 );
@@ -295,6 +311,8 @@ impl Mind {
     /// was asked if System One can tell, and answers once System Two has
     /// thought about it.
     pub fn hear(&mut self, world: &mut World, text: &str) {
+        self.remember_speech(world);
+        let was_telling = world.telling.is_some();
         let heard = world.hear(text);
         self.journal.conversation.push(Remark {
             at: now(),
@@ -302,8 +320,28 @@ impl Mind {
             text: text.to_owned(),
         });
         trim(&mut self.journal.conversation, REMARKS_KEPT);
+        let story = matches!(
+            heard.understanding,
+            Understanding::Asked {
+                question: Question::Story,
+                ..
+            }
+        ) && heard.tone != Some(Tone::Scolding);
+        if story && was_telling {
+            return;
+        }
+        let request_story = if story {
+            self.next_id += 1;
+            self.pending_story = Some(self.next_id);
+            Some((self.next_id, heard.korean))
+        } else {
+            None
+        };
         if self.claude.is_some() {
-            self.heard.push_back(text.to_owned());
+            self.heard.push_back(HeardMessage {
+                text: text.to_owned(),
+                story: request_story,
+            });
         }
         // Without System One to ask, words heard before and still not
         // understood make it try something, to see if that's what they mean.
@@ -313,16 +351,17 @@ impl Mind {
         };
         // Without System Two, it answers in the few words of its own.
         if self.claude.is_none() {
-            let lines = musing::reply(world, &heard, guessed);
-            if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
-                world.say(&lines[index]);
-                self.journal.conversation.push(Remark {
-                    at: now(),
-                    speaker: Speaker::Ghost,
-                    text: lines[index].clone(),
-                });
-                trim(&mut self.journal.conversation, REMARKS_KEPT);
+            if story {
+                let lines = musing::story(world, heard.korean);
+                world.tell(lines);
+                self.pending_story = None;
+            } else {
+                let lines = musing::reply(world, &heard, guessed);
+                if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
+                    world.say(&lines[index]);
+                }
             }
+            self.remember_speech(world);
         }
         if heard.given_name.is_some() {
             self.renamed += 1;
@@ -463,6 +502,35 @@ impl Mind {
             } => self.one = Status::Failed(message),
             Answer::Reflected(result) => {
                 self.reflecting = false;
+                if let Some((id, korean)) = self.reflecting_story.take() {
+                    let waiting = self.pending_story == Some(id)
+                        && world
+                            .telling
+                            .as_ref()
+                            .is_some_and(|telling| telling.lines.is_empty());
+                    if waiting {
+                        self.pending_story = None;
+                        let lines = result
+                            .as_ref()
+                            .ok()
+                            .and_then(|reflection| reflection.as_ref())
+                            .map(|reflection| reflection::story_lines(&reflection.say))
+                            .filter(|lines| !lines.is_empty())
+                            .unwrap_or_else(|| musing::story(world, korean));
+                        world.tell(lines);
+                    }
+                    match result {
+                        Ok(reflection) => {
+                            self.two = Status::Ready;
+                            if waiting && let Some(mut reflection) = reflection {
+                                reflection.say.clear();
+                                self.take_in(reflection, world);
+                            }
+                        }
+                        Err(message) => self.two = Status::Failed(message),
+                    }
+                    return;
+                }
                 match result {
                     Ok(reflection) => {
                         self.two = Status::Ready;
@@ -487,12 +555,7 @@ impl Mind {
         }
         if !reflection.say.is_empty() {
             world.say(&reflection.say);
-            self.journal.conversation.push(Remark {
-                at: now(),
-                speaker: Speaker::Ghost,
-                text: reflection.say.clone(),
-            });
-            trim(&mut self.journal.conversation, REMARKS_KEPT);
+            self.remember_speech(world);
         }
         if !reflection.goal.is_empty() {
             world.ghost.goal = Some(reflection.goal);
@@ -522,6 +585,35 @@ impl Mind {
         if !reflection.look_at.is_empty() {
             world.attend(&reflection.look_at, LOOKS_FOR);
         }
+    }
+
+    fn remember_speech(&mut self, world: &World) {
+        let mut at = None;
+        let mut count = 0;
+        for event in &world.events {
+            let EventKind::Said(text) = &event.kind else {
+                continue;
+            };
+            if at != Some(event.time) {
+                at = Some(event.time);
+                count = 0;
+            }
+            count += 1;
+            if self
+                .said_through
+                .is_none_or(|through| (event.time, count) > through)
+            {
+                self.journal.conversation.push(Remark {
+                    at: now(),
+                    speaker: Speaker::Ghost,
+                    text: text.clone(),
+                });
+            }
+        }
+        if let Some(at) = at {
+            self.said_through = Some((at, count));
+        }
+        trim(&mut self.journal.conversation, REMARKS_KEPT);
     }
 }
 
@@ -758,6 +850,118 @@ mod tests {
 
     fn offline() -> Mind {
         Mind::new(&Config::default(), Journal::default(), true)
+    }
+
+    fn waiting_for_story(text: &str) -> (Mind, World) {
+        let mut mind = offline();
+        mind.claude = Some(Claude::new("test-key", "test-model").unwrap());
+        let mut world = World::new(3, 12.0);
+        world.notice_viewer();
+        mind.hear(&mut world, text);
+        mind.reflecting_story = mind.heard.pop_front().unwrap().story;
+        mind.reflecting = true;
+        (mind, world)
+    }
+
+    #[test]
+    fn claudes_story_is_told_sentence_by_sentence_and_remembered_once() {
+        let (mut mind, mut world) = waiting_for_story("tell me a story");
+        let reflection = Reflection {
+            say: "A light woke. You came! It had a home…".to_owned(),
+            ..Reflection::default()
+        };
+        mind.apply(Answer::Reflected(Ok(Some(reflection))), &mut world);
+        assert_eq!(
+            observation::observe(&world)["ghost"]["doing"],
+            "telling the viewer a story"
+        );
+        assert_eq!(
+            world.telling.as_ref().unwrap().lines,
+            ["A light woke.", "You came!", "It had a home…"]
+        );
+        assert!(world.ghost.speech.is_none());
+        assert_eq!(mind.journal.conversation.len(), 1);
+        mind.claude = None;
+        for expected in ["A light woke.", "You came!", "It had a home…"] {
+            world.step(0.1);
+            mind.think(&mut world);
+            mind.think(&mut world);
+            assert_eq!(mind.journal.conversation.last().unwrap().text, expected);
+            let pause = world.telling.as_ref().unwrap().next_at - world.time;
+            world.step((pause - 0.05) as f32);
+        }
+        world.step(0.1);
+        mind.think(&mut world);
+        assert!(world.telling.is_none());
+        assert_eq!(world.life.total.stories, 1);
+        assert_eq!(mind.journal.conversation.len(), 4);
+    }
+
+    #[test]
+    fn failed_declined_and_empty_story_reflections_fall_back_in_the_asked_language() {
+        for result in [
+            Err("unavailable".to_owned()),
+            Ok(None),
+            Ok(Some(Reflection::default())),
+        ] {
+            let (mut mind, mut world) = waiting_for_story("이야기 들려줘");
+            mind.apply(Answer::Reflected(result), &mut world);
+            let lines = &world.telling.as_ref().unwrap().lines;
+            assert!((3..=5).contains(&lines.len()));
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| line.chars().any(|letter| ('가'..='힣').contains(&letter)))
+            );
+            assert!(mind.pending_story.is_none());
+        }
+    }
+
+    #[test]
+    fn late_story_replies_cannot_restart_an_interrupted_or_newer_story() {
+        let (mut mind, mut world) = waiting_for_story("tell me a story");
+        let reflection = Reflection {
+            say: "Old tale. Old light. Old home.".to_owned(),
+            ..Reflection::default()
+        };
+        world.poke();
+        mind.apply(Answer::Reflected(Ok(Some(reflection.clone()))), &mut world);
+        assert!(world.telling.is_none());
+        assert!(world.ghost.speech.is_none());
+
+        let (mut mind, mut world) = waiting_for_story("tell me a story");
+        world.poke();
+        mind.hear(&mut world, "이야기 들려줘");
+        let current = mind.pending_story;
+        mind.apply(Answer::Reflected(Ok(Some(reflection))), &mut world);
+        assert_eq!(mind.pending_story, current);
+        assert!(world.telling.as_ref().unwrap().lines.is_empty());
+        mind.reflecting_story = mind.heard.pop_front().unwrap().story;
+        mind.apply(Answer::Reflected(Err("unavailable".to_owned())), &mut world);
+        assert!(!world.telling.as_ref().unwrap().lines.is_empty());
+    }
+
+    #[test]
+    fn another_story_request_is_ignored_while_new_messages_are_answered_normally() {
+        let mut mind = offline();
+        let mut world = World::new(3, 12.0);
+        world.notice_viewer();
+        mind.hear(&mut world, "tell me a story");
+        let telling = world.telling.clone();
+        mind.hear(&mut world, "story please");
+        assert_eq!(world.telling, telling);
+        assert!(mind.heard.is_empty());
+        mind.hear(&mut world, "what's your name?");
+        assert!(
+            world
+                .ghost
+                .speech
+                .as_ref()
+                .unwrap()
+                .text
+                .contains(&world.ghost.name)
+        );
+        assert_eq!(world.telling, telling);
     }
 
     #[test]

@@ -309,7 +309,7 @@ impl World {
     /// Invites an awake ghost to a game; an invitation gives the viewer
     /// the opening move, even if it is too tired to suggest a game itself.
     pub fn challenge(&mut self) -> bool {
-        if self.ghost.asleep >= 0.3 {
+        if self.telling.is_some() || self.ghost.asleep >= 0.3 {
             return false;
         }
         self.notice_viewer();
