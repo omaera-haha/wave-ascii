@@ -361,14 +361,14 @@ Its life panel and diary remember completed sessions and whole minutes
 spent together, including early endings. Quitting silently ends the timer.
 
 After four nearby completed sessions, it suggests a longer break with a
-stretch and some water. Outside focus, a long sitting may bring a slow
-stretch at the glass. A quick “okay” or “응” makes it smile; “not now” or
+stretch and some water. Outside focus, two unbroken hours together may bring
+a slow stretch at the glass. A quick “okay” or “응” makes it smile; “not now” or
 “나중에” puts stretch suggestions off for three hours. If you leave after
 its suggestion and return from a short break, it welcomes you back. In the
 small hours, a message or poke may bring one sleepy reminder to rest;
 saying goodnight afterwards becomes a little shared memory. These gentle
-prompts wait for quiet moments and happen at most three times a local day,
-even across restarts. No extra keys are needed.
+prompts wait for quiet moments and happen at most twice a local day, even
+across restarts. No extra keys are needed.
 
 ### Playing with it
 

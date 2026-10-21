@@ -287,19 +287,30 @@ impl World {
             return false;
         }
         if self.pending_pins.len() >= WAITING {
-            if pin.kind != Kind::OwnDoodle
-                && let Some(index) = self
-                    .pending_pins
-                    .iter()
-                    .rposition(|pin| pin.kind == Kind::OwnDoodle)
-            {
-                self.pending_pins.remove(index);
-            } else if pin.kind == Kind::Constellation {
-                // Leave a card already being carried at the front alone.
-                self.pending_pins.pop();
-            } else {
+            // The viewer's drawings outrank the ghost's constellations, which
+            // outrank its doodles; a card already being carried stays.
+            let rank = |kind: Kind| match kind {
+                Kind::OwnDoodle => 0,
+                Kind::Constellation => 1,
+                Kind::ViewerDrawing => 2,
+            };
+            let carried =
+                usize::from(self.ghost.plan.activity == Activity::Pin && !self.ghost.plan.done);
+            let displaced = self
+                .pending_pins
+                .iter()
+                .enumerate()
+                .skip(carried)
+                .filter(|(_, waiting)| {
+                    rank(waiting.kind) < rank(pin.kind)
+                        || (pin.kind == Kind::Constellation && waiting.kind == pin.kind)
+                })
+                .min_by_key(|(index, waiting)| (rank(waiting.kind), usize::MAX - index))
+                .map(|(index, _)| index);
+            let Some(index) = displaced else {
                 return false;
-            }
+            };
+            self.pending_pins.remove(index);
         }
         self.pending_pins.push(pin);
         true
@@ -313,10 +324,10 @@ impl World {
             .count() as u32;
         if self.life.today.viewer_pins + waiting >= 2
             || self.pending_pins.len() >= WAITING
-                && !self
+                && self
                     .pending_pins
                     .iter()
-                    .any(|pin| pin.kind == Kind::OwnDoodle)
+                    .all(|pin| pin.kind == Kind::ViewerDrawing)
         {
             return false;
         }
@@ -577,6 +588,18 @@ mod tests {
             assert_eq!(world.pending_pins[1].kind, Kind::Constellation);
             assert!(world.pending_pins[1].valid(&world.date.to_string()));
         }
+    }
+
+    #[test]
+    fn the_first_viewer_drawing_makes_room_in_a_queue_full_of_constellations() {
+        let mut world = with_drawing(1);
+        world.queue_pin(pin(Kind::Constellation, "the Little Heart"));
+        world.queue_pin(pin(Kind::Constellation, "the Great Line"));
+        assert!(world.keep_viewer_drawing(Some(("heart", "하트"))));
+        assert_eq!(world.pending_pins.len(), 2);
+        assert_eq!(world.pending_pins[0].kind, Kind::Constellation);
+        assert_eq!(world.pending_pins[1].kind, Kind::ViewerDrawing);
+        assert!(!world.queue_pin(pin(Kind::OwnDoodle, "star")));
     }
 
     #[test]

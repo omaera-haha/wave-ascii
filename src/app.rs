@@ -304,13 +304,12 @@ impl App {
             self.album.observe(&self.world);
             self.album.elapse(seconds);
         }
+        // The picture itself is taken by the next watching frame; a portrait
+        // nobody returns to watch is let go.
         if let Some(left) = self.posing.as_mut() {
             *left -= seconds;
-            if *left <= 0.0 {
+            if *left <= -POSING * 5.0 {
                 self.posing = None;
-                if self.save_postcard() {
-                    self.world.photographed(true);
-                }
             }
         }
         if self.paused {
@@ -1471,6 +1470,12 @@ impl App {
                 self.post(format!("Couldn't keep an album moment: {error}"));
             }
             self.postcard = Some(Postcard::new(canvas, colored, &self.world, &self.doing()));
+            if self.posing.is_some_and(|left| left <= 0.0) {
+                self.posing = None;
+                if self.save_postcard() {
+                    self.world.photographed(true);
+                }
+            }
         }
         ui::draw(self, &mut screen, scene_rows);
         screen
@@ -2417,9 +2422,21 @@ mod tests {
         }
         assert_eq!(std::fs::read_dir(paths.postcards()).unwrap().count(), 2);
         assert_eq!(app.world.life.total.portraits, 1);
-        app.input(Input::Key(Key::Character('p')));
-        assert_eq!(app.world.life.total.photos, 2);
+
+        // Opening a panel during the smile waits for the room to be seen.
+        app.input(Input::Key(Key::Character('P')));
+        app.input(Input::Key(Key::Character('j')));
+        for _ in 0..50 {
+            app.advance(0.05);
+            app.frame(40, 12);
+        }
         assert_eq!(app.world.life.total.portraits, 1);
+        app.input(Input::Key(Key::Escape));
+        app.frame(40, 12);
+        assert_eq!(app.world.life.total.portraits, 2);
+        app.input(Input::Key(Key::Character('p')));
+        assert_eq!(app.world.life.total.photos, 3);
+        assert_eq!(app.world.life.total.portraits, 2);
         std::fs::remove_dir_all(directory).unwrap();
     }
 

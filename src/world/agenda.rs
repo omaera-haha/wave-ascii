@@ -763,6 +763,7 @@ impl World {
             || super::music::own_song_requested(text)
             || super::puzzle::requested(text)
             || super::cranes::requested(text)
+            || super::bubbles::requested(text)
             || super::quirks::yawn_message(text)
             || super::vocabulary::introduced_name(text).is_some()
             || super::vocabulary::given_name(text).is_some()

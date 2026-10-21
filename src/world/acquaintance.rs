@@ -368,6 +368,8 @@ fn unrelated(text: &str) -> bool {
         || super::focus::requested(text).is_some()
         || super::breeze::requested(text).is_some()
         || super::puzzle::requested(text)
+        || super::cranes::requested(text)
+        || super::bubbles::requested(text)
         || super::music::lullaby_requested(text)
         || super::music::lesson(text).is_some()
         || super::quirks::yawn_message(text)
