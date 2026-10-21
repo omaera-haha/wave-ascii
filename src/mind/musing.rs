@@ -352,6 +352,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     if today.storms > 0 {
         lines.push("…thunder far away, like a drum…");
     }
+    if today.shooting_stars > 0 {
+        lines.push("…riding a shooting star across the hills, wishing all the way…");
+    }
     if today.rainbows > 0 {
         lines.push("…sliding down a rainbow…");
     } else if today.showers > 0 {

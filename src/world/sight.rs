@@ -329,6 +329,10 @@ impl World {
         } else {
             Sight::default()
         };
+        // A shooting star counts once it has begun to streak.
+        let shooting_star = self
+            .shooting_star()
+            .filter(|meteor| self.seen_meteor != Some(meteor.slot) && meteor.progress(time) > 0.1);
         for seen in &sight.in_view {
             if seen.thing == Thing::Window
                 && seen.hidden_behind.is_none()
@@ -365,6 +369,15 @@ impl World {
                     self.record(EventKind::Noticed(
                         "the rainbow through the window".to_owned(),
                     ));
+                }
+                Thing::Window
+                    if seen.hidden_behind.is_none()
+                        && let Some(meteor) = shooting_star
+                        && self.seen_meteor != Some(meteor.slot) =>
+                {
+                    self.seen_meteor = Some(meteor.slot);
+                    self.record(EventKind::ShootingStar);
+                    self.wish();
                 }
                 Thing::Bird if seen.hidden_behind.is_none() => {
                     if let Some(bird) = &mut self.visitors.bird

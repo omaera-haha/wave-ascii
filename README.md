@@ -229,7 +229,12 @@ wall looks over rolling hills and a tree that changes with the northern
 hemisphere seasons: spring blossom, summer green, autumn gold and drifting
 leaves, and bare winter branches. The sun crosses the sky, clouds drift,
 stars twinkle, and the moon waxes and wanes with the calendar. A few fireflies
-blink over the hills on summer nights.
+blink over the hills on summer nights. Late on clear nights, a shooting star
+now and then streaks across the window, and many more fall on the best nights
+of the year's meteor showers: the Quadrantids in early January, the Lyrids in
+April, the Eta Aquariids in May, the Perseids in August, the Orionids in
+October, the Leonids in November, and the Geminids in December. On those nights
+the ghost likes to watch the sky, and if it sees one fall, it makes a wish.
 
 The ghost naps when tired by day. Bedtime runs from ten at night to half past
 six in the morning: it turns the lamp off if you're away and sleeps through

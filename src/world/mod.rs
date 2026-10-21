@@ -5,6 +5,7 @@ mod doodle;
 pub mod game;
 mod letters;
 mod life;
+pub mod meteor;
 mod nature;
 mod needs;
 pub mod occasion;
@@ -185,6 +186,8 @@ pub enum EventKind {
     Kept(Keepsake),
     /// The viewer gave the ghost a name.
     Named(String),
+    /// It saw a shooting star through the window and made a wish.
+    ShootingStar,
 }
 
 impl EventKind {
@@ -285,6 +288,9 @@ impl EventKind {
             Self::GiftLeft(gift) => format!("the bird left {} on the sill outside", gift.name()),
             Self::Kept(gift) => format!("put {} on the shelf of keepsakes", gift.name()),
             Self::Named(name) => format!("the viewer named you {name}"),
+            Self::ShootingStar => {
+                "saw a shooting star through the window and made a wish".to_owned()
+            }
         }
     }
 }
@@ -454,6 +460,11 @@ pub struct World {
     /// Whether this spell of petting has been counted.
     petted: bool,
     routine: routine::Routine,
+    /// Hashed with the time to place shooting stars without drawing from
+    /// `random`.
+    meteor_seed: u64,
+    /// The slot of the last shooting star it saw.
+    seen_meteor: Option<u64>,
 }
 
 impl World {
@@ -532,6 +543,8 @@ impl World {
             petting: 0.0,
             petted: false,
             routine: routine::Routine::default(),
+            meteor_seed: seed,
+            seen_meteor: None,
         };
         world.scatter_blocks();
         world
@@ -666,6 +679,19 @@ impl World {
                 .viewer
                 .looked_away_at
                 .is_none_or(|at| self.time - at < LOOKED_AWAY_FOR)
+    }
+
+    /// The meteor shower of a dark night, if it is one.
+    pub fn meteor_shower(&self) -> Option<meteor::Shower> {
+        meteor::shower(self.date, self.hour).filter(|_| meteor::dark(self.hour))
+    }
+
+    /// The shooting star crossing a dark, clear sky right now, if any.
+    pub fn shooting_star(&self) -> Option<meteor::Meteor> {
+        let clear = self.weather.sky == Sky::Clear && !self.weather.storm;
+        (clear && meteor::dark(self.hour))
+            .then(|| meteor::Meteor::at(self.meteor_seed, self.time, self.meteor_shower()))
+            .flatten()
     }
 
     pub fn is_night(&self) -> bool {
@@ -1325,6 +1351,26 @@ impl World {
             text: text.to_owned(),
             time: self.time,
         });
+    }
+
+    // A wish on a shooting star, kept secret, or about the viewer when a
+    // close friend is there to share the night.
+    fn wish(&mut self) {
+        let lines: &[&str] = if self.life.bond >= 0.55 && self.viewer_present() {
+            &[
+                "I wished you'd stay a little longer.",
+                "I made a wish. It was about you.",
+                "I wished for more nights like this one.",
+            ]
+        } else {
+            &[
+                "A shooting star! I made a wish.",
+                "Quick, a wish! …There.",
+                "I made a wish. It's a secret.",
+            ]
+        };
+        let index = ((self.random.unit() * lines.len() as f32) as usize).min(lines.len() - 1);
+        self.think(lines[index]);
     }
 
     /// A mind's suggestion of how the ghost feels, which holds for `seconds`.
@@ -3809,6 +3855,77 @@ mod tests {
             1
         );
         assert!(world.life.today.words().contains("learned your name: Sam"));
+    }
+
+    // A clear Perseid night, with the ghost watching the window.
+    fn under_the_perseids(seed: u64) -> World {
+        let mut world = World::new(seed, 23.0);
+        world.date = jiff::civil::Date::constant(2026, 8, 12);
+        world.weather.sky = Sky::Clear;
+        world.weather.storm = false;
+        world.weather.until = 1e9;
+        world
+    }
+
+    fn wishes(world: &World) -> usize {
+        world
+            .events
+            .iter()
+            .filter(|event| event.kind == EventKind::ShootingStar)
+            .count()
+    }
+
+    #[test]
+    fn a_ghost_watching_the_window_wishes_once_on_each_shooting_star_it_sees() {
+        let mut world = under_the_perseids(4);
+        let mut stars = std::collections::BTreeSet::new();
+        for _ in 0..3000 {
+            if world.ghost.plan.done || world.ghost.plan.activity != Activity::Window {
+                world.begin(Activity::Window);
+            }
+            world.ghost.needs.energy = 1.0;
+            world.step(0.1);
+            if let Some(meteor) = world.shooting_star() {
+                stars.insert(meteor.slot);
+            }
+        }
+        let seen = world.life.total.shooting_stars as usize;
+        assert!(seen >= 1, "it saw no shooting star in five minutes");
+        assert!(seen <= stars.len());
+        assert!(wishes(&world) <= seen);
+        assert!(
+            world
+                .life
+                .milestones
+                .iter()
+                .any(|milestone| milestone.text == "Saw my first shooting star, and made a wish.")
+        );
+        assert!(world.life.today.words().contains("shooting star"));
+    }
+
+    #[test]
+    fn no_shooting_stars_by_day_in_rain_or_for_a_sleeping_ghost() {
+        let mut world = under_the_perseids(4);
+        world.hour = 12.0;
+        assert!(world.meteor_shower().is_none());
+        assert!((0..6000).all(|step| {
+            world.time = f64::from(step) * 0.1;
+            world.shooting_star().is_none()
+        }));
+        world.hour = 23.0;
+        world.weather.sky = Sky::Rain;
+        assert!((0..6000).all(|step| {
+            world.time = f64::from(step) * 0.1;
+            world.shooting_star().is_none()
+        }));
+
+        let mut world = under_the_perseids(4);
+        world.tuck_in();
+        for _ in 0..3000 {
+            world.step(0.1);
+        }
+        assert!(world.ghost.asleep > 0.5);
+        assert_eq!(world.life.total.shooting_stars, 0);
     }
 
     #[test]

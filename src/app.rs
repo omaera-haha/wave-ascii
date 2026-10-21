@@ -746,6 +746,9 @@ impl App {
                         .map(|bird| bird.picture(world.time)),
                     time: world.time,
                     sill: world.life.sill,
+                    meteor: world
+                        .shooting_star()
+                        .map(|meteor| meteor.streak(world.time)),
                 },
                 view,
                 face,

@@ -137,6 +137,9 @@ pub struct Tally {
     pub tallest: u32,
     #[serde(default)]
     pub toppled: u32,
+    /// Shooting stars it saw and wished on.
+    #[serde(default)]
+    pub shooting_stars: u32,
 }
 
 impl Tally {
@@ -203,6 +206,9 @@ impl Tally {
             EventKind::StormStarted => self.storms += 1,
             EventKind::SnowStarted => self.snowfalls += 1,
             EventKind::Noticed(thing) if thing.starts_with("the rainbow") => self.rainbows += 1,
+            EventKind::ShootingStar => {
+                self.shooting_stars = self.shooting_stars.saturating_add(1);
+            }
             EventKind::Noticed(thing) if thing == "a bird at the window" => self.birds += 1,
             EventKind::Noticed(thing) if thing == "a moth at the lamp" => self.moths += 1,
             EventKind::Heard(_) => self.heard += 1,
@@ -383,6 +389,11 @@ impl Tally {
                 [word] => format!("learned what {word} means"),
                 words => format!("learned what {} mean", listed(words)),
             });
+        }
+        match self.shooting_stars {
+            0 => {}
+            1 => deeds.push("wished on a shooting star".to_owned()),
+            stars => deeds.push(format!("wished on {stars} shooting stars")),
         }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
@@ -928,6 +939,9 @@ impl Life {
                 if thing.starts_with("the rainbow") && total.rainbows == 1 =>
             {
                 "Saw my first rainbow.".to_owned()
+            }
+            EventKind::ShootingStar if total.shooting_stars == 1 => {
+                "Saw my first shooting star, and made a wish.".to_owned()
             }
             EventKind::StormStarted if total.storms == 1 => {
                 "Sat out my first thunderstorm.".to_owned()

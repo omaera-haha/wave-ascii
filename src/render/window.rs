@@ -3,6 +3,7 @@ use std::f32::consts::{PI, TAU};
 use glam::{Vec2, Vec3};
 
 use crate::sdf::{capsule, coverage, mix, smoothstep};
+use crate::world::meteor::Streak;
 use crate::world::{BirdPicture, Keepsake, Season};
 
 pub const WINDOW_LOW: Vec2 = Vec2::new(-0.75, 1.0);
@@ -24,6 +25,8 @@ pub struct Outside {
     pub time: f64,
     pub bird: Option<BirdPicture>,
     pub sill: Option<Keepsake>,
+    /// A shooting star crossing the sky.
+    pub meteor: Option<Streak>,
 }
 
 impl Outside {
@@ -44,6 +47,7 @@ impl Outside {
             time,
             bird: None,
             sill: None,
+            meteor: None,
         }
     }
 }
@@ -142,6 +146,12 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
         1.0,
         (WINDOW_HIGH.y - WINDOW_LOW.y) / (WINDOW_HIGH.x - WINDOW_LOW.x),
     );
+    if let Some(streak) = &outside.meteor {
+        color += Vec3::new(0.86, 0.92, 1.0)
+            * shooting_star(coordinates, footprint, streak, proportions)
+            * night;
+    }
+
     let moon_point = (coordinates - Vec2::new(0.79, 0.8)) * proportions;
     let moon_distance = moon_point.length();
     let angle = outside.moon_phase * TAU;
@@ -347,6 +357,28 @@ fn visiting_bird(
     };
     let feather = Vec3::new(0.22, 0.2, 0.19).lerp(warm, breast);
     color.lerp(feather, coverage(distance, footprint * 0.5))
+}
+
+// How brightly a shooting star's streak covers a point of the sky: a thin
+// line, brightest at its head and fading along its tail.
+fn shooting_star(coordinates: Vec2, footprint: f32, streak: &Streak, proportions: Vec2) -> f32 {
+    let reach = 0.03 + footprint;
+    let low = streak.head.min(streak.tail) - Vec2::splat(reach);
+    let high = streak.head.max(streak.tail) + Vec2::splat(reach);
+    if streak.brightness <= 0.0 || coordinates.cmplt(low).any() || coordinates.cmpgt(high).any() {
+        return 0.0;
+    }
+    let point = (coordinates - streak.tail) * proportions;
+    let along = (streak.head - streak.tail) * proportions;
+    let fraction = if along.length_squared() > 1e-8 {
+        (point.dot(along) / along.length_squared()).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let distance = point.distance(along * fraction);
+    let line = coverage(distance - 0.002 - 0.003 * fraction, footprint * 0.5);
+    let head = (-point.distance_squared(along) / 0.0004).exp();
+    (line * fraction.powf(1.5) + head * 0.8) * streak.brightness
 }
 
 fn lightning(coordinates: Vec2, footprint: f32, last_flash: f64) -> f32 {
@@ -868,6 +900,33 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn nothing_of_a_shooting_star_lies_beyond_the_bound_that_skips_it() {
+        let proportions = Vec2::new(1.0, 0.6);
+        let streak = Streak {
+            head: Vec2::new(0.5, 0.7),
+            tail: Vec2::new(0.6, 0.78),
+            brightness: 1.0,
+        };
+        let footprint = 0.01;
+        // Just outside the bound, the unbounded streak is all but dark.
+        for point in [
+            Vec2::new(0.43, 0.7),
+            Vec2::new(0.67, 0.8),
+            Vec2::new(0.55, 0.62),
+        ] {
+            assert_eq!(shooting_star(point, footprint, &streak, proportions), 0.0);
+        }
+        let head = shooting_star(streak.head, footprint, &streak, proportions);
+        let tail = shooting_star(streak.tail, footprint, &streak, proportions);
+        assert!(head > tail && head.is_finite());
+        let resting = Streak {
+            tail: streak.head,
+            ..streak
+        };
+        assert!(shooting_star(streak.head, footprint, &resting, proportions).is_finite());
+    }
+
     #[test]
     fn a_spark_with_no_travel_yet_has_a_finite_distance() {
         for age in [0.0, 1e-8, 1e-6, 1e-4, 0.1] {

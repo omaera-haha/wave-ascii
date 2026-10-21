@@ -150,6 +150,15 @@ fn outside_the_window(world: &World) -> String {
     if world.fireworks() {
         outside.push_str(", fireworks bursting in the sky");
     }
+    if let Some(shower) = world.meteor_shower() {
+        outside.push_str(&format!(
+            ", on the night of {}, when shooting stars fall more often",
+            shower.name
+        ));
+    }
+    if world.shooting_star().is_some() {
+        outside.push_str(", a shooting star streaking across it right now");
+    }
     if world.visitors.bird.is_some() {
         outside.push_str(match world.life.bird_trust {
             trust if trust < 0.2 => ", the bird is wary of you",

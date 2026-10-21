@@ -109,9 +109,10 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::Scolded => Expression::Worry,
         EventKind::MissedVisit => Expression::Worry,
         EventKind::Puzzled(_) => Expression::Skeptical,
-        EventKind::LearnedWord { .. } | EventKind::LearnedName(_) | EventKind::Named(_) => {
-            Expression::Sparkle
-        }
+        EventKind::LearnedWord { .. }
+        | EventKind::LearnedName(_)
+        | EventKind::Named(_)
+        | EventKind::ShootingStar => Expression::Sparkle,
         EventKind::Noticed(thing)
             if thing.starts_with("the rainbow")
                 || thing == "the falling snow"

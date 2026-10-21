@@ -946,6 +946,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             "visits missed",
             total.missed,
         ),
+        (
+            "snowfalls seen",
+            total.snowfalls,
+            "shooting stars",
+            total.shooting_stars,
+        ),
     ] {
         counts.push((
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),
