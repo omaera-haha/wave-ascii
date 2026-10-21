@@ -1499,6 +1499,7 @@ mod tests {
             world.life.milestones = vec![crate::world::Entry {
                 day: previous.to_owned(),
                 text: "I learned your name: Sam.".to_owned(),
+                korean: None,
             }];
             let observation = observe(&world);
             assert!(observation["day_of_life"].as_str().unwrap().contains(words));

@@ -53,6 +53,7 @@ mod vocabulary;
 pub mod wardrobe;
 mod weather;
 pub mod wish;
+pub mod writing;
 
 use glam::Vec3;
 
@@ -2371,7 +2372,7 @@ impl World {
     }
 
     pub fn speaks_korean(&self) -> bool {
-        self.life.korean > 0.5
+        self.life.speaks_korean()
     }
 
     pub(crate) fn spoken(&self, english: &'static str, korean: &'static str) -> &'static str {

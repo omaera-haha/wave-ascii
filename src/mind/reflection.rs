@@ -590,6 +590,7 @@ pub(crate) mod tests {
         world.life.milestones.push(Entry {
             day: "2026-05-10".to_owned(),
             text: "I learned your name: Sam.".to_owned(),
+            korean: None,
         });
         let observation = super::super::observation::observe(&world);
         let request = request(&observation, &[], &world.life, &[], None, None, None);
@@ -679,10 +680,12 @@ pub(crate) mod tests {
             diary: vec![Entry {
                 day: "2026-10-20".to_owned(),
                 text: "Took a nap.".to_owned(),
+                korean: None,
             }],
             milestones: vec![Entry {
                 day: "2026-10-19".to_owned(),
                 text: "Saw my first rainbow.".to_owned(),
+                korean: None,
             }],
             ..Life::default()
         };
@@ -843,5 +846,28 @@ pub(crate) mod tests {
             assert!(prompt.contains(words));
         }
         assert!(!prompt.contains("to see falling snow"));
+    }
+    #[test]
+    fn paired_diary_and_milestone_writing_never_enters_the_reflection_prompt_in_korean() {
+        let life = Life {
+            korean: 1.0,
+            diary: vec![Entry {
+                day: "2026-10-20".to_owned(),
+                text: "Took a nap.".to_owned(),
+                korean: Some("일기만을 위한 한국어".to_owned()),
+            }],
+            milestones: vec![Entry {
+                day: "2026-10-19".to_owned(),
+                text: "Saw my first rainbow.".to_owned(),
+                korean: Some("이정표만을 위한 한국어".to_owned()),
+            }],
+            ..Default::default()
+        };
+        let request = request(&json!({}), &[], &life, &[], None, None, None);
+        let prompt = &request.system[1].text;
+        assert!(prompt.contains("Took a nap."));
+        assert!(prompt.contains("Saw my first rainbow."));
+        assert!(!prompt.contains("일기만을 위한 한국어"));
+        assert!(!prompt.contains("이정표만을 위한 한국어"));
     }
 }

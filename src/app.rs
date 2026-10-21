@@ -3452,6 +3452,7 @@ mod tests {
                     .unwrap()
                     .to_string(),
                 text: "A quiet day.".to_owned(),
+                korean: None,
             });
         }
         restore(&mut world, &save, local_seconds("2027-06-21T12:00:00"));

@@ -2523,4 +2523,24 @@ mod acquaintance_tests {
             assert_eq!(world.life.vocabulary, vocabulary);
         }
     }
+    #[test]
+    fn recall_and_time_questions_bypass_jev_and_teach_no_vocabulary() {
+        let mut world = World::new(7, 15.0);
+        for message in [
+            "what did we do yesterday?",
+            "어제 뭐했어?",
+            "what did you do today?",
+            "오늘 뭐 했어?",
+            "what time is it?",
+            "몇 시야?",
+            "what's the date?",
+            "무슨 요일이야?",
+        ] {
+            let vocabulary = world.life.vocabulary.clone();
+            let heard = world.hear(message);
+            assert!(matches!(heard.understanding, Understanding::Asked { .. }));
+            assert!(!routes_to_jev(&heard), "{message}");
+            assert_eq!(world.life.vocabulary, vocabulary);
+        }
+    }
 }

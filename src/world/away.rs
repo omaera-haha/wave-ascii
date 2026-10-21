@@ -313,17 +313,51 @@ impl Away {
 
     pub fn write_diary(&self, life: &mut Life, left: Date, today: Date) {
         if let Some(date) = self.quiet_before {
-            life.remember_day(Entry {
-                day: date.to_string(),
-                text: "While you were away: many quiet days passed in the little room.".to_owned(),
-            });
+            life.remember_day(
+                Entry {
+                    day: date.to_string(),
+                    text: "While you were away: many quiet days passed in the little room."
+                        .to_owned(),
+                    korean: Some("네가 없는 동안 작은 방에서 조용한 날들을 보냈어.".to_owned()),
+                },
+                Vec::new(),
+            );
         }
         for day in &self.days {
             if day.date > left && day.date < today {
-                life.remember_day(Entry {
-                    day: day.date.to_string(),
-                    text: sentence(&day.happenings),
-                });
+                let mut happenings = day.happenings.clone();
+                happenings.sort_by_key(|happening| std::cmp::Reverse(happening.importance()));
+                let deeds = happenings
+                    .iter()
+                    .take(3)
+                    .map(|happening| Entry {
+                        day: day.date.to_string(),
+                        text: happening.words(),
+                        korean: Some(
+                            happening.lines(true)[0]
+                                .trim_end_matches(['.', '!'])
+                                .to_owned(),
+                        ),
+                    })
+                    .collect();
+                let korean = day
+                    .happenings
+                    .iter()
+                    .map(|happening| happening.lines(true)[0].to_owned())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                life.remember_day(
+                    Entry {
+                        day: day.date.to_string(),
+                        text: sentence(&day.happenings),
+                        korean: Some(if korean.is_empty() {
+                            "네가 없는 동안 조용히 지냈어.".to_owned()
+                        } else {
+                            korean
+                        }),
+                    },
+                    deeds,
+                );
             }
         }
     }
@@ -924,5 +958,27 @@ mod tests {
         }
         assert!(naps[1] > naps[0] * 2);
         assert!(birds[1] > birds[0] * 2);
+    }
+    #[test]
+    fn skipped_days_keep_paired_diaries_and_typed_yesterday_recall() {
+        let left = "2026-10-17".parse::<Date>().unwrap().at(12, 0, 0, 0);
+        let now = "2026-10-21".parse::<Date>().unwrap().at(12, 0, 0, 0);
+        let mut life = Life::default();
+        life.begin_day(&left.date().to_string());
+        let away = story(left, now, 7, &life, None);
+        life.begin_day(&now.date().to_string());
+        away.write_diary(&mut life, left.date(), now.date());
+        assert_eq!(life.diary.len(), 3);
+        assert!(
+            life.diary
+                .iter()
+                .all(|entry| entry.korean.as_ref().is_some_and(|text| !text.is_empty()))
+        );
+        assert!(life.yesterday.iter().all(|entry| entry.day == "2026-10-20"));
+        assert!(!life.yesterday.is_empty());
+        assert!(
+            life.recall_yesterday(now.date(), true)
+                .contains(life.yesterday[0].in_language(true).trim_end_matches('어'))
+        );
     }
 }

@@ -101,7 +101,10 @@ close to you, learns your words, your name, and the name you give it, learns
 when you usually come and waits for you, befriends the bird, which brings it
 little gifts, plants a garden from its plant's seeds, forms habits, keeps a
 diary, and marks its special days, Seollal and Chuseok among them. Speak
-Korean to it and it answers in Korean and writes Hangul in the fog.
+Korean to it and it answers in Korean and writes Hangul in the fog. Its diary,
+today so far, and milestones follow your language too; new entries keep both
+English and Korean, so changing languages later changes what you read. Older
+entries without Korean stay in English.
 
 Two models give it a mind:
 
@@ -469,6 +472,10 @@ even across restarts. No extra keys are needed.
   Korean when you ask in Korean, and learns no words from a question. With a
   Claude key, Claude answers instead. It also answers "tell me a story"
   offline, weaving its own memories into a short tale in either language.
+  Ask "what did we do yesterday?" / "어제 뭐 했어?" or "what did you do
+  today?" / "오늘 뭐 했어?" for the day's highlights. "What time is it?" /
+  "몇 시야?" and "what's the date?" / "오늘 며칠이야?" use its local clock
+  and calendar, including today's special occasion.
 
 ### A thousand paper cranes
 

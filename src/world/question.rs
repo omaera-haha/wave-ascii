@@ -46,6 +46,10 @@ pub enum Question {
     Mirror,
     Viewer(super::acquaintance::Topic),
     Cranes,
+    Yesterday,
+    Today,
+    Time,
+    Date,
 }
 
 impl Question {
@@ -358,6 +362,32 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
             &["how", "many", "cranes"],
         ],
     ),
+    (
+        Question::Yesterday,
+        &[
+            &["what", "did", "we", "do", "yesterday"],
+            &["what", "did", "you", "do", "yesterday"],
+        ],
+    ),
+    (
+        Question::Today,
+        &[
+            &["what", "did", "you", "do", "today"],
+            &["what", "did", "we", "do", "today"],
+        ],
+    ),
+    (
+        Question::Time,
+        &[&["what", "time", "is", "it"], &["whats", "the", "time"]],
+    ),
+    (
+        Question::Date,
+        &[
+            &["what", "day", "is", "it"],
+            &["whats", "the", "date"],
+            &["what", "is", "the", "date"],
+        ],
+    ),
 ];
 
 // Questions in Korean, as pieces of the message with its spaces taken out,
@@ -548,6 +578,14 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
     ),
     (Question::Feeling, &["잘지내", "괜찮아"], true),
     (Question::Cranes, &["종이학몇마리", "학몇마리접"], false),
+    (Question::Yesterday, &["어제뭐했", "어제는뭐했"], false),
+    (Question::Today, &["오늘뭐했", "오늘은뭐했"], false),
+    (Question::Time, &["몇시야", "몇시니", "몇시인지알아"], false),
+    (
+        Question::Date,
+        &["무슨요일이야", "무슨요일이니", "오늘며칠", "오늘날짜"],
+        false,
+    ),
 ];
 
 /// The question `text` asks, if it is one the ghost can answer by itself.
@@ -741,6 +779,63 @@ mod tests {
         }
         for text in ["wishful thinking", "I wish for rain", "내 소원은 무지개야"] {
             assert_ne!(ask(text), Some(Question::Wish), "{text}");
+        }
+    }
+    #[test]
+    fn recall_clock_and_calendar_questions_use_word_runs_and_korean_pieces() {
+        for (question, examples) in [
+            (
+                Question::Yesterday,
+                vec![
+                    "what did we do yesterday?",
+                    "what did you do yesterday",
+                    "어제 뭐 했어?",
+                    "어제 뭐했어?",
+                ],
+            ),
+            (
+                Question::Today,
+                vec![
+                    "what did you do today?",
+                    "what did we do today",
+                    "오늘 뭐 했어?",
+                    "오늘 뭐했어?",
+                ],
+            ),
+            (
+                Question::Time,
+                vec![
+                    "what time is it?",
+                    "What's the time",
+                    "몇 시야?",
+                    "지금 몇시야",
+                ],
+            ),
+            (
+                Question::Date,
+                vec![
+                    "what day is it?",
+                    "what's the date?",
+                    "what is the date",
+                    "무슨 요일이야?",
+                    "오늘 며칠이야?",
+                ],
+            ),
+        ] {
+            for text in examples {
+                assert_eq!(ask(text), Some(question), "{text}");
+            }
+        }
+        for text in [
+            "we played yesterday",
+            "today is quiet",
+            "time flies",
+            "what timing is it",
+            "어제 놀았어",
+            "오늘은 월요일이야",
+            "세 시야",
+        ] {
+            assert_eq!(ask(text), None, "{text}");
         }
     }
 }

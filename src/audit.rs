@@ -382,13 +382,31 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
         world.life.total.treasure_hints,
         world.life.total.fastest_treasure
     );
+    println!(
+        "-- paired writing: {}/{} diary entries, {}/{} milestones, {} yesterday deeds",
+        world
+            .life
+            .diary
+            .iter()
+            .filter(|entry| entry.korean.is_some())
+            .count(),
+        world.life.diary.len(),
+        world
+            .life
+            .milestones
+            .iter()
+            .filter(|entry| entry.korean.is_some())
+            .count(),
+        world.life.milestones.len(),
+        world.life.yesterday.len()
+    );
     println!("-- diary");
     for entry in &world.life.diary {
-        println!("  {}: {}", entry.day, entry.text);
+        println!("  {}: {}", entry.day, entry.in_language(korean));
     }
     println!("-- milestones");
     for entry in &world.life.milestones {
-        println!("  {}: {}", entry.day, entry.text);
+        println!("  {}: {}", entry.day, entry.in_language(korean));
     }
     by_day.push(format!(
         "  {} (so far): {}",

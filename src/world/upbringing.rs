@@ -162,6 +162,29 @@ const THOUGHTS: [[&str; 2]; 5] = [
     ],
 ];
 
+const KOREAN_MILESTONES: [[&str; 2]; 5] = [
+    [
+        "조금 더 차분하게 놀게 됐어.",
+        "너처럼 장난기가 늘어난 것 같아.",
+    ],
+    ["내 작은 세상이 더 익숙해졌어.", "모든 게 더 궁금해졌어."],
+    ["부끄러움을 덜 타게 됐어.", "전보다 조금 더 수줍어졌어."],
+    ["전보다 더 활발해졌어.", "잠이 더 많은 유령이 됐어."],
+    [
+        "혼자서도 조금 더 잘 지내게 됐어.",
+        "네 곁에서 더 다정해졌어.",
+    ],
+];
+
+pub(super) fn korean_change(text: &str) -> &'static str {
+    for (index, pair) in MILESTONES.iter().enumerate() {
+        if let Some(direction) = pair.iter().position(|english| *english == text) {
+            return KOREAN_MILESTONES[index][direction].trim_end_matches('.');
+        }
+    }
+    ""
+}
+
 pub(super) fn valid_change(text: &str) -> bool {
     MILESTONES.iter().flatten().any(|known| *known == text)
 }
@@ -282,6 +305,7 @@ impl Life {
                 self.milestones.push(Entry {
                     day: day.to_string(),
                     text: text.clone(),
+                    korean: Some(KOREAN_MILESTONES[index][usize::from(drift > 0.0)].to_owned()),
                 });
                 self.total.temperament_changes.push(text.clone());
                 if lived {

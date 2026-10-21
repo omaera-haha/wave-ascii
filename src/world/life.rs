@@ -12,37 +12,93 @@ use super::{
 const DAYS_KEPT: usize = 60;
 /// Bonds at which the ghost marks how close it has grown, and what it
 /// says about it.
-const CLOSER: [(f32, &str); 4] = [
-    (0.3, "We got to know each other."),
-    (0.55, "I've grown fond of you."),
-    (0.8, "We're close now, you and I."),
-    (0.95, "I'm devoted to you."),
+const CLOSER: [(f32, &str, &str); 4] = [
+    (
+        0.3,
+        "We got to know each other.",
+        "우리는 서로를 알아 갔어.",
+    ),
+    (0.55, "I've grown fond of you.", "네가 점점 좋아졌어."),
+    (
+        0.8,
+        "We're close now, you and I.",
+        "너와 나는 이제 가까운 사이야.",
+    ),
+    (
+        0.95,
+        "I'm devoted to you.",
+        "내 마음은 언제나 네 곁에 있어.",
+    ),
 ];
 /// Hours together the ghost marks, and what it says about them. Milestones
 /// reach the minds as events, so they are written in words, not digits.
-const HOURS_MARKED: [(f64, &str); 3] = [
-    (1.0, "We spent our first hour together."),
-    (10.0, "We've spent ten hours together."),
-    (100.0, "We've spent a hundred hours together."),
+const HOURS_MARKED: [(f64, &str, &str); 3] = [
+    (
+        1.0,
+        "We spent our first hour together.",
+        "처음으로 한 시간을 같이 보냈어.",
+    ),
+    (
+        10.0,
+        "We've spent ten hours together.",
+        "열 시간을 같이 보냈어.",
+    ),
+    (
+        100.0,
+        "We've spent a hundred hours together.",
+        "백 시간을 같이 보냈어.",
+    ),
 ];
 /// Numbers of the viewer's words it knows that the ghost marks, after the
 /// first.
-const WORDS_MARKED: [(usize, &str); 4] = [
-    (10, "I know ten of your words now."),
-    (25, "I know twenty-five of your words now."),
-    (50, "I know fifty of your words now."),
-    (100, "I know a hundred of your words now."),
+const WORDS_MARKED: [(usize, &str, &str); 4] = [
+    (
+        10,
+        "I know ten of your words now.",
+        "네 말 열 개를 알게 됐어.",
+    ),
+    (
+        25,
+        "I know twenty-five of your words now.",
+        "네 말 스물다섯 개를 알게 됐어.",
+    ),
+    (
+        50,
+        "I know fifty of your words now.",
+        "네 말 쉰 개를 알게 됐어.",
+    ),
+    (
+        100,
+        "I know a hundred of your words now.",
+        "네 말 백 개를 알게 됐어.",
+    ),
 ];
 /// Deeds a diary entry keeps, the ones that stood out most.
 const DIARY_DEEDS: usize = 6;
 /// Words learned in a day that the diary names.
 const WORDS_NAMED: usize = 4;
 /// Light motes eaten that the ghost marks, after the first.
-const MOTES_MARKED: [(u32, &str); 4] = [
-    (50, "Ate my fiftieth light mote."),
-    (100, "Ate my hundredth light mote."),
-    (500, "Ate my five hundredth light mote."),
-    (1000, "Ate my thousandth light mote."),
+const MOTES_MARKED: [(u32, &str, &str); 4] = [
+    (
+        50,
+        "Ate my fiftieth light mote.",
+        "빛 알갱이 쉰 개를 먹었어.",
+    ),
+    (
+        100,
+        "Ate my hundredth light mote.",
+        "빛 알갱이 백 개를 먹었어.",
+    ),
+    (
+        500,
+        "Ate my five hundredth light mote.",
+        "빛 알갱이 오백 개를 먹었어.",
+    ),
+    (
+        1000,
+        "Ate my thousandth light mote.",
+        "빛 알갱이 천 개를 먹었어.",
+    ),
 ];
 /// How much each second with the viewer around warms the bond, before the
 /// day's warmth wears off and a deeper bond slows it.
@@ -313,6 +369,9 @@ pub struct Tally {
     pub cranes: u32,
     #[serde(default)]
     pub cranes_for_sad_viewer: u32,
+    #[serde(default)]
+    /// Paired names and remembered deeds supplied by their typed events.
+    pub korean_details: BTreeMap<String, String>,
 }
 
 impl Tally {
@@ -401,12 +460,26 @@ impl Tally {
                     _ => self.wishes_faded = self.wishes_faded.saturating_add(1),
                 }
                 if self.wish_words.len() < 12 {
-                    self.wish_words.push(match kind {
+                    let english = match kind {
                         EventKind::MadeWish(wish) => {
                             format!("made a wish {}", wish.words(&Life::default()))
                         }
                         _ => kind.words(),
-                    });
+                    };
+                    let korean = match kind {
+                        EventKind::MadeWish(wish) => {
+                            format!("소원을 빌었어: {}", wish.korean(&Life::default()))
+                        }
+                        EventKind::WishGranted(wish) => {
+                            format!("소원이 이루어졌어: {}", wish.korean(&Life::default()))
+                        }
+                        EventKind::WishFaded(wish) => {
+                            format!("소원을 살며시 보내 줬어: {}", wish.korean(&Life::default()))
+                        }
+                        _ => unreachable!(),
+                    };
+                    self.remember_writing(english.clone(), korean);
+                    self.wish_words.push(english);
                 }
             }
             EventKind::SawPasserby(passerby) => {
@@ -631,7 +704,7 @@ impl Tally {
     /// Everything that happened in a few sentences, as the ghost would tell
     /// the viewer what it has been up to.
     pub fn words(&self) -> String {
-        let deeds: Vec<String> = self.deeds().into_iter().map(|(_, deed)| deed).collect();
+        let deeds: Vec<String> = self.deeds().into_iter().map(|(_, deed, _)| deed).collect();
         self.written(&deeds)
     }
 
@@ -640,26 +713,103 @@ impl Tally {
     pub fn diary(&self) -> String {
         let mut deeds = self.deeds();
         // A stable sort keeps deeds of equal weight in their usual order.
-        deeds.sort_by(|(first, _), (second, _)| second.cmp(first));
+        deeds.sort_by(|(first, _, _), (second, _, _)| second.cmp(first));
         deeds.truncate(DIARY_DEEDS);
-        let deeds: Vec<String> = deeds.into_iter().map(|(_, deed)| deed).collect();
+        let deeds: Vec<String> = deeds.into_iter().map(|(_, deed, _)| deed).collect();
         self.written(&deeds)
     }
 
-    // Each thing it did or saw, with how much it stood out.
-    fn deeds(&self) -> Vec<(Salience, String)> {
-        let mut deeds: Vec<(Salience, String)> = self
+    pub fn words_korean(&self) -> String {
+        let deeds = self
+            .deeds()
+            .into_iter()
+            .map(
+                |(_, english, korean)| {
+                    if korean.is_empty() { english } else { korean }
+                },
+            )
+            .collect::<Vec<_>>();
+        self.written_korean(&deeds)
+    }
+
+    pub fn diary_korean(&self) -> String {
+        let deeds = self
+            .top_deeds("", DIARY_DEEDS)
+            .into_iter()
+            .map(|entry| entry.in_language(true).to_owned())
+            .collect::<Vec<_>>();
+        self.written_korean(&deeds)
+    }
+
+    pub(super) fn top_deeds(&self, day: &str, limit: usize) -> Vec<Entry> {
+        let mut deeds = self.deeds();
+        deeds.sort_by(|(first, _, _), (second, _, _)| second.cmp(first));
+        deeds
+            .into_iter()
+            .take(limit)
+            .map(|(_, text, korean)| Entry {
+                day: day.to_owned(),
+                text,
+                korean: (!korean.is_empty()).then_some(korean),
+            })
+            .collect()
+    }
+
+    pub fn recall(&self, korean: bool) -> String {
+        let deeds = self
+            .top_deeds("", 3)
+            .iter()
+            .map(|entry| entry.in_language(korean).to_owned())
+            .collect::<Vec<_>>();
+        recalled_deeds(&deeds, korean)
+    }
+
+    pub(super) fn remember_writing(&mut self, english: String, korean: String) {
+        if self.korean_details.len() >= 64 && !self.korean_details.contains_key(&english) {
+            self.korean_details.pop_first();
+        }
+        self.korean_details.insert(english, korean);
+    }
+
+    fn korean_detail<'a>(&'a self, text: &'a str) -> &'a str {
+        self.korean_details.get(text).map_or(text, String::as_str)
+    }
+
+    // Each deed keeps its salience and both languages. An empty Korean side
+    // falls back to English, including deeds added by newer features.
+    fn deeds(&self) -> Vec<(Salience, String, String)> {
+        let mut deeds: Vec<(Salience, String, String)> = self
             .occasions
             .iter()
-            .map(|occasion| (Salience::Momentous, occasion.diary_words().to_owned()))
+            .map(|occasion| {
+                (
+                    Salience::Momentous,
+                    occasion.diary_words().to_owned(),
+                    format!(
+                        "{}{} 기념했어",
+                        super::writing::occasion_korean(*occasion),
+                        super::writing::particle(
+                            super::writing::occasion_korean(*occasion),
+                            "을",
+                            "를"
+                        )
+                    ),
+                )
+            })
             .collect();
-        deeds.extend(
-            self.temperament_changes
-                .iter()
-                .map(|line| (Salience::Momentous, line.trim_end_matches('.').to_owned())),
-        );
+        deeds.extend(self.temperament_changes.iter().map(|line| {
+            (
+                Salience::Momentous,
+                line.trim_end_matches('.').to_owned(),
+                super::upbringing::korean_change(line).to_owned(),
+            )
+        }));
         if self.scolds > 0 {
-            deeds.push((Salience::Small, "you told me no".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "you told me no".to_owned(),
+                "안 된다는 말을 들었어".to_owned(),
+            ));
         }
         if self.treasures_found > 0 {
             deeds.push((
@@ -669,35 +819,50 @@ impl Tally {
                 } else {
                     "found the treasure you hid".to_owned()
                 },
+                if self.fastest_treasure.is_some_and(|seconds| seconds < 20) {
+                    "네 보물을 금세 찾았어"
+                } else {
+                    "네가 숨긴 보물을 찾았어"
+                }
+                .to_owned(),
             ));
         } else if self.hunts > 0 {
             deeds.push((
                 Salience::Small,
                 "searched for the treasure you hid".to_owned(),
+                "네가 숨긴 보물을 찾아다녔어".to_owned(),
             ));
         }
         if self.treasure_hints > 0 {
             deeds.push((
                 Salience::Small,
                 "followed your warmer and colder hints".to_owned(),
+                "가깝고 멀다는 네 힌트를 따라갔어".to_owned(),
             ));
         }
         if self.promises_made > 0 {
             deeds.push((
                 Salience::Small,
                 "you told me when you would return".to_owned(),
+                "언제 돌아올지 말해 줬어".to_owned(),
             ));
         }
         if self.promises_kept > self.trips_kept {
             deeds.push((
                 Salience::Notable,
                 "you came back when you said you would".to_owned(),
+                "약속한 때에 돌아와 줬어".to_owned(),
             ));
         }
         if self.trips_kept > 0 {
-            deeds.push((Salience::Special, "you came home from your trip".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "you came home from your trip".to_owned(),
+                "네가 여행을 마치고 돌아왔어".to_owned(),
+            ));
         }
         deeds.extend(self.anniversary_words.iter().map(|line| {
+            let korean = self.korean_details.get(line).cloned().unwrap_or_default();
             let mut letters = line.trim_end_matches('.').chars();
             let line = letters.next().map_or_else(String::new, |first| {
                 first.to_lowercase().collect::<String>() + letters.as_str()
@@ -705,12 +870,14 @@ impl Tally {
             (
                 Salience::Notable,
                 format!("remembered {}", line.replacen(", ", ", when ", 1)),
+                korean,
             )
         }));
         if self.anniversaries > 0 && self.anniversary_words.is_empty() {
             deeds.push((
                 Salience::Notable,
                 "remembered a special day from my life".to_owned(),
+                "내 삶의 특별했던 날을 떠올렸어".to_owned(),
             ));
         }
         for feeling in &self.comforted_feelings {
@@ -719,13 +886,14 @@ impl Tally {
             } else {
                 format!("you were {}, so I {}", feeling.name(), feeling.care_words())
             };
-            deeds.push((Salience::Special, words));
+            deeds.push((Salience::Special, words, super::writing::comfort(*feeling)));
         }
         for feeling in &self.feelings {
             if !self.comforted_feelings.contains(feeling) {
                 deeds.push((
                     Salience::Notable,
                     format!("you told me you were {}", feeling.name()),
+                    format!("‘{}’ 하고 말해 줬어", feeling.korean()),
                 ));
             }
         }
@@ -733,46 +901,84 @@ impl Tally {
             deeds.push((
                 Salience::Special,
                 "you told me you were feeling better".to_owned(),
+                "기분이 나아졌다고 말해 줬어".to_owned(),
             ));
         }
         deeds.extend(super::Quirk::ALL.into_iter().filter_map(|kind| {
             self.quirks
                 .get(&kind)
                 .filter(|count| **count > 0)
-                .map(|count| (Salience::Small, kind.diary(*count)))
+                .map(|count| {
+                    (
+                        Salience::Small,
+                        kind.diary(*count),
+                        super::writing::quirk(kind, *count),
+                    )
+                })
         }));
         if self.letters_received > 0 {
-            deeds.push((Salience::Special, "received your letter".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "received your letter".to_owned(),
+                "네 편지를 받았어".to_owned(),
+            ));
         }
         if self.viewer_letters_read > 0 {
-            deeds.push((Salience::Special, "read your letter".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "read your letter".to_owned(),
+                "네 편지를 읽었어".to_owned(),
+            ));
         }
         for title in &self.composition_titles {
             deeds.push((
                 Salience::Special,
                 format!("made up a tune called “{title}”"),
+                format!(
+                    "《{}》{} 곡을 만들었어",
+                    self.korean_detail(title),
+                    super::writing::particle(self.korean_detail(title), "이라는", "라는")
+                ),
             ));
         }
         for title in &self.written_titles {
             deeds.push((
                 Salience::Momentous,
                 format!("wrote my own picture book, “{title}”"),
+                format!(
+                    "내 그림책 《{}》{} 썼어",
+                    self.korean_detail(title),
+                    super::writing::particle(self.korean_detail(title), "을", "를")
+                ),
             ));
         }
         if self.songs_sung_back > 0 {
             deeds.push((
                 Salience::Special,
                 "heard you sing my own song back to me".to_owned(),
+                "네가 내 노래를 다시 불러 줬어".to_owned(),
             ));
         }
         if self.letters_written > 0 {
-            deeds.push((Salience::Special, "wrote you a letter".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "wrote you a letter".to_owned(),
+                "네게 편지를 썼어".to_owned(),
+            ));
         }
         if self.letters_read > 0 {
-            deeds.push((Salience::Special, "watched you read my letter".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "watched you read my letter".to_owned(),
+                "네가 내 편지를 읽는 모습을 봤어".to_owned(),
+            ));
         }
         if self.outfits > 0 {
-            deeds.push((Salience::Small, "wore a little accessory".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "wore a little accessory".to_owned(),
+                "작은 장신구를 달았어".to_owned(),
+            ));
         }
         if self.pages > 0 {
             deeds.push((
@@ -782,6 +988,7 @@ impl Tally {
                     count_words(self.pages),
                     if self.pages == 1 { "page" } else { "pages" }
                 ),
+                format!("책을 {}쪽 읽었어", self.pages),
             ));
         }
         if self.books_finished > 0 {
@@ -796,6 +1003,7 @@ impl Tally {
                         "books"
                     }
                 ),
+                format!("그림책 {}권을 끝까지 읽었어", self.books_finished),
             ));
         }
         if self.books_received > 0 {
@@ -810,6 +1018,7 @@ impl Tally {
                         "books"
                     }
                 ),
+                format!("새 그림책 {}권을 받았어", self.books_received),
             ));
         }
         deeds.extend(self.wish_words.iter().map(|words| {
@@ -820,7 +1029,11 @@ impl Tally {
             } else {
                 Salience::Small
             };
-            (salience, words.clone())
+            (
+                salience,
+                words.clone(),
+                self.korean_details.get(words).cloned().unwrap_or_default(),
+            )
         }));
         if self.focus_sessions > 0 {
             deeds.push((
@@ -834,12 +1047,17 @@ impl Tally {
                         "sessions"
                     },
                 ),
+                format!(
+                    "네가 집중하는 동안 {}번 곁에 있어 줬어",
+                    self.focus_sessions
+                ),
             ));
         }
         if self.airings > 0 {
             deeds.push((
                 Salience::Small,
                 "opened the window for fresh air".to_owned(),
+                "창문을 열어 바깥 공기를 마셨어".to_owned(),
             ));
         }
         if self.focus_minutes > 0 {
@@ -854,6 +1072,7 @@ impl Tally {
                         "minutes"
                     }
                 ),
+                format!("{}분 동안 같이 집중했어", self.focus_minutes),
             ));
         }
         if let Some(name) = &self.friend_name {
@@ -876,39 +1095,60 @@ impl Tally {
                     } else {
                         format!("{visit} and we played {}", listed(&games))
                     },
+                    super::writing::friend_visit(self, name),
                 ));
             }
         }
         match self.motes {
             0 => {}
-            1 => deeds.push((Salience::Routine, "ate a light mote".to_owned())),
+            1 => deeds.push((
+                Salience::Routine,
+                "ate a light mote".to_owned(),
+                "빛 알갱이 하나를 먹었어".to_owned(),
+            )),
             motes => deeds.push((
                 Salience::Routine,
                 format!("ate {} light motes", count_words(motes)),
+                format!("빛 알갱이 {motes}개를 먹었어"),
             )),
         }
         match self.nudges {
             0 => {}
-            1 => deeds.push((Salience::Routine, "nudged the ball".to_owned())),
+            1 => deeds.push((
+                Salience::Routine,
+                "nudged the ball".to_owned(),
+                "공을 밀었어".to_owned(),
+            )),
             nudges => deeds.push((
                 Salience::Routine,
                 format!("pushed the ball around {} times", count_words(nudges)),
+                format!("공을 {nudges}번 굴렸어"),
             )),
         }
         match self.fetches {
             0 => {}
-            1 => deeds.push((Salience::Notable, "fetched the ball for you".to_owned())),
+            1 => deeds.push((
+                Salience::Notable,
+                "fetched the ball for you".to_owned(),
+                "네게 공을 가져다줬어".to_owned(),
+            )),
             fetches => deeds.push((
                 Salience::Notable,
                 format!("fetched the ball for you {} times", count_words(fetches)),
+                format!("네게 공을 {fetches}번 가져다줬어"),
             )),
         }
         match self.pounces {
             0 => {}
-            1 => deeds.push((Salience::Small, "pounced on your finger".to_owned())),
+            1 => deeds.push((
+                Salience::Small,
+                "pounced on your finger".to_owned(),
+                "네 손가락에 폴짝 뛰어들었어".to_owned(),
+            )),
             pounces => deeds.push((
                 Salience::Small,
                 format!("pounced on your finger {} times", count_words(pounces)),
+                format!("네 손가락에 {pounces}번 폴짝 뛰어들었어"),
             )),
         }
         let tower = match self.towers {
@@ -924,23 +1164,37 @@ impl Tally {
                     tower.push_str(&format!(", and you knocked {} down", count_words(toppled)))
                 }
             }
-            deeds.push((Salience::Notable, tower));
+            deeds.push((
+                Salience::Notable,
+                tower,
+                if self.toppled > 0 {
+                    format!(
+                        "블록 탑을 {}개 쌓았고, 네가 {}개를 무너뜨렸어",
+                        self.towers, self.toppled
+                    )
+                } else {
+                    format!("블록 탑을 {}개 쌓았어", self.towers)
+                },
+            ));
         } else if self.toppled > 0 {
             deeds.push((
                 Salience::Small,
                 "watched you knock my tower down".to_owned(),
+                "네가 내 탑을 무너뜨리는 모습을 봤어".to_owned(),
             ));
         }
         if self.learned_about > 0 {
             deeds.push((
                 Salience::Special,
                 "learned a little more about you".to_owned(),
+                "너에 대해 조금 더 알게 됐어".to_owned(),
             ));
         }
         if self.moon_wishes > 0 {
             deeds.push((
                 Salience::Special,
                 "made a wish on the Chuseok moon".to_owned(),
+                "추석 달을 보며 소원을 빌었어".to_owned(),
             ));
         }
         if self.constellations > 0 {
@@ -951,14 +1205,20 @@ impl Tally {
                 } else {
                     "found new constellations in the stars".to_owned()
                 },
+                "별들 사이에서 새로운 그림을 찾았어".to_owned(),
             ));
         }
         match self.dances {
             0 => {}
-            1 => deeds.push((Salience::Small, "danced a twirl".to_owned())),
+            1 => deeds.push((
+                Salience::Small,
+                "danced a twirl".to_owned(),
+                "빙글 돌며 춤췄어".to_owned(),
+            )),
             dances => deeds.push((
                 Salience::Small,
                 format!("danced {} twirls", count_words(dances)),
+                format!("{dances}번 빙글 돌며 춤췄어"),
             )),
         }
         match (self.finds, self.jumps) {
@@ -966,12 +1226,18 @@ impl Tally {
             (0, _) => deeds.push((
                 Salience::Notable,
                 "played hide-and-seek, and you never found me".to_owned(),
+                "숨바꼭질을 했는데 네가 나를 못 찾았어".to_owned(),
             )),
             (_, 0) => deeds.push((
                 Salience::Notable,
                 "played hide-and-seek, and you found me".to_owned(),
+                "숨바꼭질을 했고 네가 나를 찾았어".to_owned(),
             )),
-            _ => deeds.push((Salience::Notable, "played hide-and-seek".to_owned())),
+            _ => deeds.push((
+                Salience::Notable,
+                "played hide-and-seek".to_owned(),
+                "숨바꼭질을 했어".to_owned(),
+            )),
         }
         if self.games == 1 {
             let result = if self.wins > 0 {
@@ -984,6 +1250,14 @@ impl Tally {
             deeds.push((
                 Salience::Notable,
                 format!("played noughts and crosses with you {result}"),
+                if self.wins > 0 {
+                    "너랑 틱택토를 해서 이겼어"
+                } else if self.losses > 0 {
+                    "너랑 틱택토를 했고 네가 이겼어"
+                } else {
+                    "너랑 틱택토를 해서 비겼어"
+                }
+                .to_owned(),
             ));
         } else if self.games > 1 {
             let mut results = Vec::new();
@@ -1002,26 +1276,37 @@ impl Tally {
                     "played games of noughts and crosses with you: {}",
                     listed(&results)
                 ),
+                format!(
+                    "너랑 틱택토를 했어. 나는 {}번, 너는 {}번 이겼고, {}번 비겼어",
+                    self.wins, self.losses, self.draws
+                ),
             ));
         }
         match self.doodles {
             0 => {}
-            1 => deeds.push((Salience::Small, "drew a picture on the glass".to_owned())),
+            1 => deeds.push((
+                Salience::Small,
+                "drew a picture on the glass".to_owned(),
+                "유리에 그림을 그렸어".to_owned(),
+            )),
             doodles => deeds.push((
                 Salience::Small,
                 format!("drew {} pictures on the glass", count_words(doodles)),
+                format!("유리에 그림을 {doodles}개 그렸어"),
             )),
         }
         if self.drawings_seen > 0 {
             deeds.push((
                 Salience::Notable,
                 "looked at the pictures you drew on the glass".to_owned(),
+                "네가 유리에 그린 그림을 봤어".to_owned(),
             ));
         }
         if self.pictures_learned > 0 {
             deeds.push((
                 Salience::Special,
                 "learned new pictures from you".to_owned(),
+                "네게 새로운 그림을 배웠어".to_owned(),
             ));
         }
         for word in &self.written_words {
@@ -1031,57 +1316,105 @@ impl Tally {
                     "wrote “{}” on the glass for you",
                     super::doodle::writing_words(word)
                 ),
+                format!(
+                    "네가 읽을 수 있게 유리에 ‘{word}’{} 썼어",
+                    super::writing::particle(word, "이라고", "라고")
+                ),
             ));
         }
         if self.writings > 0 && self.written_words.is_empty() {
             deeds.push((
                 Salience::Small,
                 "wrote words on the glass for you".to_owned(),
+                "네가 읽을 수 있게 유리에 글씨를 썼어".to_owned(),
             ));
         }
         for name in &self.viewer_names {
-            deeds.push((Salience::Momentous, format!("learned your name: {name}")));
+            deeds.push((
+                Salience::Momentous,
+                format!("learned your name: {name}"),
+                format!("네 이름을 알게 됐어: {name}"),
+            ));
         }
         match (self.waterings, self.blooms) {
             (0, 0) => {}
-            (0, _) => deeds.push((Salience::Notable, "saw the plant flower".to_owned())),
-            (_, 0) => deeds.push((Salience::Small, "watered the plant".to_owned())),
+            (0, _) => deeds.push((
+                Salience::Notable,
+                "saw the plant flower".to_owned(),
+                "화분에 꽃이 피는 걸 봤어".to_owned(),
+            )),
+            (_, 0) => deeds.push((
+                Salience::Small,
+                "watered the plant".to_owned(),
+                "화분에 물을 줬어".to_owned(),
+            )),
             _ => deeds.push((
                 Salience::Notable,
                 "watered the plant until it flowered".to_owned(),
+                "화분에 물을 주고 꽃이 피는 걸 봤어".to_owned(),
             )),
         }
         for kind in &self.planted_kinds {
-            deeds.push((Salience::Special, format!("planted a {} seed", kind.name())));
+            deeds.push((
+                Salience::Special,
+                format!("planted a {} seed", kind.name()),
+                format!("{} 씨앗을 심었어", kind.korean()),
+            ));
         }
         for kind in &self.sprouted_kinds {
-            deeds.push((Salience::Special, format!("saw the {} sprout", kind.name())));
+            deeds.push((
+                Salience::Special,
+                format!("saw the {} sprout", kind.name()),
+                format!("{} 싹이 나는 걸 봤어", kind.korean()),
+            ));
         }
         for kind in &self.flowered_kinds {
             deeds.push((
                 Salience::Momentous,
                 format!("the {} came into flower", kind.name()),
+                format!("{} 꽃이 피었어", kind.korean()),
             ));
         }
         if self.drooped > 0 {
             deeds.push((
                 Salience::Notable,
                 "noticed the plant drooping from thirst".to_owned(),
+                "목말라 시든 화분을 발견했어".to_owned(),
             ));
         }
         match self.naps {
             0 => {}
-            1 => deeds.push((Salience::Small, "took a nap".to_owned())),
-            naps => deeds.push((Salience::Small, format!("took {} naps", count_words(naps)))),
+            1 => deeds.push((
+                Salience::Small,
+                "took a nap".to_owned(),
+                "낮잠을 잤어".to_owned(),
+            )),
+            naps => deeds.push((
+                Salience::Small,
+                format!("took {} naps", count_words(naps)),
+                format!("낮잠을 {naps}번 잤어"),
+            )),
         }
         if self.nights > 0 {
-            deeds.push((Salience::Small, "slept through the night".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "slept through the night".to_owned(),
+                "밤새 푹 잤어".to_owned(),
+            ));
         }
         if self.snowfalls > 0 {
-            deeds.push((Salience::Special, "watched the snow fall".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "watched the snow fall".to_owned(),
+                "눈이 내리는 걸 봤어".to_owned(),
+            ));
         }
         if self.birds > 0 {
-            deeds.push((Salience::Small, "watched a bird at the window".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "watched a bird at the window".to_owned(),
+                "창가에서 새를 구경했어".to_owned(),
+            ));
         }
         if self.gifts > 0 {
             let gifts: Vec<String> = self
@@ -1101,33 +1434,56 @@ impl Tally {
                 } else {
                     format!("the bird brought me gifts, including {gifts}")
                 },
+                format!(
+                    "새가 선물을 가져다줬어: {}",
+                    self.keepsakes
+                        .iter()
+                        .map(|gift| gift.korean())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             ));
         }
         if self.moths > 0 {
-            deeds.push((Salience::Small, "saw a moth at the lamp".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "saw a moth at the lamp".to_owned(),
+                "등불 곁에서 나방을 봤어".to_owned(),
+            ));
         }
         if self.expected > 0 {
-            deeds.push((Salience::Notable, "you came at your usual time".to_owned()));
+            deeds.push((
+                Salience::Notable,
+                "you came at your usual time".to_owned(),
+                "네가 늘 오는 시간에 왔어".to_owned(),
+            ));
         }
         if self.missed > 0 {
             deeds.push((
                 Salience::Notable,
                 "waited for you at your usual time, but you didn't come".to_owned(),
+                "네가 늘 오는 시간에 기다렸지만 오지 않았어".to_owned(),
             ));
         }
         if self.storms > 0 {
-            deeds.push((Salience::Notable, "sat out a thunderstorm".to_owned()));
+            deeds.push((
+                Salience::Notable,
+                "sat out a thunderstorm".to_owned(),
+                "천둥이 치는 동안 가만히 기다렸어".to_owned(),
+            ));
         }
         if self.forecasts > 0 {
             deeds.push((
                 Salience::Notable,
                 "felt the rain coming before it fell".to_owned(),
+                "비가 오기 전에 느꼈어".to_owned(),
             ));
         }
         if self.snow_forecasts > 0 {
             deeds.push((
                 Salience::Notable,
                 "smelled the snow coming before it fell".to_owned(),
+                "눈이 오기 전에 냄새를 맡았어".to_owned(),
             ));
         }
         if !self.words.is_empty() {
@@ -1138,6 +1494,7 @@ impl Tally {
                     [word] => format!("learned what {word} means"),
                     words => format!("learned what {} mean", listed(words)),
                 },
+                format!("{}의 뜻을 배웠어", quoted.join(", ")),
             ));
         }
         if self.passersby > 0 {
@@ -1145,6 +1502,7 @@ impl Tally {
                 deeds.push((
                     Salience::Notable,
                     "watched passing life outside the window".to_owned(),
+                    "창밖으로 지나가는 친구들을 구경했어".to_owned(),
                 ));
             } else {
                 let kinds: Vec<String> = self
@@ -1155,15 +1513,36 @@ impl Tally {
                 deeds.push((
                     Salience::Notable,
                     format!("saw {} through the window", listed(&kinds)),
+                    format!(
+                        "창밖에서 {} 구경했어",
+                        self.passerby_kinds
+                            .iter()
+                            .map(|kind| format!(
+                                "{}{}",
+                                super::writing::passerby(*kind),
+                                super::writing::particle(
+                                    super::writing::passerby(*kind),
+                                    "을",
+                                    "를"
+                                )
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
                 ));
             }
         }
         match self.shooting_stars {
             0 => {}
-            1 => deeds.push((Salience::Notable, "wished on a shooting star".to_owned())),
+            1 => deeds.push((
+                Salience::Notable,
+                "wished on a shooting star".to_owned(),
+                "별똥별에 소원을 빌었어".to_owned(),
+            )),
             stars => deeds.push((
                 Salience::Notable,
                 format!("wished on {} shooting stars", count_words(stars)),
+                format!("별똥별 {stars}개에 소원을 빌었어"),
             )),
         }
         if self.word_games > 0 {
@@ -1179,6 +1558,10 @@ impl Tally {
                     },
                     count_words(self.words_guessed)
                 ),
+                format!(
+                    "너랑 낱말 놀이를 {}번 했고, 네가 {}개를 맞혔어",
+                    self.word_games, self.words_guessed
+                ),
             ));
         }
         if self.tunes_played > 0 {
@@ -1193,65 +1576,101 @@ impl Tally {
                         "tunes"
                     }
                 ),
+                format!("오르골로 노래를 {}곡 틀었어", self.tunes_played),
             ));
         }
         if self.tunes_learned > 0 {
-            deeds.push((Salience::Special, "learned a tune from you".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "learned a tune from you".to_owned(),
+                "네게 노래를 배웠어".to_owned(),
+            ));
         }
         if self.mirror_visits > 0 {
-            deeds.push((Salience::Small, "looked in the mirror".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "looked in the mirror".to_owned(),
+                "거울을 들여다봤어".to_owned(),
+            ));
         }
         if self.met_reflection {
-            deeds.push((Salience::Special, "met the ghost in the mirror".to_owned()));
+            deeds.push((
+                Salience::Special,
+                "met the ghost in the mirror".to_owned(),
+                "거울 속 유령을 만났어".to_owned(),
+            ));
         }
         if self.recognized_self {
             deeds.push((
                 Salience::Momentous,
                 "learned the ghost in the mirror is me".to_owned(),
+                "거울 속 유령이 나라는 걸 알게 됐어".to_owned(),
             ));
         }
         if self.lullaby_sleeps > 0 {
-            deeds.push((Salience::Small, "fell asleep to a lullaby".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "fell asleep to a lullaby".to_owned(),
+                "자장가를 들으며 잠들었어".to_owned(),
+            ));
         }
         match self.stories {
             0 => {}
-            1 => deeds.push((Salience::Special, "told you a story".to_owned())),
+            1 => deeds.push((
+                Salience::Special,
+                "told you a story".to_owned(),
+                "네게 이야기를 들려줬어".to_owned(),
+            )),
             count => deeds.push((
                 Salience::Special,
                 format!("told you {} stories", count_words(count)),
+                format!("네게 이야기를 {count}번 들려줬어"),
             )),
         }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
-            (0, _) => deeds.push((Salience::Routine, "listened to the rain".to_owned())),
-            (1, _) => deeds.push((Salience::Special, "saw a rainbow".to_owned())),
+            (0, _) => deeds.push((
+                Salience::Routine,
+                "listened to the rain".to_owned(),
+                "빗소리를 들었어".to_owned(),
+            )),
+            (1, _) => deeds.push((
+                Salience::Special,
+                "saw a rainbow".to_owned(),
+                "무지개를 봤어".to_owned(),
+            )),
             (rainbows, _) => deeds.push((
                 Salience::Special,
                 format!("saw {} rainbows", count_words(rainbows)),
+                format!("무지개를 {rainbows}번 봤어"),
             )),
         }
         deeds.extend(self.heard_plans.iter().map(|errand| {
             (
                 Salience::Small,
                 format!("you told me about your {}", errand.name()),
+                format!("네 {} 이야기를 들었어", errand.korean()),
             )
         }));
         deeds.extend(self.wished_plans.iter().map(|errand| {
             (
                 Salience::Notable,
                 format!("wished you luck for your {}", errand.name()),
+                format!("네 {} 잘 되길 빌었어", errand.korean()),
             )
         }));
         deeds.extend(self.good_plans.iter().map(|errand| {
             (
                 Salience::Special,
                 format!("your {} went well", errand.name()),
+                format!("네 {} 잘 됐어", errand.korean()),
             )
         }));
         deeds.extend(self.hard_plans.iter().map(|errand| {
             (
                 Salience::Notable,
                 format!("your {} was hard, so I stayed close", errand.name()),
+                format!("네 {} 힘들었다고 해서 곁에 있었어", errand.korean()),
             )
         }));
         if self.breaks_suggested > 0 {
@@ -1266,21 +1685,28 @@ impl Tally {
                         "breaks"
                     }
                 ),
+                format!("쉬자고 {}번 말했어", self.breaks_suggested),
             ));
         }
         if self.breaks_taken > 0 {
             deeds.push((
                 Salience::Notable,
                 "you took a break when I asked".to_owned(),
+                "내 말에 네가 잠깐 쉬었어".to_owned(),
             ));
         }
         if self.late_nights > 0 {
-            deeds.push((Salience::Small, "you stayed up very late".to_owned()));
+            deeds.push((
+                Salience::Small,
+                "you stayed up very late".to_owned(),
+                "네가 아주 늦게까지 깨어 있었어".to_owned(),
+            ));
         }
         if self.goodnights_together > 0 {
             deeds.push((
                 Salience::Notable,
                 "we said goodnight together late at night".to_owned(),
+                "늦은 밤에 같이 잘 자라고 인사했어".to_owned(),
             ));
         }
         if self.cranes > 0 {
@@ -1291,15 +1717,44 @@ impl Tally {
                 } else {
                     format!("folded {} paper cranes", count_words(self.cranes))
                 },
+                format!("종이학을 {}마리 접었어", self.cranes),
             ));
         }
         if self.cranes_for_sad_viewer > 0 {
             deeds.push((
                 Salience::Notable,
                 "folded a crane for you when you were sad".to_owned(),
+                "네가 슬플 때 종이학을 접어 줬어".to_owned(),
             ));
         }
         deeds
+    }
+
+    fn written_korean(&self, deeds: &[String]) -> String {
+        let mut text = super::writing::sentence(deeds);
+        if self.together < 60.0 && self.heard == 0 && self.expected == 0 {
+            text.push_str(" 오늘은 네가 오지 않았어.");
+        } else {
+            text.push_str(&format!(
+                " 오늘은 {} 같이 있었{}.",
+                super::writing::duration(self.together),
+                if self.heard > 0 {
+                    "고, 이야기도 나눴어"
+                } else {
+                    "어"
+                }
+            ));
+        }
+        text.push_str(match self.pets {
+            0 => "",
+            1 => " 한 번 쓰다듬어 줬어.",
+            2..=4 => " 몇 번 쓰다듬어 줬어.",
+            _ => " 많이 쓰다듬어 줬어.",
+        });
+        if self.pokes >= 6 {
+            text.push_str(" 콕콕 많이 찔렀어.");
+        }
+        text
     }
 
     // The deeds as a sentence, then the viewer's part in the day.
@@ -1341,6 +1796,8 @@ pub struct Entry {
     /// The local date, as YYYY-MM-DD.
     pub day: String,
     pub text: String,
+    #[serde(default)]
+    pub korean: Option<String>,
 }
 
 /// The ghost's life over days: how close it has grown to the viewer, what
@@ -1481,10 +1938,20 @@ pub struct Life {
     pub rhythm_suggestions: u8,
     #[serde(default)]
     pub cranes: super::cranes::Cranes,
+    #[serde(default)]
+    /// The previous day's three most notable deeds, kept without parsing prose.
+    pub yesterday: Vec<Entry>,
 }
 
 impl Life {
-    pub(super) fn remember_day(&mut self, entry: Entry) {
+    pub(super) fn remember_day(&mut self, entry: Entry, deeds: Vec<Entry>) {
+        if self
+            .yesterday
+            .first()
+            .is_none_or(|previous| previous.day <= entry.day)
+        {
+            self.yesterday = deeds;
+        }
         self.diary.push(entry);
         if self.diary.len() > DAYS_KEPT {
             self.diary.drain(..self.diary.len() - DAYS_KEPT);
@@ -1495,7 +1962,10 @@ impl Life {
         let before = self.bird_trust;
         self.bird_trust = super::visitor::quiet_trust(before, seconds);
         if before < 0.5 && self.bird_trust >= 0.5 {
-            self.reach("The bird trusts me now.".to_owned())
+            self.reach(
+                "The bird trusts me now.".to_owned(),
+                "이제 새가 나를 믿어 줘.",
+            )
         } else {
             None
         }
@@ -1583,6 +2053,28 @@ impl Life {
         if matches!(kind, EventKind::FriendArrived(_)) {
             self.last_friend_visit = Some(self.day.clone());
         }
+        let title = match kind {
+            EventKind::Composed(title) => self
+                .compositions
+                .iter()
+                .find(|song| song.title == *title)
+                .map(|song| (title.clone(), song.korean_title.clone())),
+            EventKind::WroteBook(title) => self
+                .written
+                .iter()
+                .find(|book| book.title.0 == *title)
+                .map(|book| (title.clone(), book.title.1.clone())),
+            EventKind::FoundConstellation(name) => self
+                .constellations
+                .iter()
+                .find(|stars| stars.name == *name)
+                .map(|stars| (name.clone(), stars.korean.clone())),
+            _ => None,
+        };
+        if let Some((english, korean)) = title {
+            self.today.remember_writing(english.clone(), korean.clone());
+            self.total.remember_writing(english, korean);
+        }
         self.skills.migrate(&self.total);
         self.total.note(kind);
         self.today.note(kind);
@@ -1620,7 +2112,7 @@ impl Life {
         let milestone = self.first(kind);
         let skill_milestone = practiced.and_then(|skill| {
             (self.skills.level(skill) >= 0.65)
-                .then(|| self.reach(skill.milestone().to_owned()))
+                .then(|| self.reach(skill.milestone().to_owned(), skill.milestone_korean()))
                 .flatten()
         });
         let milestone = milestone.or(skill_milestone);
@@ -1632,20 +2124,29 @@ impl Life {
                         EventKind::FriendArrived(_) | EventKind::PlayedWithFriend(_)
                     ) =>
             {
-                Some(format!("{} and I are good friends now.", friend.name))
+                Some((
+                    format!("{} and I are good friends now.", friend.name),
+                    format!("친구 {}, 이제 아주 친해졌어.", friend.name),
+                ))
             }
             _ => None,
         }
-        .and_then(|text| self.reach(text));
+        .and_then(|(text, korean)| self.reach(text, korean));
         let milestone = milestone.or(friendship);
         let milestone = if matches!(kind, EventKind::Built { height } if *height >= 5) {
-            let tallest = self.reach("I built a tower five blocks high.".to_owned());
+            let tallest = self.reach(
+                "I built a tower five blocks high.".to_owned(),
+                "블록 다섯 개 높이의 탑을 쌓았어.",
+            );
             milestone.or(tallest)
         } else {
             milestone
         };
         if matches!(kind, EventKind::Planted(_)) && self.total.planted >= 3 {
-            self.reach("My garden has three little pots.".to_owned());
+            self.reach(
+                "My garden has three little pots.".to_owned(),
+                "내 정원에 작은 화분이 세 개 생겼어.",
+            );
         }
         let warmth = match kind {
             EventKind::PromiseKept(kind) if kind.trip() => 0.02,
@@ -1715,8 +2216,8 @@ impl Life {
         self.warm(GROWING * seconds * warmth);
         let milestone = HOURS_MARKED
             .into_iter()
-            .find(|(hours, _)| (together..self.total.together).contains(&(hours * 3600.0)))
-            .and_then(|(_, text)| self.reach(text.to_owned()));
+            .find(|(hours, _, _)| (together..self.total.together).contains(&(hours * 3600.0)))
+            .and_then(|(_, text, korean)| self.reach(text.to_owned(), korean));
         milestone.or_else(|| self.closer(bond))
     }
 
@@ -1777,7 +2278,10 @@ impl Life {
         self.arrivals[hour as usize] += 1.0;
         self.routine_days = self.routine_days.max(1.0);
         self.usual_time()?;
-        self.reach("I've learned when you usually come.".to_owned())
+        self.reach(
+            "I've learned when you usually come.".to_owned(),
+            "네가 늘 언제 오는지 알게 됐어.",
+        )
     }
 
     /// How strongly the viewer is expected at this hour, with half of
@@ -1857,12 +2361,14 @@ impl Life {
             self.diary.push(Entry {
                 day: self.day.clone(),
                 text: self.today.diary(),
+                korean: Some(self.today.diary_korean()),
             });
             if self.diary.len() > DAYS_KEPT {
                 let excess = self.diary.len() - DAYS_KEPT;
                 self.diary.drain(..excess);
             }
         }
+        self.yesterday = self.today.top_deeds(&self.day, 3);
         self.day = day.to_owned();
         self.today = Tally::default();
         self.warmed = 0.0;
@@ -1872,7 +2378,10 @@ impl Life {
     /// the first moment it keeps.
     pub fn begin(&mut self, day: &str) -> Option<String> {
         self.begin_day(day);
-        self.reach("I came into being in a glass box.".to_owned())
+        self.reach(
+            "I came into being in a glass box.".to_owned(),
+            "유리 상자 안에서 태어났어.",
+        )
     }
 
     /// How much more, or less, than a new ghost it leans toward `activity`
@@ -1935,6 +2444,35 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        for entry in self
+            .diary
+            .iter_mut()
+            .chain(&mut self.milestones)
+            .chain(&mut self.yesterday)
+        {
+            entry.korean = entry
+                .korean
+                .take()
+                .filter(|text| super::writing::valid(text));
+        }
+        self.yesterday.retain(|entry| {
+            super::writing::valid(&entry.text)
+                && entry
+                    .day
+                    .parse::<jiff::civil::Date>()
+                    .ok()
+                    .zip(self.day.parse::<jiff::civil::Date>().ok())
+                    .is_some_and(|(day, today)| day < today)
+        });
+        self.yesterday.truncate(3);
+        for tally in [&mut self.today, &mut self.total] {
+            tally.korean_details.retain(|english, korean| {
+                super::writing::valid(english) && super::writing::valid(korean)
+            });
+            while tally.korean_details.len() > 64 {
+                tally.korean_details.pop_last();
+            }
+        }
         super::breaks::sanitize(&mut self);
         self.cranes.sanitize(&self.day);
         for (tally, maximum) in [
@@ -2272,66 +2810,108 @@ impl Life {
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
         if let EventKind::PromiseKept(kind) = kind {
-            let first = self.reach("You came back when you said you would.".to_owned());
+            let first = self.reach(
+                "You came back when you said you would.".to_owned(),
+                "돌아온다고 약속한 때에 와 줬어.",
+            );
             let trip = kind
                 .trip()
-                .then(|| self.reach("You came home from a trip.".to_owned()))
+                .then(|| {
+                    self.reach(
+                        "You came home from a trip.".to_owned(),
+                        "네가 여행을 마치고 돌아왔어.",
+                    )
+                })
                 .flatten();
             return first.or(trip);
         }
         if matches!(kind, EventKind::MetReflection) {
-            return self.reach("I met a ghost in the mirror.".to_owned());
+            return self.reach(
+                "I met a ghost in the mirror.".to_owned(),
+                "거울 속 유령을 만났어.",
+            );
         }
         if matches!(kind, EventKind::RecognizedSelf) {
-            return self.reach("I know the ghost in the mirror is me.".to_owned());
+            return self.reach(
+                "I know the ghost in the mirror is me.".to_owned(),
+                "거울 속 유령이 나라는 걸 알게 됐어.",
+            );
         }
         if let EventKind::LearnedAboutViewer(topic) = kind {
-            let first = self.reach("You told me about yourself.".to_owned());
+            let first = self.reach(
+                "You told me about yourself.".to_owned(),
+                "너에 대해 이야기해 줬어.",
+            );
             let birthday = (*topic == super::acquaintance::Topic::Birthday)
-                .then(|| self.reach("I know your birthday now.".to_owned()))
+                .then(|| {
+                    self.reach(
+                        "I know your birthday now.".to_owned(),
+                        "이제 네 생일을 알아.",
+                    )
+                })
                 .flatten();
             return first.or(birthday);
         }
         if matches!(kind, EventKind::LearnedTune(_)) {
-            return self.reach("You taught me my first tune.".to_owned());
+            return self.reach(
+                "You taught me my first tune.".to_owned(),
+                "처음으로 내게 노래를 가르쳐 줬어.",
+            );
         }
         if matches!(kind, EventKind::LullabySleep) {
-            return self.reach("I fell asleep to my first lullaby.".to_owned());
+            return self.reach(
+                "I fell asleep to my first lullaby.".to_owned(),
+                "처음으로 자장가를 들으며 잠들었어.",
+            );
         }
         if matches!(kind, EventKind::WishGranted(_)) {
             let mut first = None;
-            for (count, text) in [
-                (1, "My first wish came true."),
-                (5, "Five of my wishes have come true."),
+            for (count, text, korean) in [
+                (1, "My first wish came true.", "첫 소원이 이루어졌어."),
+                (
+                    5,
+                    "Five of my wishes have come true.",
+                    "소원 다섯 개가 이루어졌어.",
+                ),
             ] {
                 if self.total.wishes_granted >= count {
-                    first = first.or(self.reach(text.to_owned()));
+                    first = first.or(self.reach(text.to_owned(), korean));
                 }
             }
             return first;
         }
         if let EventKind::SawPasserby(passerby) = kind {
-            return self.reach(format!("I saw {} for the first time.", passerby.name()));
+            return self.reach(
+                format!("I saw {} for the first time.", passerby.name()),
+                format!(
+                    "처음으로 {}{} 봤어.",
+                    super::writing::passerby(*passerby),
+                    super::writing::particle(super::writing::passerby(*passerby), "을", "를")
+                ),
+            );
         }
         if let EventKind::FocusEnded { completed, .. } = kind {
             let reached = [
                 (
                     *completed && self.total.focus_sessions >= 1,
                     "We finished our first focus session together.",
+                    "처음으로 같이 집중하는 시간을 끝냈어.",
                 ),
                 (
                     *completed && self.total.focus_sessions >= 5,
                     "We have finished five focus sessions together.",
+                    "같이 집중하는 시간을 다섯 번 끝냈어.",
                 ),
                 (
                     self.total.focus_minutes >= 600,
                     "We have focused together for ten hours.",
+                    "열 시간 동안 같이 집중했어.",
                 ),
             ];
             let mut first = None;
-            for (reached, text) in reached {
+            for (reached, text, korean) in reached {
                 if reached {
-                    let milestone = self.reach(text.to_owned());
+                    let milestone = self.reach(text.to_owned(), korean);
                     first = first.or(milestone);
                 }
             }
@@ -2339,10 +2919,14 @@ impl Life {
         }
         if let EventKind::FriendArrived(name) = kind {
             return match self.friend.as_ref().map_or(0, |friend| friend.visits) {
-                1 => self.reach(format!(
-                    "I met another ghost tonight. Their name is {name}."
-                )),
-                5 => self.reach(format!("{name} has come to see me five times now.")),
+                1 => self.reach(
+                    format!("I met another ghost tonight. Their name is {name}."),
+                    format!("오늘 밤 유령 친구를 만났어. 이름은 {name}."),
+                ),
+                5 => self.reach(
+                    format!("{name} has come to see me five times now."),
+                    format!("친구 {name}, 벌써 다섯 번이나 놀러 왔어."),
+                ),
                 _ => None,
             };
         }
@@ -2352,95 +2936,139 @@ impl Life {
                 (
                     outcome.finished() && total.games == 1,
                     "We played our first game of noughts and crosses.",
+                    "처음으로 같이 틱택토를 했어.",
                 ),
                 (
                     matches!(outcome, Outcome::ViewerWon { .. }) && total.losses == 1,
                     "You beat me at noughts and crosses for the first time.",
+                    "네가 처음으로 틱택토에서 나를 이겼어.",
                 ),
                 (
                     matches!(outcome, Outcome::GhostWon { .. }) && total.wins == 1,
                     "I won my first game of noughts and crosses.",
+                    "처음으로 틱택토에서 이겼어.",
                 ),
             ];
             let mut first = None;
-            for (reached, text) in firsts {
+            for (reached, text, korean) in firsts {
                 if reached {
-                    let milestone = self.reach(text.to_owned());
+                    let milestone = self.reach(text.to_owned(), korean);
                     first = first.or(milestone);
                 }
             }
             return first;
         }
-        let text = match kind {
-            EventKind::Comforted(_) if total.comforts == 1 => {
-                "I comforted you for the first time.".to_owned()
+        let (text, korean) = match kind {
+            EventKind::Comforted(_) if total.comforts == 1 => (
+                "I comforted you for the first time.".to_owned(),
+                "처음으로 네 마음을 달래 줬어.".to_owned(),
+            ),
+            EventKind::WordGame { solved: true, .. } if total.words_guessed == 1 => (
+                "You guessed my secret word for the first time.".to_owned(),
+                "네가 처음으로 내 비밀 낱말을 맞혔어.".to_owned(),
+            ),
+            EventKind::Composed(title) if total.compositions == 1 => (
+                format!("I made up a tune of my own: {title}."),
+                format!("내 노래를 만들었어: {}.", self.today.korean_detail(title)),
+            ),
+            EventKind::SangMySong(_) if total.songs_sung_back == 1 => (
+                "You sang my song back to me.".to_owned(),
+                "네가 내 노래를 다시 불러 줬어.".to_owned(),
+            ),
+            EventKind::WroteBook(title) if total.books_written == 1 => (
+                format!("I wrote a picture book of my own: {title}."),
+                format!("내 그림책을 썼어: {}.", self.today.korean_detail(title)),
+            ),
+            EventKind::FinishedBook(_) if total.books_finished == 1 => (
+                "I finished my first picture book.".to_owned(),
+                "첫 그림책을 끝까지 읽었어.".to_owned(),
+            ),
+            EventKind::GotLetter if total.letters_received == 1 => (
+                "You wrote me my first letter.".to_owned(),
+                "네가 내게 첫 편지를 써 줬어.".to_owned(),
+            ),
+            EventKind::WroteLetter if total.letters_written == 1 => (
+                "I wrote you my first letter.".to_owned(),
+                "네게 첫 편지를 썼어.".to_owned(),
+            ),
+            EventKind::ToldStory if total.stories == 1 => (
+                "I told you my first story.".to_owned(),
+                "네게 처음으로 이야기를 들려줬어.".to_owned(),
+            ),
+            EventKind::LearnedPicture(name) if total.pictures_learned == 1 => (
+                format!("You taught me to draw a {name}."),
+                format!("네게 그림 그리는 법을 배웠어: {name}."),
+            ),
+            EventKind::Planted(_) if total.planted == 1 => (
+                "I planted my first seed.".to_owned(),
+                "첫 씨앗을 심었어.".to_owned(),
+            ),
+            EventKind::Sprouted(_) if total.sprouted == 1 => (
+                "Something is growing in the little pot!".to_owned(),
+                "작은 화분에서 싹이 났어!".to_owned(),
+            ),
+            EventKind::Flowered(_) if total.flowered == 1 => (
+                "The first flower I grew from a seed is blooming.".to_owned(),
+                "씨앗부터 키운 첫 꽃이 피었어.".to_owned(),
+            ),
+            EventKind::Kept(_) if total.gifts == 1 => (
+                "The bird brought me a gift.".to_owned(),
+                "새가 선물을 가져다줬어.".to_owned(),
+            ),
+            EventKind::AteMote if total.motes == 1 => (
+                "Caught my first light mote.".to_owned(),
+                "첫 빛 알갱이를 잡았어.".to_owned(),
+            ),
+            EventKind::AteMote => {
+                let (_, english, korean) = MOTES_MARKED
+                    .into_iter()
+                    .find(|(motes, _, _)| *motes == total.motes)?;
+                (english.to_owned(), korean.to_owned())
             }
-            EventKind::WordGame { solved: true, .. } if total.words_guessed == 1 => {
-                "You guessed my secret word for the first time.".to_owned()
-            }
-            EventKind::Composed(title) if total.compositions == 1 => {
-                format!("I made up a tune of my own: {title}.")
-            }
-            EventKind::SangMySong(_) if total.songs_sung_back == 1 => {
-                "You sang my song back to me.".to_owned()
-            }
-            EventKind::WroteBook(title) if total.books_written == 1 => {
-                format!("I wrote a picture book of my own: {title}.")
-            }
-            EventKind::FinishedBook(_) if total.books_finished == 1 => {
-                "I finished my first picture book.".to_owned()
-            }
-            EventKind::GotLetter if total.letters_received == 1 => {
-                "You wrote me my first letter.".to_owned()
-            }
-            EventKind::WroteLetter if total.letters_written == 1 => {
-                "I wrote you my first letter.".to_owned()
-            }
-            EventKind::ToldStory if total.stories == 1 => "I told you my first story.".to_owned(),
-            EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {
-                format!("You taught me to draw a {name}.")
-            }
-            EventKind::Planted(_) if total.planted == 1 => "I planted my first seed.".to_owned(),
-            EventKind::Sprouted(_) if total.sprouted == 1 => {
-                "Something is growing in the little pot!".to_owned()
-            }
-            EventKind::Flowered(_) if total.flowered == 1 => {
-                "The first flower I grew from a seed is blooming.".to_owned()
-            }
-            EventKind::Kept(_) if total.gifts == 1 => "The bird brought me a gift.".to_owned(),
-            EventKind::AteMote if total.motes == 1 => "Caught my first light mote.".to_owned(),
-            EventKind::AteMote => MOTES_MARKED
-                .into_iter()
-                .find(|(motes, _)| *motes == total.motes)?
-                .1
-                .to_owned(),
-            EventKind::NudgedBall if total.nudges == 1 => {
-                "Played with the ball for the first time.".to_owned()
-            }
-            EventKind::Fetched if total.fetches == 1 => {
-                "Played fetch with you for the first time.".to_owned()
-            }
-            EventKind::Pounced if total.pounces == 1 => {
-                "Caught your finger on the glass for the first time.".to_owned()
-            }
-            EventKind::Built { .. } if total.towers == 1 => {
-                "I built my first tower of blocks.".to_owned()
-            }
-            EventKind::Danced if total.dances == 1 => "Danced my first twirl.".to_owned(),
-            EventKind::Found if total.finds == 1 => "You found me hiding.".to_owned(),
-            EventKind::Doodled(_) | EventKind::Copied(_) if total.doodles == 1 => {
-                "Drew my first picture on the glass.".to_owned()
-            }
+            EventKind::NudgedBall if total.nudges == 1 => (
+                "Played with the ball for the first time.".to_owned(),
+                "처음으로 공을 가지고 놀았어.".to_owned(),
+            ),
+            EventKind::Fetched if total.fetches == 1 => (
+                "Played fetch with you for the first time.".to_owned(),
+                "처음으로 네게 공을 가져다줬어.".to_owned(),
+            ),
+            EventKind::Pounced if total.pounces == 1 => (
+                "Caught your finger on the glass for the first time.".to_owned(),
+                "처음으로 유리 너머 네 손가락을 잡았어.".to_owned(),
+            ),
+            EventKind::Built { .. } if total.towers == 1 => (
+                "I built my first tower of blocks.".to_owned(),
+                "첫 블록 탑을 쌓았어.".to_owned(),
+            ),
+            EventKind::Danced if total.dances == 1 => (
+                "Danced my first twirl.".to_owned(),
+                "처음으로 빙글 돌며 춤췄어.".to_owned(),
+            ),
+            EventKind::Found if total.finds == 1 => (
+                "You found me hiding.".to_owned(),
+                "숨어 있던 나를 네가 찾았어.".to_owned(),
+            ),
+            EventKind::Doodled(_) | EventKind::Copied(_) if total.doodles == 1 => (
+                "Drew my first picture on the glass.".to_owned(),
+                "유리에 첫 그림을 그렸어.".to_owned(),
+            ),
             EventKind::Wrote {
                 mirrored: false, ..
-            } => "I learned to write so you can read it.".to_owned(),
+            } => (
+                "I learned to write so you can read it.".to_owned(),
+                "네가 읽을 수 있게 글씨 쓰는 법을 배웠어.".to_owned(),
+            ),
             EventKind::LearnedName(name)
                 if !self
                     .milestones
                     .iter()
                     .any(|milestone| milestone.text.starts_with("I learned your name: ")) =>
             {
-                format!("I learned your name: {name}.")
+                (
+                    format!("I learned your name: {name}."),
+                    format!("네 이름을 알게 됐어: {name}."),
+                )
             }
             EventKind::Named(name)
                 if !self
@@ -2448,117 +3076,174 @@ impl Life {
                     .iter()
                     .any(|milestone| milestone.text.starts_with("You gave me my name: ")) =>
             {
-                format!("You gave me my name: {name}.")
+                (
+                    format!("You gave me my name: {name}."),
+                    format!("네가 내게 이름을 지어 줬어: {name}."),
+                )
             }
-            EventKind::Bloomed if total.blooms == 1 => {
-                "My plant flowered for the first time.".to_owned()
-            }
-            EventKind::Morning if total.nights == 1 => {
-                "Slept through my first night in the glass box.".to_owned()
-            }
+            EventKind::Bloomed if total.blooms == 1 => (
+                "My plant flowered for the first time.".to_owned(),
+                "내 화분에 처음으로 꽃이 피었어.".to_owned(),
+            ),
+            EventKind::Morning if total.nights == 1 => (
+                "Slept through my first night in the glass box.".to_owned(),
+                "유리 상자에서 첫 밤을 푹 잤어.".to_owned(),
+            ),
             EventKind::Noticed(thing)
                 if thing.starts_with("the rainbow") && total.rainbows == 1 =>
             {
-                "Saw my first rainbow.".to_owned()
+                (
+                    "Saw my first rainbow.".to_owned(),
+                    "첫 무지개를 봤어.".to_owned(),
+                )
             }
-            EventKind::ShootingStar if total.shooting_stars == 1 => {
-                "Saw my first shooting star, and made a wish.".to_owned()
+            EventKind::ShootingStar if total.shooting_stars == 1 => (
+                "Saw my first shooting star, and made a wish.".to_owned(),
+                "첫 별똥별을 보고 소원을 빌었어.".to_owned(),
+            ),
+            EventKind::ForecastCameTrue { snow: false } if total.forecasts == 1 => (
+                "I felt the rain coming before it fell.".to_owned(),
+                "비가 오기 전에 느꼈어.".to_owned(),
+            ),
+            EventKind::ForecastCameTrue { snow: true } if total.snow_forecasts == 1 => (
+                "I smelled the snow coming before it fell.".to_owned(),
+                "눈이 오기 전에 냄새를 맡았어.".to_owned(),
+            ),
+            EventKind::PutOn(_) if total.outfits == 1 => (
+                "I wore my first little accessory.".to_owned(),
+                "처음으로 작은 장신구를 달았어.".to_owned(),
+            ),
+            EventKind::FoundConstellation(name) if total.constellations == 1 => (
+                format!("I found my first constellation: {name}."),
+                format!("첫 별자리를 찾았어: {}.", self.today.korean_detail(name)),
+            ),
+            EventKind::StormStarted if total.storms == 1 => (
+                "Sat out my first thunderstorm.".to_owned(),
+                "첫 천둥 소리를 들으며 기다렸어.".to_owned(),
+            ),
+            EventKind::Noticed(thing) if thing == "a bird at the window" && total.birds == 1 => (
+                "Saw my first bird.".to_owned(),
+                "처음으로 새를 봤어.".to_owned(),
+            ),
+            EventKind::Noticed(thing) if thing == "a moth at the lamp" && total.moths == 1 => (
+                "A moth came to visit my lamp.".to_owned(),
+                "나방이 내 등불에 놀러 왔어.".to_owned(),
+            ),
+            EventKind::SnowStarted if total.snowfalls == 1 => (
+                "Saw snow fall for the first time.".to_owned(),
+                "처음으로 눈이 내리는 걸 봤어.".to_owned(),
+            ),
+            EventKind::Celebrated(occasion) => {
+                let (english, korean) = match occasion {
+                    Occasion::Halloween => (
+                        "My first Halloween in the glass box.",
+                        "유리 상자에서 첫 할로윈을 보냈어.",
+                    ),
+                    Occasion::WinterHolidays => {
+                        ("My first winter holidays.", "첫 겨울 명절을 보냈어.")
+                    }
+                    Occasion::NewYear => ("Saw in my first new year.", "첫 새해를 맞았어."),
+                    Occasion::Valentine => {
+                        ("My first Valentine's Day.", "첫 밸런타인데이를 보냈어.")
+                    }
+                    Occasion::Birthday => ("My first birthday!", "첫 생일을 맞았어!"),
+                    Occasion::ViewerBirthday => (
+                        "Celebrated your birthday together for the first time.",
+                        "처음으로 네 생일을 같이 축하했어.",
+                    ),
+                    Occasion::HundredDays => (
+                        "My hundredth day in the glass box.",
+                        "유리 상자에서 백일을 맞았어.",
+                    ),
+                    Occasion::ThousandDays => (
+                        "My thousandth day in the glass box.",
+                        "유리 상자에서 천일을 맞았어.",
+                    ),
+                    Occasion::Seollal => ("Celebrated my first Seollal.", "첫 설날을 보냈어."),
+                    Occasion::Chuseok => (
+                        "Celebrated my first Chuseok under the harvest moon.",
+                        "첫 추석 달을 보며 명절을 보냈어.",
+                    ),
+                    Occasion::HangulDay => (
+                        "My first Hangul Day, drawing letters in the fog.",
+                        "첫 한글날에 김 서린 유리에 글씨를 그렸어.",
+                    ),
+                };
+                (english.to_owned(), korean.to_owned())
             }
-            EventKind::ForecastCameTrue { snow: false } if total.forecasts == 1 => {
-                "I felt the rain coming before it fell.".to_owned()
-            }
-            EventKind::ForecastCameTrue { snow: true } if total.snow_forecasts == 1 => {
-                "I smelled the snow coming before it fell.".to_owned()
-            }
-            EventKind::PutOn(_) if total.outfits == 1 => {
-                "I wore my first little accessory.".to_owned()
-            }
-            EventKind::FoundConstellation(name) if total.constellations == 1 => {
-                format!("I found my first constellation: {name}.")
-            }
-            EventKind::StormStarted if total.storms == 1 => {
-                "Sat out my first thunderstorm.".to_owned()
-            }
-            EventKind::Noticed(thing) if thing == "a bird at the window" && total.birds == 1 => {
-                "Saw my first bird.".to_owned()
-            }
-            EventKind::Noticed(thing) if thing == "a moth at the lamp" && total.moths == 1 => {
-                "A moth came to visit my lamp.".to_owned()
-            }
-            EventKind::SnowStarted if total.snowfalls == 1 => {
-                "Saw snow fall for the first time.".to_owned()
-            }
-            EventKind::Celebrated(occasion) => match occasion {
-                Occasion::Halloween => "My first Halloween in the glass box.",
-                Occasion::WinterHolidays => "My first winter holidays.",
-                Occasion::NewYear => "Saw in my first new year.",
-                Occasion::Valentine => "My first Valentine's Day.",
-                Occasion::Birthday => "My first birthday!",
-                Occasion::ViewerBirthday => "Celebrated your birthday together for the first time.",
-                Occasion::HundredDays => "My hundredth day in the glass box.",
-                Occasion::ThousandDays => "My thousandth day in the glass box.",
-                Occasion::Seollal => "Celebrated my first Seollal.",
-                Occasion::Chuseok => "Celebrated my first Chuseok under the harvest moon.",
-                Occasion::HangulDay => "My first Hangul Day, drawing letters in the fog.",
-            }
-            .to_owned(),
-            EventKind::Petted if total.pets == 1 => "You stroked me for the first time.".to_owned(),
-            EventKind::Heard(_) if total.heard == 1 => {
-                "You talked to me for the first time.".to_owned()
-            }
-            EventKind::LearnedWord { word, .. } if total.learned == 1 => {
-                format!("Learned my first word from you: “{word}”.")
-            }
+            EventKind::Petted if total.pets == 1 => (
+                "You stroked me for the first time.".to_owned(),
+                "네가 처음으로 나를 쓰다듬어 줬어.".to_owned(),
+            ),
+            EventKind::Heard(_) if total.heard == 1 => (
+                "You talked to me for the first time.".to_owned(),
+                "네가 처음으로 내게 말을 걸어 줬어.".to_owned(),
+            ),
+            EventKind::LearnedWord { word, .. } if total.learned == 1 => (
+                format!("Learned my first word from you: “{word}”."),
+                format!("네게 첫 낱말을 배웠어: ‘{word}’."),
+            ),
             EventKind::LearnedWord { .. } => {
                 let known = self.vocabulary.known().len();
                 // Several words can be learned at once, so a mark passed
                 // without being kept is kept now.
-                WORDS_MARKED
+                let (_, english, korean) = WORDS_MARKED
                     .into_iter()
-                    .filter(|(count, _)| *count <= known)
-                    .find(|(_, text)| {
+                    .filter(|(count, _, _)| *count <= known)
+                    .find(|(_, text, _)| {
                         !self
                             .milestones
                             .iter()
                             .any(|milestone| milestone.text == *text)
-                    })?
-                    .1
-                    .to_owned()
+                    })?;
+                (english.to_owned(), korean.to_owned())
             }
-            EventKind::PlanWentWell(errand) if total.plans_went_well == 1 => {
-                format!("You told me your {} went well.", errand.name())
-            }
-            EventKind::FoundTreasure { gave_up: false, .. } if total.treasures_found == 1 => {
-                "I found the treasure you hid for the first time.".to_owned()
-            }
-            EventKind::TookBreak if total.breaks_taken == 1 => {
-                "You took a break when I asked.".to_owned()
-            }
+            EventKind::PlanWentWell(errand) if total.plans_went_well == 1 => (
+                format!("You told me your {} went well.", errand.name()),
+                format!("네 {} 잘 됐다고 말해 줬어.", errand.korean()),
+            ),
+            EventKind::FoundTreasure { gave_up: false, .. } if total.treasures_found == 1 => (
+                "I found the treasure you hid for the first time.".to_owned(),
+                "처음으로 네가 숨긴 보물을 찾았어.".to_owned(),
+            ),
+            EventKind::TookBreak if total.breaks_taken == 1 => (
+                "You took a break when I asked.".to_owned(),
+                "내 말에 네가 잠깐 쉬었어.".to_owned(),
+            ),
             EventKind::FoldedCrane { count } if super::cranes::LANDMARKS.contains(count) => {
                 if *count == 1 {
-                    "I folded my first paper crane for you.".to_owned()
+                    (
+                        "I folded my first paper crane for you.".to_owned(),
+                        "너를 위해 첫 종이학을 접었어.".to_owned(),
+                    )
                 } else if *count == 1000 {
-                    "I folded a thousand paper cranes and made a wish for you.".to_owned()
+                    (
+                        "I folded a thousand paper cranes and made a wish for you.".to_owned(),
+                        "종이학 천 마리를 접고 너를 위해 소원을 빌었어.".to_owned(),
+                    )
                 } else {
-                    format!("I folded {} paper cranes for you.", count_words(*count))
+                    (
+                        format!("I folded {} paper cranes for you.", count_words(*count)),
+                        format!("너를 위해 종이학 {count}마리를 접었어."),
+                    )
                 }
             }
             _ => return None,
         };
-        self.reach(text)
+        self.reach(text, korean)
     }
 
     // The bond grew past one of the marks since it was `before`.
     fn closer(&mut self, before: f32) -> Option<String> {
-        let (_, text) = CLOSER
+        let (_, text, korean) = CLOSER
             .into_iter()
             .rev()
-            .find(|(mark, _)| before < *mark && self.bond >= *mark)?;
-        self.reach(text.to_owned())
+            .find(|(mark, _, _)| before < *mark && self.bond >= *mark)?;
+        self.reach(text.to_owned(), korean)
     }
 
     // Keeps a milestone, once; returns it if it is new.
-    pub(super) fn reach(&mut self, text: String) -> Option<String> {
+    pub(super) fn reach(&mut self, text: String, korean: impl Into<String>) -> Option<String> {
         if self
             .milestones
             .iter()
@@ -2569,6 +3254,7 @@ impl Life {
         self.milestones.push(Entry {
             day: self.day.clone(),
             text: text.clone(),
+            korean: Some(korean.into()),
         });
         Some(text)
     }
@@ -2585,6 +3271,17 @@ impl Life {
         };
         self.bond = (self.bond + change).clamp(self.closest * 0.5, 1.0);
         self.closest = self.closest.max(self.bond);
+    }
+}
+
+pub(super) fn recalled_deeds(deeds: &[String], korean: bool) -> String {
+    if korean {
+        return super::writing::sentence(deeds);
+    }
+    if deeds.is_empty() {
+        "We had a quiet day.".to_owned()
+    } else {
+        format!("{}.", capitalized(&listed(deeds)))
     }
 }
 
@@ -2633,9 +3330,14 @@ mod tests {
         let deeds = tally.deeds();
         assert!(deeds.contains(&(
             Salience::Notable,
-            "you came back when you said you would".to_owned()
+            "you came back when you said you would".to_owned(),
+            "약속한 때에 돌아와 줬어".to_owned()
         )));
-        assert!(deeds.contains(&(Salience::Special, "you came home from your trip".to_owned())));
+        assert!(deeds.contains(&(
+            Salience::Special,
+            "you came home from your trip".to_owned(),
+            "네가 여행을 마치고 돌아왔어".to_owned()
+        )));
         assert_eq!(tally.promises_kept, 2);
         assert_eq!(tally.trips_kept, 1);
     }
@@ -2651,11 +3353,11 @@ mod tests {
         assert_eq!(life.today.feelings_heard, 3);
         assert_eq!(life.today.feelings, vec![Feeling::Sad, Feeling::Happy]);
         assert!(!life.today.words().contains("drew you a heart"));
-        assert!(
-            life.today
-                .deeds()
-                .contains(&(Salience::Notable, "you told me you were happy".to_owned()))
-        );
+        assert!(life.today.deeds().contains(&(
+            Salience::Notable,
+            "you told me you were happy".to_owned(),
+            "‘행복해’ 하고 말해 줬어".to_owned()
+        )));
         let before = life.bond;
         assert_eq!(
             life.note(&EventKind::Comforted(Feeling::Sad)).as_deref(),
@@ -2664,7 +3366,8 @@ mod tests {
         assert!((life.bond - before - 0.006).abs() < 0.0002);
         assert!(life.today.deeds().contains(&(
             Salience::Special,
-            "you were sad, so I drew you a heart".to_owned()
+            "you were sad, so I drew you a heart".to_owned(),
+            "‘슬퍼’ 하고 말해서 하트를 그려 줬어".to_owned()
         )));
         let before = life.bond;
         life.note(&EventKind::FeltBetter);
@@ -3916,5 +4619,384 @@ mod tests {
         assert_eq!(life.total.watched_writings, 2);
         assert_eq!(life.total.written_words, vec!["HI"; WORDS_NAMED]);
         assert!(life.total.viewer_names.is_empty());
+    }
+    #[test]
+    fn every_deed_pairs_its_english_with_korean_including_all_saved_details() {
+        use crate::world::{Feeling, Flower, Passerby, Quirk, Wish, agenda::Errand, friend::Game};
+        for count in [1, 2, 6] {
+            let mut saved = serde_json::to_value(Tally::default()).unwrap();
+            for value in saved.as_object_mut().unwrap().values_mut() {
+                if value.is_number() {
+                    *value = serde_json::json!(count);
+                }
+                if value.is_boolean() {
+                    *value = serde_json::json!(true);
+                }
+            }
+            let mut tally: Tally = serde_json::from_value(saved).unwrap();
+            tally.occasions = vec![
+                Occasion::Halloween,
+                Occasion::WinterHolidays,
+                Occasion::NewYear,
+                Occasion::Valentine,
+                Occasion::Birthday,
+                Occasion::Seollal,
+                Occasion::Chuseok,
+                Occasion::HangulDay,
+                Occasion::ViewerBirthday,
+                Occasion::HundredDays,
+                Occasion::ThousandDays,
+            ];
+            tally.anniversary_words =
+                vec!["A week ago today, I learned your name: Mina.".to_owned()];
+            tally.korean_details.insert(
+                tally.anniversary_words[0].clone(),
+                "일주일 전 오늘, 네 이름을 알게 됐어: Mina".to_owned(),
+            );
+            tally.temperament_changes = vec!["I'm not so shy anymore.".to_owned()];
+            tally.words = vec!["fetch".to_owned()];
+            tally.written_words = vec!["MINA".to_owned()];
+            tally.viewer_names = vec!["Mina".to_owned()];
+            tally.friend_name = Some("Pell".to_owned());
+            tally.friend_played = vec![Game::Tag, Game::Twirl, Game::MoonGazing];
+            tally.keepsakes = vec![Keepsake::Feather, Keepsake::Acorn];
+            tally.planted_kinds = vec![
+                Flower::Daisy,
+                Flower::Tulip,
+                Flower::Sunflower,
+                Flower::Bluebell,
+                Flower::Poppy,
+            ];
+            tally.sprouted_kinds = tally.planted_kinds.clone();
+            tally.flowered_kinds = tally.planted_kinds.clone();
+            tally.passerby_kinds = Passerby::ALL.to_vec();
+            tally.quirks = Quirk::ALL.into_iter().map(|quirk| (quirk, count)).collect();
+            tally.feelings = vec![
+                Feeling::Happy,
+                Feeling::Sad,
+                Feeling::Tired,
+                Feeling::Lonely,
+                Feeling::Stressed,
+                Feeling::Angry,
+                Feeling::Unwell,
+                Feeling::Bored,
+                Feeling::Proud,
+            ];
+            tally.comforted_feelings = tally.feelings.clone();
+            tally.composition_titles = vec!["My Tune".to_owned()];
+            tally.written_titles = vec!["My Book".to_owned()];
+            tally
+                .korean_details
+                .insert("My Tune".to_owned(), "작은 노래".to_owned());
+            tally
+                .korean_details
+                .insert("My Book".to_owned(), "작은 책".to_owned());
+            tally.heard_plans = vec![
+                Errand::Exam,
+                Errand::Interview,
+                Errand::Presentation,
+                Errand::Meeting,
+                Errand::Appointment,
+                Errand::Date,
+                Errand::Match,
+                Errand::Performance,
+                Errand::Deadline,
+                Errand::Party,
+                Errand::Moving,
+                Errand::FirstDay,
+                Errand::Result,
+            ];
+            tally.wished_plans = tally.heard_plans.clone();
+            tally.good_plans = tally.heard_plans.clone();
+            tally.hard_plans = tally.heard_plans.clone();
+            tally.fastest_treasure = Some(10);
+            tally.note(&EventKind::MadeWish(Wish::Book { index: 0 }));
+            tally.note(&EventKind::WishGranted(Wish::Rainbow));
+            tally.note(&EventKind::WishFaded(Wish::Snow));
+            for (_, english, korean) in tally.deeds() {
+                assert!(!english.is_empty());
+                assert!(!korean.is_empty(), "{english}");
+                let prose = ["Mina", "Pell", "MINA", "fetch"]
+                    .iter()
+                    .fold(korean.clone(), |prose, name| prose.replace(name, ""));
+                assert!(
+                    !prose.chars().any(|letter| letter.is_ascii_alphabetic()),
+                    "{english}: {korean}"
+                );
+            }
+            // Feelings merely heard use their own paired phrases as well.
+            tally.comforted_feelings.clear();
+            for (_, english, korean) in tally.deeds() {
+                assert!(!korean.is_empty(), "{english}");
+            }
+        }
+    }
+
+    #[test]
+    fn days_keep_both_languages_and_recall_only_the_top_three_deeds() {
+        let mut life = Life::default();
+        life.begin("2026-10-20");
+        for event in [
+            EventKind::AteMote,
+            EventKind::Petted,
+            EventKind::Built { height: 3 },
+            EventKind::LearnedName("Mina".to_owned()),
+            EventKind::GotLetter,
+        ] {
+            life.note(&event);
+        }
+        life.pass(7.0 * 3600.0, true);
+        life.note(&EventKind::Heard("hello".to_owned()));
+        life.begin_day("2026-10-21");
+        assert_eq!(life.yesterday.len(), 3);
+        assert!(life.diary[0].text.contains("Mina"));
+        assert!(
+            life.diary[0]
+                .korean
+                .as_ref()
+                .unwrap()
+                .contains("일곱 시간쯤 같이 있었고, 이야기도 나눴어")
+        );
+        assert!(
+            life.recall_yesterday("2026-10-21".parse().unwrap(), false)
+                .contains("Mina")
+        );
+        assert!(
+            life.recall_yesterday("2026-10-21".parse().unwrap(), true)
+                .contains("네 이름")
+        );
+        assert!(
+            !life
+                .recall_yesterday("2026-10-21".parse().unwrap(), true)
+                .contains("빛 알갱이")
+        );
+        let again: Life = serde_json::from_str(&serde_json::to_string(&life).unwrap()).unwrap();
+        assert_eq!(again, life);
+        life.begin_day("2026-10-23");
+        assert_eq!(
+            life.recall_yesterday("2026-10-23".parse().unwrap(), true),
+            "조용한 하루였어."
+        );
+    }
+
+    #[test]
+    fn old_writing_and_deeds_without_a_translation_fall_back_to_english() {
+        let old: Entry =
+            serde_json::from_str(r#"{"day":"2026-10-20","text":"A quiet day."}"#).unwrap();
+        assert_eq!(old.korean, None);
+        assert_eq!(old.in_language(true), "A quiet day.");
+        let tally = Tally {
+            wish_words: vec!["a future deed".to_owned()],
+            anniversary_words: vec!["A week ago today, I found a treasure.".to_owned()],
+            ..Default::default()
+        };
+        assert!(tally.words_korean().contains("a future deed"));
+        assert!(tally.words_korean().contains("remembered a week ago today"));
+        assert!(tally.diary_korean().contains("a future deed"));
+        assert_eq!(
+            serde_json::from_str::<Life>("{}").unwrap().yesterday,
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn damaged_korean_is_dropped_without_losing_the_english_entry() {
+        for korean in [
+            "".to_owned(),
+            "  ".to_owned(),
+            "안녕\n친구".to_owned(),
+            "가".repeat(super::super::writing::TEXT_LIMIT + 1),
+        ] {
+            let entry = Entry {
+                day: "2026-10-20".to_owned(),
+                text: "A quiet day.".to_owned(),
+                korean: Some(korean),
+            };
+            let life = Life {
+                day: "2026-10-21".to_owned(),
+                diary: vec![entry.clone()],
+                milestones: vec![entry.clone()],
+                yesterday: vec![entry],
+                ..Default::default()
+            }
+            .sanitized();
+            for entry in life
+                .diary
+                .iter()
+                .chain(&life.milestones)
+                .chain(&life.yesterday)
+            {
+                assert_eq!(entry.korean, None);
+                assert_eq!(entry.text, "A quiet day.");
+            }
+        }
+        let valid = Entry {
+            day: "2026-10-20".to_owned(),
+            text: "A quiet day.".to_owned(),
+            korean: Some("조용한 하루였어.".to_owned()),
+        };
+        let life = Life {
+            day: "2026-10-21".to_owned(),
+            diary: vec![valid.clone()],
+            yesterday: vec![
+                valid.clone(),
+                Entry {
+                    day: "broken".to_owned(),
+                    ..valid.clone()
+                },
+                Entry {
+                    day: "2026-10-22".to_owned(),
+                    ..valid
+                },
+            ],
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!(life.yesterday.len(), 1);
+        assert_eq!(life.diary[0].in_language(true), "조용한 하루였어.");
+    }
+
+    #[test]
+    fn firsts_landmarks_growth_skills_and_upbringing_keep_korean_beside_english_events() {
+        use crate::world::{Feeling, Skill, Wish, World};
+        let mut life = Life::default();
+        life.begin("2026-10-20");
+        let events = [
+            EventKind::AteMote,
+            EventKind::Petted,
+            EventKind::GotLetter,
+            EventKind::LearnedName("Mina".to_owned()),
+            EventKind::Named("Pip".to_owned()),
+            EventKind::Composed("My Tune".to_owned()),
+            EventKind::WroteBook("My Book".to_owned()),
+            EventKind::Comforted(Feeling::Sad),
+            EventKind::WishGranted(Wish::Rainbow),
+            EventKind::FoldedCrane { count: 1 },
+            EventKind::FinishedBook("Book".to_owned()),
+            EventKind::ForecastCameTrue { snow: false },
+            EventKind::MetReflection,
+            EventKind::Celebrated(Occasion::HundredDays),
+        ];
+        for event in events {
+            let english = life.note(&event).unwrap();
+            let entry = life
+                .milestones
+                .iter()
+                .find(|entry| entry.text == english)
+                .unwrap();
+            assert!(
+                entry.korean.as_ref().is_some_and(|text| !text.is_empty()),
+                "{english}"
+            );
+            assert!(
+                !english
+                    .chars()
+                    .any(|letter| ('가'..='힣').contains(&letter))
+            );
+        }
+        life.pass(3600.0, true);
+        life.watch_bird(100_000.0);
+        life.upbringing.drift = [0.15; 5];
+        life.begin_day("2026-10-21");
+        assert!(
+            life.milestones
+                .iter()
+                .any(|entry| entry.text.contains("playful"))
+        );
+        let mut world = World::new(7, 12.0);
+        world.birthday = Some(world.date.checked_add(jiff::Span::new().days(-40)).unwrap());
+        world.mark_growth();
+        for skill in Skill::ALL {
+            world
+                .life
+                .reach(skill.milestone().to_owned(), skill.milestone_korean());
+        }
+        for entry in life.milestones.iter().chain(&world.life.milestones) {
+            assert!(
+                entry.korean.as_ref().is_some_and(|text| !text.is_empty()),
+                "{}",
+                entry.text
+            );
+        }
+        let count = life.milestones.len();
+        assert!(
+            life.reach(
+                "I came into being in a glass box.".to_owned(),
+                "다른 한국어".to_owned()
+            )
+            .is_none()
+        );
+        assert_eq!(life.milestones.len(), count);
+    }
+    #[test]
+    fn creation_and_constellation_milestones_use_saved_korean_titles() {
+        use crate::world::{
+            creation::WrittenBook,
+            music::{Composition, Note, Tune},
+            stars::Constellation,
+        };
+        let mut life = Life::default();
+        life.begin_day("2026-10-21");
+        life.compositions.push(Composition {
+            title: "My Tune".to_owned(),
+            korean_title: "나의 노래".to_owned(),
+            day: life.day.clone(),
+            tune: Tune {
+                name: "My Tune".to_owned(),
+                notes: vec![Note {
+                    pitch: 0,
+                    beats: 1.0,
+                }],
+            },
+        });
+        life.written.push(WrittenBook {
+            title: ("My Book".to_owned(), "나의 책".to_owned()),
+            ..Default::default()
+        });
+        life.constellations.push(Constellation {
+            name: "Little Heart".to_owned(),
+            korean: "작은 하트".to_owned(),
+            ..Default::default()
+        });
+        for (event, title) in [
+            (EventKind::Composed("My Tune".to_owned()), "나의 노래"),
+            (EventKind::WroteBook("My Book".to_owned()), "나의 책"),
+            (
+                EventKind::FoundConstellation("Little Heart".to_owned()),
+                "작은 하트",
+            ),
+        ] {
+            let english = life.note(&event).unwrap();
+            assert!(
+                life.milestones
+                    .iter()
+                    .find(|entry| entry.text == english)
+                    .unwrap()
+                    .in_language(true)
+                    .contains(title)
+            );
+        }
+        assert!(life.today.words_korean().contains("나의 노래"));
+        assert!(life.today.words_korean().contains("나의 책"));
+        assert!(life.today.words().contains("My Tune"));
+    }
+
+    #[test]
+    fn paired_deed_details_are_bounded_and_sanitized() {
+        let mut life = Life {
+            day: "2026-10-21".to_owned(),
+            ..Default::default()
+        };
+        for index in 0..100 {
+            life.today
+                .remember_writing(format!("title {index}"), "이름".to_owned());
+        }
+        assert_eq!(life.today.korean_details.len(), 64);
+        life.total
+            .korean_details
+            .insert("damaged".to_owned(), "잘못된\n글".to_owned());
+        life = life.sanitized();
+        assert!(life.total.korean_details.is_empty());
+        assert_eq!(life.today.korean_details.len(), 64);
     }
 }

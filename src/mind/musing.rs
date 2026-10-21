@@ -1052,6 +1052,14 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
         }
         Understanding::Unable { activity, .. } => return unable(world, *activity, korean),
         Understanding::Asked { question, doing } => {
+            let korean = if matches!(
+                question,
+                Question::Yesterday | Question::Today | Question::Time | Question::Date
+            ) {
+                heard.korean
+            } else {
+                korean
+            };
             let answers = answer(world, *question, *doing, korean);
             let hello = if korean { "안녕! " } else { "Hi! " };
             return if heard.tone == Some(Tone::Greeting) {
@@ -1617,6 +1625,10 @@ pub(crate) fn answer(
                 crate::world::friend::count_words(world.life.cranes.total)
             )
         }],
+        Question::Yesterday => vec![world.life.recall_yesterday(world.date, korean)],
+        Question::Today => vec![world.life.today.recall(korean)],
+        Question::Time => vec![crate::world::writing::time_answer(world, korean)],
+        Question::Date => vec![crate::world::writing::date_answer(world, korean)],
     }
 }
 
@@ -2065,6 +2077,7 @@ mod tests {
         world.life.milestones.push(crate::world::Entry {
             day: "2026-05-10".to_owned(),
             text: "I learned your name: Sam.".to_owned(),
+            korean: None,
         });
         let recalled = "A month ago today, I learned your name: Sam.";
         assert!(idle(&world).iter().any(|line| line == recalled));
@@ -3333,5 +3346,40 @@ mod tests {
                 .iter()
                 .any(|line| line.contains("paper cranes"))
         );
+    }
+    #[test]
+    fn recall_and_time_replies_answer_from_state_in_the_messages_language() {
+        let mut world = World::new(7, 15.1);
+        world.life.begin_day("2026-06-20");
+        world.life.note(&EventKind::GotLetter);
+        world.life.begin_day("2026-06-21");
+        world.life.note(&EventKind::NudgedBall);
+        for (message, expected) in [
+            ("what did we do yesterday?", "received your letter"),
+            ("어제 뭐했어?", "네 편지를 받았어"),
+            ("what did you do today?", "nudged the ball"),
+            ("오늘 뭐 했어?", "공을 밀었어"),
+            ("what time is it?", "three in the afternoon"),
+            ("몇 시야?", "오후 세 시 조금 넘었어"),
+            ("what's the date?", "Sunday, June twenty first"),
+            ("무슨 요일이야?", "일요일"),
+        ] {
+            world.life.korean = 1.0;
+            let learned = world.life.total.learned;
+            let heard = world.hear(message);
+            assert!(
+                matches!(heard.understanding, Understanding::Asked { .. }),
+                "{message}"
+            );
+            assert_eq!(world.life.total.learned, learned);
+            assert!(heard.learned.is_empty(), "{message}");
+            let replies = reply(&world, &heard, None);
+            assert!(
+                replies
+                    .iter()
+                    .any(|reply| reply.to_lowercase().contains(&expected.to_lowercase())),
+                "{message}: {replies:?}"
+            );
+        }
     }
 }

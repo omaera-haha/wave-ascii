@@ -766,10 +766,7 @@ fn object_name(name: &str) -> String {
 
 /// The object particle after `name`: 을 after a final consonant, else 를.
 fn object_particle(name: &str) -> &'static str {
-    let final_consonant = name.chars().last().is_some_and(|letter| {
-        ('가'..='힣').contains(&letter) && (u32::from(letter) - u32::from('가')) % 28 != 0
-    });
-    if final_consonant { "을" } else { "를" }
+    super::writing::particle(name, "을", "를")
 }
 
 fn book_title(index: usize, korean: bool) -> &'static str {
@@ -1484,6 +1481,7 @@ mod tests {
         world.life.milestones.push(super::super::Entry {
             day: world.date.to_string(),
             text: "You gave me my name: Pip.".to_owned(),
+            korean: None,
         });
         assert_eq!(world.life.sanitized().total.names, 1);
     }

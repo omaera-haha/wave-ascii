@@ -903,7 +903,11 @@ impl JournalPanel {
             append("  ", "none yet", DIM);
         }
         for milestone in milestones {
-            append(&format!("  {}  ", milestone.day), &milestone.text, TEXT);
+            append(
+                &format!("  {}  ", milestone.day),
+                milestone.in_language(app.world.speaks_korean()),
+                TEXT,
+            );
         }
         append("", "", TEXT);
         append("", "Diary", ACCENT);
@@ -912,7 +916,11 @@ impl JournalPanel {
             append("  ", "no days written yet", DIM);
         }
         for entry in diary {
-            append(&format!("  {}  ", entry.day), &entry.text, TEXT);
+            append(
+                &format!("  {}  ", entry.day),
+                entry.in_language(app.world.speaks_korean()),
+                TEXT,
+            );
         }
         append("", "", TEXT);
         append("", "Its own picture books", ACCENT);
@@ -1474,13 +1482,21 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         Some(milestone) => vec![
             (String::new(), TEXT),
             ("Its latest moment to remember".to_owned(), ACCENT),
-            (format!("  {}", milestone.text), TEXT),
+            (
+                format!("  {}", milestone.in_language(life.speaks_korean())),
+                TEXT,
+            ),
         ],
         None => Vec::new(),
     };
     let mut today = vec![(String::new(), TEXT), ("Today so far".to_owned(), ACCENT)];
     let room = columns.saturating_sub(10).clamp(20, 56);
-    for line in wrap(&life.today.words(), room) {
+    let today_words = if life.speaks_korean() {
+        life.today.words_korean()
+    } else {
+        life.today.words()
+    };
+    for line in wrap(&today_words, room) {
         today.push((format!("  {line}"), TEXT));
     }
     let footer = vec![
@@ -1787,6 +1803,7 @@ mod tests {
         app.world.life.milestones.push(crate::world::Entry {
             day: "2026-10-21".into(),
             text: "Saw my first rainbow.".into(),
+            korean: None,
         });
         let full = life_lines(&app, 100, 60);
         for rows in [60, 24, 16, 12, 9] {
@@ -1830,5 +1847,73 @@ mod tests {
         assert_eq!(meter(0.0), "▱▱▱▱▱");
         assert_eq!(meter(0.62), "▰▰▰▱▱");
         assert_eq!(meter(1.0), "▰▰▰▰▰");
+    }
+    #[test]
+    fn journal_and_life_writing_follow_the_language_and_old_entries_fall_back() {
+        let mut app = app();
+        app.world.life.diary.push(crate::world::Entry {
+            day: "2026-10-20".to_owned(),
+            text: "English diary".to_owned(),
+            korean: Some("한국어 일기".to_owned()),
+        });
+        app.world.life.diary.push(crate::world::Entry {
+            day: "2026-10-19".to_owned(),
+            text: "Old diary".to_owned(),
+            korean: None,
+        });
+        app.world.life.milestones.push(crate::world::Entry {
+            day: "2026-10-20".to_owned(),
+            text: "English milestone".to_owned(),
+            korean: Some("한국어 이정표".to_owned()),
+        });
+        app.world.life.today.nudges = 1;
+        for korean in [false, true] {
+            app.world.life.korean = if korean { 1.0 } else { 0.0 };
+            let journal = JournalPanel::new(&app, 100, 32)
+                .lines
+                .iter()
+                .map(|(line, _)| line.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let life = life_lines(&app, 100, usize::MAX)
+                .iter()
+                .map(|(line, _)| line.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(journal.contains("Old diary"));
+            assert_eq!(journal.contains("한국어 일기"), korean);
+            assert_eq!(journal.contains("English diary"), !korean);
+            for panel in [&journal, &life] {
+                assert_eq!(panel.contains("한국어 이정표"), korean);
+                assert_eq!(panel.contains("English milestone"), !korean);
+            }
+            assert_eq!(life.contains("공을 밀었어"), korean);
+            assert_eq!(life.contains("Nudged the ball"), !korean);
+        }
+    }
+
+    #[test]
+    fn korean_journal_wrapping_and_scroll_ranges_include_the_whole_entry() {
+        let mut app = app();
+        app.world.life.korean = 1.0;
+        app.world.life.diary.push(crate::world::Entry {
+            day: "2026-10-20".to_owned(),
+            text: "English diary".to_owned(),
+            korean: Some("오래오래 함께 있었어. ".repeat(80)),
+        });
+        for columns in [20, 40, 100] {
+            let journal = JournalPanel::new(&app, columns, 12);
+            assert!(journal.max_scroll() > 0);
+            assert_eq!(journal.visible_range(0).end, journal.lines.len());
+            assert_eq!(journal.visible_range(usize::MAX).start, 0);
+            assert!(
+                journal
+                    .lines
+                    .iter()
+                    .all(|(line, _)| width(line) <= journal.inner)
+            );
+            let (extent, page) = life_extent(&app, columns, 12);
+            assert!(extent >= page);
+        }
     }
 }

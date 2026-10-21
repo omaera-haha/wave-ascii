@@ -50,12 +50,16 @@ impl World {
         let Some(days) = self.age_days() else {
             return;
         };
-        for (age, text) in [
-            (3.0, "I'm not a newborn wisp any more."),
-            (30.0, "I'm all grown up now."),
+        for (age, text, korean) in [
+            (
+                3.0,
+                "I'm not a newborn wisp any more.",
+                "이제 갓 태어난 아기 유령은 아니야.",
+            ),
+            (30.0, "I'm all grown up now.", "이제 다 자랐어."),
         ] {
             if days >= age
-                && let Some(milestone) = self.life.reach(text.to_owned())
+                && let Some(milestone) = self.life.reach(text.to_owned(), korean)
             {
                 self.record(EventKind::Milestone(milestone));
             }
@@ -104,6 +108,17 @@ impl Skill {
             Self::Games => "noughts and crosses",
             Self::Writing => "writing",
             Self::Dancing => "dancing",
+        }
+    }
+
+    pub(super) fn milestone_korean(self) -> &'static str {
+        match self {
+            Self::Stacking => "이제 높은 탑도 무너뜨리지 않고 쌓을 수 있어.",
+            Self::Catching => "이제 빛 알갱이를 잘 잡아.",
+            Self::Fetching => "이제 공을 잘 가져다줘.",
+            Self::Games => "이제 틱택토를 잘해.",
+            Self::Writing => "이제 유리에 글씨를 잘 써.",
+            Self::Dancing => "이제 춤을 잘 춰.",
         }
     }
 
