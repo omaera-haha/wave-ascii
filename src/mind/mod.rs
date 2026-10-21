@@ -279,8 +279,12 @@ impl Mind {
             if (due && world.focus.is_none()) || !self.heard.is_empty() {
                 let heard = self.heard.pop_front();
                 self.reflecting_story = heard.as_ref().and_then(|heard| heard.story);
+                let observation = heard.as_ref().map_or_else(
+                    || observation::observe(world),
+                    |message| observation::for_message(world, &message.text),
+                );
                 let request = reflection::request(
-                    &observation::observe(world),
+                    &observation,
                     &self.journal.memories,
                     &world.life,
                     &self.journal.conversation,
@@ -359,6 +363,16 @@ impl Mind {
                 let lines = musing::reply(world, &heard, guessed);
                 if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
                     world.say(&lines[index]);
+                    if matches!(
+                        heard.understanding,
+                        Understanding::Asked {
+                            question: Question::Away,
+                            ..
+                        }
+                    ) && let Some(away) = &mut world.away
+                    {
+                        away.told = true;
+                    }
                 }
             }
             self.remember_speech(world);
@@ -391,6 +405,18 @@ impl Mind {
     // it sets out on something, when nothing much happens, and in its
     // dreams.
     fn muse(&mut self, world: &mut World) {
+        if world.viewer_present()
+            && world.ghost.asleep < 0.3
+            && world.away.as_ref().is_some_and(|away| !away.told)
+        {
+            let lines = musing::returned(world, world.speaks_korean());
+            if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
+                world.say(&lines[index]);
+                world.away.as_mut().unwrap().told = true;
+                self.remember_speech(world);
+                return;
+            }
+        }
         let since = self.mused_at;
         self.mused_at = world.time;
         let asleep = world.ghost.asleep > crate::world::dream::SLEEPING;
@@ -962,6 +988,56 @@ mod tests {
                 .contains(&world.ghost.name)
         );
         assert_eq!(world.telling, telling);
+    }
+
+    #[test]
+    fn a_return_story_is_spoken_once_in_the_viewers_language_after_presence() {
+        for korean in [false, true] {
+            let mut mind = offline();
+            let mut world = World::new(3, 12.0);
+            world.life.korean = if korean { 1.0 } else { 0.0 };
+            let mut away = crate::world::away::story(
+                "2026-06-21T12:00:00".parse().unwrap(),
+                "2026-06-21T16:00:00".parse().unwrap(),
+                1,
+                &world.life,
+                None,
+            );
+            away.happenings = vec![crate::world::away::Happening::Waited];
+            world.away = Some(away);
+            mind.think(&mut world);
+            assert!(world.ghost.speech.is_none());
+            world.notice_viewer();
+            mind.think(&mut world);
+            assert!(world.away.as_ref().unwrap().told);
+            let said = world.ghost.speech.as_ref().unwrap().text.clone();
+            assert_eq!(
+                said.chars()
+                    .any(|character| ('가'..='힣').contains(&character)),
+                korean
+            );
+            assert_eq!(mind.journal.conversation.len(), 1);
+            world.ghost.speech = None;
+            world.step(0.1);
+            mind.think(&mut world);
+            assert!(world.ghost.speech.is_none());
+            assert_eq!(mind.journal.conversation.len(), 1);
+            mind.hear(
+                &mut world,
+                if korean {
+                    "뭐 하고 있었어?"
+                } else {
+                    "What did you do while I was away?"
+                },
+            );
+            let said = &world.ghost.speech.as_ref().unwrap().text;
+            assert!(if korean {
+                said.contains("유리")
+            } else {
+                said.contains("glass")
+            });
+            assert!(world.life.vocabulary.words.is_empty());
+        }
     }
 
     #[test]

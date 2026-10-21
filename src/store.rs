@@ -185,6 +185,8 @@ pub struct Save {
     pub life: Life,
     #[serde(default)]
     pub seedlings: Vec<crate::world::Seedling>,
+    #[serde(default)]
+    pub room: Option<crate::world::Room>,
 }
 
 impl Save {
@@ -369,6 +371,7 @@ mod tests {
         assert_eq!(save.name, "Pip");
         assert_eq!(save.life, Life::default());
         assert!(save.seedlings.is_empty());
+        assert!(save.room.is_none());
         assert_eq!(
             (
                 save.plant.blossom,

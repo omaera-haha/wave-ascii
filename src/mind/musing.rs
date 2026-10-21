@@ -1,3 +1,4 @@
+use crate::world::away::Happening;
 use crate::world::{
     Activity, Heard, Mood, Occasion, Question, Skill, Sky, Stage, Tone, Understanding, World,
 };
@@ -6,6 +7,167 @@ use crate::world::{
 // with: a few words that fit the moment, so a ghost without keys still has
 // an inner life. Each function gives every line that fits; the caller picks
 // one.
+
+/// Spoken once on returning, or again when the viewer asks about the absence.
+pub fn returned(world: &World, korean: bool) -> Vec<String> {
+    let Some(happening) = world.away.as_ref().and_then(|away| away.notable()) else {
+        return Vec::new();
+    };
+    let lines = match happening {
+        Happening::SleptNight => [
+            ("I slept through the night.", "밤새 푹 잤어."),
+            (
+                "My cushion kept me cozy all night.",
+                "밤새 방석에서 포근하게 잤어.",
+            ),
+        ],
+        Happening::Napped => [
+            (
+                "I had a little nap while you were gone.",
+                "너 없는 동안 낮잠을 잤어.",
+            ),
+            (
+                "I curled up on my cushion for a nap.",
+                "방석에 웅크리고 낮잠을 잤어.",
+            ),
+        ],
+        Happening::WatchedRain => [
+            (
+                "I watched the rain while you were gone.",
+                "너 없는 동안 비를 구경했어.",
+            ),
+            ("The rain kept me company.", "비가 내 곁에 있어 줬어."),
+        ],
+        Happening::WatchedStorm => [
+            (
+                "There was a storm. I stayed by my cushion.",
+                "폭풍이 왔어. 방석 곁에 있었어.",
+            ),
+            (
+                "I watched a storm from my cozy cushion.",
+                "포근한 방석에서 폭풍을 구경했어.",
+            ),
+        ],
+        Happening::WatchedSnow => [
+            ("It snowed while you were gone!", "너 없는 동안 눈이 왔어!"),
+            (
+                "I watched snowflakes at the window.",
+                "창문에서 눈송이를 구경했어.",
+            ),
+        ],
+        Happening::SawRainbow => [
+            (
+                "I saw a rainbow while you were gone!",
+                "너 없는 동안 무지개를 봤어!",
+            ),
+            (
+                "The rain left a rainbow for me.",
+                "비가 그치고 무지개가 떴어.",
+            ),
+        ],
+        Happening::WatchedBird => [
+            (
+                "The bird kept me company at the window.",
+                "창가에서 새가 곁에 있어 줬어.",
+            ),
+            (
+                "I watched the bird while you were gone.",
+                "너 없는 동안 새를 구경했어.",
+            ),
+        ],
+        Happening::BuiltTower { standing: true } => [
+            (
+                "I built a tower while you were gone!",
+                "너 없는 동안 탑을 쌓았어!",
+            ),
+            (
+                "I left my tower standing for you.",
+                "보여 주려고 탑을 남겨 뒀어.",
+            ),
+        ],
+        Happening::BuiltTower { standing: false } => [
+            (
+                "I built a tower and knocked it down!",
+                "탑을 쌓고 와르르 무너뜨렸어!",
+            ),
+            (
+                "My tower went whoosh while you were gone!",
+                "너 없는 동안 내 탑이 와르르 무너졌어!",
+            ),
+        ],
+        Happening::PlayedBall => [
+            (
+                "I played with the ball while you were gone.",
+                "너 없는 동안 공을 가지고 놀았어.",
+            ),
+            (
+                "I rolled the ball all around the room.",
+                "방 안에서 공을 굴리며 놀았어.",
+            ),
+        ],
+        Happening::Drew(_) => [
+            (
+                "I drew a little picture while you were gone.",
+                "너 없는 동안 작은 그림을 그렸어.",
+            ),
+            (
+                "I left a picture in the fog for you.",
+                "보여 주려고 김 서린 유리에 그림을 남겼어.",
+            ),
+        ],
+        Happening::WateredPlant => [
+            (
+                "I watered the plant while you were gone.",
+                "너 없는 동안 화분에 물을 줬어.",
+            ),
+            (
+                "I kept the plant company and gave it water.",
+                "화분 곁에 있어 주고 물도 줬어.",
+            ),
+        ],
+        Happening::WishedOnStar => [
+            ("I wished on a shooting star!", "별똥별에 소원을 빌었어!"),
+            (
+                "A shooting star crossed my window. I made a wish.",
+                "창밖으로 별똥별이 지나갔어. 소원을 빌었지.",
+            ),
+        ],
+        Happening::FriendVisited => [
+            (
+                "My ghost friend came by while you were gone!",
+                "너 없는 동안 유령 친구가 놀러 왔어!",
+            ),
+            (
+                "I spent an evening with my ghost friend.",
+                "유령 친구와 저녁을 보냈어.",
+            ),
+        ],
+        Happening::Waited => [
+            (
+                "I waited for you at the glass.",
+                "유리 앞에서 너를 기다렸어.",
+            ),
+            (
+                "I came to the glass when you usually visit.",
+                "네가 늘 오는 시간에 유리 앞으로 왔어.",
+            ),
+        ],
+        Happening::MissedViewer => [
+            (
+                "I missed you while you were gone.",
+                "너 없는 동안 보고 싶었어.",
+            ),
+            (
+                "The room felt quiet without you.",
+                "네가 없으니 방이 조용했어.",
+            ),
+        ],
+    };
+    lines
+        .into_iter()
+        .map(|(english, hangul)| if korean { hangul } else { english }.to_owned())
+        .collect()
+}
 
 /// What crosses its mind as it sets out to do `activity`.
 pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
@@ -765,6 +927,14 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
     let bond = world.life.bond;
     match question {
         Question::Story => Vec::new(),
+        Question::Away => {
+            let remembered = returned(world, korean);
+            if remembered.is_empty() {
+                lines(&["It was quiet here."], &["여기서 조용히 지냈어."])
+            } else {
+                remembered
+            }
+        }
         Question::Friend => match &world.life.friend {
             Some(friend) if korean => vec![format!(
                 "내 유령 친구 이름은 {}! {}",

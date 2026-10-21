@@ -33,6 +33,13 @@ pub enum Question {
     Friend,
     /// A story from its life.
     Story,
+    Away,
+}
+
+impl Question {
+    pub fn ask(text: &str) -> Option<Self> {
+        ask(text)
+    }
 }
 
 // Questions in English, as runs of words to find in the message, compared
@@ -46,6 +53,15 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
             &["tell", "a", "story"],
             &["story", "please"],
             &["bedtime", "story"],
+        ],
+    ),
+    (
+        Question::Away,
+        &[
+            &["what", "did", "you", "do", "while", "i", "was", "away"],
+            &["what", "did", "you", "do", "while", "i", "was", "gone"],
+            &["what", "were", "you", "doing"],
+            &["what", "did", "you", "do", "without", "me"],
         ],
     ),
     (
@@ -222,6 +238,11 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
     ),
     (Question::Story, &["이야기", "얘기", "동화"], true),
     (
+        Question::Away,
+        &["뭐하고있었", "없는동안뭐", "안온동안뭐"],
+        false,
+    ),
+    (
         Question::Friend,
         &[
             "친구는누구",
@@ -381,6 +402,8 @@ mod tests {
     #[test]
     fn everyday_questions_in_english_are_recognized() {
         for (text, question) in [
+            ("What did you do while I was away?", Question::Away),
+            ("what were you doing?", Question::Away),
             ("How are you?", Question::Feeling),
             ("hi! how's it going", Question::Feeling),
             ("are you okay", Question::Feeling),
@@ -413,6 +436,7 @@ mod tests {
     #[test]
     fn everyday_questions_in_korean_are_recognized() {
         for (text, question) in [
+            ("뭐 하고 있었어?", Question::Away),
             ("뭐해?", Question::Doing),
             ("지금 뭐 하고 있어", Question::Doing),
             ("기분 어때?", Question::Feeling),

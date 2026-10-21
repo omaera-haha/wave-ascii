@@ -1,4 +1,5 @@
 mod activity;
+pub mod away;
 pub mod blocks;
 pub mod calendar;
 mod doodle;
@@ -19,6 +20,7 @@ mod pounce;
 mod question;
 mod random;
 mod recognizer;
+mod room;
 mod routine;
 mod sight;
 mod sleep;
@@ -47,6 +49,7 @@ pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
 pub use question::{Question, ask as asked_question};
 pub use random::Random;
+pub use room::Room;
 pub use sight::{Seen, Thing};
 pub use story::Telling;
 pub use things::{
@@ -574,6 +577,8 @@ pub struct World {
     pub focus: Option<Focus>,
     break_until: f64,
     pub telling: Option<Telling>,
+    /// The story of its time alone, kept only for this session.
+    pub away: Option<away::Away>,
 }
 
 impl World {
@@ -670,6 +675,7 @@ impl World {
             focus: None,
             break_until: 0.0,
             telling: None,
+            away: None,
         };
         world.scatter_blocks();
         world

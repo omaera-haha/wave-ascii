@@ -667,6 +667,12 @@ pub struct Life {
 }
 
 impl Life {
+    pub(super) fn remember_day(&mut self, entry: Entry) {
+        self.diary.push(entry);
+        if self.diary.len() > DAYS_KEPT {
+            self.diary.drain(..self.diary.len() - DAYS_KEPT);
+        }
+    }
     /// Quiet company slowly earns the bird's trust, marking friendship once.
     pub fn watch_bird(&mut self, seconds: f32) -> Option<String> {
         let before = self.bird_trust;
