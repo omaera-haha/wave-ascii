@@ -247,6 +247,11 @@ pub struct Tally {
     #[serde(default)]
     pub viewer_letters_read: u32,
     pub learned_about: u32,
+    pub comforts: u32,
+    pub feelings_heard: u32,
+    pub feelings: Vec<super::Feeling>,
+    pub comforted_feelings: Vec<super::Feeling>,
+    pub felt_better: u32,
 }
 
 impl Tally {
@@ -257,6 +262,19 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::ViewerFelt(feeling) => {
+                self.feelings_heard = self.feelings_heard.saturating_add(1);
+                if !self.feelings.contains(feeling) {
+                    self.feelings.push(*feeling);
+                }
+            }
+            EventKind::Comforted(feeling) => {
+                self.comforts = self.comforts.saturating_add(1);
+                if !self.comforted_feelings.contains(feeling) {
+                    self.comforted_feelings.push(*feeling);
+                }
+            }
+            EventKind::FeltBetter => self.felt_better = self.felt_better.saturating_add(1),
             EventKind::VisitedMirror => self.mirror_visits = self.mirror_visits.saturating_add(1),
             EventKind::MetReflection => self.met_reflection = true,
             EventKind::RecognizedSelf => self.recognized_self = true,
@@ -501,6 +519,28 @@ impl Tally {
             deeds.push((
                 Salience::Notable,
                 "remembered a special day from my life".to_owned(),
+            ));
+        }
+        for feeling in &self.comforted_feelings {
+            let words = if matches!(feeling, super::Feeling::Stressed | super::Feeling::Angry) {
+                "we breathed together".to_owned()
+            } else {
+                format!("you were {}, so I {}", feeling.name(), feeling.care_words())
+            };
+            deeds.push((Salience::Special, words));
+        }
+        for feeling in &self.feelings {
+            if !self.comforted_feelings.contains(feeling) {
+                deeds.push((
+                    Salience::Notable,
+                    format!("you told me you were {}", feeling.name()),
+                ));
+            }
+        }
+        if self.felt_better > 0 {
+            deeds.push((
+                Salience::Special,
+                "you told me you were feeling better".to_owned(),
             ));
         }
         deeds.extend(super::Quirk::ALL.into_iter().filter_map(|kind| {
@@ -1113,6 +1153,7 @@ pub struct Life {
     #[serde(default)]
     pub received: Vec<super::penpal::ViewerLetter>,
     pub viewer: super::acquaintance::Acquaintance,
+    pub feelings: Vec<super::feelings::FeelingNote>,
 }
 
 impl Life {
@@ -1274,6 +1315,8 @@ impl Life {
             EventKind::Heard(_) => 0.015,
             EventKind::Praised | EventKind::LearnedWord { .. } | EventKind::LearnedName(_) => 0.005,
             EventKind::Named(_) => 0.01,
+            EventKind::Comforted(_) => 0.006,
+            EventKind::FeltBetter => 0.004,
             EventKind::Fetched => 0.01,
             EventKind::Petted => 0.004,
             EventKind::Pounced => 0.003,
@@ -1450,13 +1493,14 @@ impl Life {
     /// because of how often it chose it before: from 0.85 for what it never
     /// does to 1.3 for what it does most. Floating is no habit.
     pub fn habit(&self, activity: Activity) -> f32 {
-        if activity == Activity::Float {
+        if matches!(activity, Activity::Float | Activity::Comfort) {
             return 1.0;
         }
-        let kinds = Activity::ALL.len() as f32 - 1.0;
+        // Comfort responds to a message rather than forming a routine.
+        let kinds = Activity::ALL.len() as f32 - 2.0;
         let total: u32 = Activity::ALL
             .into_iter()
-            .filter(|other| *other != Activity::Float)
+            .filter(|other| !matches!(other, Activity::Float | Activity::Comfort))
             .map(|other| self.total.times(other))
             .sum();
         let share = (self.total.times(activity) as f32 + PRIOR) / (total as f32 + PRIOR * kinds);
@@ -1510,6 +1554,10 @@ impl Life {
             .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
         for tally in [&mut self.today, &mut self.total] {
             tally.anniversary_words.truncate(12);
+        }
+        self.feelings.retain(|note| note.valid(&self.day));
+        if self.feelings.len() > 12 {
+            self.feelings.drain(..self.feelings.len() - 12);
         }
         self.mirror.sanitize(&self.day);
         self.total.met_reflection |= self.mirror.sessions > 0 || self.mirror.recognizes_self();
@@ -1660,6 +1708,27 @@ impl Life {
                 }
             }
             tally.passerby_kinds = kinds;
+            tally.comforts = tally.comforts.min(100_000_000);
+            tally.feelings_heard = tally.feelings_heard.min(100_000_000);
+            tally.felt_better = tally.felt_better.min(100_000_000);
+            let mut feelings = Vec::new();
+            tally.feelings.retain(|feeling| {
+                if feelings.contains(feeling) {
+                    false
+                } else {
+                    feelings.push(*feeling);
+                    true
+                }
+            });
+            let mut comforts = Vec::new();
+            tally.comforted_feelings.retain(|feeling| {
+                if comforts.contains(feeling) {
+                    false
+                } else {
+                    comforts.push(*feeling);
+                    true
+                }
+            });
             tally.focus_sessions = tally.focus_sessions.min(1_000_000);
             tally.focus_minutes = tally.focus_minutes.min(100_000_000);
             tally.stories = tally.stories.min(100_000_000);
@@ -1829,6 +1898,9 @@ impl Life {
             return first;
         }
         let text = match kind {
+            EventKind::Comforted(_) if total.comforts == 1 => {
+                "I comforted you for the first time.".to_owned()
+            }
             EventKind::WordGame { solved: true, .. } if total.words_guessed == 1 => {
                 "You guessed my secret word for the first time.".to_owned()
             }
@@ -2044,6 +2116,43 @@ fn capitalized(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn completed_care_warms_the_bond_and_diary_distinguishes_shared_and_completed_feelings() {
+        use crate::world::Feeling;
+        let mut life = Life::default();
+        life.begin_day("2026-06-21");
+        life.note(&EventKind::ViewerFelt(Feeling::Sad));
+        life.note(&EventKind::ViewerFelt(Feeling::Sad));
+        life.note(&EventKind::ViewerFelt(Feeling::Happy));
+        assert_eq!(life.today.feelings_heard, 3);
+        assert_eq!(life.today.feelings, vec![Feeling::Sad, Feeling::Happy]);
+        assert!(!life.today.words().contains("drew you a heart"));
+        assert!(
+            life.today
+                .deeds()
+                .contains(&(Salience::Notable, "you told me you were happy".to_owned()))
+        );
+        let before = life.bond;
+        assert_eq!(
+            life.note(&EventKind::Comforted(Feeling::Sad)).as_deref(),
+            Some("I comforted you for the first time.")
+        );
+        assert!((life.bond - before - 0.006).abs() < 0.0002);
+        assert!(life.today.deeds().contains(&(
+            Salience::Special,
+            "you were sad, so I drew you a heart".to_owned()
+        )));
+        let before = life.bond;
+        life.note(&EventKind::FeltBetter);
+        // A day's warmth so far and the bond already gathered take a
+        // little off.
+        assert!((life.bond - before - 0.004).abs() < 0.0002);
+        assert!(life.note(&EventKind::Comforted(Feeling::Sad)).is_none());
+        life.begin_day("2026-06-22");
+        assert!(life.today.feelings.is_empty());
+        assert!(life.diary.last().unwrap().text.contains("drew you a heart"));
+    }
+
     use super::*;
 
     #[test]

@@ -376,6 +376,11 @@ impl World {
         self.start_music(tune, lullaby, 1);
     }
 
+    pub(super) fn play_comfort_lullaby(&mut self) {
+        self.begin(Activity::Music);
+        self.queued_tune = Some(built_in(0));
+    }
+
     fn ask_lullaby(&mut self) {
         if self.ghost.asleep >= 0.3 {
             self.deepen_sleep();

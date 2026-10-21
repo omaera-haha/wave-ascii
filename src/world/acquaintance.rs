@@ -639,6 +639,7 @@ impl World {
             self.asking = None;
         }
         if self.asking.is_some()
+            || self.feeling_follow_up.is_some()
             || !self.viewer_present()
             || self.viewer.typing
             || self.ghost.asleep >= 0.3
@@ -707,6 +708,9 @@ impl World {
 
     pub(super) fn answer_viewer(&mut self, text: &str, korean: bool) -> Option<Heard> {
         let (topic, until) = self.asking.take()?;
+        if super::feelings::felt(text).is_some() {
+            return None;
+        }
         let definite_answer = match topic {
             Topic::Color => color(text).is_some(),
             Topic::Season => season(text).is_some(),

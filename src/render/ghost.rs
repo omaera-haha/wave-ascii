@@ -31,6 +31,7 @@ const DOT_SPACING: f32 = 0.085;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pose {
     lift: f32,
+    swell: f32,
     lean: f32,
     /// How far the hem trails behind the head.
     trail: f32,
@@ -53,6 +54,7 @@ impl Pose {
         let rock = 0.05 * sway.cos() * awake;
         Self {
             lift: 0.045 * bob.sin() * awake,
+            swell: 1.0,
             lean: (-0.16 * sideways).clamp(-0.25, 0.25) - rock,
             trail: (0.28 * sideways).clamp(-0.36, 0.36) + 1.6 * rock,
             stretch: 0.025 * bob.cos() * awake + (0.04 * rising).clamp(-0.05, 0.05),
@@ -63,6 +65,16 @@ impl Pose {
     pub fn with_letter(mut self, curious: bool) -> Self {
         if curious {
             self.lean += 0.12;
+        }
+        self
+    }
+
+    pub fn with_comfort(mut self, breath: Option<f32>) -> Self {
+        if let Some(breath) = breath {
+            self.lift = 0.04 * breath;
+            self.swell = 1.0 + 0.035 * breath;
+            self.stretch = 0.02 + 0.06 * breath;
+            self.lean *= 0.3;
         }
         self
     }
@@ -99,7 +111,7 @@ impl Pose {
         let point = Mat2::from_angle(-self.lean) * (point - Vec2::new(0.0, self.lift));
         // The lower body lags behind the head as the ghost moves.
         let below = (HEAD_CENTER.y - point.y).max(0.0);
-        Vec2::new(point.x + self.trail * below * below, point.y)
+        Vec2::new((point.x + self.trail * below * below) / self.swell, point.y)
     }
 
     /// Signed distance to the ghost's outline: a round head over a skirt

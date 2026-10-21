@@ -249,6 +249,16 @@ keeps its words fixed. Letters stay separate from the conversation. Reading
 one warms the bond and can leave a picture in the album. On your birthday,
 once it knows it, a short birthday letter waits by the glass too.
 
+### How you feel
+
+Tell me “I'm tired”, “I'm stressed out”, “I'm lonely”, or “오늘 너무 힘들었어”.
+I'll come close: sit quietly, breathe slowly with you, or draw a heart in the
+fog. If you're bored I may invite you to a little game; “I did it!” gets a
+celebrating twirl. I remember what you shared and may ask “Are you feeling
+better today?” when you return over the next few days. “Yes”, “much better”,
+“괜찮아”, or a no tells me how to care next. While you work I stay in quiet
+company, and if I'm asleep your words wait in my memory.
+
 ### Focus together
 
 Press `o` to work beside the ghost for twenty-five minutes, or tell it

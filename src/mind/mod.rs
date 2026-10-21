@@ -831,7 +831,7 @@ impl Mind {
         if !reflection.thought.is_empty() {
             world.think(&reflection.thought);
         }
-        if world.asking.is_none() && !reflection.say.is_empty() {
+        if world.asking.is_none() && !reflection.say.is_empty() && world.ghost.asleep < 0.3 {
             world.say(&reflection.say);
             self.remember_speech(world);
         }
@@ -857,11 +857,14 @@ impl Mind {
         if self.reflection_renamed == self.renamed {
             world.take_name(&reflection.name);
         }
-        if world.asking.is_none() && !world.reading_viewer_letter() && !reflection.write.is_empty()
+        if world.asking.is_none()
+            && !world.reading_viewer_letter()
+            && world.comforting.is_none()
+            && !reflection.write.is_empty()
         {
             world.write(&reflection.write);
         }
-        if !reflection.look_at.is_empty() {
+        if world.comforting.is_none() && !reflection.look_at.is_empty() {
             world.attend(&reflection.look_at, LOOKS_FOR);
         }
     }
@@ -930,6 +933,8 @@ fn routes_to_jev(heard: &Heard) -> bool {
             heard.understanding,
             Understanding::Asked { .. }
                 | Understanding::Named { .. }
+                | Understanding::Felt(_)
+                | Understanding::FeltBetter
                 | Understanding::Focusing { .. }
                 | Understanding::Airing { .. }
                 | Understanding::WordGame
@@ -1418,6 +1423,68 @@ mod tests {
         mind.think(&mut world);
         assert!(mind.reflecting);
         assert!(mind.reflecting_for_viewer);
+    }
+
+    #[test]
+    fn feelings_bypass_jev_reply_in_the_viewers_language_and_still_reach_reflection() {
+        for text in [
+            "I'm tired",
+            "I'm Stressed",
+            "I'm so happy!",
+            "오늘 너무 힘들었어",
+            "나는 뿌듯해",
+        ] {
+            let mut world = World::new(3, 12.0);
+            let heard = world.hear(text);
+            assert!(!routes_to_jev(&heard));
+            let mut world = World::new(3, 12.0);
+            let mut mind = offline();
+            mind.hear(&mut world, text);
+            let reply = &world.ghost.speech.as_ref().unwrap().text;
+            assert!(musing::reply(&world, &heard, None).contains(reply));
+            assert_eq!(world.life.today.praises, 0);
+            assert_eq!(world.life.total.feelings_heard, 1);
+            let config = Config {
+                anthropic_api_key: Some("test-key".to_owned()),
+                ..Config::default()
+            };
+            let mut mind = Mind::new(&config, Journal::default(), false);
+            mind.hear(&mut World::new(3, 12.0), text);
+            assert_eq!(mind.heard.front().unwrap().text, text);
+        }
+    }
+
+    #[test]
+    fn feeling_replies_leave_sleepers_quiet_and_reflections_preserve_the_comfort_plan_and_gaze() {
+        let mut mind = offline();
+        let mut world = World::new(3, 23.0);
+        world.tuck_in();
+        mind.hear(&mut world, "I'm sad");
+        assert!(world.ghost.speech.is_none());
+        assert_eq!(world.ghost.asleep, 1.0);
+        mind.take_in(
+            Reflection {
+                say: "I'm here.".to_owned(),
+                ..Reflection::default()
+            },
+            &mut world,
+        );
+        assert!(world.ghost.speech.is_none());
+        let mut world = World::new(3, 12.0);
+        mind.hear(&mut world, "I'm stressed");
+        let plan = world.ghost.plan.clone();
+        mind.take_in(
+            Reflection {
+                say: "I'm here.".to_owned(),
+                write: "HI".to_owned(),
+                look_at: "lamp".to_owned(),
+                ..Reflection::default()
+            },
+            &mut world,
+        );
+        assert_eq!(world.ghost.plan, plan);
+        assert!(world.ghost.attention.is_none());
+        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "I'm here.");
     }
 
     const DECISION: &str = r#"{"model": "jev-1.13.0", "answers": {

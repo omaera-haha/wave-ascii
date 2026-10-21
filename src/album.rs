@@ -471,6 +471,10 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
         EventKind::Bloomed => ("My plant opened its flowers.".to_owned(), None),
         EventKind::Flowered(flower) => (format!("My {} opened its flowers.", flower.name()), None),
         EventKind::ReadViewerLetter => ("I read your letter.".to_owned(), None),
+        EventKind::Comforted(_) => (
+            "I stayed close to you.".to_owned(),
+            Some("comfort".to_owned()),
+        ),
         EventKind::ReadLetter => ("You read my letter.".to_owned(), None),
         EventKind::ToldStory => ("I told you a whole story.".to_owned(), None),
         EventKind::FocusEnded {
@@ -483,6 +487,39 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn completed_comfort_uses_one_ordinary_album_trigger_each_local_day() {
+        let directory = scratch("comfort");
+        let paths = Paths::in_directory(&directory);
+        let mut album = Album::default();
+        let mut world = World::new(1, 12.0);
+        moment(&mut world, EventKind::Comforted(crate::world::Feeling::Sad));
+        album.observe(&world);
+        assert_eq!(album.pending.len(), 1);
+        assert!(!album.pending[0].milestone);
+        world.time += 2.0;
+        album.elapse(2.0);
+        album
+            .capture(&paths, &world, &Canvas::blank(1, 1), 100)
+            .unwrap();
+        let mut album = Album::load(&paths, 500);
+        world.time += 400.0;
+        moment(
+            &mut world,
+            EventKind::Comforted(crate::world::Feeling::Tired),
+        );
+        album.observe(&world);
+        assert!(album.pending.is_empty());
+        world.date = world.date.tomorrow().unwrap();
+        moment(
+            &mut world,
+            EventKind::Comforted(crate::world::Feeling::Tired),
+        );
+        album.observe(&world);
+        assert_eq!(album.pending.len(), 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     use super::*;
     use crate::world::{Event, Occasion};
     use std::os::unix::fs::PermissionsExt;

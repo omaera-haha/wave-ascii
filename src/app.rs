@@ -1132,6 +1132,10 @@ impl App {
         {
             face.shut = [1.0; 2];
         }
+        if world.quiet_comfort() {
+            face.lid = [0.55; 2];
+        }
+        let comfort_breath = world.comfort_breath();
         let energy = ghost.needs.energy;
         let aura = Aura {
             color: self.aura.lerp(
@@ -1141,7 +1145,8 @@ impl App {
                     .map_or(0.0, |spell| 0.5 * spell.envelope(world.time)),
             ),
             visibility: 1.0 - ghost.fade,
-            brightness: 0.25 + 0.75 * energy,
+            brightness: (0.25 + 0.75 * energy)
+                * comfort_breath.map_or(1.0, |phase| 0.9 + 0.1 * phase),
             beat: beat(ghost.mood) * (0.6 + 0.4 * energy),
         };
         let pose = Pose::new(
@@ -1168,7 +1173,8 @@ impl App {
         .with_letter(matches!(
             world.letter_expression(),
             Some((_, Expression::Glance { .. }))
-        ));
+        ))
+        .with_comfort(comfort_breath);
         let friend =
             world
                 .friend

@@ -139,6 +139,9 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Doodled(_)
         | EventKind::Wrote { .. } => Expression::Smile,
         EventKind::PlayedMusic { .. } | EventKind::LearnedTune(_) => Expression::Smile,
+        EventKind::ViewerFelt(feeling) if feeling.negative() => Expression::Worry,
+        EventKind::ViewerFelt(_) | EventKind::FeltBetter => Expression::Sparkle,
+        EventKind::Comforted(_) => Expression::Smile,
         EventKind::OpenedWindow | EventKind::ClosedWindow => Expression::Smile,
         EventKind::Puddle => Expression::Worry,
         EventKind::BirdSang

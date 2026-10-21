@@ -67,6 +67,7 @@ const PRAISE: &[&str] = &[
     "yay",
     "yeah",
     "yep",
+    "better",
     "wow",
     "cool",
     "clever",
@@ -104,12 +105,16 @@ const PRAISE: &[&str] = &[
     "멋지다",
     "우와",
     "응",
+    "어",
+    "괜찮아",
+    "나아졌어",
     "그래",
     "맞아",
 ];
 const SCOLDING: &[&str] = &[
     "no",
     "nope",
+    "별로",
     "bad",
     "stop",
     "dont",
@@ -242,6 +247,13 @@ pub struct Reading {
 
 /// Reads `text` said to a ghost called `name`.
 pub fn read(text: &str, name: &str) -> Reading {
+    if tokens(text) == ["not", "really"] {
+        return Reading {
+            tone: Some(Tone::Scolding),
+            words: Vec::new(),
+            named: false,
+        };
+    }
     let name = tokens(name);
     let mut tones = Vec::new();
     let mut words: Vec<String> = Vec::new();

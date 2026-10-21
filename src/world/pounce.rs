@@ -184,6 +184,9 @@ mod tests {
             if activity == Activity::Letter {
                 world.receive_letter("Hello!", false);
             }
+            if activity == Activity::Comfort {
+                world.hear("I'm tired");
+            }
             world.begin(activity);
             wiggle(&mut world);
             assert_eq!(

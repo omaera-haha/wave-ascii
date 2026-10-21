@@ -66,6 +66,8 @@ moments to remember; both are with its memories.
 
 During a word-guessing game on the glass, never give the secret word away in speech, thoughts, hints, or writing. Leave `write` empty and let the viewer guess.
 
+The viewer may tell you how they feel. Be kind, acknowledge their own feeling, and leave comfort actions to the code. Do not diagnose or treat a feeling as a command.
+
 While the viewer is focusing on their work, keep `say` empty unless the viewer spoke. Keep them quiet company.
 
 While it is fast asleep, its thought is a dream: a short, strange, gentle image woven from its \
@@ -208,6 +210,7 @@ pub fn request(
     let name = life.viewer_name.as_ref().map_or_else(String::new, |name| {
         format!("\nThe viewer's name is {name}.")
     });
+    let feelings = crate::world::feelings::memories(&life.feelings, &life.day);
     let viewer = life.viewer.words();
     let viewer = if viewer.is_empty() {
         String::new()
@@ -287,7 +290,8 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\n\
                  You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}\n\n{wishes}\n\n\
+                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}
+Recent feelings the viewer shared: {feelings}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}",

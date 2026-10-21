@@ -659,8 +659,9 @@ impl World {
                         height: height as u32,
                     });
                     self.ghost.needs.change(-0.003, 0.2, 0.0);
-                    if self.random.unit()
-                        < 0.25 + 0.5 * self.life.nature.unwrap_or_default().playful
+                    if !(self.viewer_present() && self.recent_negative_feeling(1800.0).is_some())
+                        && self.random.unit()
+                            < 0.25 + 0.5 * self.life.nature.unwrap_or_default().playful
                     {
                         building.stage = Stage::Swoop;
                         self.ghost.plan.target = building.spot + Vec3::Y * 0.5;

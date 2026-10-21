@@ -8,6 +8,7 @@ pub mod breeze;
 pub mod calendar;
 mod doodle;
 pub mod dream;
+pub mod feelings;
 pub mod focus;
 pub mod fog;
 pub mod friend;
@@ -52,6 +53,7 @@ pub use breeze::{Leaf, Wind};
 pub use calendar::Season;
 pub use doodle::{Doodle, Picture, Sketch, Writing};
 pub use dream::Dream;
+pub use feelings::Feeling;
 pub use focus::Focus;
 pub use fog::{Drawing, LearnedPicture};
 pub use friend::{Companion, Friend};
@@ -164,6 +166,9 @@ pub enum EventKind {
     WokeUp,
     /// The viewer said something.
     Heard(String),
+    ViewerFelt(Feeling),
+    Comforted(Feeling),
+    FeltBetter,
     /// The ghost said something.
     Said(String),
     ViewerArrived,
@@ -296,6 +301,11 @@ impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::ViewerFelt(feeling) => format!("you told me you felt {}", feeling.name()),
+            Self::Comforted(feeling) => {
+                format!("you were {}, so I {}", feeling.name(), feeling.care_words())
+            }
+            Self::FeltBetter => "you told me you were feeling better".to_owned(),
             Self::MetReflection => "met the ghost in the mirror".to_owned(),
             Self::RecognizedSelf => "learned the ghost in the mirror is me".to_owned(),
             Self::VisitedMirror => "looked in the mirror".to_owned(),
@@ -533,6 +543,8 @@ pub enum Understanding {
         open: bool,
         accepted: bool,
     },
+    Felt(Feeling),
+    FeltBetter,
     WordGame,
     Yawning,
     Undressing,
@@ -700,6 +712,10 @@ pub struct World {
     tending: Option<garden::Tending>,
     pub dream: Option<Dream>,
     pub focus: Option<Focus>,
+    pub comforting: Option<feelings::Comforting>,
+    feeling_at: Option<f64>,
+    feeling_follow_up: Option<(Feeling, f64)>,
+    feeling_visit_asked: bool,
     break_until: f64,
     pub telling: Option<Telling>,
     /// The story of its time alone, kept only for this session.
@@ -834,6 +850,10 @@ impl World {
             tending: None,
             dream: None,
             focus: None,
+            comforting: None,
+            feeling_at: None,
+            feeling_follow_up: None,
+            feeling_visit_asked: false,
             break_until: 0.0,
             telling: None,
             away: None,
@@ -898,6 +918,7 @@ impl World {
         }
         self.celebrate_wish();
         self.greet_favorite_season();
+        self.follow_up_feeling();
         self.ask_viewer();
     }
 
@@ -1001,6 +1022,8 @@ impl World {
                 // to answer.
                 self.abandon_puzzle();
                 self.asking = None;
+                self.abandon_comfort();
+                self.feeling_visit_asked = false;
             }
         }
         if !self.viewer_gone
@@ -1099,6 +1122,7 @@ impl World {
             .into_iter()
             .filter(|activity| self.focus.is_none() || !focus::seeks_attention(*activity))
             .filter(|activity| match activity {
+                Activity::Comfort => false,
                 Activity::Company => {
                     self.focus.is_some()
                         && self.ghost.asleep < 0.3
@@ -1196,6 +1220,7 @@ impl World {
             Activity::Read => "Read a few pages of a picture book on the cushion or under the lamp. Quiet company during work, or a page before bed.".to_owned(),
             Activity::Music => "Wind the little music box and sway or dance to a tune. Fits when bored or in the evening; keep it quiet during work.".to_owned(),
             Activity::Air => format!("Float to the window and {}. Close it against wet weather, cold nights and blustery wind.", if self.window_open { "push the sash shut" } else { "lift the sash for fresh air" }),
+            Activity::Comfort => "Stay low and close at the glass, caring for how the viewer said they feel.".to_owned(),
             Activity::Company => "Settle quietly beside the front glass while the viewer works. Stay nearby until the focus session ends, resting or tending to needs when necessary.".to_owned(),
             Activity::Friend => "Play tag, twirl together, or gaze at the moon with your visiting ghost friend. Fits especially when lonely or playful.".to_owned(),
             Activity::Look => "Study the picture the viewer drew in the fog on the glass, and perhaps draw an answer beside it.".to_owned(),
@@ -1304,6 +1329,14 @@ impl World {
         if activity == Activity::Letter && !self.letter_is_open() {
             return;
         }
+        if activity == Activity::Comfort
+            && (self.ghost.asleep >= 0.3
+                || self.focus.is_some()
+                || !self.viewer_present()
+                || self.recent_feeling(600.0).is_none())
+        {
+            return;
+        }
         if activity == Activity::Music && (self.focus.is_some() || self.ghost.asleep >= 0.3) {
             return;
         }
@@ -1332,6 +1365,7 @@ impl World {
         ) {
             self.asking = None;
         }
+        self.abandon_comfort();
         self.abandon_game();
         self.abandon_puzzle();
         self.put_keepsake_away();
@@ -1377,6 +1411,12 @@ impl World {
         };
         let target = match activity {
             Activity::Letter => penpal::APPROACH,
+            Activity::Comfort => {
+                let mut spot = self.glass_spot();
+                spot.y = 0.85;
+                spot.z = ROOM_MAX.z - 0.32;
+                spot
+            }
             Activity::Mirror => mirror::VISIT,
             Activity::Read => {
                 if self.bedtime() || self.random.unit() < 0.5 {
@@ -1447,6 +1487,9 @@ impl World {
         self.ghost.plan = plan;
         if activity == Activity::Letter {
             self.begin_viewer_letter();
+        }
+        if activity == Activity::Comfort {
+            self.prepare_comfort();
         }
         if activity == Activity::Mirror {
             self.begin_mirror();
@@ -1572,6 +1615,7 @@ impl World {
 
     /// The viewer poked the ghost.
     pub fn poke(&mut self) {
+        self.abandon_comfort();
         self.cure_hiccups(true);
         if self.ghost.plan.activity == Activity::Hide
             && !self.ghost.plan.done
@@ -1697,10 +1741,14 @@ impl World {
         }
         self.latest_korean = korean;
         self.last_message_at = Some(self.time);
+        // Only the very next message answers a wellbeing question, even if
+        // another direct handler consumes that message first.
+        let feeling_follow_up = self.feeling_follow_up.take();
         if let Some(heard) = self.answer_viewer(text, korean) {
             return heard;
         }
-        let introduction = vocabulary::introduced_name(text);
+        let introduction =
+            vocabulary::introduced_name(text).filter(|_| feelings::felt(text).is_none());
         let naming = introduction
             .is_none()
             .then(|| vocabulary::given_name(text))
@@ -1765,6 +1813,12 @@ impl World {
             return heard;
         }
         if let Some(heard) = self.hear_puzzle(text, korean) {
+            return heard;
+        }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_feelings(text, korean, feeling_follow_up)
+        {
             return heard;
         }
         let question = naming.is_none().then(|| question::ask(text)).flatten();
@@ -2173,6 +2227,7 @@ impl World {
             kind,
             EventKind::Poked { .. } | EventKind::Scolded | EventKind::FellAsleep
         ) {
+            self.abandon_comfort();
             self.reading = None;
         }
         if matches!(
@@ -2414,6 +2469,7 @@ impl World {
             self.ghost.asleep = (self.ghost.asleep - seconds / 1.2).max(0.0);
         }
         if plan.done {
+            self.abandon_comfort();
             self.abandon_puzzle();
             self.abandon_game();
             self.reading = None;
@@ -2445,6 +2501,7 @@ impl World {
                     | Activity::Music
                     | Activity::Mirror
                     | Activity::Letter
+                    | Activity::Comfort
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -2460,6 +2517,7 @@ impl World {
         let mut look = None;
         match self.ghost.plan.activity {
             Activity::Letter => look = self.carry_out_letter(),
+            Activity::Comfort => look = self.carry_out_comfort(),
             Activity::Mirror => look = self.carry_out_mirror(),
             Activity::Read => look = self.carry_out_read(),
             Activity::Music => look = self.carry_out_music(),
@@ -2626,6 +2684,7 @@ impl World {
                 self.wish_on_moon();
                 self.find_constellation();
             }
+            Activity::Visit if self.comforting.is_some() => look = self.carry_out_comfort(),
             Activity::Visit => {
                 if self
                     .telling
@@ -2743,59 +2802,64 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
-            Activity::Doodle => {
-                if let Some(started) = self.ghost.plan.arrived {
-                    if self.ghost.plan.count == 0 {
-                        if self.doodles.len() >= MAX_DOODLES {
-                            self.doodles.remove(0);
-                        }
-                        self.doodles.push(Doodle {
-                            picture: self
-                                .ghost
-                                .plan
-                                .picture
-                                .clone()
-                                .unwrap_or(Picture::Sketch(Sketch::Smile)),
-                            center: self.ghost.plan.anchor.truncate(),
-                            size: self.ghost.plan.picture.as_ref().map_or(0.3, Picture::size),
-                            started,
-                        });
-                        self.ghost.plan.count = 1;
-                    }
-                    if let Some(doodle) = self.doodles.last() {
-                        let progress = doodle.drawn(time);
-                        let pen = doodle.center + doodle.picture.point_at(progress) * doodle.size;
-                        look = Some(Vec3::new(pen.x, pen.y, ROOM_MAX.z));
-                        self.ghost.plan.target = if progress < 1.0 {
-                            Vec3::new(pen.x, pen.y, ROOM_MAX.z - 0.3)
-                        } else {
-                            Vec3::new(doodle.center.x, doodle.center.y, ROOM_MAX.z - 0.7)
-                        };
-                        if time - started > doodle.picture.draw_time() + 2.0 {
-                            let event = match &doodle.picture {
-                                Picture::Sketch(sketch) => EventKind::Doodled(sketch.name()),
-                                Picture::Copy(copy) => EventKind::Copied(copy.name.clone()),
-                                Picture::Word(writing) => EventKind::Wrote {
-                                    text: writing.text.clone(),
-                                    mirrored: writing.mirrored,
-                                    watched: self.viewer_present(),
-                                },
-                            };
-                            self.record(event);
-                            self.ghost.needs.change(0.0, 0.1, 0.0);
-                            self.ghost.plan.done = true;
-                        }
-                    }
-                } else {
-                    look = Some(self.ghost.plan.target + Vec3::Z * 0.35);
-                }
-            }
+            Activity::Doodle => look = self.carry_out_doodle(),
         }
         self.ghost.look = look;
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
             self.begin(Activity::Rest);
             self.ghost.plan.count = 1;
         }
+    }
+
+    pub(super) fn carry_out_doodle(&mut self) -> Option<Vec3> {
+        let time = self.time;
+        let mut look = None;
+        if let Some(started) = self.ghost.plan.arrived {
+            if self.ghost.plan.count == 0 {
+                if self.doodles.len() >= MAX_DOODLES {
+                    self.doodles.remove(0);
+                }
+                self.doodles.push(Doodle {
+                    picture: self
+                        .ghost
+                        .plan
+                        .picture
+                        .clone()
+                        .unwrap_or(Picture::Sketch(Sketch::Smile)),
+                    center: self.ghost.plan.anchor.truncate(),
+                    size: self.ghost.plan.picture.as_ref().map_or(0.3, Picture::size),
+                    started,
+                });
+                self.ghost.plan.count = 1;
+            }
+            if let Some(doodle) = self.doodles.last() {
+                let progress = doodle.drawn(time);
+                let pen = doodle.center + doodle.picture.point_at(progress) * doodle.size;
+                look = Some(Vec3::new(pen.x, pen.y, ROOM_MAX.z));
+                self.ghost.plan.target = if progress < 1.0 {
+                    Vec3::new(pen.x, pen.y, ROOM_MAX.z - 0.3)
+                } else {
+                    Vec3::new(doodle.center.x, doodle.center.y, ROOM_MAX.z - 0.7)
+                };
+                if time - started > doodle.picture.draw_time() + 2.0 {
+                    let event = match &doodle.picture {
+                        Picture::Sketch(sketch) => EventKind::Doodled(sketch.name()),
+                        Picture::Copy(copy) => EventKind::Copied(copy.name.clone()),
+                        Picture::Word(writing) => EventKind::Wrote {
+                            text: writing.text.clone(),
+                            mirrored: writing.mirrored,
+                            watched: self.viewer_present(),
+                        },
+                    };
+                    self.record(event);
+                    self.ghost.needs.change(0.0, 0.1, 0.0);
+                    self.ghost.plan.done = true;
+                }
+            }
+        } else {
+            look = Some(self.ghost.plan.target + Vec3::Z * 0.35);
+        }
+        look
     }
 
     // Steers toward the plan's target, around obstacles and away from the
@@ -2827,6 +2891,7 @@ impl World {
             }
             Activity::Float => 0.35,
             Activity::Wait | Activity::Company => 0.3,
+            Activity::Comfort => 0.55,
             Activity::Rest => 0.5,
             Activity::Explore => 0.7,
             Activity::Mirror => 0.45,

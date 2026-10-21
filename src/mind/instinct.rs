@@ -100,6 +100,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         }
                 }
             }
+            Activity::Comfort => 0.0,
             Activity::Company => {
                 if world.focus.is_some() {
                     10.0 * needs.energy
@@ -431,7 +432,22 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             } else {
                 1.0
             };
+            let caring = if present && let Some(feeling) = world.recent_negative_feeling(1800.0) {
+                match activity {
+                    Activity::Pounce | Activity::Hide | Activity::Build | Activity::Music => 0.15,
+                    Activity::Game | Activity::Puzzle
+                        if feeling != crate::world::Feeling::Bored =>
+                    {
+                        0.15
+                    }
+                    Activity::Visit | Activity::Company => 1.35,
+                    _ => 1.0,
+                }
+            } else {
+                1.0
+            };
             weight
+                * caring
                 * world.quirk_leaning(*activity)
                 * wishing
                 * quiet
@@ -469,6 +485,32 @@ pub fn blend(model: &[(Activity, f32)], own: &[(Activity, f32)]) -> Vec<(Activit
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_recent_negative_feeling_softens_noisy_choices_until_half_an_hour_passes() {
+        let mut worried = World::new(3, 12.0);
+        worried.hear("I'm sad");
+        let mut ordinary = worried.clone();
+        ordinary.life.feelings.clear();
+        let options = [
+            Activity::Visit,
+            Activity::Hide,
+            Activity::Build,
+            Activity::Game,
+        ];
+        let normal = weigh(&ordinary, &options);
+        let careful = weigh(&worried, &options);
+        assert!(careful[0].1 > normal[0].1);
+        for index in 1..options.len() {
+            assert!(careful[index].1 < normal[index].1);
+        }
+        worried.time += 1801.0;
+        worried.notice_viewer();
+        assert_eq!(weigh(&worried, &options), normal);
+        let mut bored = ordinary;
+        bored.hear("I'm bored");
+        assert!(weigh(&bored, &options)[3].1 > careful[3].1);
+    }
+
     use super::*;
 
     #[test]

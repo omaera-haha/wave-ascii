@@ -74,6 +74,7 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     let mut next_action = 0.0f64;
     let mut log: Vec<String> = Vec::new();
     let mut focus_day = None;
+    let mut feeling_day = None;
     let mut thought_count = 0u32;
     let mut speech_count = 0u32;
     let mut max_speed = 0.0f32;
@@ -154,6 +155,18 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             }
         } else if here && rng.next() < 0.002 {
             world.notice_viewer();
+        }
+        // One disclosure per evening exercises care and next-day follow-ups
+        // without changing the simulated viewer's ordinary action rate.
+        if here && feeling_day != Some(clock.date()) && (18.2..18.3).contains(&hour) {
+            feeling_day = Some(clock.date());
+            let message = if korean {
+                "오늘 너무 힘들었어"
+            } else {
+                "I'm stressed out"
+            };
+            mind.hear(&mut world, message);
+            log.push(format!("{clock} viewer says {message:?}"));
         }
         world.step(step);
         mind.think(&mut world);

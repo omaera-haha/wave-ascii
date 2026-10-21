@@ -88,6 +88,7 @@ impl Nature {
     pub fn leaning(self, activity: Activity, bond: f32) -> f32 {
         let signed = |value: f32| 2.0 * (value - 0.5);
         let inclination = match activity {
+            Activity::Comfort => signed(self.tender),
             Activity::Play
             | Activity::Fetch
             | Activity::Dance

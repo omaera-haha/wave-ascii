@@ -237,6 +237,11 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 // has grown fond of the viewer.
 fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
     Some(match event {
+        EventKind::ViewerFelt(feeling) | EventKind::Comforted(feeling) if !feeling.negative() => {
+            Emote::Sparkle
+        }
+        EventKind::ViewerFelt(_) | EventKind::Comforted(_) => Emote::Heart,
+        EventKind::FeltBetter => Emote::Sparkle,
         EventKind::MetReflection => Emote::Question,
         EventKind::RecognizedSelf => Emote::Sparkle,
         EventKind::Heard(text) if crate::world::quirks::yawn_message(text) => return None,
