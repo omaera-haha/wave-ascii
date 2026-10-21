@@ -43,10 +43,21 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 } else {
                     1.0
                 };
+                // Rereading only old favorites draws it less than a story
+                // it hasn't finished, and pages read today satisfy it.
+                let books = &world.life.books.owned;
+                let unread = if books.iter().any(|book| book.finished == 0) {
+                    1.0
+                } else {
+                    0.4
+                };
+                let read = 1.0 / (1.0 + world.life.today.pages as f32 / 12.0);
                 // A few sittings a day, more as quiet company during work.
                 (0.04 + 0.1 * (1.0 - needs.fun) + if world.focus.is_some() { 0.45 } else { 0.0 })
                     * needs.energy
                     * age
+                    * unread
+                    * read
             }
             Activity::Music => {
                 if world.focus.is_some() || world.ghost.asleep >= 0.3 {
@@ -462,6 +473,21 @@ mod tests {
         });
         assert!(chance(&weigh(&world, &options), Activity::Read) > usual);
         world.birthday = Some(world.date);
+        assert!(chance(&weigh(&world, &options), Activity::Read) < usual);
+    }
+
+    #[test]
+    fn rereading_finished_books_and_a_day_of_pages_draw_the_ghost_to_read_less() {
+        let mut world = World::new(5, 12.0);
+        let options = [Activity::Float, Activity::Read];
+        let usual = chance(&weigh(&world, &options), Activity::Read);
+        world.life.today.pages = 24;
+        let after_pages = chance(&weigh(&world, &options), Activity::Read);
+        assert!(after_pages < usual);
+        world.life.today.pages = 0;
+        for book in &mut world.life.books.owned {
+            book.finished = 1;
+        }
         assert!(chance(&weigh(&world, &options), Activity::Read) < usual);
     }
 

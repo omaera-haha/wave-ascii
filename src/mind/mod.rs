@@ -9,7 +9,7 @@ mod musing;
 mod observation;
 mod reflection;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -40,8 +40,12 @@ const MUSES_ON_SETTING_OUT: f32 = 0.35;
 const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
 /// A night holds many dreams, but not one every few breaths.
 const DREAMS_EVERY: (f32, f32) = (45.0, 90.0);
-/// Thoughts it remembers having lately, and avoids while it has others.
-const RECENT_THOUGHTS: usize = 16;
+/// Seconds until a thought it had feels fresh again. Until then it comes
+/// back only rarely, and less the more recently it was had.
+const THOUGHT_FRESHENS: f64 = 7200.0;
+/// How fresh the freshest musing that fits must be for the ghost to bother
+/// thinking it; with only lately-had thoughts to hand, it stays quiet.
+const QUIET_BELOW: f32 = 0.2;
 /// Seconds the ghost's own words get before it brings up something new.
 const SPEECH_SETTLES: f64 = 8.0;
 /// Seconds a thought stays before a musing may replace it.
@@ -118,7 +122,8 @@ pub struct Mind {
     /// whether its musings are dreams.
     mused_at: f64,
     /// Its latest thoughts, newest last.
-    recent_thoughts: VecDeque<&'static str>,
+    /// When it last had each thought.
+    thought_at: HashMap<&'static str, f64>,
     next_musing: f64,
     dreaming: bool,
     /// Messages from the viewer still waiting for a reply.
@@ -160,7 +165,7 @@ impl Mind {
             reflecting: false,
             last_reflection: None,
             mused_at: 0.0,
-            recent_thoughts: VecDeque::new(),
+            thought_at: HashMap::new(),
             next_musing: f64::from(MUSES_EVERY.0) * 0.4,
             dreaming: false,
             heard: VecDeque::new(),
@@ -610,24 +615,27 @@ impl Mind {
                 .rev()
                 .take_while(|event| event.time > since)
                 .any(|event| matches!(event.kind, EventKind::FriendArrived(_)));
-        let lines = if let Some(kind) = quirk {
-            kind.thoughts().to_vec()
+        // Reactions to what just happened always come to mind; idle
+        // musings, dreams, and setting out only when something fresh fits.
+        let (lines, optional) = if let Some(kind) = quirk {
+            (kind.thoughts().to_vec(), false)
         } else if friend_noticed {
-            musing::friend_notices_outfit(world)
+            (musing::friend_notices_outfit(world), false)
         } else if let Some(kind) = passerby {
-            kind.thoughts().to_vec()
+            (kind.thoughts().to_vec(), false)
         } else if world.time >= self.next_musing {
             self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
-            if asleep {
+            let lines = if asleep {
                 musing::dreams(world)
             } else {
                 musing::idle(world)
-            }
+            };
+            (lines, true)
         } else if let Some(activity) = began
             && !asleep
             && world.random_unit() < MUSES_ON_SETTING_OUT
         {
-            musing::setting_out(world, activity)
+            (musing::setting_out(world, activity), true)
         } else {
             return;
         };
@@ -639,28 +647,32 @@ impl Mind {
         if (thinking && !friend_noticed) || lines.is_empty() {
             return;
         }
-        // Fresh thoughts first; a line had lately comes back only when
-        // nothing else fits.
-        let fresh: Vec<f32> = lines
+        // Fresh thoughts first; a line had lately comes back rarely, the
+        // less the more recently it was had.
+        let weights: Vec<f32> = lines
             .iter()
-            .map(|line| f32::from(u8::from(!self.recent_thoughts.contains(line))))
+            .map(|line| self.freshness(line, world.time))
             .collect();
-        let weights = if fresh.iter().any(|weight| *weight > 0.0) {
-            fresh
-        } else {
-            vec![1.0; lines.len()]
-        };
+        if optional && weights.iter().all(|weight| *weight < QUIET_BELOW) {
+            return;
+        }
+        let weights: Vec<f32> = weights.into_iter().map(|weight| weight.max(1e-3)).collect();
         if let Some(index) = world.pick(&weights) {
-            self.recent_thoughts.push_back(lines[index]);
-            if self.recent_thoughts.len() > RECENT_THOUGHTS {
-                self.recent_thoughts.pop_front();
-            }
+            self.thought_at.insert(lines[index], world.time);
             let line = musing::named_friend_line(world, lines[index]);
             world.think(&line);
             if asleep {
                 world.dream_of(&line);
             }
         }
+    }
+
+    // From 0 for a thought just had to 1 for one not had within the hour,
+    // or never.
+    fn freshness(&self, line: &str, now: f64) -> f32 {
+        self.thought_at.get(line).map_or(1.0, |at| {
+            (((now - at) / THOUGHT_FRESHENS).clamp(0.0, 1.0) as f32).powi(2)
+        })
     }
 
     fn spawn(&self, task: impl Future<Output = Answer> + Send + 'static) {
@@ -1442,11 +1454,12 @@ mod tests {
         let mut world = World::new(3, 2.0);
         world.ghost.asleep = 1.0;
         let pool = musing::dreams(&world).len();
-        let rounds = pool.min(RECENT_THOUGHTS);
+        let rounds = pool.min(16);
         assert!(rounds >= 3, "{pool}");
         let mut thoughts = Vec::new();
         for _ in 0..rounds {
-            world.time += 600.0;
+            world.time += 1.0;
+            world.ghost.thought = None;
             mind.dreaming = true;
             mind.next_musing = world.time;
             mind.muse(&mut world);
@@ -1456,6 +1469,37 @@ mod tests {
         distinct.sort();
         distinct.dedup();
         assert_eq!(distinct.len(), thoughts.len(), "{thoughts:?}");
+    }
+
+    #[test]
+    fn with_only_lately_had_musings_to_hand_the_ghost_stays_quiet_until_they_freshen() {
+        let mut mind = offline();
+        let mut world = World::new(3, 2.0);
+        world.ghost.asleep = 1.0;
+        let pool = musing::dreams(&world);
+        for line in &pool {
+            mind.thought_at.insert(line, world.time);
+        }
+        world.time += 60.0;
+        mind.dreaming = true;
+        mind.next_musing = world.time;
+        mind.muse(&mut world);
+        assert!(world.ghost.thought.is_none());
+        // An hour later they are fresh again.
+        world.time += THOUGHT_FRESHENS;
+        mind.next_musing = world.time;
+        mind.muse(&mut world);
+        let thought = &world.ghost.thought.as_ref().unwrap().text;
+        assert!(
+            pool.iter()
+                .any(|line| musing::named_friend_line(&world, line) == *thought),
+            "{thought}"
+        );
+        assert_eq!(mind.freshness("never thought", world.time), 1.0);
+        let had = pool[0];
+        mind.thought_at.insert(had, world.time);
+        assert_eq!(mind.freshness(had, world.time), 0.0);
+        assert!((mind.freshness(had, world.time + THOUGHT_FRESHENS / 2.0) - 0.25).abs() < 1e-6);
     }
 
     fn waiting_for_story(text: &str) -> (Mind, World) {
