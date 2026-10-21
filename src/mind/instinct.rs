@@ -42,6 +42,21 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + 0.6 * outside.rain(world.time)
                     + 2.5 * outside.rainbow(world.time)
             }
+            Activity::Hide => {
+                if world.viewer_present() {
+                    0.15 + 0.7 * (1.0 - needs.fun) * needs.energy
+                } else {
+                    0.0
+                }
+            }
+            Activity::Doodle => {
+                let fond = if world.viewer_present() && needs.company > 0.6 {
+                    0.4
+                } else {
+                    0.0
+                };
+                (0.12 + 0.35 * (1.0 - needs.fun) + fond) * needs.energy
+            }
         })
         .collect();
     let total: f32 = weights.iter().sum::<f32>().max(f32::MIN_POSITIVE);
@@ -118,5 +133,25 @@ mod tests {
         assert!(chance(&blended, Activity::Play) > chance(&blended, Activity::Rest));
         let total: f32 = blended.iter().map(|(_, chance)| chance).sum();
         assert!((total - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn hiding_needs_company_and_doodling_draws_on_fondness_and_boredom() {
+        let mut world = World::new(1, 12.0);
+        let options = [Activity::Float, Activity::Hide, Activity::Doodle];
+        let alone = weigh(&world, &options);
+        assert_eq!(chance(&alone, Activity::Hide), 0.0);
+        world.notice_viewer();
+        world.ghost.needs.company = 0.8;
+        let together = weigh(&world, &options);
+        let ratio = |weights: &[(Activity, f32)], activity| {
+            chance(weights, activity) / chance(weights, Activity::Float)
+        };
+        assert!(ratio(&together, Activity::Hide) > 0.0);
+        assert!(ratio(&together, Activity::Doodle) > ratio(&alone, Activity::Doodle));
+        world.ghost.needs.fun = 0.0;
+        let bored = weigh(&world, &options);
+        assert!(ratio(&bored, Activity::Hide) > ratio(&together, Activity::Hide));
+        assert!(ratio(&bored, Activity::Doodle) > ratio(&together, Activity::Doodle));
     }
 }

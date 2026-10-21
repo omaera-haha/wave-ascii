@@ -105,6 +105,8 @@ impl Pose {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Aura {
     pub color: Vec3,
+    /// How much of the ghost remains visible while hiding, from 0 to 1.
+    pub visibility: f32,
     /// From dim at 0 to bright at 1.
     pub brightness: f32,
     /// Beats per second of the ring's pulse.
@@ -142,7 +144,13 @@ pub fn shade(point: Vec2, pixel: f32, time: f64, pose: &Pose, face: &Face, aura:
         return Glow::NONE;
     }
 
-    let shape = silhouette.max(-face.distance(point - HEAD_CENTER));
+    let visibility = aura.visibility.clamp(0.0, 1.0);
+    let features = face.distance(point - HEAD_CENTER);
+    let eyes =
+        coverage(features, pixel * 0.5) * coverage(silhouette, pixel * 0.5) * (1.0 - visibility)
+            / 3.0;
+    let eye_light = aura.color.lerp(Vec3::ONE, 0.7) * eyes;
+    let shape = silhouette.max(-features);
     let inside = coverage(shape, pixel * 0.5);
     if inside > 0.0 {
         let height =
@@ -159,8 +167,14 @@ pub fn shade(point: Vec2, pixel: f32, time: f64, pose: &Pose, face: &Face, aura:
             .lerp(aura.color, 0.15);
         let brightness = (0.84 + 0.06 * height + 0.16 * rim) * (0.7 + 0.3 * aura.brightness);
         return Glow {
-            light: color * brightness * texture * inside,
-            cover: inside,
+            light: color * brightness * texture * inside * visibility + eye_light,
+            cover: inside * visibility + eyes,
+        };
+    }
+    if eyes > 0.0 {
+        return Glow {
+            light: eye_light,
+            cover: eyes,
         };
     }
 
@@ -179,8 +193,8 @@ pub fn shade(point: Vec2, pixel: f32, time: f64, pose: &Pose, face: &Face, aura:
     let pulse = 0.85 + 0.15 * phase(time, 1.0 / aura.beat.max(0.1)).sin();
     let strength = ring * (0.62 + 0.38 * wave) * pulse * (0.35 + 0.65 * aura.brightness);
     Glow {
-        light: aura.color.lerp(Vec3::ONE, 0.15 * (1.0 + wave) * 0.5) * strength,
-        cover: ring * 0.8,
+        light: aura.color.lerp(Vec3::ONE, 0.15 * (1.0 + wave) * 0.5) * strength * visibility,
+        cover: ring * 0.8 * visibility,
     }
 }
 
@@ -198,6 +212,7 @@ mod tests {
     fn aura() -> Aura {
         Aura {
             color: Vec3::new(0.3, 0.8, 1.0),
+            visibility: 1.0,
             brightness: 1.0,
             beat: 1.0,
         }
@@ -269,5 +284,20 @@ mod tests {
         };
         assert_eq!(glow.over(Vec3::ONE), Vec3::ONE);
         assert_eq!(Glow::NONE.over(Vec3::ONE), Vec3::ONE);
+    }
+
+    #[test]
+    fn visibility_reduces_the_bodys_coverage_and_light() {
+        let pose = Pose::new(3.0, 0.0, 0.0, 0.0);
+        let visible = aura();
+        let hidden = Aura {
+            visibility: 0.0,
+            ..visible
+        };
+        let middle = Vec2::new(0.0, -0.2);
+        let full = shade(middle, 0.02, 3.0, &pose, &Face::REST, &visible);
+        let faint = shade(middle, 0.02, 3.0, &pose, &Face::REST, &hidden);
+        assert!(faint.cover < full.cover * 0.2);
+        assert!(faint.light.length() < full.light.length() * 0.2);
     }
 }
