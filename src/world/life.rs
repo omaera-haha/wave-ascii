@@ -530,9 +530,17 @@ impl Life {
             }
             EventKind::LearnedWord { .. } => {
                 let known = self.vocabulary.known().len();
+                // Several words can be learned at once, so a mark passed
+                // without being kept is kept now.
                 WORDS_MARKED
                     .into_iter()
-                    .find(|(count, _)| *count == known)?
+                    .filter(|(count, _)| *count <= known)
+                    .find(|(_, text)| {
+                        !self
+                            .milestones
+                            .iter()
+                            .any(|milestone| milestone.text == *text)
+                    })?
                     .1
                     .to_owned()
             }
@@ -988,6 +996,37 @@ mod tests {
         life.total.motes = 0;
         life.note(&EventKind::AteMote);
         assert_eq!(life.milestones.len(), reached);
+    }
+
+    #[test]
+    fn learning_several_words_at_once_still_marks_ten_words() {
+        let mut life = Life::default();
+        let words: Vec<String> = [
+            "ball", "dance", "nap", "water", "lamp", "hide", "draw", "spin", "look",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        for word in &words {
+            let learned = life
+                .vocabulary
+                .teach(std::slice::from_ref(word), Activity::Play, 2.0);
+            for word in learned {
+                life.note(&EventKind::LearnedWord {
+                    word,
+                    activity: Activity::Play,
+                });
+            }
+        }
+        assert_eq!(life.vocabulary.known().len(), 9);
+        let pair = ["kick".to_owned(), "roll".to_owned()];
+        let mut marked = Vec::new();
+        for word in life.vocabulary.teach(&pair, Activity::Play, 2.0) {
+            marked.extend(life.note(&EventKind::LearnedWord {
+                word,
+                activity: Activity::Play,
+            }));
+        }
+        assert_eq!(marked, ["I know ten of your words now."]);
     }
 
     #[test]

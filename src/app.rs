@@ -423,7 +423,12 @@ impl App {
 
     /// The ghost's name and activity for the terminal window title.
     pub fn title(&self) -> String {
+        // A title is an escape sequence, so nothing in it may control the
+        // terminal.
         format!("{} · {}", self.world.ghost.name, self.doing())
+            .chars()
+            .filter(|character| !character.is_control())
+            .collect()
     }
 
     fn scroll_journal(&mut self, key: Key) -> Response {
@@ -755,7 +760,13 @@ fn local_time() -> (jiff::civil::Date, f32) {
 /// Saved values are kept within their ranges and the furniture stays where
 /// the room puts it, so a hand-edited or damaged save can't break the world.
 pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
-    let name: String = save.name.trim().chars().take(24).collect();
+    let name: String = save
+        .name
+        .trim()
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(24)
+        .collect();
     if !name.is_empty() {
         world.ghost.name = name;
     }
@@ -985,6 +996,9 @@ mod tests {
         assert_eq!(app.title(), "Boo · asleep on the cushion");
         app.world.ghost.name = "Pip".into();
         assert_eq!(app.title(), "Pip · asleep on the cushion");
+        // A name can't end the title's escape sequence and send its own.
+        app.world.ghost.name = "Pip\u{7}\u{1b}[2J".into();
+        assert_eq!(app.title(), "Pip[2J · asleep on the cushion");
     }
 
     #[test]

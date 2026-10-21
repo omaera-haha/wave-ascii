@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 
 use crate::store::{Config, Memory, Remark, Speaker};
-use crate::world::{Activity, EventKind, Understanding, World};
+use crate::world::{Activity, EventKind, Tone, Understanding, World};
 use claude::{Cache, Claude, Effort, Reply};
 use decision::Decision;
 use jev::Jev;
@@ -311,7 +311,10 @@ impl Mind {
                 trim(&mut self.journal.conversation, REMARKS_KEPT);
             }
         }
-        if let Some(jev) = &self.jev {
+        // A no asks for nothing to be done.
+        if let Some(jev) = &self.jev
+            && heard.tone != Some(Tone::Scolding)
+        {
             let jev = jev.clone();
             let questions = decision::request_questions(&Activity::ALL);
             let state = serde_json::Value::String(text.to_owned());
@@ -474,7 +477,12 @@ impl Mind {
             });
             trim(&mut self.journal.memories, MEMORIES_KEPT);
         }
-        let name: String = reflection.name.chars().take(24).collect();
+        let name: String = reflection
+            .name
+            .chars()
+            .filter(|character| !character.is_control())
+            .take(24)
+            .collect();
         if !name.is_empty() {
             world.ghost.name = name;
         }

@@ -33,7 +33,10 @@ impl Postcard {
                 "{} · {}, {hour:02}:{minute:02} · {doing}",
                 world.ghost.name,
                 world.date.strftime("%-d %B %Y"),
-            ),
+            )
+            .chars()
+            .filter(|character| !character.is_control())
+            .collect(),
         }
     }
 

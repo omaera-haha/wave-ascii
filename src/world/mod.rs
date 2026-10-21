@@ -248,6 +248,9 @@ struct Listening {
     at: f64,
     /// What it did because of the words, when, and whether it was a guess.
     acted: Option<(Activity, f64, bool)>,
+    /// The words of the very latest message, which may have none, for a
+    /// mind working out what that message asked.
+    latest: Vec<String>,
     /// Whether the viewer already showed it what they meant.
     shown: bool,
 }
@@ -832,7 +835,10 @@ impl World {
         self.life.vocabulary.hear(&reading.words);
 
         let mut learned = Vec::new();
-        if let Some(activity) = busy {
+        let scolded = reading.tone == Some(Tone::Scolding);
+        if let Some(activity) = busy
+            && !scolded
+        {
             learned.extend(self.learn(&reading.words, activity, NAMED));
         }
         let acted = self
@@ -868,7 +874,8 @@ impl World {
         }
 
         let vocabulary = &self.life.vocabulary;
-        let understanding = if reading.words.is_empty() {
+        // Words said with a no, as in "no spin", ask for nothing.
+        let understanding = if reading.words.is_empty() || scolded {
             Understanding::Nothing
         } else if let Some((word, activity)) = vocabulary.meaning(&reading.words) {
             if self.options().contains(&activity) {
@@ -895,8 +902,10 @@ impl World {
                 at: self.time,
                 acted: None,
                 shown: false,
+                latest: Vec::new(),
             };
         }
+        self.listening.latest = reading.words.clone();
         match &understanding {
             Understanding::Doing { activity, .. } => {
                 let activity = *activity;
@@ -963,12 +972,20 @@ impl World {
     /// `activity`. The ghost takes that as what the words mean, and does it
     /// if it can.
     pub fn heed(&mut self, activity: Activity) {
-        if self.time - self.listening.at < HEEDED_FOR {
-            let words = self.listening.words.clone();
+        let words = self.listening.latest.clone();
+        if !words.is_empty() && self.time - self.listening.at < HEEDED_FOR {
             self.learn(&words, activity, ROUTED);
         }
         if self.options().contains(&activity) {
-            self.heed_now(activity);
+            let plan = &self.ghost.plan;
+            if plan.done || plan.activity != activity {
+                self.begin(activity);
+            }
+            // Praise or a no for it later is about these words, if it had
+            // any of its own.
+            if !words.is_empty() {
+                self.listening.acted = Some((activity, self.time, false));
+            }
         }
     }
 
@@ -2544,6 +2561,54 @@ mod tests {
                 < 2.0
         );
         assert_eq!(world.life.vocabulary.meaning(&["spin".to_owned()]), None);
+    }
+
+    #[test]
+    fn a_no_with_a_known_word_stops_the_ghost_without_starting_it_again() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world
+            .life
+            .vocabulary
+            .teach(&["spin".to_owned()], Activity::Dance, 2.0);
+        world.begin(Activity::Dance);
+        run(&mut world, 1.0);
+        let heard = world.hear("no spin!");
+        assert!(heard.stopped);
+        assert_eq!(heard.understanding, Understanding::Nothing);
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
+        assert_eq!(
+            world
+                .life
+                .vocabulary
+                .evidence(&["spin".to_owned()], Activity::Dance),
+            2.0
+        );
+    }
+
+    #[test]
+    fn a_mind_routing_a_message_without_words_teaches_nothing() {
+        let mut world = World::new(6, 23.0);
+        world.notice_viewer();
+        world.hear("twirl");
+        world.hear("goodnight");
+        world.heed(Activity::Rest);
+        assert_eq!(
+            world
+                .life
+                .vocabulary
+                .evidence(&["twirl".to_owned()], Activity::Rest),
+            0.0
+        );
+        // Praise afterward isn't about the earlier word either.
+        world.hear("good");
+        assert_eq!(
+            world
+                .life
+                .vocabulary
+                .evidence(&["twirl".to_owned()], Activity::Rest),
+            0.0
+        );
     }
 
     #[test]
