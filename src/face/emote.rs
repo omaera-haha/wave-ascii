@@ -3,7 +3,7 @@ use std::f32::consts::TAU;
 use glam::{Vec2, Vec3};
 
 use super::mood::random;
-use crate::world::{Activity, EventKind, Mood, Outcome, Thing, World};
+use crate::world::{Activity, EventKind, Mood, Outcome, Quirk, Thing, World};
 
 /// Seconds a symbol takes to rise and drift away.
 const LIFETIME: f64 = 2.2;
@@ -21,6 +21,10 @@ pub enum Emote {
     Anger,
     Sigh,
     Sparkle,
+    Hiccup,
+    Sneeze,
+    Yawn,
+    Shiver,
 }
 
 impl Emote {
@@ -35,6 +39,10 @@ impl Emote {
             Self::Anger => "#",
             Self::Sigh => "…",
             Self::Sparkle => "✦",
+            Self::Hiccup => "hic",
+            Self::Sneeze => "achoo",
+            Self::Yawn => "○",
+            Self::Shiver => "〰",
         }
     }
 
@@ -49,6 +57,9 @@ impl Emote {
             Self::Anger => Vec3::new(1.0, 0.45, 0.3),
             Self::Sigh => Vec3::new(0.7, 0.65, 0.8),
             Self::Sparkle => Vec3::new(1.0, 0.8, 0.35),
+            Self::Hiccup | Self::Yawn => mood_color,
+            Self::Sneeze => Vec3::new(1.0, 0.85, 0.6),
+            Self::Shiver => Vec3::new(0.45, 0.7, 1.0),
         }
     }
 }
@@ -127,6 +138,10 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 
     if ghost.asleep <= 0.5 {
         for (index, event) in world.events.iter().enumerate() {
+            // A spell supplies its current pulse, including repeated hiccups.
+            if matches!(event.kind, EventKind::Quirk(_)) {
+                continue;
+            }
             if event.kind == EventKind::Tended && world.garden_recovering() {
                 add(event.time, Emote::Heart);
                 continue;
@@ -173,6 +188,18 @@ pub fn puffs(world: &World) -> Vec<Puff> {
         }
     }
 
+    if let Some(spell) = world.active_quirk()
+        && let Some(emote) = reaction(&EventKind::Quirk(spell.kind), world.life.bond)
+    {
+        let start = spell.pulse_started(world.time)
+            + if spell.kind == Quirk::Sneeze {
+                1.0
+            } else {
+                0.0
+            };
+        add(start, emote);
+    }
+
     starts.sort_by(|first, second| first.0.total_cmp(&second.0));
     let keep_from = starts.len().saturating_sub(3);
     starts
@@ -200,6 +227,12 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 // has grown fond of the viewer.
 fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
     Some(match event {
+        EventKind::Heard(text) if crate::world::quirks::yawn_message(text) => return None,
+        EventKind::Quirk(Quirk::Hiccups) => Emote::Hiccup,
+        EventKind::Quirk(Quirk::Sneeze) => Emote::Sneeze,
+        EventKind::Quirk(Quirk::Yawn) => Emote::Yawn,
+        EventKind::Quirk(Quirk::Shiver) => Emote::Shiver,
+        EventKind::Quirk(Quirk::Sigh) => Emote::Sigh,
         EventKind::SawPasserby(kind) if kind.delighted() => Emote::Sparkle,
         EventKind::SawPasserby(_) => Emote::Question,
         EventKind::Noticed(thing)

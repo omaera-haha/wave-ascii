@@ -18,7 +18,9 @@ pub enum Expression {
     Wink,
     /// The eyes dart toward `toward`, from -1 to 1 across and up, rest there,
     /// and come back.
-    Glance { toward: Vec2 },
+    Glance {
+        toward: Vec2,
+    },
     /// The eyes look to one side, then up to the other.
     LookAround,
     /// The eyes close into happy arcs.
@@ -42,6 +44,11 @@ pub enum Expression {
     Prompt,
     /// The eyes squeeze shut, then open wide with a little upward lift.
     Stretch,
+    Hiccup,
+    /// A slow squint and inhale followed by a squeezed release and wide blink.
+    Sneeze,
+    Yawn,
+    Sigh,
 }
 
 impl Expression {
@@ -64,6 +71,10 @@ impl Expression {
             Self::Skeptical => 2.15,
             Self::Sparkle => 2.7,
             Self::Prompt => 4.3,
+            Self::Hiccup => 0.65,
+            Self::Sneeze => 1.8,
+            Self::Yawn => 4.5,
+            Self::Sigh => 4.0,
         }
     }
 
@@ -86,6 +97,10 @@ impl Expression {
             Self::Skeptical => skeptical(time),
             Self::Sparkle => sparkle(time),
             Self::Prompt => prompt(time),
+            Self::Hiccup => hiccup(time),
+            Self::Sneeze => sneeze(time),
+            Self::Yawn => yawn(time),
+            Self::Sigh => sigh(time),
         }
     }
 }
@@ -199,6 +214,42 @@ fn stretch(time: f32) -> Face {
     }
 }
 
+fn hiccup(time: f32) -> Face {
+    Face {
+        shut: [swell(time, 0.07, 0.13, 0.25); 2],
+        widen: swell(time, 0.23, 0.35, 0.65) * 0.55,
+        gaze: Vec2::new(0.0, 0.3 * swell(time, 0.12, 0.3, 0.65)),
+        ..Face::REST
+    }
+}
+
+fn sneeze(time: f32) -> Face {
+    Face {
+        lid: [0.6 * swell(time, 0.65, 0.9, 1.05); 2],
+        shut: [swell(time, 0.95, 1.05, 1.2); 2],
+        widen: ease_through(&[(1.05, 0.0), (1.25, 0.75), (1.4, 0.75), (1.8, 0.0)], time),
+        gaze: Vec2::new(0.0, 0.2 * swell(time, 0.6, 0.9, 1.8)),
+        ..Face::REST
+    }
+}
+
+fn yawn(time: f32) -> Face {
+    Face {
+        shut: [0.9 * swell(time, 1.2, 3.0, 4.5); 2],
+        mouth: swell(time, 1.6, 2.8, 4.5).clamp(0.0, 1.0),
+        gaze: Vec2::new(0.0, 0.2 * swell(time, 1.2, 3.0, 4.5)),
+        ..Face::REST
+    }
+}
+
+fn sigh(time: f32) -> Face {
+    Face {
+        shut: [0.85 * swell(time, 1.2, 2.6, 4.0); 2],
+        gaze: Vec2::new(0.0, -0.18 * swell(time, 1.2, 2.6, 4.0)),
+        ..Face::REST
+    }
+}
+
 fn suspicious(time: f32) -> Face {
     let across = ease_through(
         &[
@@ -284,7 +335,7 @@ fn swell(time: f32, full: f32, fade: f32, end: f32) -> f32 {
 mod tests {
     use super::*;
 
-    const ALL: [Expression; 15] = [
+    const ALL: [Expression; 19] = [
         Expression::Blink,
         Expression::DoubleBlink,
         Expression::Wink,
@@ -302,6 +353,10 @@ mod tests {
         Expression::Sparkle,
         Expression::Prompt,
         Expression::Stretch,
+        Expression::Hiccup,
+        Expression::Sneeze,
+        Expression::Yawn,
+        Expression::Sigh,
     ];
 
     #[test]
@@ -343,6 +398,7 @@ mod tests {
                     && unit.contains(&face.sparkle)
                     && unit.contains(&face.prompt)
                     && unit.contains(&face.cursor);
+                let in_range = in_range && unit.contains(&face.mouth);
                 assert!(in_range, "{expression:?} at {time}: {face:?}");
             }
         }

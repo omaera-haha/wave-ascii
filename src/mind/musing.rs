@@ -352,6 +352,9 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if let Some(spell) = world.active_quirk() {
+        lines.extend_from_slice(spell.kind.thoughts());
+    }
     if world.enjoying_air() {
         lines.extend(["The air smells like rain.", "The breeze tickles my hem."]);
         if world.season() == crate::world::Season::Autumn {
@@ -1687,6 +1690,16 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ongoing_yawn_adds_a_sleepy_thought_and_focus_keeps_its_quiet_lines() {
+        let mut world = World::new(1, 12.0);
+        world.hear("하암");
+        world.step(3.0);
+        assert!(idle(&world).contains(&"Haaah… sleepy light."));
+        world.start_focus(25);
+        assert!(!idle(&world).contains(&"Haaah… sleepy light."));
+    }
 
     #[test]
     fn window_requests_answer_in_both_languages_without_teaching_words_or_routing() {

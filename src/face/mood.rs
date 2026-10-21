@@ -3,7 +3,7 @@ use glam::Vec2;
 use super::Face;
 use super::expression::Expression;
 use crate::sdf::smoothstep;
-use crate::world::{EventKind, Mood, Outcome};
+use crate::world::{EventKind, Mood, Outcome, Quirk};
 
 /// Seconds a reaction takes to take over the face and to give it back.
 const FADE: f32 = 0.15;
@@ -81,6 +81,12 @@ pub fn face(time: f64, cues: &Cues) -> Face {
 /// The expression the face answers an event with, if any.
 pub fn reaction(event: &EventKind) -> Option<Expression> {
     Some(match event {
+        EventKind::Heard(text) if crate::world::quirks::yawn_message(text) => return None,
+        EventKind::Quirk(Quirk::Hiccups) => Expression::Hiccup,
+        EventKind::Quirk(Quirk::Sneeze) => Expression::Sneeze,
+        EventKind::Quirk(Quirk::Yawn) => Expression::Yawn,
+        EventKind::Quirk(Quirk::Shiver) => Expression::Worry,
+        EventKind::Quirk(Quirk::Sigh) => Expression::Sigh,
         EventKind::SawPasserby(kind) if kind.delighted() => Expression::Sparkle,
         EventKind::SawPasserby(_) => Expression::LookAround,
         EventKind::FocusEnded {

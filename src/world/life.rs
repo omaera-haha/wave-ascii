@@ -189,6 +189,8 @@ pub struct Tally {
     pub word_games: u32,
     #[serde(default)]
     pub words_guessed: u32,
+    #[serde(default)]
+    pub quirks: BTreeMap<super::Quirk, u32>,
 }
 
 impl Tally {
@@ -199,6 +201,10 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::Quirk(quirk) => {
+                let count = self.quirks.entry(*quirk).or_default();
+                *count = count.saturating_add(1);
+            }
             EventKind::SawPasserby(passerby) => {
                 self.passersby = self.passersby.saturating_add(1);
                 if !self.passerby_kinds.contains(passerby) {
@@ -361,6 +367,12 @@ impl Tally {
             .iter()
             .map(|occasion| occasion.diary_words().to_owned())
             .collect();
+        deeds.extend(super::Quirk::ALL.into_iter().filter_map(|kind| {
+            self.quirks
+                .get(&kind)
+                .filter(|count| **count > 0)
+                .map(|count| kind.diary(*count))
+        }));
         if self.focus_sessions > 0 {
             deeds.push(format!(
                 "kept you company through {} focus {}",
@@ -1123,6 +1135,10 @@ impl Life {
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
+            tally.quirks.retain(|_, count| {
+                *count = (*count).min(100_000_000);
+                *count > 0
+            });
             tally.passersby = tally.passersby.min(100_000_000);
             let mut kinds = Vec::new();
             for kind in &tally.passerby_kinds {

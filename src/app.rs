@@ -920,6 +920,7 @@ impl App {
             .events
             .iter()
             .filter(|event| world.time - event.time < REACTION_WINDOW)
+            .filter(|event| !matches!(event.kind, crate::world::EventKind::Quirk(_)))
             .filter(|event| event.kind != crate::world::EventKind::BirdSang || ghost.asleep <= 0.5)
             .filter_map(|event| {
                 let reaction = if matches!(
@@ -948,6 +949,13 @@ impl App {
                     .cmp(&matches!(other_expression, Expression::Stretch))
             })
         });
+        let quirk = world.active_quirk();
+        if let Some(spell) = quirk
+            && let Some(expression) =
+                face::mood::reaction(&crate::world::EventKind::Quirk(spell.kind))
+        {
+            reactions.push((spell.pulse_started(world.time), expression));
+        }
         let face = face::mood::face(
             world.time,
             &Cues {
@@ -961,7 +969,12 @@ impl App {
         );
         let energy = ghost.needs.energy;
         let aura = Aura {
-            color: self.aura,
+            color: self.aura.lerp(
+                Vec3::new(0.45, 0.7, 1.0),
+                quirk
+                    .filter(|spell| spell.kind == crate::world::Quirk::Shiver)
+                    .map_or(0.0, |spell| 0.5 * spell.envelope(world.time)),
+            ),
             visibility: 1.0 - ghost.fade,
             brightness: 0.25 + 0.75 * energy,
             beat: beat(ghost.mood) * (0.6 + 0.4 * energy),
@@ -976,7 +989,8 @@ impl App {
         .in_breeze(
             world.breeze_at(ghost.position).dot(view.right),
             world.window_shake(),
-        );
+        )
+        .with_quirk(quirk, world.time);
         let friend =
             world
                 .friend

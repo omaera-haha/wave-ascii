@@ -65,6 +65,16 @@ impl Pose {
         self
     }
 
+    pub fn with_quirk(mut self, spell: Option<crate::world::quirks::Spell>, time: f64) -> Self {
+        if let Some(spell) = spell {
+            let motion = spell.motion(time);
+            self.lift += motion.lift;
+            self.lean += motion.lean;
+            self.stretch += motion.stretch;
+        }
+        self
+    }
+
     /// Moves a point of the billboard into the body's frame, where it stands
     /// upright with its head at `HEAD_CENTER`.
     fn place(&self, point: Vec2) -> Vec2 {
