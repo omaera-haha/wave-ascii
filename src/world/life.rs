@@ -60,6 +60,7 @@ pub struct Tally {
     pub blooms: u32,
     pub naps: u32,
     pub showers: u32,
+    pub storms: u32,
     pub snowfalls: u32,
     /// Rainbows it caught sight of.
     pub rainbows: u32,
@@ -98,6 +99,7 @@ impl Tally {
             EventKind::Bloomed => self.blooms += 1,
             EventKind::FellAsleep => self.naps += 1,
             EventKind::RainStarted => self.showers += 1,
+            EventKind::StormStarted => self.storms += 1,
             EventKind::SnowStarted => self.snowfalls += 1,
             EventKind::Noticed(thing) if thing.starts_with("the rainbow") => self.rainbows += 1,
             EventKind::Heard(_) => self.heard += 1,
@@ -159,6 +161,9 @@ impl Tally {
         }
         if self.snowfalls > 0 {
             deeds.push("watched the snow fall".to_owned());
+        }
+        if self.storms > 0 {
+            deeds.push("sat out a thunderstorm".to_owned());
         }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
@@ -399,6 +404,9 @@ impl Life {
             {
                 "Saw my first rainbow.".to_owned()
             }
+            EventKind::StormStarted if total.storms == 1 => {
+                "Sat out my first thunderstorm.".to_owned()
+            }
             EventKind::SnowStarted if total.snowfalls == 1 => {
                 "Saw snow fall for the first time.".to_owned()
             }
@@ -559,6 +567,26 @@ mod tests {
         assert_eq!(life.diary.len(), 1);
         assert_eq!(life.diary[0].day, "2026-10-20");
         assert!(life.diary[0].text.starts_with("Ate 2 light motes"));
+    }
+
+    #[test]
+    fn storms_count_once_and_leave_a_diary_entry_without_changing_the_bond() {
+        let mut life = Life::default();
+        life.begin_day("2026-06-21");
+        life.note(&EventKind::StormStarted);
+        for _ in 0..12 {
+            life.note(&EventKind::Thunder);
+        }
+        assert_eq!((life.today.storms, life.total.storms), (1, 1));
+        assert_eq!(life.today.showers, 0);
+        assert_eq!(life.bond, 0.0);
+        life.begin_day("2026-06-22");
+        assert_eq!(life.today.storms, 0);
+        assert_eq!(
+            life.diary[0].text,
+            "Sat out a thunderstorm. You didn't come by."
+        );
+        assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().storms, 0);
     }
 
     #[test]

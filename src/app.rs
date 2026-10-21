@@ -568,6 +568,9 @@ impl App {
                 outside: Outside {
                     hour: world.hour,
                     rain: world.weather.rain(world.time),
+                    storm: world.weather.storm,
+                    flash: world.weather.flash(world.time),
+                    last_flash: world.weather.last_flash,
                     rainbow: world.weather.rainbow(world.time),
                     season: world.season(),
                     snow: world.weather.snow(world.time),

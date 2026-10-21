@@ -36,7 +36,7 @@ const POKE_STREAK: f64 = 1.5;
 /// Recent events kept for the face and the minds.
 const EVENTS_KEPT: usize = 80;
 /// How close the ghost must feel to the viewer to come and greet them.
-const GREETS_FROM: f32 = 0.3;
+pub(crate) const GREETS_FROM: f32 = 0.3;
 
 /// Something that happened, which the ghost's face reacts to and its minds
 /// hear about.
@@ -84,6 +84,8 @@ pub enum EventKind {
     /// A first or a landmark in the ghost's life, in its own words.
     Milestone(String),
     RainStarted,
+    StormStarted,
+    Thunder,
     RainStopped,
     SnowStarted,
     SnowStopped,
@@ -131,6 +133,8 @@ impl EventKind {
             Self::Noticed(thing) => format!("spotted {thing}"),
             Self::Milestone(text) => format!("a moment to remember: {text}"),
             Self::RainStarted => "it started to rain outside".to_owned(),
+            Self::StormStarted => "a thunderstorm rolled in".to_owned(),
+            Self::Thunder => "thunder rumbled outside".to_owned(),
             Self::RainStopped => "the rain stopped".to_owned(),
             Self::SnowStarted => "it started to snow outside".to_owned(),
             Self::SnowStopped => "the snow stopped".to_owned(),
@@ -328,6 +332,8 @@ impl World {
             }
             self.record(match change {
                 Change::RainStarted => EventKind::RainStarted,
+                Change::StormStarted => EventKind::StormStarted,
+                Change::Thunder => EventKind::Thunder,
                 Change::RainStopped => EventKind::RainStopped,
                 Change::SnowStarted => EventKind::SnowStarted,
                 Change::SnowStopped => EventKind::SnowStopped,
@@ -336,6 +342,10 @@ impl World {
             });
         }
         self.weather.advance(self.time, seconds, daytime);
+        if self.weather.advance_storm(self.time, &mut self.random) == Some(Change::Thunder) {
+            self.record(EventKind::Thunder);
+            self.hear_thunder();
+        }
 
         let obstacles = self.obstacles();
         self.ball.roll(seconds, &obstacles);
@@ -484,6 +494,7 @@ impl World {
             Activity::Window => {
                 let outside = match self.weather.sky {
                     Sky::Rainbow => ", where a rainbow is shining",
+                    Sky::Rain if self.weather.storm => ", where a thunderstorm is rumbling",
                     Sky::Rain => ", where it is raining",
                     Sky::Snow => ", where snow is falling",
                     Sky::Clear if self.is_night() => " at the night sky",
@@ -729,6 +740,29 @@ impl World {
             self.record(EventKind::WokeUp);
         }
         if self.ghost.plan.activity == Activity::Rest {
+            self.ghost.plan.done = true;
+        }
+    }
+
+    fn hear_thunder(&mut self) {
+        if self.ghost.asleep > 0.3 {
+            if self.random.unit() >= 1.0 / 3.0 {
+                return;
+            }
+            self.wake();
+        }
+        self.ghost.velocity += Vec3::new(self.random.range(-0.25, 0.25), 0.3, 0.12);
+        if self.viewer_present() && self.life.bond >= GREETS_FROM {
+            if !matches!(
+                self.ghost.plan.activity,
+                Activity::Rest | Activity::Tend | Activity::Fetch
+            ) {
+                self.begin(Activity::Visit);
+            }
+        } else if matches!(
+            self.ghost.plan.activity,
+            Activity::Float | Activity::Explore | Activity::Window
+        ) {
             self.ghost.plan.done = true;
         }
     }
@@ -1213,6 +1247,13 @@ impl World {
         if self.weather.rainbow(self.time) > 0.3 && ghost.saw_rainbow {
             return Mood::Excited;
         }
+        if ghost.asleep <= 0.3 && recent(8.0).any(|event| event.kind == EventKind::Thunder) {
+            return if self.viewer_present() {
+                Mood::Curious
+            } else {
+                Mood::Lonely
+            };
+        }
         if self.weather.snow(self.time) > 0.3 && ghost.saw_snow {
             return Mood::Curious;
         }
@@ -1235,6 +1276,192 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn before_thunder(seed: u64) -> World {
+        let mut world = World::new(seed, 12.0);
+        world.time = 40.0;
+        world.weather.sky = Sky::Rain;
+        world.weather.storm = true;
+        world.weather.until = 300.0;
+        world.weather.thunder_at = Some(40.05);
+        world
+    }
+
+    #[test]
+    fn thunder_draws_the_ghost_to_a_trusted_viewer_at_the_glass() {
+        for bond in [GREETS_FROM, 0.9] {
+            let mut world = before_thunder(1);
+            world.notice_viewer();
+            world.life.bond = bond;
+            world.begin(Activity::Play);
+            world.step(0.1);
+            assert_eq!(world.ghost.plan.activity, Activity::Visit);
+            assert_eq!(world.ghost.plan.target, world.glass_spot());
+            assert!(
+                world
+                    .events
+                    .iter()
+                    .any(|event| event.kind == EventKind::Thunder)
+            );
+            assert_eq!(world.ghost.mood, Mood::Curious);
+        }
+    }
+
+    #[test]
+    fn thunder_ends_idle_plans_without_sending_a_stranger_or_an_absent_friend_to_the_glass() {
+        for (bond, present) in [(0.0, true), (0.9, false)] {
+            for activity in [
+                Activity::Float,
+                Activity::Explore,
+                Activity::Window,
+                Activity::Play,
+            ] {
+                let mut world = before_thunder(1);
+                if present {
+                    world.notice_viewer();
+                }
+                world.life.bond = bond;
+                world.begin(activity);
+                let velocity = world.ghost.velocity;
+                world.step(0.1);
+                assert_eq!(world.ghost.plan.activity, activity);
+                assert_eq!(world.ghost.plan.done, activity != Activity::Play);
+                assert!(world.ghost.velocity.y > velocity.y);
+                assert_eq!(
+                    world.ghost.mood,
+                    if present { Mood::Curious } else { Mood::Lonely }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn thunder_leaves_resting_tending_and_fetching_alone() {
+        for activity in [Activity::Rest, Activity::Tend, Activity::Fetch] {
+            let mut world = before_thunder(1);
+            world.notice_viewer();
+            world.life.bond = 0.9;
+            world.begin(activity);
+            world.step(0.1);
+            assert_eq!(world.ghost.plan.activity, activity);
+            assert!(!world.ghost.plan.done);
+        }
+    }
+
+    #[test]
+    fn thunder_sometimes_wakes_a_sleeping_ghost_and_the_seed_decides() {
+        let mut awakened = 0;
+        for seed in 0..150 {
+            let mut world = before_thunder(seed);
+            world.begin(Activity::Rest);
+            world.ghost.position = world.nook.bed();
+            world.ghost.plan.arrived = Some(world.time);
+            world.ghost.asleep = 1.0;
+            world.ghost.needs.energy = 0.5;
+            let mut same = world.clone();
+            world.step(0.1);
+            same.step(0.1);
+            assert_eq!(world.events, same.events);
+            assert_eq!(world.ghost.asleep, same.ghost.asleep);
+            assert_eq!(world.ghost.velocity, same.ghost.velocity);
+            let woke = world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::WokeUp);
+            assert_eq!(woke, world.ghost.asleep == 0.0);
+            if woke {
+                assert!(world.ghost.plan.done);
+                awakened += 1;
+            } else {
+                assert_eq!(world.ghost.asleep, 1.0);
+            }
+        }
+        assert!((30..70).contains(&awakened), "{awakened}");
+    }
+
+    #[test]
+    fn thunder_feelings_fade_and_yield_to_sleep_annoyance_and_delight() {
+        let mut world = before_thunder(1);
+        world.record(EventKind::Thunder);
+        assert_eq!(world.feeling(), Mood::Lonely);
+        world.notice_viewer();
+        assert_eq!(world.feeling(), Mood::Curious);
+        world.time += 8.0;
+        assert_ne!(world.feeling(), Mood::Curious);
+        world.record(EventKind::Thunder);
+        world.record(EventKind::AteMote);
+        assert_eq!(world.feeling(), Mood::Excited);
+        world.record(EventKind::Poked { count: 3 });
+        assert_eq!(world.feeling(), Mood::Grumpy);
+        world.ghost.needs.energy = 0.1;
+        assert_eq!(world.feeling(), Mood::Sleepy);
+    }
+
+    #[test]
+    fn storm_starts_are_recorded_instead_of_plain_rain_and_stop_at_winter() {
+        let mut storms = 0;
+        for seed in 0..100 {
+            let mut world = World::new(seed, 12.0);
+            world.weather.until = 0.05;
+            world.step(0.1);
+            if world.weather.storm {
+                storms += 1;
+                assert_eq!(world.life.today.storms, 1);
+                assert_eq!(world.life.total.storms, 1);
+                assert_eq!(world.life.today.showers, 0);
+                assert!(
+                    world
+                        .events
+                        .iter()
+                        .any(|event| event.kind == EventKind::StormStarted)
+                );
+                assert!(
+                    !world
+                        .events
+                        .iter()
+                        .any(|event| event.kind == EventKind::RainStarted)
+                );
+                world.date = "2026-12-21".parse().unwrap();
+                world.step(0.1);
+                assert_eq!(world.weather.sky, Sky::Snow);
+                assert!(!world.weather.storm);
+                assert_eq!(world.weather.flash(world.time), 0.0);
+            }
+        }
+        assert!(storms > 10);
+    }
+
+    #[test]
+    fn each_lightning_strike_reaches_the_world_as_one_delayed_thunder_event() {
+        for seed in 0..10 {
+            let mut world = World::new(seed, 12.0);
+            world.weather.sky = Sky::Rain;
+            world.weather.storm = true;
+            world.weather.until = 200.0;
+            let mut strikes = Vec::new();
+            while world.time < 205.0 {
+                let last_flash = world.weather.last_flash;
+                world.step(0.1);
+                if world.weather.last_flash.is_finite() && world.weather.last_flash != last_flash {
+                    assert!(world.weather.rain(world.time) > 0.6);
+                    strikes.push((world.weather.last_flash, world.weather.thunder_at.unwrap()));
+                }
+            }
+            let thunder: Vec<_> = world
+                .events
+                .iter()
+                .filter(|event| event.kind == EventKind::Thunder)
+                .collect();
+            assert!(strikes.len() > 4);
+            assert_eq!(thunder.len(), strikes.len());
+            for (event, (strike, due)) in thunder.into_iter().zip(strikes) {
+                assert!((1.0..=4.0).contains(&(due - strike)));
+                assert!((due..=due + 0.1).contains(&event.time));
+            }
+            assert!(!world.weather.storm);
+            assert_eq!(world.weather.flash(world.time), 0.0);
+        }
+    }
 
     fn run(world: &mut World, seconds: f32) {
         for _ in 0..(seconds * 20.0) as usize {

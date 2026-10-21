@@ -12,6 +12,9 @@ pub const WINDOW_HIGH: Vec2 = Vec2::new(0.75, 2.0);
 pub struct Outside {
     pub hour: f32,
     pub rain: f32,
+    pub storm: bool,
+    pub flash: f32,
+    pub last_flash: f64,
     pub rainbow: f32,
     pub season: Season,
     pub snow: f32,
@@ -26,6 +29,9 @@ impl Outside {
         Self {
             hour,
             rain: 0.0,
+            storm: false,
+            flash: 0.0,
+            last_flash: f64::NEG_INFINITY,
             rainbow: 0.0,
             season: Season::Summer,
             snow: 0.0,
@@ -68,8 +74,10 @@ pub fn light_through(outside: &Outside) -> Vec3 {
     let noon = (1.0 - (outside.hour.rem_euclid(24.0) - 12.0).abs() / 6.0).max(0.0);
     let strength = sky.day * (0.65 + 0.25 * noon) + sky.twilight * 0.15;
     let cloud = outside.rain.max(outside.snow * 0.65);
-    weather_color((sky.horizon + sky.zenith) * 0.5, cloud) * strength
+    let storm = if outside.storm { outside.rain } else { 0.0 };
+    weather_color((sky.horizon + sky.zenith) * 0.5, cloud) * strength * (1.0 - storm * 0.35)
         + Vec3::new(0.055, 0.075, 0.1) * outside.snow_cover.clamp(0.0, 1.0) * sky.day
+        + Vec3::new(1.4, 1.7, 2.2) * outside.flash.clamp(0.0, 1.0)
 }
 
 struct Sky {
@@ -102,6 +110,8 @@ impl Sky {
 fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     let sky = Sky::at_hour(outside.hour);
     let rain = outside.rain.clamp(0.0, 1.0);
+    let storm = if outside.storm { rain } else { 0.0 };
+    let flash = outside.flash.clamp(0.0, 1.0);
     let snow = outside.snow.clamp(0.0, 1.0);
     let cloud = rain.max(snow * 0.85);
     let mut color = sky.horizon.lerp(sky.zenith, coordinates.y);
@@ -151,13 +161,14 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     let drift = phase(outside.time, 0.012, 64.0);
     let clouds = noise(coordinates * Vec2::new(4.5, 6.0) - Vec2::X * drift) * 0.65
         + noise(coordinates * Vec2::new(9.0, 12.0) - Vec2::X * drift * 2.0) * 0.35;
-    let clouds = smoothstep(0.5, 0.74, clouds)
+    let clouds = smoothstep(0.5 - storm * 0.15, 0.74 - storm * 0.15, clouds)
         * smoothstep(0.26, 0.4, coordinates.y)
         * (1.0 - smoothstep(0.85, 1.0, coordinates.y));
     let cloud_color = Vec3::new(0.055, 0.065, 0.1)
         .lerp(Vec3::new(0.94, 0.96, 1.0), sky.day)
         .lerp(Vec3::new(0.86, 0.57, 0.63), sky.twilight);
-    color = weather_color(color.lerp(cloud_color, clouds * 0.6), cloud);
+    color = weather_color(color.lerp(cloud_color, clouds * 0.6), cloud) * (1.0 - storm * 0.35);
+    color = color.lerp(Vec3::new(0.75, 0.86, 1.0), flash * 0.85);
 
     let land = match outside.season {
         Season::Spring => [
@@ -212,7 +223,12 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
         * (1.0 - rain * 0.65)
         * smoothstep(hills[0].0, hills[0].0 + 0.08, coordinates.y);
 
-    let land_light = 0.04 + sky.day * 0.85 + sky.twilight * 0.18;
+    if flash > 0.0 {
+        color += Vec3::new(0.85, 0.92, 1.0)
+            * lightning(coordinates, footprint, outside.last_flash)
+            * flash;
+    }
+    let land_light = 0.04 + sky.day * 0.85 + sky.twilight * 0.18 + flash * 0.6;
     for (index, (height, land)) in hills.into_iter().enumerate() {
         let white = Vec3::new(0.78, 0.86, 0.96) + Vec3::splat(index as f32 * 0.015);
         let land = land.lerp(white, outside.snow_cover.clamp(0.0, 1.0));
@@ -244,6 +260,34 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     let along = (fraction.y - 0.5).abs() / 7.0 - 0.035;
     let streak = coverage(across.max(along), footprint * 0.5);
     color + Vec3::splat(0.36) * streak * rain
+}
+
+fn lightning(coordinates: Vec2, footprint: f32, last_flash: f64) -> f32 {
+    let random = |salt: u64| {
+        let mut bits = last_flash.to_bits() ^ salt.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        bits = (bits ^ (bits >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        bits = (bits ^ (bits >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((bits ^ (bits >> 31)) >> 40) as f32 / (1u64 << 24) as f32
+    };
+    let across = 0.3 + random(0) * 0.4;
+    let points: [Vec2; 6] = std::array::from_fn(|index| {
+        let side = if index % 2 == 0 { -1.0 } else { 1.0 };
+        Vec2::new(
+            across + side * (0.025 + random(index as u64 + 1) * 0.065),
+            0.88 - index as f32 * 0.14,
+        )
+    });
+    let mut distance = f32::INFINITY;
+    for segment in points.windows(2) {
+        distance = distance.min(capsule(coordinates, segment[0], segment[1], 0.0025));
+    }
+    let side = if random(7) < 0.5 { -1.0 } else { 1.0 };
+    let branch = points[2] + Vec2::new(side * 0.1, -0.06);
+    let end = branch + Vec2::new(side * 0.05, -0.1);
+    distance = distance
+        .min(capsule(coordinates, points[2], branch, 0.0015))
+        .min(capsule(coordinates, branch, end, 0.001));
+    coverage(distance, footprint * 0.5) + 0.2 * coverage(distance - 0.008, footprint * 0.5)
 }
 
 fn tree(
@@ -535,6 +579,38 @@ mod tests {
                                         assert!((0.0..=1.0).contains(&sample.frame));
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn storm_samples_and_room_light_stay_finite_during_lightning() {
+        for hour in [0.0, 6.5, 12.0, 19.5, 24.0] {
+            for last_flash in [0.0, 42.5, 1e9, f64::MAX] {
+                for flash in [0.0, 0.25, 0.5, 1.0] {
+                    let outside = Outside {
+                        rain: 1.0,
+                        storm: true,
+                        flash,
+                        last_flash,
+                        ..Outside::clear(hour, last_flash)
+                    };
+                    assert!(light_through(&outside).is_finite());
+                    for column in 0..=12 {
+                        for row in 0..=8 {
+                            for footprint in [0.0, 0.02, 0.2] {
+                                let sample = window(
+                                    point(column as f32 / 12.0, row as f32 / 8.0),
+                                    footprint,
+                                    &outside,
+                                )
+                                .unwrap();
+                                assert!(sample.sky.is_finite(), "{outside:?}");
+                                assert!(sample.frame.is_finite());
                             }
                         }
                     }

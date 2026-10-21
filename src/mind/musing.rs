@@ -57,6 +57,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
         Activity::Window => match world.weather.sky {
             Sky::Rainbow => vec!["Look, a rainbow!", "All the colors at once."],
+            Sky::Rain if world.weather.storm => vec!["Whoa, look at that!"],
             Sky::Rain => vec!["Listen to the rain.", "Pitter-patter."],
             Sky::Snow => vec!["It's snowing!", "Every flake is different, they say."],
             Sky::Clear if world.weather.snow_cover > 0.5 => {
@@ -100,6 +101,12 @@ pub fn idle(world: &World) -> Vec<&'static str> {
         lines.push("The flowers smell nice.");
     }
     match world.weather.sky {
+        Sky::Rain if world.weather.storm => {
+            lines.extend(["I don't like thunder.", "Is it over yet?"]);
+            if present && world.life.bond >= 0.3 {
+                lines.push("I'm glad you're here when it thunders.");
+            }
+        }
         Sky::Rain => lines.extend(["The rain sounds cozy.", "Drip, drop."]),
         Sky::Rainbow => lines.push("That rainbow is still there!"),
         Sky::Snow => lines.extend(["Snow, snow, snow.", "It looks cold out there."]),
@@ -167,6 +174,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     if today.snowfalls > 0 {
         lines.push("…the snow falls inside the glass, soft as light…");
     }
+    if today.storms > 0 {
+        lines.push("…thunder far away, like a drum…");
+    }
     if today.rainbows > 0 {
         lines.push("…sliding down a rainbow…");
     } else if today.showers > 0 {
@@ -225,5 +235,27 @@ mod tests {
             dreams(&world),
             ["…the ball rolls on and on, out into the hills…"]
         );
+    }
+
+    #[test]
+    fn storms_bring_worries_reassurance_from_a_friend_and_dreams_afterward() {
+        let mut world = World::new(1, 12.0);
+        world.weather.sky = Sky::Rain;
+        world.weather.storm = true;
+        assert!(setting_out(&world, Activity::Window).contains(&"Whoa, look at that!"));
+        assert!(idle(&world).contains(&"I don't like thunder."));
+        assert!(idle(&world).contains(&"Is it over yet?"));
+        let reassured = "I'm glad you're here when it thunders.";
+        assert!(!idle(&world).contains(&reassured));
+        world.notice_viewer();
+        assert!(!idle(&world).contains(&reassured));
+        world.life.bond = 0.3;
+        assert!(idle(&world).contains(&reassured));
+        world.viewer.active_at = 0.0;
+        assert!(!idle(&world).contains(&reassured));
+        world.life.note(&EventKind::StormStarted);
+        world.weather.storm = false;
+        assert!(dreams(&world).contains(&"…thunder far away, like a drum…"));
+        assert!(!idle(&world).contains(&"I don't like thunder."));
     }
 }
