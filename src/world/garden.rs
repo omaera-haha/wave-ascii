@@ -34,6 +34,17 @@ impl Flower {
         }
     }
 
+    /// Its name in Korean.
+    pub fn korean(self) -> &'static str {
+        match self {
+            Self::Daisy => "데이지",
+            Self::Tulip => "튤립",
+            Self::Sunflower => "해바라기",
+            Self::Bluebell => "초롱꽃",
+            Self::Poppy => "양귀비",
+        }
+    }
+
     fn choose(random: &mut Random) -> Self {
         let kinds = [
             Self::Daisy,

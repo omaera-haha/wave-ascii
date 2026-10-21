@@ -249,8 +249,20 @@ impl World {
             .as_ref()
             .map(|recognized| recognized.name.clone());
         self.record(EventKind::SawDrawing { name });
-        let line = match &recognition {
-            Some(recognized) if self.latest_korean => format!(
+        let korean = self.latest_korean || self.speaks_korean();
+        // A flower drawn while one of its own pots is in flower.
+        let season = self.season();
+        let blooming = recognition
+            .as_ref()
+            .filter(|recognized| recognized.sketch == Some(super::Sketch::Flower))
+            .and_then(|_| {
+                self.seedlings
+                    .iter()
+                    .find(|seedling| seedling.flowering(season))
+            })
+            .map(|seedling| seedling.kind);
+        let mut line = match &recognition {
+            Some(recognized) if korean => format!(
                 "{}!{}",
                 recognized.korean,
                 if recognized.learned {
@@ -261,8 +273,8 @@ impl World {
             ),
             Some(recognized) => {
                 format!(
-                    "A {}!{}",
-                    recognized.name,
+                    "{}!{}",
+                    with_article(&recognized.name),
                     if recognized.learned {
                         " You taught me that."
                     } else {
@@ -270,9 +282,16 @@ impl World {
                     }
                 )
             }
-            None if self.latest_korean => "뭐야?".to_owned(),
+            None if korean => "뭐야?".to_owned(),
             None => "What's that?".to_owned(),
         };
+        if let Some(flower) = blooming {
+            line.push_str(&if korean {
+                format!(" 내 {}처럼!", flower.korean())
+            } else {
+                format!(" Like my {}!", flower.name())
+            });
+        }
         self.say(&line);
         let mood = match &recognition {
             Some(recognized) if recognized.learned => Mood::Excited,
@@ -361,6 +380,15 @@ impl World {
             given_name: None,
             korean: self.latest_korean,
         })
+    }
+}
+
+// "A heart", "An owl", or a name in another script as it is.
+fn with_article(name: &str) -> String {
+    match name.chars().next() {
+        Some(first) if !first.is_ascii_alphabetic() => name.to_owned(),
+        Some('a' | 'e' | 'i' | 'o' | 'u' | 'A' | 'E' | 'I' | 'O' | 'U') => format!("An {name}"),
+        _ => format!("A {name}"),
     }
 }
 
@@ -513,6 +541,41 @@ mod tests {
         assert!(answered && only_looked);
         assert_eq!(answer_chance(1.0, 1.0, true), 0.9);
         assert!(answer_chance(0.5, 0.5, false) < answer_chance(0.5, 0.5, true));
+    }
+
+    #[test]
+    fn a_drawn_flower_brings_its_own_flowering_pot_to_mind() {
+        let said = |world: &World| {
+            world
+                .events
+                .iter()
+                .filter_map(|event| match &event.kind {
+                    EventKind::Said(text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut world = World::new(1, 12.0);
+        let mut tulip = crate::world::Seedling::new(crate::world::Flower::Tulip);
+        tulip.growth = 1.0;
+        world.seedlings.push(tulip);
+        studied(&mut world, &Sketch::Flower.strokes());
+        assert!(said(&world).contains(&"A flower! Like my tulip!".to_owned()));
+
+        let mut world = World::new(1, 12.0);
+        world.life.korean = 0.9;
+        let mut sunflower = crate::world::Seedling::new(crate::world::Flower::Sunflower);
+        sunflower.growth = 1.0;
+        world.seedlings.push(sunflower);
+        studied(&mut world, &Sketch::Flower.strokes());
+        assert!(said(&world).contains(&"꽃! 내 해바라기처럼!".to_owned()));
+
+        let mut world = World::new(1, 12.0);
+        studied(&mut world, &Sketch::Flower.strokes());
+        assert!(said(&world).contains(&"A flower!".to_owned()));
+        assert_eq!(with_article("owl"), "An owl");
+        assert_eq!(with_article("cat"), "A cat");
+        assert_eq!(with_article("고양이"), "고양이");
     }
 
     #[test]
