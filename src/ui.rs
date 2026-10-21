@@ -748,7 +748,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "k          keys and models      click ball    flick it",
         "j          journal and diary    click room    drop a light mote",
         "l          life and growth      click blocks  nudge or topple",
-        "p          save a postcard      click friend  make it giggle",
+        "p, P       postcard, posed      click friend  make it giggle",
         "o          focus (o ends it)    drag ghost    stroke it",
         "g          noughts and crosses  1-9, click    choose a square",
         "f          draw (f/Esc stops)   x          hide on floor (x/Esc)",

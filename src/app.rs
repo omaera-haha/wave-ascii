@@ -30,6 +30,8 @@ const WATCH_POINTER: f64 = 4.0;
 const REACTION_WINDOW: f64 = 6.0;
 /// Seconds between saves while the app runs.
 const SAVE_EVERY: f64 = 60.0;
+/// How long the ghost holds its smile before a posed picture is taken.
+const POSING: f32 = 2.0;
 
 /// What the main loop should do after an input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -202,6 +204,8 @@ pub struct App {
     hint_claude_at: Option<f64>,
     /// The last watching frame's scene and words, before its status bar.
     postcard: Option<Postcard>,
+    /// Seconds until the picture the ghost is posing for is taken.
+    posing: Option<f32>,
     /// Whether the terminal has the focus, as far as it reports.
     focused: bool,
     pub drawing_mode: bool,
@@ -256,6 +260,7 @@ impl App {
             hinted_claude: false,
             hint_claude_at: None,
             postcard: None,
+            posing: None,
             focused: true,
             drawing_mode: false,
             drawing_right: false,
@@ -298,6 +303,15 @@ impl App {
         if self.paths.is_some() {
             self.album.observe(&self.world);
             self.album.elapse(seconds);
+        }
+        if let Some(left) = self.posing.as_mut() {
+            *left -= seconds;
+            if *left <= 0.0 {
+                self.posing = None;
+                if self.save_postcard() {
+                    self.world.photographed(true);
+                }
+            }
         }
         if self.paused {
             return;
@@ -687,7 +701,12 @@ impl App {
                 self.mode = Mode::Album;
             }
             Key::Character('e') => self.open_letter(),
-            Key::Character('p') => self.save_postcard(),
+            Key::Character('p') => {
+                if self.save_postcard() {
+                    self.world.photographed(false);
+                }
+            }
+            Key::Character('P') => self.pose_for_postcard(),
             Key::Character('o') => self.world.toggle_focus(),
             Key::Character('g') => {
                 if !self.world.challenge() {
@@ -800,19 +819,37 @@ impl App {
         }
     }
 
-    fn save_postcard(&mut self) {
+    /// Returns whether a postcard was saved.
+    fn save_postcard(&mut self) -> bool {
         let Some(paths) = &self.paths else {
             self.post("Postcards need a saved life");
-            return;
+            return false;
         };
         let Some(postcard) = &self.postcard else {
-            return;
+            return false;
         };
-        let message = match postcard.save(paths) {
-            Ok(path) => format!("Saved a postcard: {}", postcard::display_path(&path)),
-            Err(error) => format!("Couldn't save a postcard: {error}"),
+        let (message, saved) = match postcard.save(paths) {
+            Ok(path) => (
+                format!("Saved a postcard: {}", postcard::display_path(&path)),
+                true,
+            ),
+            Err(error) => (format!("Couldn't save a postcard: {error}"), false),
         };
         self.post(message);
+        saved
+    }
+
+    // A portrait: the ghost comes to the glass and smiles, and the picture
+    // is taken a moment later. A sleeper or a paused room is taken as it is.
+    fn pose_for_postcard(&mut self) {
+        if self.paths.is_none() {
+            self.post("Postcards need a saved life");
+        } else if self.posing.is_none() && !self.paused && self.world.pose_for_photo() {
+            self.posing = Some(POSING);
+            self.post("Say cheese…");
+        } else if self.posing.is_none() && self.save_postcard() {
+            self.world.photographed(false);
+        }
     }
 
     pub fn doing(&self) -> String {
@@ -2340,6 +2377,39 @@ mod tests {
         app.input(Input::Key(Key::Character('p')));
         assert_eq!(app.talk.text(), "p");
         assert_eq!(std::fs::read_dir(paths.postcards()).unwrap().count(), 2);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn shift_p_poses_the_ghost_and_takes_the_picture_after_its_smile() {
+        let directory =
+            std::env::temp_dir().join(format!("wave-ascii-app-portrait-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let paths = Paths::in_directory(&directory);
+        let mut app = app();
+        app.paths = Some(paths.clone());
+        app.world.begin(Activity::Explore);
+        app.frame(40, 12);
+        app.input(Input::Key(Key::Character('P')));
+        assert_eq!(app.notice(), Some("Say cheese…"));
+        assert_eq!(app.world.ghost.plan.activity, Activity::Visit);
+        assert!(!paths.postcards().exists());
+        // A second press while it smiles takes nothing extra.
+        app.input(Input::Key(Key::Character('P')));
+        for _ in 0..30 {
+            app.advance(0.05);
+            app.frame(40, 12);
+        }
+        assert!(!paths.postcards().exists());
+        for _ in 0..12 {
+            app.advance(0.05);
+            app.frame(40, 12);
+        }
+        assert_eq!(std::fs::read_dir(paths.postcards()).unwrap().count(), 2);
+        assert_eq!(app.world.life.total.portraits, 1);
+        app.input(Input::Key(Key::Character('p')));
+        assert_eq!(app.world.life.total.photos, 2);
+        assert_eq!(app.world.life.total.portraits, 1);
         std::fs::remove_dir_all(directory).unwrap();
     }
 

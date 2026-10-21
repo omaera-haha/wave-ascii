@@ -313,6 +313,11 @@ pub struct Tally {
     pub cranes: u32,
     #[serde(default)]
     pub cranes_for_sad_viewer: u32,
+    /// Pictures the viewer took of it, and how many it posed for.
+    #[serde(default)]
+    pub photos: u32,
+    #[serde(default)]
+    pub portraits: u32,
 }
 
 impl Tally {
@@ -618,6 +623,12 @@ impl Tally {
             }
             EventKind::FoldedCrane { .. } => {
                 self.cranes = self.cranes.saturating_add(1).min(super::cranes::MAXIMUM)
+            }
+            EventKind::Photographed { posed } => {
+                self.photos = self.photos.saturating_add(1);
+                if *posed {
+                    self.portraits = self.portraits.saturating_add(1);
+                }
             }
             _ => {}
         }
@@ -1212,6 +1223,15 @@ impl Tally {
         }
         if self.lullaby_sleeps > 0 {
             deeds.push((Salience::Small, "fell asleep to a lullaby".to_owned()));
+        }
+        match (self.photos, self.portraits) {
+            (0, _) => {}
+            (1, 1) => deeds.push((Salience::Small, "posed for your camera".to_owned())),
+            (1, _) => deeds.push((Salience::Small, "you took my picture".to_owned())),
+            (count, _) => deeds.push((
+                Salience::Small,
+                format!("you took {} pictures of me", count_words(count)),
+            )),
         }
         match self.stories {
             0 => {}
@@ -2171,6 +2191,8 @@ impl Life {
             tally.focus_sessions = tally.focus_sessions.min(1_000_000);
             tally.focus_minutes = tally.focus_minutes.min(100_000_000);
             tally.stories = tally.stories.min(100_000_000);
+            tally.photos = tally.photos.min(100_000_000);
+            tally.portraits = tally.portraits.min(tally.photos);
             tally.airings = tally.airings.min(100_000_000);
             tally.word_games = tally.word_games.min(100_000_000);
             tally.words_guessed = tally.words_guessed.min(tally.word_games);
@@ -2397,6 +2419,9 @@ impl Life {
                 "I wrote you my first letter.".to_owned()
             }
             EventKind::ToldStory if total.stories == 1 => "I told you my first story.".to_owned(),
+            EventKind::Photographed { .. } if total.photos == 1 => {
+                "You took my picture for the first time.".to_owned()
+            }
             EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {
                 format!("You taught me to draw a {name}.")
             }

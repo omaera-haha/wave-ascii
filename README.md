@@ -168,6 +168,7 @@ the next requests use them at once.
 | `j`             | Journal: memories, moments, diary, conversation            |
 | `l`             | Its life: age, growth, skills, bond, today so far; ↑↓ scroll |
 | `p`             | Save a postcard of the moment                             |
+| `P`             | Ask the ghost to pose, then save a postcard               |
 | `b`             | Open the album of moments the ghost kept                  |
 | `e`             | Read letters, or write when none; Left/Right browse        |
 | `w` (in letters) | Write a letter; Ctrl+S sends, Esc keeps the draft          |
@@ -225,7 +226,14 @@ the moment's local time, such as `2026-10-21-153012.txt`; another in the same
 second gets `-2`, then `-3`. Use `cat` to view an `.ans` file in a truecolor
 terminal. In plain block mode, the ANSI copy uses colored blocks from the
 same rendered moment. A ghost without a saved life cannot save postcards;
-piped output never saves them.
+piped output never saves them. The ghost notices your first picture, and now
+and then another, and turns to ask about it.
+
+Press `P` (Shift+P) for a portrait instead: an awake ghost that isn't busy
+comes to the glass, turns to you, says "Cheese!" (or "김치~!"), and the
+postcard is taken two seconds later with its smile. A busy ghost smiles
+where it is, and a sleeper is pictured asleep. Pictures count in its diary,
+and the first is a milestone.
 
 ### Album of moments
 

@@ -73,6 +73,7 @@ Keys:
   m, c         style, color mode      ?        help
   r            reset the view         space    pause
   p            save a postcard        b        album of moments
+  P            ask it to pose, then save a postcard
   g            noughts and crosses    1-9      choose a square
   o            focus together for twenty-five minutes (o again ends it)
   f            draw in the fog with left drags (f or Esc stops)

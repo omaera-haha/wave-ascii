@@ -33,6 +33,7 @@ mod needs;
 pub mod occasion;
 pub mod passerby;
 pub mod penpal;
+mod photo;
 mod pounce;
 pub mod promise;
 pub mod puzzle;
@@ -344,6 +345,10 @@ pub enum EventKind {
     FoldedCrane {
         count: u32,
     },
+    /// The viewer took its picture, `posed` when it smiled for it.
+    Photographed {
+        posed: bool,
+    },
 }
 
 impl EventKind {
@@ -602,6 +607,8 @@ impl EventKind {
             Self::FoldedCrane { count } => {
                 format!("folded the {} paper crane", anniversary::ordinal(*count))
             }
+            Self::Photographed { posed: true } => "posed for the viewer's camera".to_owned(),
+            Self::Photographed { posed: false } => "the viewer took my picture".to_owned(),
         }
     }
 }
