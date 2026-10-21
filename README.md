@@ -36,7 +36,10 @@ learns the pictures you teach it. Stroke it and it melts. At night it goes
 to bed and sleeps until morning. On some moonlit evenings a smaller ghost,
 its friend, drifts in through the window to play.
 On clear nights it finds and names pictures in the stars, keeping their faint
-outlines in its sky.
+outlines in its sky. It notices when you say you're tired or sad and looks
+after you, writes back when you write to it, makes up songs and, in time, a
+picture book of its own life, remembers the day it learned your name a month
+later, and celebrates its hundredth day with you.
 
 A wooden mirror on the right wall reflects the room and its ghosts. At first
 it greets the stranger inside, then tests how the reflection copies it.
@@ -48,9 +51,8 @@ mirror?” or “거울 속에 누구야?” to hear what it thinks.
 You can be pen pals. Press `e` to open the paper panel, then `w` to write
 (or start writing immediately if there are no letters yet). Enter adds a line;
 Ctrl+S sends, and Esc keeps the draft in memory until you quit; `w` in the
-letters reopens it. Paste keeps
-line breaks, including Korean text, up to twelve lines and six hundred
-characters. The ghost takes your letter from the glass, reads quietly with
+letters reopens it. Paste keeps line breaks, including Korean text, up to
+twelve lines and six hundred characters. The ghost takes your letter from the glass, reads quietly with
 little reactions, and keeps it near the shelf. Sleep and focus sessions defer
 reading. It writes back after twenty to forty minutes together, on an arrival
 at least an hour later, or the next morning. Replies remember simple questions,
