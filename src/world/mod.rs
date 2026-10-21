@@ -21,6 +21,7 @@ pub mod passerby;
 mod pounce;
 pub mod puzzle;
 mod question;
+pub mod quirks;
 mod random;
 mod recognizer;
 mod room;
@@ -55,6 +56,7 @@ pub use occasion::{Decoration, Occasion};
 pub use passerby::Passerby;
 pub use puzzle::Puzzle;
 pub use question::{Question, ask as asked_question};
+pub use quirks::Quirk;
 pub use random::Random;
 pub use room::Room;
 pub use sight::{Seen, Thing};
@@ -251,12 +253,14 @@ pub enum EventKind {
         word: String,
         solved: bool,
     },
+    Quirk(Quirk),
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::Quirk(kind) => kind.words().to_owned(),
             Self::OpenedWindow => "opened the window for fresh air".to_owned(),
             Self::ClosedWindow => "closed the window".to_owned(),
             Self::Puddle => "noticed a puddle below the window".to_owned(),
@@ -468,6 +472,7 @@ pub enum Understanding {
         accepted: bool,
     },
     WordGame,
+    Yawning,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -640,6 +645,9 @@ pub struct World {
     windfall_random: Random,
     seen_passersby: [Option<u64>; Passerby::ALL.len()],
     pub puzzle: Option<Puzzle>,
+    /// An involuntary spell, kept only for this session.
+    pub quirk: Option<quirks::Spell>,
+    quirk_triggers: quirks::Triggers,
 }
 
 impl World {
@@ -752,6 +760,8 @@ impl World {
             windfall_random: Random::new(seed ^ 0x6c65_6176_6573),
             seen_passersby: [None; Passerby::ALL.len()],
             puzzle: None,
+            quirk: None,
+            quirk_triggers: quirks::Triggers::default(),
         };
         world.scatter_blocks();
         world
@@ -890,6 +900,7 @@ impl World {
         self.holiday_greeting();
         self.advance_fog();
         self.advance_story();
+        self.advance_quirks();
         self.carry_out(seconds);
         self.advance_dream();
         let hiding = !self.ghost.plan.done
@@ -1365,6 +1376,7 @@ impl World {
 
     /// The viewer poked the ghost.
     pub fn poke(&mut self) {
+        self.cure_hiccups(true);
         if self.ghost.plan.activity == Activity::Hide
             && !self.ghost.plan.done
             && self.ghost.fade > 0.3
@@ -1441,6 +1453,7 @@ impl World {
             return;
         }
         self.petting = (self.petting + travel.max(0.0) * STROKING).min(1.0);
+        self.note_quirk_stroke(travel);
         if self.petting >= PETTED && !self.petted {
             self.petted = true;
             self.record(EventKind::Petted);
@@ -1492,6 +1505,20 @@ impl World {
             .is_none()
             .then(|| vocabulary::given_name(text))
             .flatten();
+        if introduction.is_none() && naming.is_none() && quirks::yawn_message(text) {
+            self.listening = Listening::default();
+            self.catch_yawn_message(text);
+            return Heard {
+                tone: None,
+                understanding: Understanding::Yawning,
+                named: false,
+                learned: Vec::new(),
+                stopped: false,
+                learned_name: None,
+                given_name: None,
+                korean,
+            };
+        }
         if introduction.is_none()
             && naming.is_none()
             && let Some(minutes) = focus::requested(text)
@@ -1925,6 +1952,10 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        let quirk_trigger = kind == EventKind::AteMote || quirks::delighted(&kind);
+        if kind == EventKind::Thunder {
+            self.cure_hiccups(false);
+        }
         if matches!(
             kind,
             EventKind::Poked { .. }
@@ -1952,6 +1983,9 @@ impl World {
         });
         for milestone in milestones {
             self.record(EventKind::Milestone(milestone));
+        }
+        if quirk_trigger {
+            self.quirk_after_event();
         }
     }
 
@@ -2146,6 +2180,9 @@ impl World {
         let arrived_now = position.distance(plan.target) < ARRIVED;
         if arrived_now && plan.arrived.is_none() {
             self.ghost.plan.arrived = Some(time);
+            if self.ghost.plan.activity == Activity::Rest {
+                self.sigh_on_cushion();
+            }
         }
         // Waiting at the glass keeps its full length. Resting, hiding, and
         // games have their own waits after arrival, but give up on the way
@@ -2251,7 +2288,12 @@ impl World {
             Activity::Rest => {
                 if self.ghost.plan.arrived.is_some() {
                     let before = self.ghost.asleep;
-                    self.ghost.asleep = (before + seconds / 3.0).min(1.0);
+                    if !self
+                        .active_quirk()
+                        .is_some_and(|spell| spell.kind == Quirk::Sigh)
+                    {
+                        self.ghost.asleep = (before + seconds / 3.0).min(1.0);
+                    }
                     if before < 0.9 && self.ghost.asleep >= 0.9 {
                         self.record(EventKind::FellAsleep);
                     }

@@ -30,6 +30,8 @@ pub struct Face {
     pub prompt: f32,
     /// How visible the prompt's cursor is, from 0 to 1.
     pub cursor: f32,
+    /// How far a small yawning mouth has opened.
+    pub mouth: f32,
 }
 
 impl Face {
@@ -43,6 +45,7 @@ impl Face {
         sparkle: 0.0,
         prompt: 0.0,
         cursor: 1.0,
+        mouth: 0.0,
     };
 
     /// This face with `other`'s departures from rest added on: shut eyes,
@@ -61,6 +64,7 @@ impl Face {
             sparkle: self.sparkle.max(other.sparkle),
             prompt: self.prompt.max(other.prompt),
             cursor: self.cursor.min(other.cursor),
+            mouth: self.mouth.max(other.mouth),
         }
     }
 
@@ -79,6 +83,7 @@ impl Face {
             sparkle: mix(self.sparkle, other.sparkle, amount),
             prompt: mix(self.prompt, other.prompt, amount),
             cursor: mix(self.cursor, other.cursor, amount),
+            mouth: mix(self.mouth, other.mouth, amount),
         }
     }
 
@@ -86,7 +91,16 @@ impl Face {
     /// relative to the head's center. Each feature changes shape by moving
     /// its own points and sizes, so every moment of a change is a clean shape.
     pub fn distance(&self, point: Vec2) -> f32 {
-        self.eye(point, 0).min(self.eye(point, 1))
+        let eyes = self.eye(point, 0).min(self.eye(point, 1));
+        if self.mouth > 0.0 {
+            eyes.min(rounded_box(
+                point - Vec2::new(0.0, -0.22),
+                Vec2::new(0.043, 0.07) * self.mouth,
+                0.03 * self.mouth,
+            ))
+        } else {
+            eyes
+        }
     }
 
     /// Signed distance to the left eye for `index` 0 or the right for 1.

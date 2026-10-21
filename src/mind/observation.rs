@@ -43,6 +43,7 @@ pub fn observe(world: &World) -> Value {
             "doing": doing,
             "goal": ghost.goal.as_deref().unwrap_or("none yet"),
             "loves": world.life.favorite().map_or("nothing in particular yet", Activity::doing),
+            "quirk": world.quirk_words(),
         },
         "time_of_day": time_of_day(world.hour),
         "season": world.season().name(),
@@ -501,6 +502,18 @@ mod tests {
     use crate::world::EventKind;
     use glam::Vec3;
 
+    #[test]
+    fn ongoing_yawns_are_described_in_words_and_disappear_when_the_spell_ends() {
+        let mut world = World::new(1, 12.0);
+        world.hear("*yawns*");
+        world.step(3.0);
+        assert_eq!(
+            observe(&world)["ghost"]["quirk"],
+            "you are stretching through a slow yawn"
+        );
+        world.step(5.0);
+        assert_eq!(observe(&world)["ghost"]["quirk"], "none just now");
+    }
     #[test]
     fn a_puzzle_observation_names_the_wait_and_counts_without_the_answer() {
         let mut world = World::new(5, 12.0);

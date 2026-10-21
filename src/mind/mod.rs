@@ -353,7 +353,10 @@ impl Mind {
             self.latest_request = self.next_id;
             return;
         }
-        if heard.understanding == Understanding::WordGame {
+        if matches!(
+            heard.understanding,
+            Understanding::WordGame | Understanding::Yawning
+        ) {
             self.next_id += 1;
             self.latest_request = self.next_id;
             self.remember_speech(world);
@@ -506,7 +509,22 @@ impl Mind {
                     })
             })
             .flatten();
-        let lines = if let Some(kind) = passerby {
+        let quirk = (!asleep && !focusing)
+            .then(|| {
+                world
+                    .events
+                    .iter()
+                    .rev()
+                    .take_while(|event| event.time > since)
+                    .find_map(|event| match event.kind {
+                        EventKind::Quirk(kind) => Some(kind),
+                        _ => None,
+                    })
+            })
+            .flatten();
+        let lines = if let Some(kind) = quirk {
+            kind.thoughts().to_vec()
+        } else if let Some(kind) = passerby {
             kind.thoughts().to_vec()
         } else if world.time >= self.next_musing {
             self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
@@ -743,6 +761,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Focusing { .. }
                 | Understanding::Airing { .. }
                 | Understanding::WordGame
+                | Understanding::Yawning
         )
 }
 
@@ -768,6 +787,20 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
+    #[test]
+    fn performed_yawns_do_not_route_to_system_one_or_produce_a_spoken_reply() {
+        let mut mind = offline();
+        let mut world = World::new(1, 12.0);
+        let heard = world.hear("*yawns*");
+        assert!(!routes_to_jev(&heard));
+        mind.hear(&mut world, "하암");
+        assert!(world.ghost.speech.is_none());
+        world.step(3.0);
+        assert_eq!(
+            world.quirk.map(|spell| spell.kind),
+            Some(crate::world::Quirk::Yawn)
+        );
+    }
     #[test]
     fn puzzle_requests_and_guesses_bypass_jev_and_keep_the_worlds_reply() {
         let mut mind = offline();

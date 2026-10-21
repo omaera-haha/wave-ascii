@@ -38,6 +38,14 @@ its friend, drifts in through the window to play.
 On clear nights it finds and names pictures in the stars, keeping their faint
 outlines in its sky.
 
+Little involuntary quirks follow the room: hiccups after too many motes or
+much delight, sneezes around spring blossom or dusty corners, sleepy yawns,
+cold shivers, and contented sighs after a long stroke or settling on the
+cushion. Poke away the hiccups, or send “yawn”, “*yawns*”, “하품”, or “하암”
+and it may yawn back. Shivers draw it toward warmth or a shut window. These
+moments move its face and body and leave small diary memories, while sleep,
+stories, and games stay quiet.
+
 Each ghost is born a small wisp with a nature of its own, and grows up over
 its first month, getting better at what it practices. Over days it grows
 close to you, learns your words, your name, and the name you give it, learns

@@ -353,6 +353,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 1.0
             };
             weight
+                * world.quirk_leaning(*activity)
                 * quiet
                 * playful
                 * world.life.habit(*activity)
