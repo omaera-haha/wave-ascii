@@ -1,7 +1,7 @@
 use glam::Vec3;
 use serde_json::{Value, json};
 
-use crate::world::{Activity, Plant, Seen, Thing, World, flat};
+use crate::world::{Activity, Plant, Seen, Sky, Thing, World, calendar::moon_words, flat};
 
 /// What the ghost knows of its situation, in words. Both minds read it:
 /// System One models judge words more reliably than numbers, and Claude
@@ -25,7 +25,8 @@ pub fn observe(world: &World) -> Value {
             "goal": ghost.goal.as_deref().unwrap_or("none yet"),
         },
         "time_of_day": time_of_day(world.hour),
-        "outside_the_window": world.weather.words(world.time, world.is_night()),
+        "season": world.season().name(),
+        "outside_the_window": outside_the_window(world),
         "sight": sight(world),
         "room": {
             "light": light(world),
@@ -88,6 +89,22 @@ fn light(world: &World) -> &'static str {
     }
 }
 
+fn outside_the_window(world: &World) -> String {
+    let weather = &world.weather;
+    let mut outside = weather.words(world.time, world.is_night()).to_owned();
+    if world.is_night()
+        && matches!(weather.sky, Sky::Clear | Sky::Rainbow)
+        && let Some(moon) = moon_words(world.moon_phase())
+    {
+        outside.push_str(" with ");
+        outside.push_str(moon);
+    }
+    if weather.sky != Sky::Snow && weather.snow_cover > 0.5 {
+        outside.push_str(", the hills white with snow");
+    }
+    outside
+}
+
 fn plant(plant: &Plant) -> String {
     let size = match plant.growth {
         growth if plant.blooming() && growth >= 0.95 => "fully grown and flowering",
@@ -132,10 +149,7 @@ fn thing(world: &World, thing: Thing) -> String {
             "the viewer, watching through the glass".to_owned()
         }
         Thing::Viewer => "the glass, with nobody behind it".to_owned(),
-        Thing::Window => format!(
-            "the window, showing {}",
-            world.weather.words(world.time, world.is_night())
-        ),
+        Thing::Window => format!("the window, showing {}", outside_the_window(world)),
         Thing::Lamp => format!(
             "the floor lamp, {}",
             if world.lamp.on { "on" } else { "off" }
@@ -235,6 +249,7 @@ mod tests {
         world.poke();
         let observation = observe(&world);
         assert_eq!(observation["time_of_day"], "night");
+        assert_eq!(observation["season"], "summer");
         assert_eq!(observation["room"]["light"], "lamplight in the dark");
         assert!(
             observation["room"]["light_motes"]
@@ -298,5 +313,38 @@ mod tests {
         assert_eq!(time_of_day(13.0), "afternoon");
         assert_eq!(time_of_day(23.5), "night");
         assert_eq!(time_of_day(2.0), "night");
+    }
+
+    #[test]
+    fn seasons_snow_and_visible_moons_are_described_without_digits() {
+        let mut world = World::new(1, 22.0);
+        world.date = jiff::civil::Date::constant(2026, 3, 3);
+        assert_eq!(observe(&world)["season"], "spring");
+        assert_eq!(
+            outside_the_window(&world),
+            "a clear night sky with a full moon"
+        );
+        assert!(thing(&world, Thing::Window).contains("a full moon"));
+        world.date = jiff::civil::Date::constant(2026, 2, 17);
+        assert_eq!(outside_the_window(&world), "a clear night sky");
+        world.weather.sky = Sky::Snow;
+        world.weather.snow_cover = 0.8;
+        assert_eq!(observe(&world)["season"], "winter");
+        assert_eq!(outside_the_window(&world), "snow falling, the hills white");
+        assert!(thing(&world, Thing::Window).contains("snow falling"));
+        assert!(
+            !observe(&world)
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.weather.sky = Sky::Clear;
+        assert!(outside_the_window(&world).contains("hills white with snow"));
+        world.date = jiff::civil::Date::constant(2026, 3, 3);
+        world.hour = 12.0;
+        assert!(!outside_the_window(&world).contains("moon"));
+        world.hour = 22.0;
+        world.weather.sky = Sky::Rain;
+        assert!(!outside_the_window(&world).contains("moon"));
     }
 }

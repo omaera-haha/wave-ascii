@@ -215,7 +215,7 @@ impl App {
         self.paths = paths;
         self.born = born;
         self.live_clock = true;
-        self.world.hour = local_hour();
+        (self.world.date, self.world.hour) = local_time();
         self
     }
 
@@ -225,7 +225,7 @@ impl App {
             return;
         }
         if self.live_clock {
-            self.world.hour = local_hour();
+            (self.world.date, self.world.hour) = local_time();
         }
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
@@ -563,6 +563,10 @@ impl App {
                     hour: world.hour,
                     rain: world.weather.rain(world.time),
                     rainbow: world.weather.rainbow(world.time),
+                    season: world.season(),
+                    snow: world.weather.snow(world.time),
+                    snow_cover: world.weather.snow_cover,
+                    moon_phase: world.moon_phase(),
                     time: world.time,
                 },
                 view,
@@ -638,8 +642,15 @@ fn beat(mood: Mood) -> f32 {
 
 /// The local hour of the day, from 0 to 24.
 pub fn local_hour() -> f32 {
+    local_time().1
+}
+
+fn local_time() -> (jiff::civil::Date, f32) {
     let now = jiff::Zoned::now();
-    f32::from(now.hour()) + f32::from(now.minute()) / 60.0
+    (
+        now.date(),
+        f32::from(now.hour()) + f32::from(now.minute()) / 60.0,
+    )
 }
 
 /// Starts the world from a saved life, catching up on the time the app was

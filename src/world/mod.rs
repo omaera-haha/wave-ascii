@@ -1,4 +1,5 @@
 mod activity;
+pub mod calendar;
 mod needs;
 mod random;
 mod sight;
@@ -8,6 +9,7 @@ mod weather;
 use glam::Vec3;
 
 pub use activity::{Activity, Plan};
+pub use calendar::Season;
 pub use needs::{Mood, Needs};
 pub use random::Random;
 pub use sight::{Seen, Thing};
@@ -70,6 +72,8 @@ pub enum EventKind {
     Noticed(String),
     RainStarted,
     RainStopped,
+    SnowStarted,
+    SnowStopped,
     RainbowAppeared,
     RainbowFaded,
 }
@@ -108,6 +112,8 @@ impl EventKind {
             Self::Noticed(thing) => format!("spotted {thing}"),
             Self::RainStarted => "it started to rain outside".to_owned(),
             Self::RainStopped => "the rain stopped".to_owned(),
+            Self::SnowStarted => "it started to snow outside".to_owned(),
+            Self::SnowStopped => "the snow stopped".to_owned(),
             Self::RainbowAppeared => "the rain stopped and a rainbow came out".to_owned(),
             Self::RainbowFaded => "the rainbow faded".to_owned(),
         }
@@ -149,6 +155,8 @@ pub struct Ghost {
     pub known: Vec<u32>,
     /// Whether it has seen the current rainbow.
     pub saw_rainbow: bool,
+    /// Whether it has seen the current snowfall.
+    pub saw_snow: bool,
 }
 
 /// The person at the glass, as the world knows them.
@@ -170,6 +178,8 @@ pub struct World {
     pub time: f64,
     /// The local hour of the day, from 0 to 24, which sets the light.
     pub hour: f32,
+    /// The local date, fixed for seeded pictures and set by the clock in live mode.
+    pub date: jiff::civil::Date,
     pub ghost: Ghost,
     pub lamp: Lamp,
     pub ball: Ball,
@@ -195,6 +205,7 @@ impl World {
         Self {
             time: 0.0,
             hour,
+            date: jiff::civil::Date::constant(2026, 6, 21),
             ghost: Ghost {
                 name: "Boo".to_owned(),
                 position: start,
@@ -212,6 +223,7 @@ impl World {
                 attention: None,
                 known: Vec::new(),
                 saw_rainbow: false,
+                saw_snow: false,
             },
             lamp: Lamp {
                 position: Vec3::new(-1.55, 0.0, -0.95),
@@ -270,17 +282,27 @@ impl World {
         }
 
         let daytime = (7.0..18.5).contains(&self.hour);
-        if let Some(change) = self.weather.step(self.time, daytime, &mut self.random) {
+        let season = self.season();
+        if let Some(change) = self
+            .weather
+            .step(self.time, daytime, season, &mut self.random)
+        {
             if change == Change::RainbowFaded {
                 self.ghost.saw_rainbow = false;
+            }
+            if change == Change::SnowStopped {
+                self.ghost.saw_snow = false;
             }
             self.record(match change {
                 Change::RainStarted => EventKind::RainStarted,
                 Change::RainStopped => EventKind::RainStopped,
+                Change::SnowStarted => EventKind::SnowStarted,
+                Change::SnowStopped => EventKind::SnowStopped,
                 Change::RainbowAppeared => EventKind::RainbowAppeared,
                 Change::RainbowFaded => EventKind::RainbowFaded,
             });
         }
+        self.weather.advance(self.time, seconds, daytime);
 
         let obstacles = self.obstacles();
         self.ball.roll(seconds, &obstacles);
@@ -315,6 +337,14 @@ impl World {
 
     pub fn is_night(&self) -> bool {
         !(6.5..19.5).contains(&self.hour)
+    }
+
+    pub fn season(&self) -> Season {
+        Season::of(self.date)
+    }
+
+    pub fn moon_phase(&self) -> f32 {
+        calendar::moon_phase(self.date, self.hour)
     }
 
     /// Whether the ghost has finished its plan and waits for a decision.
@@ -378,6 +408,7 @@ impl World {
                 let outside = match self.weather.sky {
                     Sky::Rainbow => ", where a rainbow is shining",
                     Sky::Rain => ", where it is raining",
+                    Sky::Snow => ", where snow is falling",
                     Sky::Clear if self.is_night() => " at the night sky",
                     Sky::Clear => " at the sky and the hills",
                 };
@@ -860,6 +891,9 @@ impl World {
         }
         if self.weather.rainbow(self.time) > 0.3 && ghost.saw_rainbow {
             return Mood::Excited;
+        }
+        if self.weather.snow(self.time) > 0.3 && ghost.saw_snow {
+            return Mood::Curious;
         }
         if ghost.needs.company < 0.25 {
             return Mood::Lonely;

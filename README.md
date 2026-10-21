@@ -4,8 +4,8 @@ A ghost lives in a glass box in your terminal.
 
 The box is a small room drawn in dots: a floor lamp, a potted plant, a ball, a
 cushion to sleep on, specks of light that drift in, and a window onto hills
-where it sometimes rains and, after rain by day, a rainbow shines. The ghost
-is a point in that room with a body, needs, a mood, and a gaze: it sees what
+where the seasons change, snow falls in winter, and rain can leave a rainbow.
+The ghost is a point in that room with a body, needs, a mood, and a gaze: it sees what
 lies within sixty degrees of where it faces, and furniture hides what's behind
 it. You see it as an abstract shape made of dots, and its glow shows how it
 is. It floats about, chases and eats the light motes it has spotted, plays with
@@ -87,18 +87,27 @@ either the journal or help. Any other key closes help.
   It shines and beats faster with more energy.
 - **Its face** shows the mood too. It makes its own expressions at irregular
   moments, reacts to what happens, and shuts its eyes in sleep.
+- **The window** follows your local date: blossom in spring, green hills and
+  fireflies in summer, autumn leaves, and bare branches and snow in winter.
+  The moon follows its real phase.
 - **The status bar** shows its name, mood, and needs (energy, fun, company),
   what it's doing, and the state of each mind: `●` ready, `◐` thinking,
   `✕` failed (the journal says why), and `○` off.
 - **The line above the status bar** shows what it said, a thought, or its
   goal. What it says also appears in a bubble over its head.
 
-The room follows your local time: daylight by day, warm at dawn and dusk, and
-dark at night unless the lamp is on.
-A wooden window in the back wall looks over rolling hills, with a sun that
-crosses the sky, drifting clouds, and a moon and twinkling stars at night.
-Every so often a shower comes; one that ends by day leaves a rainbow for a
-couple of minutes. The ghost lights up if it catches sight of it.
+The room follows your local time and date: daylight by day, warm at dawn and
+dusk, and dark at night unless the lamp is on.
+A wooden window in the back wall looks over rolling hills and a tree that
+changes with the northern hemisphere seasons: spring blossom, summer green,
+autumn gold and drifting leaves, and bare winter branches. The sun crosses
+the sky, clouds drift, stars twinkle, and the moon waxes and wanes with the
+calendar. A few fireflies blink over the hills on summer nights.
+Showers come more often in spring and less often in summer; rain that ends
+by day leaves a rainbow for a couple of minutes. Winter brings soft falling
+snow instead, whitening the hills and dusting the branches. Snow builds in
+about two minutes and melts over about twenty minutes by day or an hour at
+night. The ghost lights up when it spots a rainbow or falling snow.
 
 - **Its eyes** follow where it faces, so its face shows what it's looking at,
   except while your pointer moves, which it watches instead.
@@ -165,14 +174,17 @@ When stdout or stdin isn't a terminal, the app prints one frame of a fresh
 ghost and exits. It never reads or writes the saved life or calls a model. The
 frame size comes from `COLUMNS` and `LINES` (default 80x24), and output is
 plain unless `--color` is given. `--time` runs the world that many seconds
-first, deciding on instinct, and `--hour` sets the time of day:
+first, deciding on instinct. `--hour` sets the time of day (default noon),
+and `--date YYYY-MM-DD` sets the date (default 2026-06-21):
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 ```
 
-The same `--time` and `--hour` give the same frame.
+The same `--time`, `--hour`, and `--date` give the same frame. Piped time
+advances the simulation while the chosen date and hour stay fixed.
 
 ## Development
 

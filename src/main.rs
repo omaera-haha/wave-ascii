@@ -47,6 +47,7 @@ Options:
   --time SECONDS                 when piped: how long the world runs before
                                  the frame is printed (default 0)
   --hour HOUR                    when piped: the hour of day (default 12)
+  --date YYYY-MM-DD              when piped: the date (default 2026-06-21)
   -h, --help                     show this help
 
 Keys:
@@ -70,6 +71,7 @@ struct Options {
     offline: bool,
     time: f32,
     hour: f32,
+    date: jiff::civil::Date,
 }
 
 fn main() -> ExitCode {
@@ -86,6 +88,23 @@ fn invalid_input(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
+fn parse_date(value: &str) -> io::Result<jiff::civil::Date> {
+    let valid_format = value.len() == 10
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if index == 4 || index == 7 {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit()
+            }
+        });
+    if valid_format && let Ok(date) = value.parse() {
+        return Ok(date);
+    }
+    Err(invalid_input(format!(
+        "--date needs a valid date in YYYY-MM-DD format, not {value:?}"
+    )))
+}
+
 /// Returns `None` when help was requested.
 fn parse_options() -> io::Result<Option<Options>> {
     let mut options = Options {
@@ -95,6 +114,7 @@ fn parse_options() -> io::Result<Option<Options>> {
         offline: false,
         time: 0.0,
         hour: 12.0,
+        date: jiff::civil::Date::constant(2026, 6, 21),
     };
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -146,6 +166,7 @@ fn parse_options() -> io::Result<Option<Options>> {
                 options.time = number(value()?, 0.0, 86_400.0, "a number of seconds")? as f32
             }
             "--hour" => options.hour = number(value()?, 0.0, 24.0, "an hour from 0 to 24")? as f32,
+            "--date" => options.date = parse_date(&value()?)?,
             "--offline" => options.offline = true,
             other => {
                 return Err(invalid_input(format!(
@@ -245,7 +266,8 @@ fn run_loop(app: &mut App, frames_per_second: f64) -> io::Result<()> {
 fn print_frame(options: &Options) -> io::Result<()> {
     let size = Size::from_environment();
     let color = options.color.unwrap_or(ColorMode::Plain);
-    let world = World::new(1, options.hour);
+    let mut world = World::new(1, options.hour);
+    world.date = options.date;
     let mind = Mind::new(&Config::default(), Journal::default(), true);
     let mut app = App::new(world, mind, Config::default(), options.style, color);
     let mut remaining = options.time;
@@ -262,4 +284,31 @@ fn seed() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(1, |duration| duration.as_nanos() as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dates_require_the_calendar_and_the_documented_format() {
+        assert_eq!(
+            parse_date("2026-12-24").unwrap(),
+            jiff::civil::Date::constant(2026, 12, 24)
+        );
+        assert!(parse_date("2024-02-29").is_ok());
+        for value in [
+            "2026-02-29",
+            "2026-13-01",
+            "2026-04-31",
+            "2026-1-01",
+            "2026-01-01T12:00",
+            "tomorrow",
+            "",
+        ] {
+            let error = parse_date(value).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            assert!(error.to_string().contains("YYYY-MM-DD"));
+        }
+    }
 }
