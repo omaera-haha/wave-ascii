@@ -19,9 +19,9 @@ const RING_WIDTH: f32 = 0.065;
 const BODY_TOP: Vec3 = Vec3::ONE;
 const BODY_BOTTOM: Vec3 = Vec3::new(0.8, 0.87, 1.0);
 /// The corners of a box around the ghost and its ring, in its own space,
-/// measured over its most extreme poses: a hard lean and a trailing hem
-/// reach far below.
-pub const BOUNDS: [Vec2; 2] = [Vec2::new(-0.8, -1.4), Vec2::new(0.8, 0.92)];
+/// measured over its most extreme poses: at full speed the hem streams out
+/// far to one side.
+pub const BOUNDS: [Vec2; 2] = [Vec2::new(-1.3, -1.05), Vec2::new(1.3, 0.92)];
 /// Dots in the body sit this far apart, in the ghost's own space.
 const DOT_SPACING: f32 = 0.085;
 
@@ -46,10 +46,14 @@ impl Pose {
         let bob = phase(time, 3.0);
         let sway = phase(time, 6.0);
         let awake = 1.0 - 0.6 * asleep;
+        // The head tips into the motion and the hem streams out behind it,
+        // so `trail` bends the lower body the opposite way to `lean`. The
+        // idle sway rocks the body the same way, gently.
+        let rock = 0.05 * sway.cos() * awake;
         Self {
             lift: 0.045 * bob.sin() * awake,
-            lean: (-0.18 * sideways).clamp(-0.35, 0.35) - 0.05 * sway.cos() * awake,
-            trail: (-0.3 * sideways).clamp(-0.45, 0.45) - 0.08 * sway.cos() * awake,
+            lean: (-0.16 * sideways).clamp(-0.25, 0.25) - rock,
+            trail: (0.28 * sideways).clamp(-0.36, 0.36) + 1.6 * rock,
             stretch: 0.025 * bob.cos() * awake + (0.04 * rising).clamp(-0.05, 0.05),
             ripple: phase(time, TAU as f32 / (2.2 + 1.5 * (1.0 - asleep))),
         }
@@ -212,8 +216,8 @@ mod tests {
     fn everything_drawn_stays_inside_the_bounds() {
         for (sideways, rising) in [(0.0, 0.0), (3.0, 1.0), (-10.0, -10.0), (10.0, 10.0)] {
             let pose = Pose::new(1.3, sideways, rising, 0.0);
-            for column in -75..=75 {
-                for row in -75..=75 {
+            for column in -85..=85 {
+                for row in -85..=85 {
                     let point = Vec2::new(column as f32, row as f32) * 0.02;
                     let outside = point.x < BOUNDS[0].x
                         || point.x > BOUNDS[1].x
@@ -229,16 +233,25 @@ mod tests {
     }
 
     #[test]
-    fn moving_sideways_leans_the_head_into_the_motion() {
-        let still = Pose::new(0.0, 0.0, 0.0, 0.0);
-        let moving = Pose::new(0.0, 2.0, 0.0, 0.0);
-        let head_top = |pose: &Pose| {
-            (-90..=90)
+    fn moving_leans_the_head_forward_and_streams_the_hem_behind() {
+        // The middle of the body across one height of the billboard.
+        let middle = |pose: &Pose, height: f32| {
+            let inside: Vec<f32> = (-150..=150)
                 .map(|step| step as f32 * 0.01)
-                .filter(|x| pose.silhouette(pose.place(Vec2::new(*x, 0.6))) < 0.0)
-                .sum::<f32>()
+                .filter(|x| pose.silhouette(pose.place(Vec2::new(*x, height))) < 0.0)
+                .collect();
+            inside.iter().sum::<f32>() / inside.len() as f32
         };
-        assert!(head_top(&moving) > head_top(&still));
+        // Bobbing and swaying are left out at a quarter of the sway's cycle.
+        let time = 1.5;
+        let still = Pose::new(time, 0.0, 0.0, 0.0);
+        for sideways in [2.0, -2.0] {
+            let moving = Pose::new(time, sideways, 0.0, 0.0);
+            let head = middle(&moving, 0.55) - middle(&still, 0.55);
+            let hem = middle(&moving, -0.5) - middle(&still, -0.5);
+            assert!(head * sideways > 0.0, "{sideways}: head {head}");
+            assert!(hem * sideways < 0.0, "{sideways}: hem {hem}");
+        }
     }
 
     #[test]
