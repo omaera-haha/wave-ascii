@@ -83,7 +83,8 @@ Keys:
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, a block to nudge it or a tower to topple it, the window to ask it
-to open or shut, the music box to wind it, an envelope to read it, and elsewhere to drop a light mote.
+to open or shut, the music box to wind it, a soap bubble to pop it, an envelope
+to read it, and elsewhere to drop a light mote. Ask for “bubbles!” to start.
 Press on the ghost and drag across it to stroke it; drag elsewhere to turn the view,
 and scroll to zoom. Right-drag draws in the fog on the glass. In the
 journal, help, life, letter, or album panel, the mouse selects text. In the journal,

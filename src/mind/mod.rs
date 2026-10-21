@@ -966,6 +966,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::PlanAnswered { .. }
                 | Understanding::Hint { .. }
                 | Understanding::BreakReply { .. }
+                | Understanding::Bubbles { .. }
         )
 }
 
@@ -2504,6 +2505,46 @@ mod acquaintance_tests {
             assert!(!routes_to_jev(&heard));
             assert!(musing::reply(&world, &heard, None).is_empty());
             assert_eq!(world.life.vocabulary, vocabulary);
+        }
+    }
+
+    #[test]
+    fn bubble_requests_bypass_jev_and_reply_in_the_viewers_language_even_while_busy() {
+        for (message, reply, later) in [
+            (
+                "blow bubbles",
+                "Catch the bubbles!",
+                "I'll blow some bubbles later.",
+            ),
+            (
+                "비눗방울 불어줘",
+                "비눗방울 잡아 봐!",
+                "비눗방울은 나중에 불게.",
+            ),
+        ] {
+            for asleep in [false, true] {
+                let mut world = World::new(7, 12.0);
+                if asleep {
+                    world.tuck_in();
+                    world.ghost.asleep = 1.0;
+                }
+                let heard = world.hear(message);
+                assert!(!routes_to_jev(&heard));
+                assert_eq!(
+                    musing::reply(&world, &heard, None),
+                    vec![if asleep { later } else { reply }]
+                );
+                let mut mind = Mind::new(&Config::default(), Journal::default(), true);
+                mind.hear(&mut world, message);
+                assert_eq!(
+                    world.ghost.speech.as_ref().unwrap().text,
+                    if asleep { later } else { reply }
+                );
+                assert!(world.life.vocabulary.words.is_empty());
+                if asleep {
+                    assert_eq!(world.ghost.asleep, 1.0);
+                }
+            }
         }
     }
 }

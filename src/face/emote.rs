@@ -337,6 +337,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::AskedTreasureHint => Emote::Question,
         EventKind::TookBreak | EventKind::SaidGoodnightTogether => Emote::Heart,
         EventKind::NoticedLateNight => Emote::Sleep,
+        EventKind::BlewBubbles { .. } => Emote::Sparkle,
         _ => return None,
     })
 }

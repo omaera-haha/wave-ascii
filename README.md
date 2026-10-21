@@ -74,6 +74,14 @@ is no audio. It knows a lullaby, a waltz, a tiny march, and a sparkling little
 melody; sometimes it winds the lullaby on its way to bed and falls asleep
 before the music ends. Clicking the box winds it, and a sleeper sleeps on.
 
+Sometimes it holds up a little wand and blows soap bubbles. Four to ten
+rainbow shells wobble on the window breeze, swirl when the box is resized,
+and pop against the room or its curious nose. Click a bubble to pop it
+before it fades, or ask “blow bubbles”, “bubbles!”, “비눗방울 불어줘”, or
+“비눗방울 하자”. It waits until after sleep, work, stories, and games.
+A few quiet sessions fit into each day; popping some together leaves a diary
+memory. The bubbles and wand disappear between visits.
+
 Teach it a tune by typing only three to twenty-four solfège syllables:
 `do re mi fa sol la ti` (also `so` and `si`), `do-re-mi`, or `도레미` /
 `도 레 미`. Add `~` or a trailing dash before a space or the end to hold a
@@ -193,9 +201,9 @@ the next requests use them at once.
 With the mouse, click the ghost to poke it (poke it a few times and it gets
 grumpy), click the ball to flick it, click a loose block to nudge it or a
 tower to knock it down, click the window to ask it to open or shut, click
-the music box to wind it, and click anywhere else in the room to drop in a
-light mote. Press on the ghost and drag back and forth across it to
-stroke it. Drag anywhere else to turn the view, and scroll to zoom. The
+the music box to wind it, click a soap bubble to pop it, and click anywhere
+else in the room to drop in a light mote. Press on the ghost and drag back
+and forth across it to stroke it. Drag anywhere else to turn the view, and scroll to zoom. The
 ghost's eyes follow the pointer. Right-drag on the glass to draw in its fog,
 or press `f` to draw with left drags on a trackpad. Left clicks still poke,
 flick, or play board moves in this mode; `f` or Esc returns to ordinary drags.

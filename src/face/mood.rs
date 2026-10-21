@@ -198,6 +198,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::TookBreak
         | EventKind::SaidGoodnightTogether => Expression::Smile,
         EventKind::NoticedLateNight => Expression::Doze,
+        EventKind::BlewBubbles { .. } => Expression::Smile,
         _ => return None,
     })
 }

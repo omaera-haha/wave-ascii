@@ -124,6 +124,7 @@ fn request(activity: Activity) -> &'static str {
         Activity::Air => "Asks it to open or close the window, or let in fresh air.",
         Activity::Comfort => "Asks it to stay nearby and offer comfort.",
         Activity::Seek => "Only the viewer hiding a treasure starts a search.",
+        Activity::Bubbles => "Asks it to blow or make soap bubbles.",
         Activity::Company => "Asks it to keep the viewer quiet company while they work or study.",
     }
 }

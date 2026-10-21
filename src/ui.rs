@@ -331,7 +331,7 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
 }
 
 /// Tips for a quiet words line, the basics first.
-const TIPS: [&str; 11] = [
+const TIPS: [&str; 12] = [
     "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around",
     "drag across the ghost to stroke it · right drag draws in the fog on the glass",
     "e reads its letters, and w there writes it one back",
@@ -343,6 +343,7 @@ const TIPS: [&str; 11] = [
     "tell it “I have an exam tomorrow” or “내일 면접 있어”, and it remembers to cheer you on",
     "Press x, then click the floor to hide a treasure. Try warmer or colder!",
     "it may suggest a stretch after a long sitting · “not now” puts stretches off for three hours",
+    "ask for “bubbles!” or “비눗방울 불어줘”, then click the bubbles to pop them",
 ];
 /// Seconds the basics show first, and each later tip after them.
 const BASICS_SHOW: f64 = 90.0;
@@ -760,7 +761,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
     let notes = [
         "Ask for a word game; type a letter to guess in talk mode.",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
-        "Click the music box to wind a tune; teach it do re mi.",
+        "Click bubbles to pop them; click the music box for a tune.",
         "Letters: ←/→ browse · w write, Ctrl+S sends · v sent",
         "Album: ←/→, Home/End · life panel: ↑/↓ scroll",
         "Right-drag draws; tell it your feelings or return plans.",

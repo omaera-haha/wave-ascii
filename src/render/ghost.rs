@@ -62,6 +62,13 @@ impl Pose {
         }
     }
 
+    pub fn with_bubbles(mut self, breath: f32) -> Self {
+        self.swell += 0.05 * breath;
+        self.lean += 0.12 * breath;
+        self.stretch -= 0.02 * breath;
+        self
+    }
+
     pub fn with_letter(mut self, curious: bool) -> Self {
         if curious {
             self.lean += 0.12;

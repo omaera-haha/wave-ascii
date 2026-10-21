@@ -185,6 +185,7 @@ pub enum Furniture<'a> {
         radius: f32,
         brightness: f32,
     },
+    BubbleWand(Vec3),
 }
 
 impl Furniture<'_> {
@@ -234,6 +235,7 @@ impl Furniture<'_> {
             Self::Treasure {
                 position, radius, ..
             } => (*position, radius + 0.01),
+            Self::BubbleWand(position) => (*position - Vec3::Y * 0.07, 0.19),
         }
     }
 
@@ -435,6 +437,17 @@ impl Furniture<'_> {
             Self::Treasure {
                 position, radius, ..
             } => ((point - *position).length() - radius, Material::Treasure),
+            Self::BubbleWand(position) => {
+                let local = point - *position;
+                let ring = Vec2::new(local.truncate().length() - 0.065, local.z).length() - 0.009;
+                let stick = capsule(
+                    local,
+                    Vec3::new(0.0, -0.065, 0.0),
+                    Vec3::new(0.02, -0.21, 0.0),
+                    0.012,
+                );
+                (ring.min(stick), Material::Brass)
+            }
         }
     }
 

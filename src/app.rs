@@ -1071,6 +1071,9 @@ impl App {
             self.world.poke();
             return;
         }
+        if self.world.pop_bubble(view.eye, view.ray(point)) {
+            return;
+        }
         if self.world.hunt_counting() {
             if let Some(spot) = view
                 .on_plane(point, 0.0)
@@ -1252,6 +1255,12 @@ impl App {
         {
             face.shut = [1.0; 2];
         }
+        let blowing = world.bubble_breath();
+        if blowing > 0.0 {
+            face.mouth = 0.35 * blowing;
+            face.widen = -0.3 * blowing;
+            face.smile *= 1.0 - blowing;
+        }
         if world.quiet_comfort() {
             face.lid = [0.55; 2];
         }
@@ -1295,7 +1304,8 @@ impl App {
             Some((_, Expression::Glance { .. }))
         ))
         .with_comfort(comfort_breath)
-        .with_stretch(world.stretch_amount());
+        .with_stretch(world.stretch_amount())
+        .with_bubbles(blowing);
         let friend =
             world
                 .friend
@@ -3618,5 +3628,82 @@ mod tests {
         app.input(Input::Key(Key::Character('x')));
         assert!(app.world.hunt.is_none());
         assert!(app.notice().unwrap().contains("game"));
+    }
+
+    fn soap(position: Vec3) -> crate::world::bubbles::Bubble {
+        crate::world::bubbles::Bubble {
+            position,
+            velocity: Vec3::ZERO,
+            radius: 0.1,
+            seed: 1.0,
+            born: 0.0,
+            lifetime: 12.0,
+            popping: None,
+        }
+    }
+
+    #[test]
+    fn clicking_a_bubble_pops_the_nearest_shell_before_the_ball_or_blocks() {
+        for blocks in [false, true] {
+            let mut app = app();
+            let view = app.view.unwrap();
+            app.world.ghost.position = Vec3::new(-1.5, 1.6, -0.7);
+            let target = if blocks {
+                app.world.blocks[0].position
+            } else {
+                app.world.ball.position
+            };
+            let point = view.project(target).unwrap();
+            let direction = view.ray(point);
+            let distance = (target - view.eye).dot(direction);
+            let nearest = view.eye + direction * (distance - 1.0);
+            let farther = view.eye + direction * (distance - 0.4);
+            app.world.bubbles = vec![soap(farther), soap(nearest)];
+            app.click(point);
+            assert!(app.world.bubbles[1].popping.is_some());
+            assert!(app.world.bubbles[0].popping.is_none());
+            assert!(app.world.motes.is_empty());
+            assert!(
+                app.world
+                    .blocks
+                    .iter()
+                    .all(|block| block.velocity == Vec3::ZERO)
+            );
+            assert!(!app.world.events.iter().any(|event| matches!(
+                event.kind,
+                EventKind::KickedBall | EventKind::Toppled { .. }
+            )));
+        }
+    }
+
+    #[test]
+    fn bubble_clicks_leave_the_ghost_and_active_board_cells_first() {
+        let mut app = app();
+        let view = app.view.unwrap();
+        let point = view.project(app.world.ghost.position).unwrap();
+        let direction = view.ray(point);
+        let distance = (app.world.ghost.position - view.eye).dot(direction);
+        app.world.bubbles = vec![soap(view.eye + direction * (distance + 0.5))];
+        app.click(point);
+        assert!(app.world.bubbles[0].popping.is_none());
+        assert!(
+            app.world
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::Poked { .. }))
+        );
+
+        app.world.ghost.position = Vec3::new(-1.5, 0.8, 0.0);
+        app.world.game = Some(crate::world::Game::new(
+            Vec2::new(0.0, 1.5),
+            crate::world::Mark::Cross,
+            0.0,
+        ));
+        let glass = Vec3::new(0.0, 1.5, ROOM_MAX.z);
+        let point = view.project(glass).unwrap();
+        app.world.bubbles = vec![soap(glass - Vec3::Z * 0.2)];
+        app.click(point);
+        assert!(app.world.bubbles[0].popping.is_none());
+        assert!(app.world.motes.is_empty());
     }
 }

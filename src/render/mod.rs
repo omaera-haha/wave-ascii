@@ -1,3 +1,4 @@
+mod bubbles;
 mod dream;
 pub mod ghost;
 mod shapes;
@@ -348,12 +349,21 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     {
         reflected_bodies.swap(0, 1);
     }
+    let shells: Vec<_> = world
+        .bubbles
+        .iter()
+        .filter_map(|bubble| bubbles::Shell::new(bubble, scene.view, world.time, grid.scale()))
+        .collect();
+    if let Some(position) = world.bubble_wand() {
+        furniture.push(Furniture::BubbleWand(position));
+    }
     let tracer = Tracer {
         scene,
         lights: &lights,
         furniture: &furniture,
         bodies: [bodies, reflected_bodies],
         spread,
+        bubbles: &shells,
     };
     Frame::sample(grid, |point| {
         let direction = scene.view.ray(point);
@@ -369,6 +379,7 @@ struct Tracer<'a> {
     furniture: &'a [Furniture<'a>],
     bodies: [[Option<Body>; 2]; 2],
     spread: f32,
+    bubbles: &'a [bubbles::Shell],
 }
 
 impl Tracer<'_> {
@@ -495,6 +506,12 @@ impl Tracer<'_> {
             .then(|| glass_distance(eye, direction))
             .flatten()
             .filter(|distance| *distance <= limit + 1e-3);
+        let soap = (!reflected && !self.bubbles.is_empty())
+            .then(|| bubbles::hits(self.bubbles, view, direction, limit, spread * FOCAL));
+        let mut soap = soap
+            .iter()
+            .flat_map(|hits| hits.iter().flatten())
+            .peekable();
         let mut glazed = false;
         let mut dream = dream.and_then(|bubble| {
             view.billboard_from(eye, direction, bubble.position, bubble.scale)
@@ -538,6 +555,13 @@ impl Tracer<'_> {
                     bubble.shade(local, (traveled + distance) * spread / bubble.scale),
                 );
             }
+            while soap
+                .peek()
+                .is_some_and(|(bubble_distance, _)| *bubble_distance >= distance)
+            {
+                let &(bubble_distance, glow) = soap.next().unwrap();
+                overlay(bubble_distance, glow);
+            }
             let pixel = (traveled + distance) * spread / body.scale;
             overlay(distance, ghost::shade(local, pixel, world.time, body));
         }
@@ -546,6 +570,9 @@ impl Tracer<'_> {
                 distance,
                 bubble.shade(local, (traveled + distance) * spread / bubble.scale),
             );
+        }
+        for &(distance, glow) in soap {
+            overlay(distance, glow);
         }
         if let Some(glass) = glass
             && !glazed
@@ -1018,6 +1045,7 @@ mod tests {
         ];
         let lights = Lights::of(&scene);
         let tracer = Tracer {
+            bubbles: &[],
             scene: &scene,
             lights: &lights,
             furniture: &furniture,
@@ -1089,6 +1117,7 @@ mod tests {
                         Furniture::MusicBox(false, 0.0),
                     ];
                     let tracer = Tracer {
+                        bubbles: &[],
                         scene: &scene,
                         lights: &lights,
                         furniture: &furniture,
@@ -1123,6 +1152,7 @@ mod tests {
             let scene = mirror_scene(world);
             let lights = Lights::of(&scene);
             let tracer = Tracer {
+                bubbles: &[],
                 scene: &scene,
                 lights: &lights,
                 furniture: &[],

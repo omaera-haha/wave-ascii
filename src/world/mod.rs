@@ -7,6 +7,7 @@ pub mod blocks;
 pub mod books;
 pub mod breaks;
 pub mod breeze;
+pub mod bubbles;
 pub mod calendar;
 pub mod creation;
 mod doodle;
@@ -340,6 +341,10 @@ pub enum EventKind {
     NoticedLateNight,
     SaidGoodnightTogether,
     TookBreak,
+    BlewBubbles {
+        blown: u32,
+        popped_by_viewer: u32,
+    },
 }
 
 impl EventKind {
@@ -595,6 +600,14 @@ impl EventKind {
             Self::NoticedLateNight => "you stayed up very late".to_owned(),
             Self::SaidGoodnightTogether => "we said goodnight together late at night".to_owned(),
             Self::TookBreak => "you took a break when I asked".to_owned(),
+            Self::BlewBubbles {
+                blown,
+                popped_by_viewer,
+            } => format!(
+                "blew {} bubbles and you popped {} of them",
+                friend::count_words(*blown),
+                friend::count_words(*popped_by_viewer)
+            ),
         }
     }
 }
@@ -675,6 +688,9 @@ pub enum Understanding {
     },
     BreakReply {
         agreed: bool,
+    },
+    Bubbles {
+        accepted: bool,
     },
 }
 
@@ -887,6 +903,9 @@ pub struct World {
     agenda_visit_question: bool,
     pub hunt: Option<hunt::Hunt>,
     pub rhythm: breaks::Rhythm,
+    pub bubbles: Vec<bubbles::Bubble>,
+    bubble_session: Option<bubbles::Session>,
+    bubbles_finished_at: Option<f64>,
 }
 
 impl World {
@@ -1032,6 +1051,9 @@ impl World {
             agenda_visit_question: false,
             hunt: None,
             rhythm: breaks::Rhythm::default(),
+            bubbles: Vec::new(),
+            bubble_session: None,
+            bubbles_finished_at: None,
         };
         world.scatter_blocks();
         world
@@ -1222,6 +1244,7 @@ impl World {
         let fade = if hiding { 0.85 } else { 0.0 };
         self.ghost.fade += (fade - self.ghost.fade) * (1.0 - (-seconds / 0.4).exp());
         self.move_ghost(seconds);
+        self.advance_bubbles(seconds);
         self.move_friend(seconds);
         if self.ball.held {
             self.ball.position = (self.ghost.position - Vec3::Y * 0.42).clamp(
@@ -1368,6 +1391,13 @@ impl World {
                     .hunt
                     .as_ref()
                     .is_some_and(|hunt| hunt.phase == hunt::Phase::Searching),
+                Activity::Bubbles => {
+                    self.bubbles_are_open()
+                        && self.life.today.times(Activity::Bubbles) < 4
+                        && self
+                            .bubbles_finished_at
+                            .is_none_or(|at| self.time - at >= 3600.0)
+                }
             })
             .collect()
     }
@@ -1491,6 +1521,7 @@ impl World {
                                 something good happened, or to show off for the viewer."
                 .to_owned(),
             Activity::Seek => "Search by sight for the treasure the viewer hid, following their warmer and colder hints.".to_owned(),
+            Activity::Bubbles => "Float into an open spot and blow soap bubbles. Watch them drift, or let the viewer pop them. Wait until after work and games.".to_owned(),
 
         }
     }
@@ -1508,6 +1539,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Bubbles && !self.bubbles_are_open() {
+            return;
+        }
         if activity == Activity::Seek
             && self.ghost.plan.activity == Activity::Seek
             && !self.ghost.plan.done
@@ -1616,6 +1650,7 @@ impl World {
             Activity::Pounce => 25.0,
             Activity::Puzzle => Puzzle::SILENCE as f32 + 15.0,
             Activity::Look => self.random.range(2.0, 3.0),
+            Activity::Bubbles => self.random.range(15.0, 30.0),
             _ => 0.0,
         };
         let target = match activity {
@@ -1676,6 +1711,7 @@ impl World {
             | Activity::Build
             | Activity::Friend => position,
             Activity::Seek => position,
+            Activity::Bubbles => self.bubble_spot(),
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         if activity == Activity::Air {
@@ -1721,6 +1757,9 @@ impl World {
         }
         if activity == Activity::Friend {
             self.begin_friend_game();
+        }
+        if activity == Activity::Bubbles {
+            self.begin_bubbles();
         }
         self.record(EventKind::Began(activity));
     }
@@ -2053,6 +2092,12 @@ impl World {
         if introduction.is_none()
             && naming.is_none()
             && let Some(heard) = self.hear_wardrobe(text, korean)
+        {
+            return heard;
+        }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_bubbles(text, korean)
         {
             return heard;
         }
@@ -2790,6 +2835,7 @@ impl World {
                     | Activity::Mirror
                     | Activity::Letter
                     | Activity::Comfort
+                    | Activity::Bubbles
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -3092,6 +3138,7 @@ impl World {
             }
             Activity::Doodle => look = self.carry_out_doodle(),
             Activity::Seek => look = self.seek_treasure(),
+            Activity::Bubbles => look = self.carry_out_bubbles(),
         }
         self.ghost.look = look;
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
@@ -3318,6 +3365,7 @@ impl World {
                 fun += 0.004 + 0.02 * self.weather.rainbow(self.time)
             }
             Activity::Seek if !ghost.plan.done => fun += 0.004,
+            Activity::Bubbles if !ghost.plan.done => fun += 0.006,
             _ => {}
         }
         if present {

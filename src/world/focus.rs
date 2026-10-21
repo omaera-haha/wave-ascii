@@ -96,6 +96,7 @@ pub(crate) fn seeks_attention(activity: Activity) -> bool {
             | Activity::Wait
             | Activity::Music
             | Activity::Seek
+            | Activity::Bubbles
     )
 }
 

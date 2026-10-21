@@ -309,6 +309,12 @@ pub struct Tally {
     pub late_nights: u32,
     #[serde(default)]
     pub goodnights_together: u32,
+    #[serde(default)]
+    pub bubble_sessions: u32,
+    #[serde(default)]
+    pub bubbles_blown: u32,
+    #[serde(default)]
+    pub bubbles_popped: u32,
 }
 
 impl Tally {
@@ -611,6 +617,14 @@ impl Tally {
             EventKind::NoticedLateNight => self.late_nights = self.late_nights.saturating_add(1),
             EventKind::SaidGoodnightTogether => {
                 self.goodnights_together = self.goodnights_together.saturating_add(1)
+            }
+            EventKind::BlewBubbles {
+                blown,
+                popped_by_viewer,
+            } => {
+                self.bubble_sessions = self.bubble_sessions.saturating_add(1);
+                self.bubbles_blown = self.bubbles_blown.saturating_add(*blown);
+                self.bubbles_popped = self.bubbles_popped.saturating_add(*popped_by_viewer);
             }
             _ => {}
         }
@@ -1276,6 +1290,16 @@ impl Tally {
                 "we said goodnight together late at night".to_owned(),
             ));
         }
+        if self.bubble_sessions > 0 {
+            deeds.push(if self.bubbles_popped > 0 {
+                (
+                    Salience::Notable,
+                    "blew bubbles and you popped them".to_owned(),
+                )
+            } else {
+                (Salience::Small, "blew bubbles".to_owned())
+            });
+        }
         deeds
     }
 
@@ -1645,6 +1669,9 @@ impl Life {
             EventKind::PlanWentWell(_) => 0.008,
             EventKind::FoundTreasure { gave_up: false, .. } => 0.004,
             EventKind::TookBreak | EventKind::SaidGoodnightTogether => 0.004,
+            EventKind::BlewBubbles {
+                popped_by_viewer, ..
+            } if *popped_by_viewer > 0 => 0.003,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -1860,6 +1887,7 @@ impl Life {
             Activity::Music => 5.0,
             Activity::Doodle | Activity::Hide | Activity::Build => 8.0,
             Activity::Dance | Activity::Explore | Activity::Play => 16.0,
+            Activity::Bubbles => 1.5,
             _ => return 1.0,
         };
         1.0 / (1.0 + self.today.times(activity) as f32 / enough)
@@ -2156,6 +2184,9 @@ impl Life {
             tally.luck_wished = tally.luck_wished.min(100_000_000);
             tally.plans_went_well = tally.plans_went_well.min(100_000_000);
             tally.plans_went_badly = tally.plans_went_badly.min(100_000_000);
+            tally.bubble_sessions = tally.bubble_sessions.min(1_000_000);
+            tally.bubbles_blown = tally.bubbles_blown.min(tally.bubble_sessions * 10);
+            tally.bubbles_popped = tally.bubbles_popped.min(tally.bubbles_blown);
             for errands in [
                 &mut tally.heard_plans,
                 &mut tally.wished_plans,
@@ -2481,6 +2512,9 @@ impl Life {
             EventKind::TookBreak if total.breaks_taken == 1 => {
                 "You took a break when I asked.".to_owned()
             }
+            EventKind::BlewBubbles {
+                popped_by_viewer, ..
+            } if *popped_by_viewer > 0 => "You popped my bubbles for the first time.".to_owned(),
             _ => return None,
         };
         self.reach(text)
