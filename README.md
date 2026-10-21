@@ -3,11 +3,14 @@
 A ghost lives in a glass box in your terminal.
 
 The box is a small room drawn in dots: a floor lamp, a potted plant, a ball, a
-cushion to sleep on, and specks of light that drift in. The ghost is a point in
-that room with a body, needs, and a mood. You see it as an abstract shape made
-of dots, and its glow shows how it is. It floats about, chases and eats light
-motes, plays with the ball, waters the plant, switches the lamp, naps when
-tired, and comes to the glass to look at you.
+cushion to sleep on, specks of light that drift in, and a window onto hills
+where it sometimes rains and, after rain by day, a rainbow shines. The ghost
+is a point in that room with a body, needs, a mood, and a gaze: it sees what
+lies within sixty degrees of where it faces, and furniture hides what's behind
+it. You see it as an abstract shape made of dots, and its glow shows how it
+is. It floats about, chases and eats the light motes it has spotted, plays with
+the ball, waters the plant, switches the lamp, gazes out of the window, naps
+when tired, and comes to the glass to look at you.
 
 Two models give it a mind:
 
@@ -94,6 +97,11 @@ The room follows your local time: daylight by day, warm at dawn and dusk, and
 dark at night unless the lamp is on.
 A wooden window in the back wall looks over rolling hills, with a sun that
 crosses the sky, drifting clouds, and a moon and twinkling stars at night.
+Every so often a shower comes; one that ends by day leaves a rainbow for a
+couple of minutes. The ghost lights up if it catches sight of it.
+
+- **Its eyes** follow where it faces, so its face shows what it's looking at,
+  except while your pointer moves, which it watches instead.
 
 ### Its life between runs
 
@@ -122,9 +130,11 @@ All but the last three can be changed in the app with `k`.
 ### What is sent, and what it costs
 
 Each request describes the moment in words, for example "tired", "the plant is
-a little dry", "the viewer poked you (just now)". Requests to Claude also carry
-the ghost's memories and the last few lines of conversation. Nothing else
-leaves your machine.
+a little dry", "the viewer poked you (just now)", and what the ghost sees from
+where it faces, such as "the window, showing a rainbow: across the room,
+straight ahead". Requests to Claude also carry the ghost's memories and the
+last few lines of conversation. Nothing else leaves your machine. Claude can
+answer by turning the ghost's gaze to something, so it can choose to look.
 
 Jev costs very little: each decision is a few hundred input tokens, billed per
 million, and output is free. Claude reflects every three minutes while you're
