@@ -913,23 +913,11 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             total.nudges,
         ),
         ("fetches", total.fetches, "dances", total.dances),
-        ("found hiding", total.finds, "doodles", total.doodles),
+        ("found hiding", total.finds, "finger pounces", total.pounces),
+        ("doodles", total.doodles, "words written", total.writings),
         ("plant watered", total.waterings, "flowers", total.blooms),
-        ("naps", total.naps, "rainbows seen", total.rainbows),
+        ("naps", total.naps, "nights slept", total.nights),
         ("messages from you", total.heard, "pokes", total.pokes),
-        (
-            "storms sat out",
-            total.storms,
-            "celebrations",
-            total.celebrations,
-        ),
-        (
-            "finger pounces",
-            total.pounces,
-            "nights slept",
-            total.nights,
-        ),
-        ("birds watched", total.birds, "moths seen", total.moths),
         (
             "strokes from you",
             total.pets,
@@ -937,17 +925,26 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             total.learned,
         ),
         (
+            "storms sat out",
+            total.storms,
+            "rainbows seen",
+            total.rainbows,
+        ),
+        (
+            "celebrations",
+            total.celebrations,
+            "birds watched",
+            total.birds,
+        ),
+        ("moths seen", total.moths, "gifts kept", total.gifts),
+        ("games won", total.wins, "games lost", total.losses),
+        ("games drawn", total.draws, "towers built", total.towers),
+        ("tallest tower", total.tallest, "you toppled", total.toppled),
+        (
             "expected visits",
             total.expected,
             "visits missed",
             total.missed,
-        ),
-        ("towers built", total.towers, "tallest tower", total.tallest),
-        (
-            "words written",
-            total.writings,
-            "watched",
-            total.watched_writings,
         ),
     ] {
         counts.push((
@@ -955,15 +952,6 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             TEXT,
         ));
     }
-    counts.push((
-        format!(
-            "  noughts and crosses: {} games, {} won, {} lost, {} drawn",
-            total.games, total.wins, total.losses, total.draws
-        ),
-        TEXT,
-    ));
-    counts.push((format!("  gifts kept        {:>5}", total.gifts), TEXT));
-    counts.push((format!("  towers you toppled{:>5}", total.toppled), TEXT));
     let latest = match life.milestones.last() {
         Some(milestone) => vec![
             (String::new(), TEXT),

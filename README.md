@@ -2,25 +2,28 @@
 
 A ghost lives in a glass box in your terminal.
 
-The box is a small room drawn in dots: a floor lamp, a potted plant, a ball, five
-bright toy blocks, a cushion to sleep on, specks of light that drift in, and a
-window onto hills where the seasons turn, birds come to perch, storms roll
-through, snow falls in winter, and rain can leave a rainbow. On lit nights,
-a little moth
-sometimes flutters in and circles the lamp. The ghost is a point in that room
-with a body, needs, a mood, and a gaze: it sees what lies within sixty
-degrees of where it faces, and furniture hides what's behind it. You see it
-as an abstract shape made of dots, and its glow shows how it is.
+The box is a small room drawn in dots: a floor lamp, a potted plant, a ball,
+five bright toy blocks, a cushion to sleep on, a little shelf of keepsakes,
+specks of light that drift in, and a window onto hills where the seasons
+turn, birds come to perch, storms roll through, snow falls in winter, and
+rain can leave a rainbow. On lit nights, a little moth sometimes flutters in
+and circles the lamp. The ghost is a point in that room with a body, needs, a
+mood, and a gaze: it sees what lies within sixty degrees of where it faces,
+and furniture hides what's behind it. You see it as an abstract shape made of
+dots, and its glow shows how it is.
 
 It floats about, chases and eats the light motes it has spotted, plays with
-the ball and brings it back after a throw, stacks towers of blocks, pounces
-on your pointer through the glass, waters the plant, switches the lamp, watches
-the birds from the window, naps when tired, and comes to the glass to look at
-you. When delighted it dances a little twirl in the air. It plays hide-and-seek and
-draws little pictures in the fog on the glass. At night it goes to bed and
-sleeps until morning. Each ghost is born with a nature of its own, and over
-days it grows close to you, learns your words, forms habits, keeps a diary,
-and marks its special days.
+the ball and brings it back after a throw, stacks towers of blocks and knocks
+them down, pounces on your pointer through the glass, waters the plant,
+switches the lamp, watches the birds from the window, naps when tired, and
+comes to the glass to look at you. When delighted it dances a little twirl in
+the air. It plays hide-and-seek, draws little pictures and writes words in
+the fog on the glass, and challenges you to noughts and crosses there. Stroke
+it and it melts. At night it goes to bed and sleeps until morning. Each ghost
+is born with a nature of its own, and over days it grows close to you, learns
+your words and your name, learns when you usually come and waits for you,
+befriends the bird, which brings it little gifts, forms habits, keeps a
+diary, and marks its special days.
 
 Two models give it a mind:
 
@@ -312,11 +315,12 @@ the diary and its moments are in the journal (`j`). Claude reads the last few
 days of the diary and its latest moments.
 
 The ghost's name, needs, the plant, the lamp, its goal, its memories, its
-nature, bond, habits, moments, diary, the words it has learned, its friendship
-with the bird, keepsakes, any gift waiting on the sill, and the recent
-conversation are saved in
+nature, bond, habits, moments, diary, the words it has learned, your name, the
+hours you usually come, its friendship with the bird, keepsakes, any gift
+waiting on the sill, and the recent conversation are saved in
 `~/.local/share/wave-ascii/ghost.json` (`$XDG_DATA_HOME` if set) every minute
-and on quit. While the app is closed,
+and on quit. Games, block towers, and pictures on the glass are not. While the
+app is closed,
 time passes: the plant gets thirsty and the ghost lonely, and it notices how
 long you were away. Delete the file to start a new ghost.
 

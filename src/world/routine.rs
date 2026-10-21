@@ -73,9 +73,21 @@ impl World {
         if expected {
             self.record(EventKind::ExpectedArrival);
             self.ghost.needs.change(0.0, 0.0, 0.15);
-            let lines = ["There you are!", "Right on time!", "I hoped you'd come."];
-            let index = self.random.range(0.0, lines.len() as f32) as usize;
-            self.say(lines[index]);
+            let lines = match &self.life.viewer_name {
+                Some(name) => vec![
+                    format!("There you are, {name}!"),
+                    "Right on time!".to_owned(),
+                    format!("I hoped you'd come, {name}."),
+                ],
+                None => vec![
+                    "There you are!".to_owned(),
+                    "Right on time!".to_owned(),
+                    "I hoped you'd come.".to_owned(),
+                ],
+            };
+            if let Some(index) = self.pick(&[1.0; 3]) {
+                self.say(&lines[index]);
+            }
         }
         if waiting {
             self.ghost.plan.done = true;
