@@ -559,7 +559,8 @@ mod tests {
                     .is_some()
             );
         }
-        world.weather.advance(2001.0, 1200.0, true);
+        // Winter snow takes most of a sunny day to melt.
+        world.weather.advance(2001.0, 22_000.0, true);
         assert_eq!(world.weather.settled_snow, None);
         assert!(
             Passerby::Snowman

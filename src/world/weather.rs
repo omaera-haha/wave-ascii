@@ -51,9 +51,11 @@ pub struct Weather {
 /// Seconds rain or snow takes to set in or clear, and a rainbow to appear or fade.
 const RAIN_EASE: f64 = 20.0;
 const RAINBOW_EASE: f64 = 10.0;
+/// How often a shower that ends by day leaves a rainbow behind.
+const RAINBOW_CHANCE: f32 = 0.35;
 
 impl Weather {
-    /// Clear skies, with the first shower due in a few minutes.
+    /// Clear skies, with the first shower due within a few hours.
     pub fn new(random: &mut Random) -> Self {
         Self {
             sky: Sky::Clear,
@@ -62,7 +64,7 @@ impl Weather {
             next_flash: f64::INFINITY,
             thunder_at: None,
             since: 0.0,
-            until: f64::from(random.range(180.0, 420.0)) * clear_factor(Season::Summer),
+            until: f64::from(random.range(900.0, 7200.0)) * clear_factor(Season::Summer),
             snow_cover: 0.0,
             season: Season::Summer,
             settled_snow: None,
@@ -90,7 +92,7 @@ impl Weather {
         }
         let (sky, length, change) = match self.sky {
             Sky::Clear | Sky::Rain if season == Season::Winter => {
-                (Sky::Snow, random.range(120.0, 300.0), Change::SnowStarted)
+                (Sky::Snow, random.range(600.0, 2400.0), Change::SnowStarted)
             }
             Sky::Clear => {
                 let chance = if season == Season::Summer { 0.3 } else { 0.15 };
@@ -99,20 +101,16 @@ impl Weather {
                 } else {
                     Change::RainStarted
                 };
-                (Sky::Rain, random.range(120.0, 300.0), change)
+                (Sky::Rain, random.range(300.0, 1200.0), change)
             }
-            Sky::Rain if daytime => (
+            Sky::Rain if daytime && random.unit() < RAINBOW_CHANCE => (
                 Sky::Rainbow,
-                random.range(90.0, 180.0),
+                random.range(120.0, 300.0),
                 Change::RainbowAppeared,
             ),
-            Sky::Rain => (Sky::Clear, random.range(600.0, 1800.0), Change::RainStopped),
-            Sky::Snow => (Sky::Clear, random.range(600.0, 1800.0), Change::SnowStopped),
-            Sky::Rainbow => (
-                Sky::Clear,
-                random.range(600.0, 1800.0),
-                Change::RainbowFaded,
-            ),
+            Sky::Rain => (Sky::Clear, clear_spell(random), Change::RainStopped),
+            Sky::Snow => (Sky::Clear, clear_spell(random), Change::SnowStopped),
+            Sky::Rainbow => (Sky::Clear, clear_spell(random), Change::RainbowFaded),
         };
         if change == Change::SnowStopped && self.snow_cover >= 0.65 {
             self.settled_snow = Some(time);
@@ -132,10 +130,16 @@ impl Weather {
         Some(change)
     }
 
-    /// Builds snow during snowfall and melts it more slowly at night.
+    /// Builds snow during snowfall and melts it more slowly at night, and
+    /// far more slowly while it is still winter.
     pub fn advance(&mut self, time: f64, seconds: f32, daytime: bool) {
         let snow = self.snow(time);
-        let melting_time = if daytime { 1200.0 } else { 3600.0 };
+        let melting_time = match (self.season == Season::Winter, daytime) {
+            (true, true) => 21_600.0,
+            (true, false) => 86_400.0,
+            (false, true) => 1200.0,
+            (false, false) => 3600.0,
+        };
         self.snow_cover = (self.snow_cover
             + seconds.max(0.0) * (snow / 120.0 - (1.0 - snow) / melting_time))
             .clamp(0.0, 1.0);
@@ -218,6 +222,11 @@ impl Weather {
     }
 }
 
+/// Seconds of a clear spell before the season's factor: an hour to five.
+fn clear_spell(random: &mut Random) -> f32 {
+    random.range(3600.0, 18_000.0)
+}
+
 fn clear_factor(season: Season) -> f64 {
     match season {
         Season::Spring => 0.7,
@@ -239,33 +248,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn showers_come_and_end_in_a_rainbow_only_by_day() {
-        for (daytime, ending) in [(true, Sky::Rainbow), (false, Sky::Clear)] {
-            let mut random = Random::new(1);
-            let mut weather = Weather::new(&mut random);
-            assert!((252.0..588.0).contains(&weather.until));
-            let start = weather.until;
-            assert!(matches!(
-                weather.step(start, daytime, Season::Summer, &mut random),
-                Some(Change::RainStarted | Change::StormStarted)
-            ));
-            assert_eq!(weather.sky, Sky::Rain);
-            assert_eq!(
-                weather.step(start + 1.0, daytime, Season::Summer, &mut random),
-                None
-            );
-            let change = weather.step(weather.until, daytime, Season::Summer, &mut random);
-            assert_eq!(weather.sky, ending);
-            if daytime {
-                assert_eq!(change, Some(Change::RainbowAppeared));
+    fn showers_come_now_and_then_and_sometimes_end_in_a_rainbow_only_by_day() {
+        for daytime in [true, false] {
+            let mut rainbows = 0;
+            for seed in 0..400 {
+                let mut random = Random::new(seed);
+                let mut weather = Weather::new(&mut random);
+                assert!((1260.0..10_080.0).contains(&weather.until));
+                let start = weather.until;
+                assert!(matches!(
+                    weather.step(start, daytime, Season::Summer, &mut random),
+                    Some(Change::RainStarted | Change::StormStarted)
+                ));
+                assert_eq!(weather.sky, Sky::Rain);
+                assert!((300.0..1200.0).contains(&(weather.until - start)));
                 assert_eq!(
-                    weather.step(weather.until, daytime, Season::Summer, &mut random),
-                    Some(Change::RainbowFaded)
+                    weather.step(start + 1.0, daytime, Season::Summer, &mut random),
+                    None
                 );
-            } else {
-                assert_eq!(change, Some(Change::RainStopped));
+                let change = weather.step(weather.until, daytime, Season::Summer, &mut random);
+                if change == Some(Change::RainbowAppeared) {
+                    assert!(daytime);
+                    rainbows += 1;
+                    assert_eq!(weather.sky, Sky::Rainbow);
+                    assert_eq!(
+                        weather.step(weather.until, daytime, Season::Summer, &mut random),
+                        Some(Change::RainbowFaded)
+                    );
+                } else {
+                    assert_eq!(change, Some(Change::RainStopped));
+                }
+                assert_eq!(weather.sky, Sky::Clear);
+                let clear = weather.until - weather.since;
+                assert!((5040.0..25_200.0).contains(&clear), "{clear}");
             }
-            assert_eq!(weather.sky, Sky::Clear);
+            let share = rainbows as f32 / 400.0;
+            if daytime {
+                assert!((0.25..0.45).contains(&share), "{share}");
+            } else {
+                assert_eq!(rainbows, 0);
+            }
         }
     }
 
@@ -348,6 +370,22 @@ mod tests {
         assert!(night.snow_cover < 0.001);
         night.advance(4400.0, 10_000.0, false);
         assert_eq!(night.snow_cover, 0.0);
+    }
+
+    #[test]
+    fn winter_snow_lingers_on_the_hills_for_hours() {
+        let mut random = Random::new(3);
+        let mut weather = Weather::new(&mut random);
+        weather.step(0.0, true, Season::Winter, &mut random);
+        weather.sky = Sky::Clear;
+        weather.snow_cover = 1.0;
+        weather.advance(0.0, 3600.0, true);
+        assert!(weather.snow_cover > 0.8, "{}", weather.snow_cover);
+        weather.advance(3600.0, 8.0 * 3600.0, false);
+        assert!(weather.snow_cover > 0.45, "{}", weather.snow_cover);
+        weather.step(0.0, true, Season::Spring, &mut random);
+        weather.advance(0.0, 1200.0, true);
+        assert!(weather.snow_cover < 0.001);
     }
 
     #[test]
