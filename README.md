@@ -40,6 +40,15 @@ outlines in its sky. It notices when you say you're tired or sad and looks
 after you, writes back when you write to it, makes up songs and, in time, a
 picture book of its own life, remembers the day it learned your name a month
 later, and celebrates its hundredth day with you.
+Tell it about tomorrow's exam or interview and it wishes you luck on the day
+and asks how it went. It folds paper cranes toward a thousand and strings
+them from the ceiling, blows soap bubbles for you to pop, pins your fog
+drawings to a cork board on its wall, and searches the room by sight for a
+treasure you hide (`x`), following your "warmer!" and "colder!". It poses
+for your camera (`P`), suggests a stretch after a long sitting, mumbles that
+it's late when you're up in the small hours, and writes its diary in the
+language you speak to it. Resize the terminal and the box jostles like a
+snow globe.
 
 A small cork board on the left wall keeps four pictures from its life:
 above all copies of your fog drawings, then its own proud doodles and
