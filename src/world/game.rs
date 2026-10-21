@@ -488,7 +488,7 @@ fn inside(point: Vec2, setback: f32) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{Doodle, Mood, Sketch};
+    use crate::world::{Doodle, Mood, Picture, Sketch};
 
     fn run_until(world: &mut World, condition: impl Fn(&World) -> bool) {
         for _ in 0..1400 {
@@ -802,16 +802,16 @@ mod tests {
     fn beginning_a_board_wipes_only_doodles_centered_on_it() {
         let mut world = World::new(3, 12.0);
         let doodle = Doodle {
-            sketch: Sketch::Heart,
+            picture: Picture::Sketch(Sketch::Heart),
             center: Vec2::new(world.ghost.position.x, 1.25),
             size: 0.3,
             started: 0.0,
         };
         let away = Doodle {
             center: Vec2::new(-1.5, 1.25),
-            ..doodle
+            ..doodle.clone()
         };
-        world.doodles.extend([doodle, away]);
+        world.doodles.extend([doodle, away.clone()]);
         world.begin(Activity::Game);
         assert_eq!(world.doodles, [away]);
     }

@@ -31,6 +31,8 @@ pub struct Reflection {
     pub name: String,
     /// What to turn and look at next, by its name in `Thing::NAMES`.
     pub look_at: String,
+    /// A short word to draw in the fog, or empty.
+    pub write: String,
 }
 
 const SYSTEM: &str = "\
@@ -75,7 +77,9 @@ visiting the person, the lamp), or empty to keep its current goal.
 about, or empty. Most of the time this is empty.
 - name: its new name if the person just gave it one, or empty.
 - look_at: what it turns to look at next, if it wants to look at something it doesn't see \
-now or to keep its eyes on something, or empty to let its eyes wander.";
+now or to keep its eyes on something, or empty to let its eyes wander.
+- write: a short word to write in the fog on the glass for the viewer, such as their name or HI, \
+or empty; use rarely. Use Latin letters and digits only, at most eight.";
 
 /// The schema Claude's reply must follow.
 pub fn schema() -> Value {
@@ -89,9 +93,10 @@ pub fn schema() -> Value {
             "mood": {"type": "string", "enum": Mood::ALL.map(Mood::name)},
             "remember": text,
             "name": text,
+            "write": {"type": "string", "pattern": "^[A-Za-z0-9]{0,8}$"},
             "look_at": {"type": "string", "enum": std::iter::once("").chain(Thing::NAMES).collect::<Vec<_>>()},
         },
-        "required": ["thought", "say", "goal", "mood", "remember", "name", "look_at"],
+        "required": ["thought", "say", "goal", "mood", "remember", "name", "look_at", "write"],
         "additionalProperties": false,
     })
 }
@@ -155,13 +160,16 @@ pub fn request(
     let routine = life.usual_time().map_or_else(String::new, |usual| {
         format!("\nThe viewer usually visits {usual}.")
     });
+    let name = life.viewer_name.as_ref().map_or_else(String::new, |name| {
+        format!("\nThe viewer's name is {name}.")
+    });
     let block = |text: String| Block { text, cache };
     Request {
         system: vec![
             Block::new(SYSTEM),
             block(format!(
                 "By nature you are {}. Let that color your voice.\n\
-                 Your bond with the viewer: {}.{routine}\n\n\
+                 Your bond with the viewer: {}.{routine}{name}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}",
@@ -212,6 +220,7 @@ pub fn read(value: Value) -> Option<Reflection> {
         &mut reflection.remember,
         &mut reflection.name,
         &mut reflection.look_at,
+        &mut reflection.write,
     ] {
         *field = field.trim().to_owned();
     }
@@ -235,6 +244,11 @@ mod tests {
         assert_eq!(properties.len(), required.len());
         assert!(required.iter().all(|name| properties.contains_key(*name)));
         assert_eq!(schema["additionalProperties"], false);
+        assert!(required.contains(&"write"));
+        assert_eq!(
+            schema["properties"]["write"]["pattern"],
+            "^[A-Za-z0-9]{0,8}$"
+        );
         assert_eq!(
             schema["properties"]["mood"]["enum"]
                 .as_array()
@@ -261,6 +275,7 @@ mod tests {
                 crate::world::Keepsake::Feather,
                 crate::world::Keepsake::Acorn,
             ],
+            viewer_name: Some("Mina".to_owned()),
             nature: Some(crate::world::Nature {
                 playful: 0.95,
                 shy: 0.72,
@@ -305,6 +320,11 @@ mod tests {
         assert!(request.system[1].text.contains(
             "The bird: a friend. You treasure the shelf of keepsakes, with a feather and an acorn."
         ));
+        assert!(
+            request.system[1]
+                .text
+                .contains("The viewer's name is Mina.")
+        );
         assert_eq!(request.system[1].cache, Some(Cache::OneHour));
         assert!(
             request.system[1]
@@ -358,10 +378,11 @@ mod tests {
     fn replies_are_read_and_trimmed() {
         let reflection = read(json!({
             "thought": " cozy ", "say": "", "goal": "tend the plant", "mood": "content",
-            "remember": "", "name": ""
+            "remember": "", "name": "", "look_at": "", "write": " HI "
         }))
         .unwrap();
         assert_eq!(reflection.thought, "cozy");
+        assert_eq!(reflection.write, "HI");
         assert_eq!(reflection.mood, Some(Mood::Content));
         assert!(read(json!({"thought": 3})).is_none());
     }

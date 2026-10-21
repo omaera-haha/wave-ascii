@@ -375,6 +375,16 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
 /// understood or wonders about, so the viewer can see it learning.
 pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
     let lines = |items: &[&str]| items.iter().map(|line| (*line).to_owned()).collect();
+    if let Some(name) = &heard.learned_name {
+        return if heard.korean {
+            vec![format!("반가워, {name}!"), format!("{name}! 기억할게.")]
+        } else {
+            vec![
+                format!("Nice to meet you, {name}!"),
+                format!("{name}! I'll remember."),
+            ]
+        };
+    }
     if let Some((word, _)) = heard.learned.last() {
         return vec![
             format!("So “{word}” means this!"),
@@ -431,6 +441,11 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
                 format!("Hm? {}?", capitalized(word)),
             ]
         };
+    }
+    if heard.tone == Some(Tone::Greeting)
+        && let Some(name) = &world.life.viewer_name
+    {
+        return vec![format!("Hi, {name}!"), "Hello! You're here!".to_owned()];
     }
     match heard.tone {
         Some(Tone::Farewell) if world.is_night() => lines(&["Goodnight!", "Sleep well."]),
@@ -849,5 +864,25 @@ mod tests {
         }
         let heard = world.hear("is it");
         assert!(reply(&world, &heard, None).is_empty());
+    }
+
+    #[test]
+    fn introductions_are_acknowledged_offline_and_greetings_sometimes_use_the_name() {
+        let mut world = World::new(1, 12.0);
+        let heard = world.hear("my name is Mina");
+        let lines = reply(&world, &heard, None);
+        assert!(lines.contains(&"Nice to meet you, Mina!".to_owned()));
+        assert!(lines.iter().all(|line| line.contains("Mina")));
+        let heard = world.hear("hi");
+        let lines = reply(&world, &heard, None);
+        assert!(lines.contains(&"Hi, Mina!".to_owned()));
+        assert!(lines.iter().any(|line| !line.contains("Mina")));
+        let heard = world.hear("제 이름은 민수예요.");
+        assert!(
+            reply(&world, &heard, None)
+                .iter()
+                .all(|line| line.contains("민수"))
+        );
+        assert!(reply(&world, &heard, None).contains(&"반가워, 민수!".to_owned()));
     }
 }

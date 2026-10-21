@@ -136,6 +136,98 @@ const LITTLE: &[&str] = &[
     "해줘", "줘",
 ];
 
+// Ordinary states and sentence openings that are not names in an ambiguous introduction.
+const ORDINARY: &[&str] = &[
+    "tired",
+    "back",
+    "home",
+    "here",
+    "sorry",
+    "fine",
+    "good",
+    "ok",
+    "okay",
+    "happy",
+    "sad",
+    "bored",
+    "hungry",
+    "sleepy",
+    "busy",
+    "done",
+    "leaving",
+    "going",
+    "so",
+    "very",
+    "just",
+    "not",
+    "a",
+    "an",
+    "the",
+    "and",
+    "well",
+    "great",
+    "excited",
+    "ready",
+    "awake",
+    "alone",
+    "lost",
+    "late",
+    "early",
+    "sick",
+    "ill",
+    "cold",
+    "hot",
+    "afraid",
+    "scared",
+    "confused",
+    "curious",
+    "new",
+    "sure",
+    "still",
+    "really",
+    "feeling",
+    "looking",
+    "trying",
+    "playing",
+    "watching",
+    "waiting",
+    "having",
+    "doing",
+    "getting",
+    "only",
+    "also",
+    "finally",
+    "almost",
+    "never",
+    "always",
+    "from",
+    "in",
+    "on",
+    "at",
+    "fun",
+    "glad",
+    "alive",
+    "dead",
+    "reading",
+    "writing",
+    "thinking",
+    "talking",
+    "super",
+    "quite",
+    "lonely",
+    "content",
+    "grumpy",
+    "annoyed",
+    "proud",
+    "asleep",
+    "stuck",
+    "interested",
+    "off",
+    "out",
+    "inside",
+    "outside",
+];
+
 /// What the ghost makes of a message without knowing what its words mean
 /// yet: the tone, the words that might mean something, and whether it was
 /// called by name.
@@ -182,6 +274,96 @@ pub fn read(text: &str, name: &str) -> Reading {
         .into_iter()
         .find(|tone| tones.contains(tone));
     Reading { tone, words, named }
+}
+
+/// Finds an introduction without guessing a name from an ordinary sentence.
+pub fn introduced_name(text: &str) -> Option<String> {
+    let original: Vec<&str> = text
+        .split_whitespace()
+        .map(|word| {
+            word.trim_matches(|character: char| {
+                !character.is_alphanumeric() && !matches!(character, '\'' | '’')
+            })
+        })
+        .filter(|word| !word.is_empty())
+        .collect();
+    let words: Vec<String> = original
+        .iter()
+        .map(|word| word.to_lowercase().replace('’', "'"))
+        .collect();
+    for index in 0..words.len() {
+        let tail = &words[index..];
+        let starts = |phrase: &[&str]| {
+            tail.iter()
+                .map(String::as_str)
+                .take(phrase.len())
+                .eq(phrase.iter().copied())
+        };
+        let (offset, cautious) = if starts(&["my", "name", "is"]) {
+            (3, false)
+        } else if starts(&["call", "me"]) || starts(&["내", "이름은"]) || starts(&["제", "이름은"])
+        {
+            (2, false)
+        } else if starts(&["i", "am"]) {
+            (2, true)
+        } else if starts(&["i'm"]) || starts(&["im"]) {
+            (1, true)
+        } else if starts(&["this", "is"])
+            && words[..index]
+                .iter()
+                .any(|word| GREETINGS.contains(&word.as_str()))
+        {
+            (2, false)
+        } else if tail.first().is_some_and(|word| word.ends_with("라고"))
+            && tail
+                .get(1)
+                .is_some_and(|word| matches!(word.as_str(), "불러" | "불러요" | "불러주세요"))
+        {
+            (0, false)
+        } else {
+            continue;
+        };
+        let Some(&candidate) = original.get(index + offset) else {
+            continue;
+        };
+        if cautious || starts(&["this", "is"]) {
+            let lower = candidate.to_lowercase();
+            if (cautious && !candidate.chars().next().is_some_and(char::is_uppercase))
+                || ORDINARY.contains(&lower.as_str())
+                || LITTLE.contains(&lower.as_str())
+            {
+                continue;
+            }
+        }
+        if let Some(name) = clean_name(candidate) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// A single name, kept safe for saves, milestones, and terminal text.
+pub(super) fn clean_name(text: &str) -> Option<String> {
+    let mut name = text.trim_matches(|character: char| !character.is_alphanumeric());
+    for particle in ["이에요", "이라고", "입니다", "예요", "이야", "라고", "야"] {
+        if let Some(stem) = name.strip_suffix(particle) {
+            if stem.chars().count() >= 2 {
+                name = stem;
+            }
+            break;
+        }
+    }
+    if !(2..=16).contains(&name.chars().count()) || !name.chars().all(char::is_alphabetic) {
+        return None;
+    }
+    let mut characters = name.chars();
+    let first = characters.next()?;
+    if first.is_ascii_alphabetic() || ('À'..='ɏ').contains(&first) || ('Ḁ'..='ỿ').contains(&first)
+    {
+        Some(first.to_uppercase().chain(characters).collect())
+    } else {
+        Some(name.to_owned())
+    }
 }
 
 /// The words of `text`: lowercased, without apostrophes, split at anything
@@ -507,5 +689,91 @@ mod tests {
         assert_eq!(ball.evidence(Activity::Dance), 0.0);
         assert_eq!(ball.evidence(Activity::Play), DOUBT);
         assert_eq!(ball.meaning(), Some(Activity::Fetch));
+    }
+
+    #[test]
+    fn introductions_find_names_in_english_and_korean_and_keep_their_spelling() {
+        for (text, expected) in [
+            ("my name is mina.", "Mina"),
+            ("My name is Alex!", "Alex"),
+            ("Please call me sam.", "Sam"),
+            ("I'm Mina", "Mina"),
+            ("I’m Mina!", "Mina"),
+            ("i am Sam", "Sam"),
+            ("im Jo", "Jo"),
+            ("I'm Élodie.", "Élodie"),
+            ("hello, this is Mina.", "Mina"),
+            ("Hi there, this is Alex!", "Alex"),
+            ("내 이름은 민수야", "민수"),
+            ("제 이름은 지민이에요.", "지민"),
+            ("내 이름은 수빈이야!", "수빈"),
+            ("제 이름은 미나예요", "미나"),
+            ("내 이름은 지민입니다", "지민"),
+            ("민수라고 불러", "민수"),
+            ("지민이라고 불러!", "지민"),
+            ("미나라고 불러요.", "미나"),
+            ("내 이름은 마야", "마야"),
+            ("my name is 佐藤", "佐藤"),
+            ("my name is елена", "елена"),
+            ("my name is abcdefghijklmnop", "Abcdefghijklmnop"),
+        ] {
+            assert_eq!(introduced_name(text).as_deref(), Some(expected), "{text}");
+        }
+    }
+
+    #[test]
+    fn ordinary_sentences_and_invalid_names_are_not_introductions() {
+        for text in [
+            "I'm tired",
+            "I'm Tired",
+            "I'm Back!",
+            "I am Home",
+            "im mina",
+            "I'm happy",
+            "I'm Sorry",
+            "I'm Fine",
+            "I'm Good",
+            "I'm Ok",
+            "I'm Okay",
+            "I'm Happy",
+            "I'm Sad",
+            "I'm Bored",
+            "I'm Hungry",
+            "I'm Sleepy",
+            "I'm Busy",
+            "I'm Done",
+            "I'm Leaving",
+            "I'm Going",
+            "I'm So happy",
+            "I'm Very tired",
+            "I'm Just here",
+            "I'm Not Mina",
+            "I'm A ghost",
+            "I'm An owl",
+            "I'm The viewer",
+            "I'm And",
+            "I'm Feeling good",
+            "I am Looking around",
+            "I am here",
+            "this is Mina",
+            "hi, this is fun",
+            "hello, this is my ball",
+            "this is a ball",
+            "Hi, this ball is Mina",
+            "call the ball Mina",
+            "my name is X",
+            "my name is Alex123",
+            "call me abcdefghijklmnopq",
+            "my name is",
+            "call me 123",
+            "내 이름은",
+            "내 이름은 123",
+            "민수라고 말했어",
+            "안녕",
+            "hello Mina",
+            "내 이름은 민1수",
+        ] {
+            assert_eq!(introduced_name(text), None, "{text}");
+        }
     }
 }

@@ -81,6 +81,15 @@ pub struct Tally {
     pub losses: u32,
     #[serde(default)]
     pub draws: u32,
+    #[serde(default)]
+    pub writings: u32,
+    /// Completed words with the viewer there to watch.
+    #[serde(default)]
+    pub watched_writings: u32,
+    #[serde(default)]
+    pub written_words: Vec<String>,
+    #[serde(default)]
+    pub viewer_names: Vec<String>,
     pub waterings: u32,
     /// Times the plant came into flower.
     pub blooms: u32,
@@ -170,6 +179,20 @@ impl Tally {
                     Outcome::ViewerWon { .. } => self.losses += 1,
                     Outcome::Draw => self.draws += 1,
                     Outcome::Abandoned => unreachable!(),
+                }
+            }
+            EventKind::Wrote { text, watched, .. } => {
+                self.writings = self.writings.saturating_add(1);
+                if *watched {
+                    self.watched_writings = self.watched_writings.saturating_add(1);
+                }
+                if self.written_words.len() < WORDS_NAMED && !self.written_words.contains(text) {
+                    self.written_words.push(text.clone());
+                }
+            }
+            EventKind::LearnedName(name) => {
+                if self.viewer_names.len() < WORDS_NAMED && !self.viewer_names.contains(name) {
+                    self.viewer_names.push(name.clone());
                 }
             }
             EventKind::Tended => self.waterings += 1,
@@ -292,6 +315,18 @@ impl Tally {
             0 => {}
             1 => deeds.push("drew a picture on the glass".to_owned()),
             doodles => deeds.push(format!("drew {doodles} pictures on the glass")),
+        }
+        for word in &self.written_words {
+            deeds.push(format!(
+                "wrote “{}” on the glass for you",
+                super::doodle::writing_words(word)
+            ));
+        }
+        if self.writings > 0 && self.written_words.is_empty() {
+            deeds.push("wrote words on the glass for you".to_owned());
+        }
+        for name in &self.viewer_names {
+            deeds.push(format!("learned your name: {name}"));
         }
         match (self.waterings, self.blooms) {
             (0, 0) => {}
@@ -448,6 +483,8 @@ pub struct Life {
     /// while the ghost was already waiting.
     #[serde(default)]
     pub last_arrival: Option<(String, f32)>,
+    #[serde(default)]
+    pub viewer_name: Option<String>,
 }
 
 impl Life {
@@ -507,7 +544,7 @@ impl Life {
         };
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
-            EventKind::Praised | EventKind::LearnedWord { .. } => 0.005,
+            EventKind::Praised | EventKind::LearnedWord { .. } | EventKind::LearnedName(_) => 0.005,
             EventKind::Fetched => 0.01,
             EventKind::Petted => 0.004,
             EventKind::Pounced => 0.003,
@@ -722,6 +759,9 @@ impl Life {
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
         self.nature = self.nature.map(Nature::sanitized);
+        self.viewer_name = self.viewer_name.filter(|name| {
+            (2..=16).contains(&name.chars().count()) && name.chars().all(char::is_alphabetic)
+        });
         let unit = |value: f32| {
             if value.is_finite() {
                 value.clamp(0.0, 1.0)
@@ -738,6 +778,24 @@ impl Life {
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
             tally.tallest = tally.tallest.min(5);
+            tally.watched_writings = tally.watched_writings.min(tally.writings);
+            tally.written_words.truncate(WORDS_NAMED);
+            for word in &mut tally.written_words {
+                *word = word
+                    .chars()
+                    .filter(|character| {
+                        character.is_ascii_uppercase()
+                            || character.is_ascii_digit()
+                            || matches!(character, '!' | '?' | '♥')
+                    })
+                    .take(17)
+                    .collect();
+            }
+            tally.written_words.retain(|word| !word.is_empty());
+            tally.viewer_names.retain(|name| {
+                (2..=16).contains(&name.chars().count()) && name.chars().all(char::is_alphabetic)
+            });
+            tally.viewer_names.truncate(WORDS_NAMED);
             if !tally.together.is_finite() || tally.together < 0.0 {
                 tally.together = 0.0;
             }
@@ -818,6 +876,17 @@ impl Life {
             EventKind::Found if total.finds == 1 => "You found me hiding.".to_owned(),
             EventKind::Doodled(_) if total.doodles == 1 => {
                 "Drew my first picture on the glass.".to_owned()
+            }
+            EventKind::Wrote {
+                mirrored: false, ..
+            } => "I learned to write so you can read it.".to_owned(),
+            EventKind::LearnedName(name)
+                if !self
+                    .milestones
+                    .iter()
+                    .any(|milestone| milestone.text.starts_with("I learned your name: ")) =>
+            {
+                format!("I learned your name: {name}.")
             }
             EventKind::Bloomed if total.blooms == 1 => {
                 "My plant flowered for the first time.".to_owned()
@@ -1800,5 +1869,48 @@ mod tests {
         );
         life.total.tallest = u32::MAX;
         assert_eq!(life.sanitized().total.tallest, 5);
+    }
+
+    #[test]
+    fn names_and_writing_are_backward_compatible_and_survive_a_saved_life() {
+        let old: Life = serde_json::from_str(r#"{"bond":0.6,"total":{"doodles":3}}"#).unwrap();
+        assert_eq!(old.viewer_name, None);
+        assert_eq!(old.total.writings, 0);
+        assert_eq!(old.total.watched_writings, 0);
+        let mut life = old;
+        life.viewer_name = Some("민수".to_owned());
+        life.note(&EventKind::LearnedName("민수".to_owned()));
+        for _ in 0..3 {
+            life.note(&EventKind::Wrote {
+                text: "HI".to_owned(),
+                mirrored: true,
+                watched: true,
+            });
+        }
+        let saved = serde_json::to_string(&life).unwrap();
+        let loaded: Life = serde_json::from_str(&saved).unwrap();
+        assert_eq!(loaded.clone().sanitized(), life);
+        assert_eq!(loaded.total.watched_writings, 3);
+        assert_eq!(loaded.viewer_name.as_deref(), Some("민수"));
+    }
+
+    #[test]
+    fn damaged_saved_names_and_writing_counts_are_brought_back_in_range() {
+        let life = Life {
+            viewer_name: Some("Mina123\u{1b}".to_owned()),
+            total: Tally {
+                writings: 2,
+                watched_writings: 900,
+                written_words: vec!["HI\u{1b}".to_owned(); 20],
+                viewer_names: vec!["bad\nname".to_owned(); 10],
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!(life.viewer_name, None);
+        assert_eq!(life.total.watched_writings, 2);
+        assert_eq!(life.total.written_words, vec!["HI"; WORDS_NAMED]);
+        assert!(life.total.viewer_names.is_empty());
     }
 }

@@ -1,5 +1,5 @@
 use std::f32::consts::{PI, TAU};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use glam::Vec2;
 
@@ -42,14 +42,18 @@ impl Sketch {
         }
     }
 
+    /// The length of the whole stroke.
+    pub fn length(self) -> f32 {
+        self.path().length
+    }
+
     /// The pen's position after drawing `progress` of the strokes. Lifting
     /// the pen between strokes takes no time.
     pub fn point_at(self, progress: f32) -> Vec2 {
         self.path().point_at(progress)
     }
 
-    /// Distance to the part of the stroke drawn so far, or infinity before
-    /// any of it has been drawn.
+    /// Distance to the strokes drawn so far.
     pub fn distance(self, point: Vec2, progress: f32) -> f32 {
         self.path().distance(point, progress)
     }
@@ -172,12 +176,15 @@ impl Sketch {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub(super) struct Path {
     strokes: Vec<Vec<Vec2>>,
     segments: Vec<Segment>,
     length: f32,
+    extent: Vec2,
 }
 
+#[derive(Debug, PartialEq)]
 struct Segment {
     start: Vec2,
     along: Vec2,
@@ -202,10 +209,15 @@ impl Path {
             })
             .filter(|segment| segment.length > 0.0)
             .collect();
+        let extent = strokes
+            .iter()
+            .flatten()
+            .fold(Vec2::ZERO, |extent, point| extent.max(point.abs()));
         Self {
             length: segments.iter().map(|segment| segment.length).sum(),
             strokes,
             segments,
+            extent,
         }
     }
 
@@ -251,10 +263,148 @@ impl Path {
     }
 }
 
+/// A word, measured once and shared when a plan or doodle is cloned.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Writing {
+    pub text: String,
+    pub mirrored: bool,
+    path: Arc<Path>,
+    draw_time: f64,
+}
+
+impl Writing {
+    pub fn new(text: String, mirrored: bool) -> Self {
+        let characters = text.chars().count();
+        let width = (characters as f32 * 0.8 - 0.2).max(0.6);
+        let scale = 0.2_f32.min(1.6 / width);
+        let strokes = text
+            .chars()
+            .enumerate()
+            .flat_map(|(index, character)| {
+                super::letters::glyph(character).iter().map(move |stroke| {
+                    stroke
+                        .iter()
+                        .map(|&(horizontal, vertical)| {
+                            let point = Vec2::new(
+                                horizontal + index as f32 * 0.8 - width * 0.5,
+                                vertical - 0.5,
+                            ) * scale;
+                            Vec2::new(if mirrored { -point.x } else { point.x }, point.y)
+                        })
+                        .collect()
+                })
+            })
+            .collect();
+        Self {
+            text,
+            mirrored,
+            path: Arc::new(Path::new(strokes)),
+            draw_time: (characters as f64 * 0.7).max(Doodle::DRAW_TIME),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Picture {
+    Sketch(Sketch),
+    Word(Writing),
+}
+
+impl Picture {
+    pub fn name(&self) -> String {
+        match self {
+            Self::Sketch(sketch) => sketch.name().to_owned(),
+            Self::Word(writing) => format!(
+                "“{}”{}",
+                writing_words(&writing.text),
+                if writing.mirrored {
+                    ", the wrong way round for the viewer"
+                } else {
+                    ""
+                }
+            ),
+        }
+    }
+
+    pub fn length(&self) -> f32 {
+        match self {
+            Self::Sketch(sketch) => sketch.length(),
+            Self::Word(writing) => writing.path.length,
+        }
+    }
+
+    pub fn point_at(&self, progress: f32) -> Vec2 {
+        match self {
+            Self::Sketch(sketch) => sketch.point_at(progress),
+            Self::Word(writing) => writing.path.point_at(progress),
+        }
+    }
+
+    pub fn distance(&self, point: Vec2, progress: f32) -> f32 {
+        match self {
+            Self::Sketch(sketch) => sketch.distance(point, progress),
+            Self::Word(writing) => writing.path.distance(point, progress),
+        }
+    }
+
+    pub fn extent(&self) -> Vec2 {
+        match self {
+            Self::Sketch(_) => Vec2::ONE,
+            Self::Word(writing) => writing.path.extent,
+        }
+    }
+
+    pub fn size(&self) -> f32 {
+        match self {
+            Self::Sketch(_) => 0.3,
+            Self::Word(_) => 1.0,
+        }
+    }
+
+    pub fn draw_time(&self) -> f64 {
+        match self {
+            Self::Sketch(_) => Doodle::DRAW_TIME,
+            Self::Word(writing) => writing.draw_time,
+        }
+    }
+}
+
+/// Only the supported characters reach the pen.
+pub(super) fn sanitize(text: &str) -> String {
+    text.to_uppercase()
+        .chars()
+        .filter(|character| {
+            character.is_ascii_uppercase()
+                || character.is_ascii_digit()
+                || matches!(character, '!' | '?')
+        })
+        .take(8)
+        .collect()
+}
+
+/// Digits on the glass reach the minds as spoken words.
+pub(super) fn writing_words(text: &str) -> String {
+    const DIGITS: [&str; 10] = [
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    ];
+    if !text.chars().any(|character| character.is_ascii_digit()) {
+        return text.to_owned();
+    }
+    text.chars()
+        .map(|character| {
+            character.to_digit(10).map_or_else(
+                || character.to_string(),
+                |digit| DIGITS[digit as usize].to_owned(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// A picture in the fog on the glass, drawn over time and left to fade.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Doodle {
-    pub sketch: Sketch,
+    pub picture: Picture,
     /// The center's x and y coordinates on the glass.
     pub center: Vec2,
     pub size: f32,
@@ -267,12 +417,14 @@ impl Doodle {
 
     /// How much of the stroke has been drawn at `time`.
     pub fn drawn(&self, time: f64) -> f32 {
-        ((time - self.started) / Self::DRAW_TIME).clamp(0.0, 1.0) as f32
+        ((time - self.started) / self.picture.draw_time()).clamp(0.0, 1.0) as f32
     }
 
     /// How much of the fog remains, fading over its last forty seconds.
     pub fn opacity(&self, time: f64) -> f32 {
-        ((Self::LIFETIME - (time - self.started)) / 40.0).clamp(0.0, 1.0) as f32
+        ((Self::LIFETIME + self.picture.draw_time() - Self::DRAW_TIME - (time - self.started))
+            / 40.0)
+            .clamp(0.0, 1.0) as f32
     }
 }
 
@@ -339,7 +491,7 @@ mod tests {
     #[test]
     fn a_doodle_is_drawn_before_its_fog_fades_away() {
         let doodle = Doodle {
-            sketch: Sketch::Heart,
+            picture: Picture::Sketch(Sketch::Heart),
             center: Vec2::ZERO,
             size: 0.3,
             started: 10.0,
@@ -353,5 +505,99 @@ mod tests {
         assert!((0.0..1.0).contains(&doodle.opacity(10.0 + Doodle::LIFETIME - 20.0)));
         assert_eq!(doodle.opacity(10.0 + Doodle::LIFETIME), 0.0);
         assert_eq!(doodle.opacity(200.0), 0.0);
+    }
+
+    #[test]
+    fn words_fit_the_glass_and_mirroring_reflects_every_stroke() {
+        for text in ["HI", "MINA♥", "2027", "ABCDEFGHIJKLMNOP"] {
+            let forward = Writing::new(text.to_owned(), false);
+            let mirrored = Writing::new(text.to_owned(), true);
+            assert!(forward.path.extent.x * 2.0 <= 1.6 + 1e-5);
+            assert!(forward.path.extent.y * 2.0 <= 0.2 + 1e-5);
+            assert_eq!(forward.path.strokes.len(), mirrored.path.strokes.len());
+            for (first, second) in forward
+                .path
+                .strokes
+                .iter()
+                .flatten()
+                .zip(mirrored.path.strokes.iter().flatten())
+            {
+                assert_eq!(*first * Vec2::new(-1.0, 1.0), *second);
+            }
+            let copy = forward.clone();
+            assert!(Arc::ptr_eq(&forward.path, &copy.path));
+        }
+    }
+
+    #[test]
+    fn a_words_pen_walks_each_segment_in_order_without_drawing_the_lifts() {
+        let picture = Picture::Word(Writing::new("HI!?".to_owned(), false));
+        let Picture::Word(writing) = &picture else {
+            unreachable!()
+        };
+        let mut walked = 0.0;
+        assert_eq!(picture.point_at(0.0), writing.path.strokes[0][0]);
+        for segment in &writing.path.segments {
+            let progress = (walked + segment.length * 0.5) / picture.length();
+            let expected = segment.start + segment.along * 0.5;
+            assert!(picture.point_at(progress).distance(expected) < 1e-5);
+            assert!(picture.distance(expected, progress) < 1e-5);
+            walked += segment.length;
+        }
+        assert!((walked - picture.length()).abs() < 1e-5);
+        assert_eq!(picture.point_at(1.0), writing.path.last());
+    }
+
+    #[test]
+    fn word_distances_match_sampling_only_the_strokes_drawn_so_far() {
+        let picture = Picture::Word(Writing::new("BOO!".to_owned(), true));
+        let Picture::Word(writing) = &picture else {
+            unreachable!()
+        };
+        assert_eq!(picture.distance(Vec2::ZERO, 0.0), f32::INFINITY);
+        for progress in [0.1, 0.35, 0.8, 1.0] {
+            for column in -5..=5 {
+                for row in -3..=3 {
+                    let point = Vec2::new(column as f32, row as f32) * 0.035;
+                    let mut remaining = picture.length() * progress;
+                    let mut nearest = f32::INFINITY;
+                    for stroke in &writing.path.strokes {
+                        for pair in stroke.windows(2) {
+                            if remaining <= 0.0 {
+                                break;
+                            }
+                            let length = pair[0].distance(pair[1]);
+                            let drawn = (remaining / length).min(1.0);
+                            for step in 0..=200 {
+                                nearest =
+                                    nearest.min(point.distance(
+                                        pair[0].lerp(pair[1], drawn * step as f32 / 200.0),
+                                    ));
+                            }
+                            remaining -= length;
+                        }
+                    }
+                    assert!((picture.distance(point, progress) - nearest).abs() < 0.001);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn long_words_take_longer_to_draw_and_keep_their_fog_afterwards() {
+        let short = Picture::Word(Writing::new("HI".to_owned(), true));
+        let long = Picture::Word(Writing::new("ABCDEFGH".to_owned(), false));
+        assert_eq!(short.draw_time(), Doodle::DRAW_TIME);
+        assert!((long.draw_time() - 5.6).abs() < 1e-5);
+        let doodle = Doodle {
+            picture: long,
+            size: 1.0,
+            center: Vec2::ZERO,
+            started: 10.0,
+        };
+        assert!((doodle.drawn(12.8) - 0.5).abs() < 1e-5);
+        assert_eq!(doodle.opacity(15.6), 1.0);
+        assert_eq!(doodle.opacity(165.6), 0.0);
+        assert_eq!(writing_words("2027"), "two zero two seven");
     }
 }

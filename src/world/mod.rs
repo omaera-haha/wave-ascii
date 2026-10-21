@@ -3,6 +3,7 @@ pub mod blocks;
 pub mod calendar;
 mod doodle;
 pub mod game;
+mod letters;
 mod life;
 mod nature;
 mod needs;
@@ -23,7 +24,7 @@ use glam::{Vec2, Vec3};
 pub use activity::{Activity, Plan};
 pub use blocks::Block;
 pub use calendar::Season;
-pub use doodle::{Doodle, Sketch};
+pub use doodle::{Doodle, Picture, Sketch, Writing};
 pub use game::{Game, Mark, Outcome};
 pub use life::{Entry, Life};
 pub use nature::Nature;
@@ -142,6 +143,12 @@ pub enum EventKind {
     Jumped,
     Doodled(&'static str),
     GameOver(Outcome),
+    Wrote {
+        text: String,
+        mirrored: bool,
+        watched: bool,
+    },
+    LearnedName(String),
     Celebrated(Occasion),
     Pounced,
     Built {
@@ -245,6 +252,16 @@ impl EventKind {
             }
             .to_owned(),
             Self::Doodled(name) => format!("drew a {name} on the glass"),
+            Self::Wrote { text, mirrored, .. } => format!(
+                "wrote “{}” on the glass{}",
+                doodle::writing_words(text),
+                if *mirrored {
+                    ", the wrong way round for the viewer"
+                } else {
+                    ""
+                }
+            ),
+            Self::LearnedName(name) => format!("learned that the viewer's name is {name}"),
             Self::Celebrated(Occasion::NewYear) => "a new year began".to_owned(),
             Self::Celebrated(occasion) => format!("it is {}", occasion.words()),
             Self::Praised => "the viewer sounded pleased with you".to_owned(),
@@ -277,6 +294,8 @@ pub struct Heard {
     pub learned: Vec<(String, Activity)>,
     /// Whether being told no made it stop what it was doing.
     pub stopped: bool,
+    pub learned_name: Option<String>,
+    pub korean: bool,
 }
 
 /// What the viewer's words asked for, as far as the ghost can tell.
@@ -855,7 +874,7 @@ impl World {
             self.push = self.push_direction();
         }
         if activity == Activity::Doodle {
-            plan.sketch = Some(self.choose_sketch());
+            plan.picture = Some(self.choose_picture());
         }
         if activity == Activity::Wait {
             self.begin_wait();
@@ -865,6 +884,73 @@ impl World {
             self.begin_build();
         }
         self.record(EventKind::Began(activity));
+    }
+
+    /// Begins writing a supported word when it has the energy to draw.
+    pub fn write(&mut self, text: &str) -> bool {
+        let text = doodle::sanitize(text);
+        if text.is_empty() || self.ghost.asleep >= 0.3 || self.ghost.needs.energy <= 0.25 {
+            return false;
+        }
+        let picture = self.writing(text);
+        if picture.length() <= 0.0 {
+            return false;
+        }
+        self.begin(Activity::Doodle);
+        self.ghost.plan.picture = Some(picture);
+        true
+    }
+
+    fn writing(&self, text: String) -> Picture {
+        Picture::Word(Writing::new(text, self.life.total.watched_writings < 3))
+    }
+
+    fn choose_picture(&mut self) -> Picture {
+        let occasion = self.occasion();
+        let special = match occasion {
+            Some(Occasion::Halloween) if self.random.unit() < 0.35 => Some("BOO".to_owned()),
+            Some(Occasion::NewYear) if self.random.unit() < 0.5 => {
+                Some((i32::from(self.date.year()) + i32::from(self.date.month() == 12)).to_string())
+            }
+            Some(Occasion::Birthday) if self.random.unit() < 0.3 => Some("YAY".to_owned()),
+            _ => None,
+        };
+        if let Some(text) = special {
+            return self.writing(text);
+        }
+        if self.life.bond >= 0.55 && self.life.viewer_name.is_some() && self.random.unit() < 0.3 {
+            let name = self.life.viewer_name.as_deref().unwrap();
+            if name
+                .chars()
+                .all(|character| character.is_ascii_alphabetic())
+            {
+                let mut text = name.to_ascii_uppercase();
+                if occasion == Some(Occasion::Valentine)
+                    || ((text.len() + 1) as f32 * 0.8 - 0.2) * 0.2 <= 1.6
+                {
+                    text.push('♥');
+                }
+                return self.writing(text);
+            }
+            return Picture::Sketch(Sketch::Heart);
+        }
+        if occasion == Some(Occasion::Valentine) {
+            return Picture::Sketch(Sketch::Heart);
+        }
+        let arrived = self.events.iter().rev().any(|event| {
+            matches!(
+                event.kind,
+                EventKind::ViewerArrived | EventKind::Returned { .. }
+            ) && self.time - event.time < 120.0
+        });
+        if self.viewer_present()
+            && arrived
+            && self.life.bond >= self.life.greeting_bond()
+            && self.random.unit() < 0.4
+        {
+            return self.writing("HI".to_owned());
+        }
+        Picture::Sketch(self.choose_sketch())
     }
 
     /// The viewer poked the ghost.
@@ -974,7 +1060,12 @@ impl World {
     /// it was doing, and whether the viewer sounds pleased with what it did
     /// about their last words, teach it what words mean.
     pub fn hear(&mut self, text: &str) -> Heard {
+        let introduction = vocabulary::introduced_name(text);
         let mut reading = vocabulary::read(text, &self.ghost.name);
+        if introduction.is_some() {
+            reading.words.clear();
+            reading.tone = None;
+        }
         // A question's words ask about the ghost rather than for something
         // to do, so it learns nothing from them, and "do you love me?" is
         // no praise.
@@ -1011,6 +1102,12 @@ impl World {
         self.wake();
         self.ghost.needs.change(0.0, 0.05, 0.25);
         self.record(EventKind::Heard(text.to_owned()));
+        let learned_name = introduction.filter(|name| self.life.viewer_name.as_ref() != Some(name));
+        if let Some(name) = &learned_name {
+            self.life.viewer_name = Some(name.clone());
+            self.record(EventKind::LearnedName(name.clone()));
+            self.think(&format!("Your name is {name}. I'll remember."));
+        }
         self.life.vocabulary.hear(&reading.words);
 
         let mut learned = Vec::new();
@@ -1116,6 +1213,10 @@ impl World {
             named: reading.named,
             learned,
             stopped,
+            learned_name,
+            korean: text
+                .chars()
+                .any(|character| ('가'..='힣').contains(&character)),
         }
     }
 
@@ -1712,24 +1813,37 @@ impl World {
                             self.doodles.remove(0);
                         }
                         self.doodles.push(Doodle {
-                            sketch: self.ghost.plan.sketch.unwrap_or(Sketch::Smile),
+                            picture: self
+                                .ghost
+                                .plan
+                                .picture
+                                .clone()
+                                .unwrap_or(Picture::Sketch(Sketch::Smile)),
                             center: Vec2::new(position.x, position.y),
-                            size: 0.3,
+                            size: self.ghost.plan.picture.as_ref().map_or(0.3, Picture::size),
                             started,
                         });
                         self.ghost.plan.count = 1;
                     }
-                    if let Some(doodle) = self.doodles.last().copied() {
+                    if let Some(doodle) = self.doodles.last() {
                         let progress = doodle.drawn(time);
-                        let pen = doodle.center + doodle.sketch.point_at(progress) * doodle.size;
+                        let pen = doodle.center + doodle.picture.point_at(progress) * doodle.size;
                         look = Some(Vec3::new(pen.x, pen.y, ROOM_MAX.z));
                         self.ghost.plan.target = if progress < 1.0 {
                             Vec3::new(pen.x, pen.y, ROOM_MAX.z - 0.3)
                         } else {
                             Vec3::new(doodle.center.x, doodle.center.y, ROOM_MAX.z - 0.7)
                         };
-                        if time - started > Doodle::DRAW_TIME + 2.0 {
-                            self.record(EventKind::Doodled(doodle.sketch.name()));
+                        if time - started > doodle.picture.draw_time() + 2.0 {
+                            let event = match &doodle.picture {
+                                Picture::Sketch(sketch) => EventKind::Doodled(sketch.name()),
+                                Picture::Word(writing) => EventKind::Wrote {
+                                    text: writing.text.clone(),
+                                    mirrored: writing.mirrored,
+                                    watched: self.viewer_present(),
+                                },
+                            };
+                            self.record(event);
                             self.ghost.needs.change(0.0, 0.1, 0.0);
                             self.ghost.plan.done = true;
                         }
@@ -3233,7 +3347,10 @@ mod tests {
         for seed in 0..10 {
             let mut world = World::new(seed, 12.0);
             world.begin(Activity::Doodle);
-            let sketch = world.ghost.plan.sketch.unwrap();
+            let picture = world.ghost.plan.picture.clone().unwrap();
+            let Picture::Sketch(sketch) = &picture else {
+                panic!("expected a sketch")
+            };
             assert!((-1.2..=1.2).contains(&world.ghost.plan.target.x));
             assert!((1.0..=1.6).contains(&world.ghost.plan.target.y));
             assert_eq!(world.ghost.plan.target.z, ROOM_MAX.z - 0.35);
@@ -3245,8 +3362,8 @@ mod tests {
             }
             assert!(world.needs_decision());
             assert_eq!(world.doodles.len(), 1);
-            let doodle = world.doodles[0];
-            assert_eq!(doodle.sketch, sketch);
+            let doodle = &world.doodles[0];
+            assert_eq!(doodle.picture, picture);
             assert_eq!(doodle.drawn(world.time), 1.0);
             assert!(
                 world
@@ -3531,5 +3648,203 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn writing_sanitizes_text_and_requires_an_awake_ghost_with_energy() {
+        let mut world = World::new(5, 12.0);
+        assert!(!world.write(" /한글♥ "));
+        assert!(world.write(" hi /2027!? more"));
+        let Some(Picture::Word(writing)) = &world.ghost.plan.picture else {
+            panic!("expected writing")
+        };
+        assert_eq!(writing.text, "HI2027!?");
+        world.ghost.asleep = 0.3;
+        let plan = world.ghost.plan.clone();
+        assert!(!world.write("HI"));
+        assert_eq!(world.ghost.plan, plan);
+        world.ghost.asleep = 0.0;
+        world.ghost.needs.energy = 0.25;
+        assert!(!world.write("HI"));
+        world.ghost.needs.energy = 0.26;
+        assert!(world.write("abcdefghijk"));
+        let Some(Picture::Word(writing)) = &world.ghost.plan.picture else {
+            panic!("expected writing")
+        };
+        assert_eq!(writing.text, "ABCDEFGH");
+    }
+
+    #[test]
+    fn three_watched_words_teach_the_ghost_to_write_for_the_viewer_once() {
+        let mut world = World::new(5, 12.0);
+        // Words completed alone do not teach it which side the viewer reads.
+        for _ in 0..3 {
+            assert!(world.write("HI"));
+            world.ghost.position = world.ghost.plan.target;
+            run(&mut world, 9.0);
+            assert!(world.needs_decision());
+        }
+        assert_eq!(world.life.total.writings, 3);
+        assert_eq!(world.life.total.watched_writings, 0);
+        for index in 0..5 {
+            world.notice_viewer();
+            assert!(world.write("MINA"));
+            let Some(Picture::Word(writing)) = &world.ghost.plan.picture else {
+                panic!("expected writing")
+            };
+            assert_eq!(writing.mirrored, index < 3);
+            world.ghost.position = world.ghost.plan.target;
+            run(&mut world, 9.0);
+            assert!(world.needs_decision());
+            assert_eq!(world.life.total.watched_writings, index + 1);
+        }
+        let text = "I learned to write so you can read it.";
+        assert_eq!(
+            world
+                .life
+                .milestones
+                .iter()
+                .filter(|entry| entry.text == text)
+                .count(),
+            1
+        );
+        assert_eq!(
+            world
+                .events
+                .iter()
+                .filter(|event| event.kind == EventKind::Milestone(text.to_owned()))
+                .count(),
+            1
+        );
+        assert!(world.events.iter().any(|event| matches!(&event.kind, EventKind::Wrote { text, mirrored: false, watched: true } if text == "MINA")));
+        assert!(
+            world
+                .life
+                .today
+                .words()
+                .contains("wrote “MINA” on the glass for you")
+        );
+    }
+
+    #[test]
+    fn introductions_store_and_replace_the_viewers_name_but_mark_only_the_first() {
+        let mut world = World::new(5, 12.0);
+        world.begin(Activity::Dance);
+        let heard = world.hear("my name is Mina");
+        assert_eq!(heard.learned_name.as_deref(), Some("Mina"));
+        assert_eq!(heard.understanding, Understanding::Nothing);
+        assert!(world.life.vocabulary.words.is_empty());
+        assert_eq!(world.life.viewer_name.as_deref(), Some("Mina"));
+        assert_eq!(world.hear("my name is Mina").learned_name, None);
+        assert_eq!(
+            world.hear("call me Sam").learned_name.as_deref(),
+            Some("Sam")
+        );
+        assert_eq!(world.life.viewer_name.as_deref(), Some("Sam"));
+        assert_eq!(
+            world
+                .events
+                .iter()
+                .filter(|event| matches!(event.kind, EventKind::LearnedName(_)))
+                .count(),
+            2
+        );
+        assert_eq!(
+            world
+                .life
+                .milestones
+                .iter()
+                .filter(|entry| entry.text.starts_with("I learned your name:"))
+                .count(),
+            1
+        );
+        assert!(world.life.today.words().contains("learned your name: Sam"));
+    }
+
+    #[test]
+    fn special_days_choose_their_words_only_on_the_right_occasion() {
+        for (date, birthday, word) in [
+            ((2026, 10, 31), None, "BOO"),
+            ((2026, 12, 31), None, "2027"),
+            ((2027, 1, 1), None, "2027"),
+            (
+                (2027, 3, 1),
+                Some(jiff::civil::Date::constant(2026, 3, 1)),
+                "YAY",
+            ),
+        ] {
+            let mut chosen = 0;
+            for seed in 0..250 {
+                let mut world = World::new(seed, 21.0);
+                world.date = jiff::civil::Date::constant(date.0, date.1, date.2);
+                world.birthday = birthday;
+                match world.choose_picture() {
+                    Picture::Word(writing) => {
+                        assert_eq!(writing.text, word);
+                        chosen += 1;
+                    }
+                    Picture::Sketch(_) => {}
+                }
+            }
+            assert!((35..180).contains(&chosen), "{word}: {chosen}");
+        }
+        for seed in 0..250 {
+            let mut world = World::new(seed, 12.0);
+            assert!(matches!(world.choose_picture(), Picture::Sketch(_)));
+        }
+    }
+
+    #[test]
+    fn greetings_require_a_recent_arrival_and_a_friend_and_names_need_a_close_bond() {
+        let mut greetings = 0;
+        let mut names = 0;
+        for seed in 0..250 {
+            let mut world = World::new(seed, 12.0);
+            world.notice_viewer();
+            world.record(EventKind::ViewerArrived);
+            assert!(matches!(world.choose_picture(), Picture::Sketch(_)));
+            world.life.bond = world.life.greeting_bond();
+            if let Picture::Word(writing) = world.choose_picture() {
+                assert_eq!(writing.text, "HI");
+                greetings += 1;
+            }
+            world.time = 121.0;
+            world.notice_viewer();
+            assert!(matches!(world.choose_picture(), Picture::Sketch(_)));
+            world.life.viewer_name = Some("Mina".to_owned());
+            world.life.bond = 0.54;
+            assert!(matches!(world.choose_picture(), Picture::Sketch(_)));
+            world.life.bond = 0.55;
+            if let Picture::Word(writing) = world.choose_picture() {
+                assert_eq!(writing.text, "MINA♥");
+                names += 1;
+            }
+            world.life.viewer_name = Some("민수".to_owned());
+            assert!(matches!(world.choose_picture(), Picture::Sketch(_)));
+        }
+        assert!((50..170).contains(&greetings));
+        assert!((35..130).contains(&names));
+    }
+
+    #[test]
+    fn valentines_words_are_only_the_viewers_name_with_a_heart() {
+        let mut names = 0;
+        for seed in 0..150 {
+            let mut world = World::new(seed, 12.0);
+            world.date = jiff::civil::Date::constant(2027, 2, 14);
+            world.life.bond = 0.8;
+            world.notice_viewer();
+            world.record(EventKind::ViewerArrived);
+            assert_eq!(world.choose_picture(), Picture::Sketch(Sketch::Heart));
+            world.life.viewer_name = Some("Mina".to_owned());
+            match world.choose_picture() {
+                Picture::Word(writing) => {
+                    assert_eq!(writing.text, "MINA♥");
+                    names += 1;
+                }
+                picture => assert_eq!(picture, Picture::Sketch(Sketch::Heart)),
+            }
+        }
+        assert!(names > 20);
     }
 }

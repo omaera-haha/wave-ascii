@@ -892,6 +892,9 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     {
         header.push((format!("You usually come: {usual}"), TEXT));
     }
+    if let Some(name) = &life.viewer_name {
+        header.push((format!("You: {name}"), TEXT));
+    }
     let total = &life.total;
     let mut bird = vec![(format!("The bird: {}", life.bird_words()), TEXT)];
     let room = columns.saturating_sub(10).clamp(20, 56);
@@ -940,6 +943,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             total.missed,
         ),
         ("towers built", total.towers, "tallest tower", total.tallest),
+        (
+            "words written",
+            total.writings,
+            "watched",
+            total.watched_writings,
+        ),
     ] {
         counts.push((
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),
