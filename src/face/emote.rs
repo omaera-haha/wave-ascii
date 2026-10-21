@@ -169,6 +169,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::Fetched
         | EventKind::Found
         | EventKind::Celebrated(_)
+        | EventKind::Morning
         | EventKind::Milestone(_) => Emote::Sparkle,
         EventKind::Tended | EventKind::NudgedBall | EventKind::Danced => Emote::Note,
         EventKind::Doodled(_) if bond >= 0.3 => Emote::Heart,

@@ -4,7 +4,7 @@ use glam::{Vec2, Vec3};
 
 use crate::canvas::{Canvas, Style};
 use crate::color::ColorMode;
-use crate::face::{self, mood::Cues};
+use crate::face::{self, expression::Expression, mood::Cues};
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::render::ghost::{Aura, Pose};
@@ -221,6 +221,7 @@ impl App {
             .map(|timestamp| timestamp.to_zoned(jiff::tz::TimeZone::system()).date());
         self.live_clock = true;
         (self.world.date, self.world.hour) = local_time();
+        self.world.tuck_in();
         self
     }
 
@@ -534,7 +535,7 @@ impl App {
         let ghost = &world.ghost;
         let center = view.project(ghost.position);
         let gaze = self.gaze(&view, center);
-        let reactions = world
+        let mut reactions: Vec<_> = world
             .events
             .iter()
             .filter(|event| world.time - event.time < REACTION_WINDOW)
@@ -542,6 +543,14 @@ impl App {
                 face::mood::reaction(&event.kind).map(|reaction| (event.time, reaction))
             })
             .collect();
+        // The first morning also earns a milestone; let the stretch take
+        // precedence over reactions recorded at that same moment.
+        reactions.sort_by(|(time, expression), (other_time, other_expression)| {
+            time.total_cmp(other_time).then_with(|| {
+                matches!(expression, Expression::Stretch)
+                    .cmp(&matches!(other_expression, Expression::Stretch))
+            })
+        });
         let face = face::mood::face(
             world.time,
             &Cues {

@@ -23,7 +23,7 @@ pub fn observe(world: &World) -> Value {
             "fun": ghost.needs.fun_words(),
             "company": ghost.needs.company_words(),
             "feeling": ghost.mood.name(),
-            "awake": awake(ghost.asleep),
+            "awake": awake(world),
             "doing": doing,
             "goal": ghost.goal.as_deref().unwrap_or("none yet"),
             "loves": world.life.favorite().map_or("nothing in particular yet", Activity::doing),
@@ -86,10 +86,21 @@ fn ago(seconds: f64) -> &'static str {
     }
 }
 
-fn awake(asleep: f32) -> &'static str {
-    match asleep {
+fn awake(world: &World) -> &'static str {
+    let ghost = &world.ghost;
+    match ghost.asleep {
+        asleep if asleep < 0.3 && world.drowsy() => {
+            "awake but drowsy after being woken in the night"
+        }
         asleep if asleep < 0.3 => "awake",
         asleep if asleep < 0.9 => "drifting off to sleep",
+        _ if ghost.plan.activity == Activity::Rest && !ghost.plan.done => {
+            if ghost.plan.overnight {
+                "asleep for the night and dreaming"
+            } else {
+                "napping and dreaming"
+            }
+        }
         _ => "fast asleep and dreaming",
     }
 }
@@ -429,6 +440,32 @@ mod tests {
         assert_eq!(time_of_day(13.0), "afternoon");
         assert_eq!(time_of_day(23.5), "night");
         assert_eq!(time_of_day(2.0), "night");
+    }
+
+    #[test]
+    fn night_sleep_naps_and_drowsy_interruptions_are_described_without_digits() {
+        let mut world = World::new(1, 23.0);
+        world.tuck_in();
+        assert_eq!(
+            observe(&world)["ghost"]["awake"],
+            "asleep for the night and dreaming"
+        );
+        world.poke();
+        assert_eq!(
+            observe(&world)["ghost"]["awake"],
+            "awake but drowsy after being woken in the night"
+        );
+        let text = observe(&world).to_string();
+        assert!(
+            !text.chars().any(|character| character.is_ascii_digit()),
+            "{text}"
+        );
+        world.hour = 14.0;
+        world.ghost.position = world.nook.bed();
+        world.ghost.needs.energy = 0.4;
+        world.begin(Activity::Rest);
+        world.step(4.0);
+        assert_eq!(observe(&world)["ghost"]["awake"], "napping and dreaming");
     }
 
     #[test]

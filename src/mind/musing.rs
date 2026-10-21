@@ -20,7 +20,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             "That one looks tasty.",
             "Come here, little light.",
         ],
-        Activity::Rest if world.is_night() => {
+        Activity::Rest if world.bedtime() => {
             vec!["Time for bed.", "Goodnight, little room."]
         }
         Activity::Rest => vec![
@@ -55,6 +55,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         }
         Activity::Doodle => vec!["Let me draw something.", "Hm, what shall I draw?"],
         Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
+        Activity::Window if world.morning() => morning(world),
         Activity::Window => match world.weather.sky {
             Sky::Rainbow => vec!["Look, a rainbow!", "All the colors at once."],
             Sky::Rain if world.weather.storm => vec!["Whoa, look at that!"],
@@ -77,6 +78,12 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if world.morning() {
+        lines.extend(morning(world));
+    }
+    if world.bedtime() && present {
+        lines.extend(["I should be asleep…", "Just a little longer."]);
+    }
     match world.occasion() {
         Some(Occasion::Halloween) => lines.extend([
             "Boo! Did I scare you?",
@@ -166,6 +173,26 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             "I wonder what the viewer is doing.",
             "The glass is cool.",
         ]);
+    }
+    lines
+}
+
+fn morning(world: &World) -> Vec<&'static str> {
+    let mut lines = vec!["Good morning!", "The sun's up.", "What a night."];
+    if let Some(thought) = &world.ghost.thought
+        && thought.text.starts_with('…')
+    {
+        if thought.text.contains("ball") {
+            lines.push("That ball rolled all the way to the hills.");
+        } else if thought.text.contains("mote") {
+            lines.push("There were so many light motes.");
+        } else if thought.text.contains("plant") {
+            lines.push("The plant was as tall as the room.");
+        } else if thought.text.contains("rainbow") {
+            lines.push("A rainbow makes a very good slide.");
+        } else if thought.text.contains("glass") {
+            lines.push("For a moment, there was no glass.");
+        }
     }
     lines
 }
@@ -282,6 +309,35 @@ mod tests {
             dreams(&world),
             ["…the ball rolls on and on, out into the hills…"]
         );
+    }
+
+    #[test]
+    fn company_at_bedtime_brings_a_few_reluctant_goodnights() {
+        let mut world = World::new(1, 23.0);
+        assert!(!idle(&world).contains(&"Just a little longer."));
+        world.notice_viewer();
+        assert!(idle(&world).contains(&"I should be asleep…"));
+        assert!(idle(&world).contains(&"Just a little longer."));
+        world.hour = 12.0;
+        assert!(!idle(&world).contains(&"Just a little longer."));
+    }
+
+    #[test]
+    fn morning_thoughts_greet_the_day_and_recall_the_last_dream() {
+        let mut world = World::new(1, 6.49);
+        world.tuck_in();
+        world.think("…the ball rolls on and on, out into the hills…");
+        world.hour = 6.5;
+        world.step(0.1);
+        for lines in [idle(&world), setting_out(&world, Activity::Window)] {
+            assert!(lines.contains(&"Good morning!"));
+            assert!(lines.contains(&"The sun's up."));
+            assert!(lines.contains(&"What a night."));
+            assert!(lines.contains(&"That ball rolled all the way to the hills."));
+        }
+        world.time += 600.0;
+        assert!(!idle(&world).contains(&"Good morning!"));
+        assert!(!setting_out(&world, Activity::Window).contains(&"Good morning!"));
     }
 
     #[test]

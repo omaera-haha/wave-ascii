@@ -7,6 +7,9 @@ use crate::world::{Activity, EventKind, GREETS_FROM, Occasion, World, flat};
 pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
     let needs = world.ghost.needs;
     let night = world.is_night();
+    let bedtime = world.bedtime();
+    let present = world.viewer_present();
+    let morning = world.morning();
     let shelter = world.weather.storm && world.life.bond < GREETS_FROM;
     let weights: Vec<f32> = options
         .iter()
@@ -21,7 +24,17 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             }
             Activity::Rest => {
                 2.2 * (1.0 - needs.energy).powi(2)
-                    + if night { 0.5 } else { 0.0 }
+                    + if bedtime {
+                        if present {
+                            0.6
+                        } else {
+                            2.0 + world.bedtime_progress() + if world.drowsy() { 0.8 } else { 0.0 }
+                        }
+                    } else if night {
+                        0.5
+                    } else {
+                        0.0
+                    }
                     + if shelter { 0.6 } else { 0.0 }
             }
             Activity::Play => {
@@ -31,6 +44,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 0.2 + 1.2 * (1.0 - needs.fun) * needs.energy + close
             }
             Activity::Tend => 1.6 * world.plant.thirst.powi(2),
+            Activity::Lamp if bedtime => {
+                if world.lamp.on && !present {
+                    1.2 + 2.0 * needs.energy
+                } else {
+                    0.04
+                }
+            }
             Activity::Lamp => match (night, world.lamp.on) {
                 (true, false) if needs.energy > 0.3 => 0.9,
                 (true, true) if needs.energy < 0.3 => 0.5,
@@ -43,7 +63,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 } else {
                     0.0
                 };
-                present + 1.3 * (1.0 - needs.company)
+                present
+                    + 1.3 * (1.0 - needs.company)
+                    + if morning && world.viewer_present() {
+                        1.2
+                    } else {
+                        0.0
+                    }
             }
             Activity::Window => {
                 let outside = &world.weather;
@@ -52,6 +78,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + 0.6 * outside.rain(world.time)
                     + 0.6 * outside.snow(world.time)
                     + 2.5 * outside.rainbow(world.time)
+                    + if morning { 1.8 } else { 0.0 }
                     + if world.fireworks() { 1.5 } else { 0.0 };
                 weight * if shelter { 0.2 } else { 1.0 }
             }
@@ -186,6 +213,91 @@ mod tests {
         assert!(chance(&tired, Activity::Rest) > chance(&rested, Activity::Rest));
         assert!(chance(&tired, Activity::Rest) > chance(&tired, Activity::Play));
         assert!(chance(&tired, Activity::Chase) > chance(&tired, Activity::Explore));
+    }
+
+    #[test]
+    fn bedtime_makes_rest_a_strong_favorite_and_company_softens_the_pull() {
+        let mut world = World::new(1, 23.0);
+        world.ghost.needs.energy = 0.1;
+        let alone = weigh(&world, &world.options());
+        let rest = chance(&alone, Activity::Rest);
+        for (activity, weight) in &alone {
+            if *activity != Activity::Rest {
+                assert!(rest > 2.0 * weight, "{activity:?}: {weight}");
+            }
+        }
+        world.notice_viewer();
+        let together = weigh(&world, &world.options());
+        assert!(chance(&together, Activity::Rest) < rest);
+    }
+
+    #[test]
+    fn rest_grows_more_inviting_later_in_bedtime_and_after_a_quiet_interruption() {
+        let mut world = World::new(1, 22.0);
+        let options = [Activity::Float, Activity::Rest];
+        let early = chance(&weigh(&world, &options), Activity::Rest);
+        world.hour = 2.0;
+        let late = chance(&weigh(&world, &options), Activity::Rest);
+        assert!(late > early);
+        world.tuck_in();
+        world.poke();
+        let drowsy = chance(&weigh(&world, &options), Activity::Rest);
+        assert!(drowsy > late);
+        world.notice_viewer();
+        let company = chance(&weigh(&world, &options), Activity::Rest);
+        assert!(company < drowsy);
+        world.time += 91.0;
+        assert!(!world.viewer_present());
+        assert_eq!(chance(&weigh(&world, &options), Activity::Rest), drowsy);
+    }
+
+    #[test]
+    fn the_bedtime_lamp_is_left_for_the_viewer_and_switched_off_when_alone() {
+        let mut world = World::new(1, 22.0);
+        let options = [Activity::Float, Activity::Lamp, Activity::Rest];
+        let alone = weigh(&world, &options);
+        assert!(chance(&alone, Activity::Lamp) > chance(&alone, Activity::Rest));
+        world.notice_viewer();
+        let together = weigh(&world, &options);
+        assert!(chance(&together, Activity::Lamp) < chance(&alone, Activity::Lamp) * 0.1);
+        world.lamp.on = false;
+        assert_eq!(weigh(&world, &options), together);
+        world.viewer.active_at = 0.0;
+        let dark = weigh(&world, &options);
+        assert!(chance(&dark, Activity::Lamp) < chance(&alone, Activity::Lamp) * 0.1);
+        world.hour = 12.0;
+        world.lamp.on = true;
+        let daytime = weigh(&world, &options);
+        world.lamp.on = false;
+        assert!(
+            chance(&weigh(&world, &options), Activity::Lamp) < chance(&daytime, Activity::Lamp)
+        );
+    }
+
+    #[test]
+    fn mornings_draw_the_ghost_to_the_window_and_to_a_present_viewer() {
+        let mut world = World::new(1, 6.5);
+        let options = [Activity::Float, Activity::Window, Activity::Visit];
+        let ordinary = weigh(&world, &options);
+        world.hour = 6.49;
+        world.tuck_in();
+        world.hour = 6.5;
+        world.step(0.1);
+        let morning = weigh(&world, &options);
+        let ratio = |weights: &[(Activity, f32)], activity| {
+            chance(weights, activity) / chance(weights, Activity::Float)
+        };
+        assert!(ratio(&morning, Activity::Window) > ratio(&ordinary, Activity::Window));
+        assert!(
+            (ratio(&morning, Activity::Visit) - ratio(&ordinary, Activity::Visit)).abs() < 0.001
+        );
+        world.notice_viewer();
+        let together = weigh(&world, &options);
+        world.time += 600.0;
+        world.notice_viewer();
+        let later = weigh(&world, &options);
+        assert!(ratio(&together, Activity::Visit) > ratio(&later, Activity::Visit));
+        assert!(ratio(&together, Activity::Window) > ratio(&later, Activity::Window));
     }
 
     #[test]

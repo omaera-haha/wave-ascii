@@ -137,6 +137,13 @@ leaves, and bare winter branches. The sun crosses the sky, clouds drift,
 stars twinkle, and the moon waxes and wanes with the calendar. A few fireflies
 blink over the hills on summer nights.
 
+The ghost naps when tired by day. Bedtime runs from ten at night to half past
+six in the morning: it turns the lamp off if you're away and sleeps through
+until morning. Keep it company and it stays up a while longer. Opening the
+app at bedtime finds it asleep on its cushion; poking or talking wakes it,
+and leaves it drowsy for a couple of minutes. In the morning it stretches,
+looks out of the window, and comes to the glass to greet you.
+
 Showers come more often in spring and less often in summer; rain that ends by
 day leaves a rainbow for a couple of minutes. Some showers become
 thunderstorms, especially in summer: jagged lightning flashes across the
