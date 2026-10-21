@@ -2,6 +2,7 @@ use glam::Vec2;
 
 use crate::sdf::{chevron, mix, rounded_box, star};
 
+pub mod emote;
 pub mod expression;
 pub mod mood;
 

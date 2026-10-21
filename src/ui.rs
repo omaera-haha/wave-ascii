@@ -4,6 +4,7 @@ use unicode_width::UnicodeWidthChar;
 use crate::app::{App, Mode, mood_color};
 use crate::canvas::{Canvas, Cell};
 use crate::color::Rgb;
+use crate::face::emote;
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::Status;
 use crate::render::{GHOST_SCALE, View};
@@ -25,10 +26,11 @@ const BAD: Rgb = Rgb([255, 110, 100]);
 const SPEECH_SHOWS: f64 = 14.0;
 const THOUGHT_SHOWS: f64 = 30.0;
 
-/// Draws the words around the scene: the ghost's speech bubble, the line
-/// under the scene, the status bar, and any open panel.
+/// Draws the ghost's symbols and speech bubble, the line under the scene,
+/// the status bar, and any open panel.
 pub fn draw(app: &mut App, screen: &mut Canvas, view: &View, scene_rows: usize) {
-    speech_bubble(app, screen, view, scene_rows);
+    let bubble_right = speech_bubble(app, screen, view, scene_rows);
+    emote_puffs(app, screen, view, scene_rows, bubble_right);
     words_line(app, screen, scene_rows);
     status_line(app, screen, scene_rows + 1);
     match app.mode {
@@ -149,20 +151,21 @@ fn rgb(color: Vec3) -> Rgb {
     Rgb::from_vec3(color)
 }
 
-// The ghost's latest words in a bubble above its head.
-fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) {
+// The ghost's latest words in a bubble above its head. Returns the column
+// just beyond the box when any of it is visible.
+fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) -> Option<usize> {
     let world = &app.world;
-    let Some(speech) = &world.ghost.speech else {
-        return;
-    };
+    let speech = world.ghost.speech.as_ref()?;
     if world.time - speech.time > SPEECH_SHOWS {
-        return;
+        return None;
     }
     let head = world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE;
-    let Some(point) = view.project(head) else {
-        return;
-    };
+    let point = view.project(head)?;
     let columns = screen.columns();
+    let scene_rows = scene_rows.min(screen.rows());
+    if columns == 0 || scene_rows == 0 {
+        return None;
+    }
     let pixel = Grid::new(columns, scene_rows, CELL_ASPECT)
         .to_pixels()
         .transform_point2(point);
@@ -170,18 +173,23 @@ fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize)
     let inner = lines.iter().map(|line| width(line)).max().unwrap_or(0);
     let box_width = inner + 2;
     if lines.is_empty() || box_width > columns {
-        return;
+        return None;
     }
     let anchor = pixel.x.round().clamp(0.0, columns as f32 - 1.0) as usize;
-    let tail_row = (pixel.y.round() as isize - 1).max(lines.len() as isize);
+    let tail_row = (pixel.y.round() as isize)
+        .saturating_sub(1)
+        .max(lines.len() as isize);
     let top = tail_row as usize - lines.len();
+    if top >= scene_rows {
+        return None;
+    }
     let left = anchor
         .saturating_sub(box_width / 2)
         .min(columns - box_width);
     for (offset, line) in lines.iter().enumerate() {
         let row = top + offset;
         if row >= scene_rows {
-            return;
+            break;
         }
         fill(screen, row, left, left + box_width, BUBBLE);
         write(
@@ -203,6 +211,54 @@ fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize)
             "▾",
             BUBBLE,
             None,
+        );
+    }
+    Some(left + box_width)
+}
+
+// Wordless feelings drift up from the head, beside any speech bubble.
+fn emote_puffs(
+    app: &App,
+    screen: &mut Canvas,
+    view: &View,
+    scene_rows: usize,
+    bubble_right: Option<usize>,
+) {
+    let columns = screen.columns();
+    let scene_rows = scene_rows.min(screen.rows());
+    if columns == 0 || scene_rows == 0 {
+        return;
+    }
+    let head = app.world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE;
+    let Some(point) = view.project(head) else {
+        return;
+    };
+    let pixel = Grid::new(columns, scene_rows, CELL_ASPECT)
+        .to_pixels()
+        .transform_point2(point);
+    if !(0.0..columns as f32).contains(&pixel.x) || !(0.0..scene_rows as f32).contains(&pixel.y) {
+        return;
+    }
+    let origin = bubble_right.map_or(pixel.x, |right| pixel.x.max(right as f32));
+    for puff in emote::puffs(&app.world) {
+        let column = (origin + puff.offset.x).round();
+        let row = (pixel.y - puff.offset.y).round();
+        if !(0.0..columns as f32).contains(&column) || !(0.0..scene_rows as f32).contains(&row) {
+            continue;
+        }
+        let column = column as usize;
+        let row = row as usize;
+        let fade = ((puff.age - 2.0 / 3.0) * 3.0).clamp(0.0, 1.0);
+        let color = puff.emote.color(app.aura()) * (1.0 - fade);
+        let background = screen.get(column, row).and_then(|cell| cell.background);
+        write(
+            screen,
+            column,
+            row,
+            columns,
+            puff.glyph,
+            rgb(color),
+            background,
         );
     }
 }
@@ -852,6 +908,32 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         )
+    }
+
+    #[test]
+    fn emotes_and_speech_handle_tiny_scenes_and_heads_outside_the_view() {
+        let mut app = app();
+        app.world.ghost.asleep = 1.0;
+        app.world.say("A few words beside the rising symbols.");
+        let view = crate::render::Camera::default().view(Grid::cells(80, 24));
+        let position = app.world.ghost.position;
+        for head in [
+            position,
+            position + Vec3::X * 100.0,
+            position + Vec3::Y * 100.0,
+            position - Vec3::Y * 100.0,
+            view.eye - view.forward,
+        ] {
+            app.world.ghost.position = head;
+            for columns in [0, 1, 2, 5, 80] {
+                for rows in [0, 1, 2, 5, 24] {
+                    let mut screen = Canvas::blank(columns, rows);
+                    let scene_rows = rows.saturating_sub(2).max(1);
+                    let bubble_right = speech_bubble(&app, &mut screen, &view, scene_rows);
+                    emote_puffs(&app, &mut screen, &view, scene_rows, bubble_right);
+                }
+            }
+        }
     }
 
     #[test]
