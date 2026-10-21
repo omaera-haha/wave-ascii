@@ -167,6 +167,7 @@ the next requests use them at once.
 | `o`             | Focus together for twenty-five minutes; `o` again ends it |
 | `g`             | Invite it to noughts and crosses on the glass              |
 | `f`             | Toggle finger drawing in the fog; `f` or Esc stops         |
+| `x`             | Hide a treasure: click the floor; `x` or Esc cancels       |
 | Right drag      | Draw on the outside of the glass                          |
 | `1`–`9`         | Choose a square, from top left to bottom right             |
 | `?`             | Help                                                       |
@@ -378,6 +379,13 @@ spent together, including early endings. Quitting silently ends the timer.
   watch, it learns to write your way round and keeps that moment as a milestone.
   Claude can also ask it to write a short word in the fog: up to eight
   characters, including at most five Hangul syllables.
+- **Treasure hunts.** Press `x` while the ghost is awake, then click the floor
+  to hide a glowing marble. It closes its eyes while you hide, then searches
+  with its own sight, checking behind furniture. Say “warmer”, “colder”, “hot”,
+  or “cold” (or “따뜻해”, “차가워”, “가까워”, “멀어”) to guide it. It brings
+  the treasure to the glass to give it back. Esc or `x` cancels hiding;
+  hunts wait until after focus time and end when sleep, stories, a new game,
+  a scolding, or your departure interrupts them. Hunts last only this session.
 - **Your drawings.** Right-drag, or press `f` and use left drags, to draw on
   the outside of the glass. Lift your finger between strokes. After a short
   pause an awake ghost comes to study the picture, unless it is busy resting,

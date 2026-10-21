@@ -277,6 +277,14 @@ pub struct Tally {
     pub feelings: Vec<super::Feeling>,
     pub comforted_feelings: Vec<super::Feeling>,
     pub felt_better: u32,
+    #[serde(default)]
+    pub hunts: u32,
+    #[serde(default)]
+    pub treasures_found: u32,
+    #[serde(default)]
+    pub treasure_hints: u32,
+    #[serde(default)]
+    pub fastest_treasure: Option<u32>,
 }
 
 impl Tally {
@@ -389,6 +397,9 @@ impl Tally {
                 self.constellations = self.constellations.saturating_add(1);
             }
             EventKind::Began(activity) => {
+                if *activity == Activity::Seek {
+                    self.hunts = self.hunts.saturating_add(1);
+                }
                 let count = self
                     .activities
                     .entry(activity.name().to_owned())
@@ -531,6 +542,20 @@ impl Tally {
                     self.friend_played.push(*game);
                 }
             }
+            EventKind::FoundTreasure {
+                seconds,
+                gave_up: false,
+                ..
+            } => {
+                self.treasures_found = self.treasures_found.saturating_add(1);
+                self.fastest_treasure = Some(
+                    self.fastest_treasure
+                        .map_or(*seconds, |fastest| fastest.min(*seconds)),
+                );
+            }
+            EventKind::TreasureHint(_) => {
+                self.treasure_hints = self.treasure_hints.saturating_add(1)
+            }
             _ => {}
         }
     }
@@ -572,6 +597,27 @@ impl Tally {
         );
         if self.scolds > 0 {
             deeds.push((Salience::Small, "you told me no".to_owned()));
+        }
+        if self.treasures_found > 0 {
+            deeds.push((
+                Salience::Notable,
+                if self.fastest_treasure.is_some_and(|seconds| seconds < 20) {
+                    "found your treasure in no time".to_owned()
+                } else {
+                    "found the treasure you hid".to_owned()
+                },
+            ));
+        } else if self.hunts > 0 {
+            deeds.push((
+                Salience::Small,
+                "searched for the treasure you hid".to_owned(),
+            ));
+        }
+        if self.treasure_hints > 0 {
+            deeds.push((
+                Salience::Small,
+                "followed your warmer and colder hints".to_owned(),
+            ));
         }
         if self.promises_made > 0 {
             deeds.push((
@@ -1476,6 +1522,7 @@ impl Life {
             EventKind::GameOver(outcome) if outcome.finished() => 0.002,
             EventKind::Poked { count } if *count < 3 => 0.002,
             EventKind::Poked { .. } => -0.012,
+            EventKind::FoundTreasure { gave_up: false, .. } => 0.004,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -1735,6 +1782,12 @@ impl Life {
             .landmark_greeted
             .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
         for tally in [&mut self.today, &mut self.total] {
+            tally.hunts = tally.hunts.min(1_000_000);
+            tally.treasures_found = tally.treasures_found.min(tally.hunts);
+            tally.treasure_hints = tally.treasure_hints.min(10_000_000);
+            tally.fastest_treasure = tally
+                .fastest_treasure
+                .filter(|seconds| (1..=240).contains(seconds) && tally.treasures_found > 0);
             tally.anniversary_words.retain(|line| {
                 !line.trim().is_empty()
                     && line.chars().count() <= 256
@@ -2274,6 +2327,9 @@ impl Life {
                     })?
                     .1
                     .to_owned()
+            }
+            EventKind::FoundTreasure { gave_up: false, .. } if total.treasures_found == 1 => {
+                "I found the treasure you hid for the first time.".to_owned()
             }
             _ => return None,
         };

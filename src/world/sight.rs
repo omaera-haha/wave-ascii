@@ -36,11 +36,12 @@ pub enum Thing {
     MusicBox,
     Mirror,
     ViewerLetter,
+    Treasure,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 19] = [
+    pub const NAMES: [&str; 20] = [
         "viewer",
         "window",
         "plant",
@@ -60,6 +61,7 @@ impl Thing {
         "music box",
         "mirror",
         "letter",
+        "treasure",
     ];
 
     pub fn name(self) -> &'static str {
@@ -83,6 +85,7 @@ impl Thing {
             Self::MusicBox => "music box",
             Self::ViewerLetter => "letter",
             Self::Mirror => "mirror",
+            Self::Treasure => "treasure",
         }
     }
 }
@@ -171,11 +174,15 @@ impl World {
                         })?;
                 super::garden::SPOTS[index] + Vec3::Y * plant.height() * 0.5
             }
+            Thing::Treasure => self.treasure()?.0,
         })
     }
 
     /// What the ghost sees from where it faces.
     pub fn sight(&self) -> Sight {
+        if self.hunt_counting() {
+            return Sight::default();
+        }
         let ghost = &self.ghost;
         let eye = ghost.position + Vec3::Y * 0.1;
         let heading = ghost.heading;
@@ -199,6 +206,7 @@ impl World {
             Thing::MusicBox,
             Thing::Mirror,
             Thing::ViewerLetter,
+            Thing::Treasure,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -207,6 +215,9 @@ impl World {
             let Some(position) = self.position_of(thing) else {
                 continue;
             };
+            if thing == Thing::Treasure && self.blocker(eye, position, thing).is_some() {
+                continue;
+            }
             let offset = position - eye;
             let distance = offset.length();
             let direction = offset / distance.max(1e-4);
@@ -267,6 +278,7 @@ impl World {
                 Thing::MusicBox,
                 Thing::Mirror,
                 Thing::ViewerLetter,
+                Thing::Treasure,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -278,7 +290,7 @@ impl World {
 
     // The furniture standing between the eye and a thing, if any, judged by
     // rough spheres around each piece.
-    fn blocker(&self, eye: Vec3, target: Vec3, thing: Thing) -> Option<Thing> {
+    pub(super) fn blocker(&self, eye: Vec3, target: Vec3, thing: Thing) -> Option<Thing> {
         let blockers = [
             (
                 Thing::MusicBox,
@@ -369,6 +381,10 @@ impl World {
     /// asked it to look at, else what its plan is about, else where it is
     /// going, else wherever its eyes wander. Then notes what it newly sees.
     pub(super) fn look_around(&mut self, seconds: f32) {
+        if self.hunt_counting() {
+            self.ghost.heading = -Vec3::Z;
+            return;
+        }
         let time = self.time;
         let following = (self.ghost.plan.activity == super::Activity::Window
             && self.focus.is_none())
@@ -658,6 +674,8 @@ mod tests {
             .seedlings
             .push(super::super::Seedling::new(super::super::Flower::Daisy));
         world.receive_letter("Hello!", false);
+        world.start_hiding().unwrap();
+        world.hide_treasure(Vec3::new(0.0, 0.0, 1.0));
         for name in Thing::NAMES {
             world.ghost.attention = None;
             world.attend(name, 5.0);

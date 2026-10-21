@@ -459,6 +459,7 @@ impl Mind {
                 | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
+                | Understanding::Hint { .. }
         ) {
             self.next_id += 1;
             self.latest_request = self.next_id;
@@ -530,6 +531,7 @@ impl Mind {
         self.next_id += 1;
         self.latest_request = self.next_id;
         if let Some(jev) = &self.jev
+            && world.hunt.is_none()
             && routes_to_jev(&heard)
         {
             let jev = jev.clone();
@@ -947,6 +949,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
+                | Understanding::Hint { .. }
         )
 }
 
@@ -2404,5 +2407,21 @@ mod acquaintance_tests {
             assert!(lines.contains("kimchi"));
             assert!(!lines.contains("{animal}") && !lines.contains("{food}"));
         }
+    }
+
+    #[test]
+    fn treasure_hints_keep_the_worlds_acknowledgement_and_never_route_to_jev() {
+        let mut world = World::new(1, 12.0);
+        world.start_hiding().unwrap();
+        world.hide_treasure(glam::Vec3::new(-1.8, 0.0, -1.2));
+        let heard = world.hear("warmer");
+        assert!(!routes_to_jev(&heard));
+        let mut mind = Mind::new(&Config::default(), Journal::default(), true);
+        mind.hear(&mut world, "따뜻해");
+        assert_eq!(
+            world.ghost.speech.as_ref().unwrap().text,
+            "따뜻해? 이쪽이구나!"
+        );
+        assert_eq!(world.ghost.plan.activity, Activity::Seek);
     }
 }

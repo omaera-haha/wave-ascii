@@ -75,6 +75,7 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     let mut log: Vec<String> = Vec::new();
     let mut focus_day = None;
     let mut feeling_day = None;
+    let mut hunt_day = None;
     let mut thought_count = 0u32;
     let mut speech_count = 0u32;
     let mut max_speed = 0.0f32;
@@ -147,6 +148,25 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             }
         } else if here && rng.next() < 0.002 {
             world.notice_viewer();
+        }
+        if here
+            && hunt_day != Some(clock.date())
+            && clock.day() % 2 == 1
+            && (19.0..19.1).contains(&hour)
+            && world.start_hiding().is_ok()
+        {
+            hunt_day = Some(clock.date());
+            world.hide_treasure(world.lamp.position + Vec3::new(0.25, 0.0, -0.3));
+            log.push(format!("{clock} viewer hides a treasure"));
+        }
+        if let Some(hunt) = &world.hunt
+            && hunt.phase == crate::world::hunt::Phase::Searching
+            && hunt.hints < 2
+            && world.time - hunt.hidden_at > 12.0 * f64::from(hunt.hints + 1)
+        {
+            let distance = crate::world::flat(world.ghost.position - hunt.position).length();
+            let message = if distance < 0.8 { "hot" } else { "cold" };
+            mind.hear(&mut world, message);
         }
         // One disclosure per evening exercises care and next-day follow-ups
         // without changing the simulated viewer's ordinary action rate.
@@ -318,6 +338,13 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     for (text, count) in list.iter().take(25) {
         println!("  {count:4} {text}");
     }
+    println!(
+        "-- treasure hunts: {} begun, {} found, {} hints, fastest {:?} seconds",
+        world.life.total.hunts,
+        world.life.total.treasures_found,
+        world.life.total.treasure_hints,
+        world.life.total.fastest_treasure
+    );
     println!("-- diary");
     for entry in &world.life.diary {
         println!("  {}: {}", entry.day, entry.text);

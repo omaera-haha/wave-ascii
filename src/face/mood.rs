@@ -186,6 +186,9 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::Noticed(thing) if thing.starts_with("a gift on the sill") => {
             Expression::Surprise
         }
+        EventKind::SpottedTreasure => Expression::Surprise,
+        EventKind::FoundTreasure { .. } => Expression::Sparkle,
+        EventKind::AskedTreasureHint => Expression::Prompt,
         _ => return None,
     })
 }

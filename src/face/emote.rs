@@ -330,6 +330,8 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         }
         EventKind::Heard(_) | EventKind::ViewerArrived if bond >= 0.3 => Emote::Heart,
         EventKind::Heard(_) | EventKind::ViewerArrived => Emote::Alarm,
+        EventKind::FoundTreasure { .. } => Emote::Sparkle,
+        EventKind::AskedTreasureHint => Emote::Question,
         _ => return None,
     })
 }

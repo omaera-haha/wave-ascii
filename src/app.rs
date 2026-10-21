@@ -660,6 +660,8 @@ impl App {
 
     fn command(&mut self, key: Key) -> Response {
         match key {
+            Key::Character('x') => self.toggle_hiding(),
+            Key::Escape if self.world.hunt_counting() => self.toggle_hiding(),
             Key::Character('f') => self.toggle_drawing(),
             Key::Escape if self.drawing_mode => self.toggle_drawing(),
             Key::Character('q') | Key::Escape => return Response::Quit,
@@ -751,7 +753,28 @@ impl App {
         self.drawing_right = false;
     }
 
+    fn toggle_hiding(&mut self) {
+        if self.world.hunt_counting() {
+            self.world.cancel_hunt();
+            self.post("Treasure hiding cancelled.");
+        } else {
+            match self.world.start_hiding() {
+                Ok(()) => {
+                    self.drawing_mode = false;
+                    self.world.lift_finger();
+                    self.press = None;
+                    self.stroke = None;
+                    self.post("click the floor to hide a treasure · Esc cancels");
+                }
+                Err(message) => self.post(message),
+            }
+        }
+    }
+
     fn toggle_drawing(&mut self) {
+        if self.world.hunt.is_some() {
+            return;
+        }
         self.drawing_mode = !self.drawing_mode;
         self.world.lift_finger();
         self.press = None;
@@ -893,7 +916,7 @@ impl App {
             MouseAction::ScrollDown => self.camera.zoom_by(1.0 / 1.1),
             MouseAction::Move => {}
             MouseAction::DrawPress | MouseAction::DrawDrag | MouseAction::DrawRelease => {
-                if self.mode == Mode::Watching {
+                if self.mode == Mode::Watching && self.world.hunt.is_none() {
                     match mouse.action {
                         MouseAction::DrawPress => {
                             self.world.lift_finger();
@@ -1032,6 +1055,16 @@ impl App {
             self.world.poke();
             return;
         }
+        if self.world.hunt_counting() {
+            if let Some(spot) = view
+                .on_plane(point, 0.0)
+                .filter(|spot| spot.cmpge(ROOM_MIN).all() && spot.cmple(ROOM_MAX).all())
+                && self.world.hide_treasure(spot)
+            {
+                self.notice = None;
+            }
+            return;
+        }
         let direction = view.ray(point);
         let block = self
             .world
@@ -1101,6 +1134,9 @@ impl App {
     }
 
     pub fn notice(&self) -> Option<&str> {
+        if self.world.hunt_counting() {
+            return Some("click the floor to hide a treasure · Esc cancels");
+        }
         self.notice
             .as_ref()
             .filter(|(_, time)| self.world.time - time < 8.0)
@@ -1179,7 +1215,11 @@ impl App {
             world.time,
             &Cues {
                 mood: ghost.mood,
-                asleep: ghost.asleep,
+                asleep: if self.world.hunt_counting() {
+                    1.0
+                } else {
+                    ghost.asleep
+                },
                 petting: world.petting(),
                 gaze,
                 reactions,
@@ -3475,5 +3515,59 @@ mod tests {
                 .count(),
             spoken
         );
+    }
+
+    #[test]
+    fn hiding_mode_uses_floor_clicks_keeps_pokes_and_cancels_with_escape_or_x() {
+        let mut app = app();
+        for key in [Key::Escape, Key::Character('x')] {
+            app.input(Input::Key(Key::Character('x')));
+            assert!(app.world.hunt_counting());
+            assert!(app.wants_mouse());
+            assert_eq!(
+                app.notice(),
+                Some("click the floor to hide a treasure · Esc cancels")
+            );
+            assert_eq!(app.input(Input::Key(key)), Response::Continue);
+            assert!(app.world.hunt.is_none());
+        }
+        app.input(Input::Key(Key::Character('x')));
+        let (column, row) = cell_of(&app, app.world.ghost.position);
+        click(&mut app, column, row);
+        assert!(app.world.hunt_counting());
+        assert!(
+            app.world
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::Poked { .. }))
+        );
+        assert!(app.world.motes.is_empty());
+        app.click(Vec2::new(100.0, 100.0));
+        assert!(app.world.hunt_counting());
+        let floor = Vec3::new(-0.5, 0.0, 0.8);
+        app.click(app.view.unwrap().project(floor).unwrap());
+        assert!(!app.world.hunt_counting());
+        assert!(app.world.hunt.is_some());
+        assert_eq!(app.world.ghost.plan.activity, Activity::Seek);
+        assert!(app.world.motes.is_empty());
+    }
+
+    #[test]
+    fn hiding_refuses_sleep_work_and_existing_games_with_a_notice() {
+        let mut app = app();
+        app.world.ghost.asleep = 0.9;
+        app.input(Input::Key(Key::Character('x')));
+        assert!(app.world.hunt.is_none());
+        assert!(app.notice().unwrap().contains("asleep"));
+        app.world.ghost.asleep = 0.0;
+        app.world.start_focus(25);
+        app.input(Input::Key(Key::Character('x')));
+        assert!(app.world.hunt.is_none());
+        assert!(app.notice().unwrap().contains("focus"));
+        app.world.toggle_focus();
+        app.world.challenge();
+        app.input(Input::Key(Key::Character('x')));
+        assert!(app.world.hunt.is_none());
+        assert!(app.notice().unwrap().contains("game"));
     }
 }

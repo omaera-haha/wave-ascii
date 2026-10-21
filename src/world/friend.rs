@@ -235,7 +235,8 @@ const COMES_AT_A_CHECK: f32 = 0.05;
 
 impl World {
     pub(crate) fn friend_is_open(&self) -> bool {
-        self.ghost.asleep < 0.3
+        self.hunt.is_none()
+            && self.ghost.asleep < 0.3
             && self.ghost.needs.energy > 0.15
             && self
                 .friend

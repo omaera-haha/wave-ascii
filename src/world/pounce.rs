@@ -36,6 +36,7 @@ impl World {
         // were about.
         if self.focus.is_none()
             && !self.puzzle_active()
+            && self.hunt.is_none()
             && !was_lively
             && self.viewer.pointer_is_lively()
         {
@@ -60,7 +61,8 @@ impl World {
     }
 
     pub(super) fn pounce_is_open(&self) -> bool {
-        self.focus.is_none()
+        self.hunt.is_none()
+            && self.focus.is_none()
             && self.ghost.asleep < 0.3
             && self.ghost.needs.energy > 0.25
             && self.viewer.pointer_is_lively()
@@ -186,6 +188,10 @@ mod tests {
             }
             if activity == Activity::Comfort {
                 world.hear("I'm tired");
+            }
+            if activity == Activity::Seek {
+                world.start_hiding().unwrap();
+                world.hide_treasure(Vec3::new(-1.8, 0.0, -1.2));
             }
             world.begin(activity);
             wiggle(&mut world);

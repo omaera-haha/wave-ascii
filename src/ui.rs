@@ -331,7 +331,7 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
 }
 
 /// Tips for a quiet words line, the basics first.
-const TIPS: [&str; 8] = [
+const TIPS: [&str; 9] = [
     "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around",
     "drag across the ghost to stroke it · right drag draws in the fog on the glass",
     "e reads its letters, and w there writes it one back",
@@ -340,6 +340,7 @@ const TIPS: [&str; 8] = [
     "type do re mi to teach it a tune · “play a lullaby” winds the music box",
     "l shows its life · j its journal and diary · b the album of moments it kept",
     "p keeps a postcard of this moment · ? lists every key",
+    "Press x, then click the floor to hide a treasure. Try warmer or colder!",
 ];
 /// Seconds the basics show first, and each later tip after them.
 const BASICS_SHOW: f64 = 90.0;
@@ -747,7 +748,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "p          save a postcard      click friend  make it giggle",
         "o          focus (o ends it)    drag ghost    stroke it",
         "g          noughts and crosses  1-9, click    choose a square",
-        "f          draw (f/Esc stops)   right-drag    draw on glass",
+        "f          draw (f/Esc stops)   x          hide on floor (x/Esc)",
         "b, e       album, letters       click window  open or shut",
         "arrows     turn the view        drag          turn the view",
         "+ -, wheel zoom                 r             reset the view",
@@ -760,7 +761,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "Click the music box to wind a tune; teach it do re mi.",
         "Letters: ←/→ browse · w write, Ctrl+S sends · v sent",
         "Album: ←/→, Home/End · life panel: ↑/↓ scroll",
-        "Tell it how you feel, or when you'll be back.",
+        "Right-drag draws; tell it your feelings or return plans.",
     ];
     let room = rows.saturating_sub(3);
     let mut lines = keys.to_vec();

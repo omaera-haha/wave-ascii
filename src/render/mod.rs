@@ -261,6 +261,15 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
                 .map_or(0.0, |playing| playing.beat(world.time) * PI),
         ),
     ];
+    if let Some((position, brightness)) = world.treasure() {
+        let twinkle = 0.75 + 0.25 * (world.time as f32 * 4.0).sin().powi(8);
+        let light = if world.lamp.on { 1.0 } else { 0.3 };
+        furniture.push(Furniture::Treasure {
+            position,
+            radius: crate::world::hunt::RADIUS * brightness.min(1.0).sqrt().max(0.01),
+            brightness: brightness * twinkle * light,
+        });
+    }
     if let Some(position) = world.viewer_paper() {
         furniture.push(Furniture::ViewerLetter(position));
     }
@@ -418,6 +427,14 @@ impl Tracer<'_> {
                         }
                         Material::Bulb if world.lamp.on => albedo * 1.4,
                         Material::Lampshade if world.lamp.on => LAMP_LIGHT * 0.35,
+                        Material::Treasure => {
+                            let brightness = if let Furniture::Treasure { brightness, .. } = piece {
+                                *brightness
+                            } else {
+                                0.0
+                            };
+                            albedo * brightness * 1.2
+                        }
                         _ => Vec3::ZERO,
                     };
             }

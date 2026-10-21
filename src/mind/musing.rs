@@ -137,6 +137,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             }
             Sky::Clear => vec!["I like watching the clouds.", "The hills look soft today."],
         },
+        Activity::Seek => vec![world.hunt_thought()],
     };
     if activity == Activity::Window {
         for passing in world.passersby().into_iter().flatten() {
@@ -291,6 +292,9 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
         lines.push("My book, {own_book}, keeps a little piece of my life.");
     }
 
+    if ghost.plan.activity == Activity::Seek && !ghost.plan.done {
+        lines.push(world.hunt_thought());
+    }
     if ghost.plan.activity == Activity::Mirror && !ghost.plan.done {
         lines.extend(world.mirror_thoughts());
     }
@@ -559,6 +563,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Read => "A book is a little window too.",
             Activity::Letter => "I kept their words close.",
             Activity::Mirror => "I wonder what the mirror ghost is doing.",
+            Activity::Seek => world.hunt_thought(),
         });
     }
     if lines.is_empty() {
@@ -614,6 +619,9 @@ pub fn dreams(world: &World) -> Vec<String> {
 fn dream_lines(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if today.treasures_found > 0 {
+        lines.push("A little golden treasure… I found it for you.");
+    }
     if world.life.today.viewer_letters_read > 0 {
         lines.push("…your letter folded into a little paper heart…");
     }
@@ -1865,6 +1873,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Music => "오르골 음악을 듣는 중",
         Activity::Letter => "네 편지를 읽는 중",
         Activity::Mirror => "거울 보는 중",
+        Activity::Seek => "네 보물 찾는 중",
     }
 }
 
@@ -1898,6 +1907,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Music => "오르골 듣기",
         Activity::Letter => "네 편지 읽기",
         Activity::Mirror => "거울 보기",
+        Activity::Seek => "네 보물 찾기",
     }
 }
 
