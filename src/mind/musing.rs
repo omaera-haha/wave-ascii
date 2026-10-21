@@ -40,6 +40,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             vec!["Better shut the window.", "Keep the rain outside."]
         }
         Activity::Air => vec!["A little fresh air.", "Let the breeze in."],
+        Activity::Comfort => vec!["I can stay close."],
         Activity::Company => vec!["I'll stay right here."],
         Activity::Look => vec!["What did you draw?", "Let me have a look."],
         Activity::Explore => vec![
@@ -215,16 +216,27 @@ pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<&'static str> {
     if world.focus.is_some() {
-        return vec![
+        let mut lines = vec![
             "Shh… they're working.",
             "I'll keep the light low.",
             "I'm right here.",
         ];
+        if world.recent_negative_feeling(3600.0).is_some() {
+            lines.push("I hope they're feeling better.");
+        }
+        return lines;
     }
     let ghost = &world.ghost;
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if world.recent_negative_feeling(3600.0).is_some() {
+        lines.extend([
+            "I hope they're feeling better.",
+            "A quiet little light, just for them.",
+            "I can stay close for a while.",
+        ]);
+    }
     if ghost.plan.activity == Activity::Mirror && !ghost.plan.done {
         lines.extend(world.mirror_thoughts());
     }
@@ -462,6 +474,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Doodle => "I should draw on the glass again.",
             Activity::Look => "I like seeing what you draw.",
             Activity::Air => "A breeze makes the room feel new.",
+            Activity::Comfort => "I hope my company helps.",
             Activity::Company => "I like working quietly beside you.",
             Activity::Read => "A book is a little window too.",
             Activity::Mirror => "I wonder what the mirror ghost is doing.",
@@ -517,6 +530,12 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
         } else {
             "…the ghost in the mirror invites me through…"
         });
+    }
+    if today.comforts > 0 {
+        lines.extend([
+            "…we breathe together, and the clouds drift slowly…",
+            "…a little heart keeps you warm…",
+        ]);
     }
     if today.tunes_played > 0 || world.music.is_some() {
         lines.push("…music carries my little room over the clouds…");
@@ -709,6 +728,8 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
     if !matches!(
         heard.understanding,
         Understanding::Asked { .. }
+            | Understanding::Felt(_)
+            | Understanding::FeltBetter
             | Understanding::Focusing { .. }
             | Understanding::Airing { .. }
             | Understanding::Undressing
@@ -740,6 +761,18 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             .as_ref()
             .map(|line| vec![line.text.clone()])
             .unwrap_or_default();
+    }
+    if let Understanding::Felt(feeling) = heard.understanding {
+        if world.ghost.asleep >= 0.3 {
+            return Vec::new();
+        }
+        return crate::world::feelings::replies(world, feeling, korean);
+    }
+    if heard.understanding == Understanding::FeltBetter {
+        if world.ghost.asleep >= 0.3 {
+            return Vec::new();
+        }
+        return lines(&[("I'm so glad you're feeling better!", "다행이야. 정말 기뻐!")]);
     }
     if heard.understanding == Understanding::Undressing {
         return lines(&[("All right, I took it off.", "응, 벗었어.")]);
@@ -1683,6 +1716,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Friend => "유령 친구와 노는 중",
         Activity::Look => "네가 그린 그림을 보는 중",
         Activity::Air => "창문을 여닫는 중",
+        Activity::Comfort => "네 마음을 보살피는 중",
         Activity::Company => "네가 일하는 동안 옆에 있어 주는 중",
         Activity::Puzzle => "유리에 낱말 맞추기 하는 중",
         Activity::Read => "그림책 읽는 중",
@@ -1714,6 +1748,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Friend => "유령 친구와 놀기",
         Activity::Look => "네 그림 보기",
         Activity::Air => "신선한 바람 쐬기",
+        Activity::Comfort => "네 곁에서 마음 보살피기",
         Activity::Company => "일하는 네 옆에 있기",
         Activity::Puzzle => "낱말 맞추기",
         Activity::Read => "그림책 읽기",

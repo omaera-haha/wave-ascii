@@ -81,6 +81,7 @@ pub fn observe(world: &World) -> Value {
         "viewer": viewer(world),
         "viewer_language": if world.speaks_korean() { "the viewer speaks Korean" } else { "not known yet" },
         "viewer_facts": world.life.viewer.words(),
+        "viewer_feelings": world.feeling_words(),
         "asking_viewer": world.asking.map(|(topic, _)| format!("waiting for an answer about their {}", topic.name())),
         "viewer_name": world.life.viewer_name.as_ref().map_or_else(|| "not known yet".to_owned(), |name| format!("The viewer's name is {name}.")),
         "bond_with_viewer": world.life.bond_words(),
@@ -101,6 +102,10 @@ pub fn observe(world: &World) -> Value {
 
 pub fn for_message(world: &World, message: &str) -> Value {
     let mut observation = observe(world);
+    if let Some(feeling) = crate::world::feelings::felt(message) {
+        observation["viewer_said_feeling"] =
+            json!(format!("The viewer said they feel {}.", feeling.name()));
+    }
     if Question::ask(message) == Some(Question::Away)
         && let Some(away) = &world.away
     {
@@ -574,6 +579,23 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn observations_keep_a_messages_own_feeling_and_describe_current_care_without_numbers() {
+        let mut world = World::new(3, 12.0);
+        world.hear("I'm tired");
+        let observation = observe(&world);
+        let words = observation["viewer_feelings"].as_str().unwrap();
+        assert!(words.contains("feel tired"));
+        assert!(words.contains("comforting them"));
+        assert!(!words.chars().any(char::is_numeric));
+        world.hear("I'm happy");
+        assert_eq!(
+            for_message(&world, "I'm tired")["viewer_said_feeling"],
+            "The viewer said they feel tired."
+        );
+    }
+
     use crate::world::EventKind;
     use glam::Vec3;
 

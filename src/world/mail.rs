@@ -141,11 +141,23 @@ impl World {
         } else {
             format!("Love, {ghost_name}")
         };
+        let recently_unhappy = self.life.feelings.iter().any(|note| {
+            note.feeling.negative()
+                && note
+                    .days_ago(self.date)
+                    .is_some_and(|days| (0..=3).contains(&days))
+        });
         let lines = if self.stage() == Stage::Newborn {
-            vec![
-                language("Ooh! Miss yoo!", "응! 보고 시퍼!", korean),
-                signature,
-            ]
+            let mut lines = vec![language("Ooh! Miss yoo!", "응! 보고 시퍼!", korean)];
+            if recently_unhappy {
+                lines.push(language(
+                    "I hope you're feeling better.",
+                    "네 기분이 좀 나아졌으면 좋겠어.",
+                    korean,
+                ));
+            }
+            lines.push(signature);
+            lines
         } else {
             let mut lines = vec![salutation];
             let count = 1 + usize::from(self.random_unit() < 0.5);
@@ -210,7 +222,13 @@ impl World {
             let index = self.pick(&vec![1.0; now.len()]).unwrap();
             lines.push(now.swap_remove(index));
             let nature = self.life.nature.unwrap_or_default();
-            let feeling = if self.life.bond >= 0.55 || nature.tender >= 0.65 {
+            let feeling = if recently_unhappy {
+                language(
+                    "I hope you're feeling better.",
+                    "네 기분이 좀 나아졌으면 좋겠어.",
+                    korean,
+                )
+            } else if self.life.bond >= 0.55 || nature.tender >= 0.65 {
                 language("I missed you.", "보고 싶었어.", korean)
             } else if nature.shy >= 0.65 {
                 language("It was quiet without you.", "네가 없으니 조용했어.", korean)
@@ -303,6 +321,40 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn away_letters_remember_recent_negative_feelings_in_both_languages_including_newborns() {
+        use crate::world::feelings::{Feeling, FeelingNote};
+        for korean in [false, true] {
+            for newborn in [false, true] {
+                for days in [0, 3, 4] {
+                    let mut world = returning(5, korean);
+                    if newborn {
+                        world.birthday = world.date.yesterday().ok();
+                    }
+                    let day = world
+                        .date
+                        .checked_sub(jiff::Span::new().days(days))
+                        .unwrap();
+                    world.life.feelings.push(FeelingNote {
+                        feeling: Feeling::Tired,
+                        day: day.to_string(),
+                        hour: 12.0,
+                        asked: false,
+                    });
+                    world.write_return_letter(21600.0);
+                    let letter = &world.life.letters[0];
+                    assert!(letter.valid());
+                    let hope = if korean {
+                        "네 기분이 좀 나아졌으면 좋겠어."
+                    } else {
+                        "I hope you're feeling better."
+                    };
+                    assert_eq!(letter.lines.iter().any(|line| line == hope), days <= 3);
+                }
+            }
+        }
+    }
+
     use super::*;
     use crate::world::{
         Life, Nature,

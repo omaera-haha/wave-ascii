@@ -181,6 +181,9 @@ mod tests {
             if activity == Activity::Friend {
                 world.invite_friend();
             }
+            if activity == Activity::Comfort {
+                world.hear("I'm tired");
+            }
             world.begin(activity);
             wiggle(&mut world);
             assert_eq!(
