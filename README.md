@@ -82,6 +82,8 @@ app has the mouse.
 
 The room follows your local time: daylight by day, warm at dawn and dusk, and
 dark at night unless the lamp is on.
+A wooden window in the back wall looks over rolling hills, with a sun that
+crosses the sky, drifting clouds, and a moon and twinkling stars at night.
 
 ### Its life between runs
 

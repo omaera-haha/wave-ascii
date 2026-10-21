@@ -515,6 +515,7 @@ impl App {
         let frame = render::render(
             &Scene {
                 world,
+                outside: render::window::Outside::clear(world.hour, world.time),
                 view,
                 face,
                 aura,
