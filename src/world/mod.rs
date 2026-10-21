@@ -887,7 +887,14 @@ impl World {
                 if let Understanding::Puzzled { word, .. } = understanding {
                     self.record(EventKind::Puzzled(word.clone()));
                 }
-                if self.ghost.plan.activity != Activity::Visit {
+                // A goodnight at bedtime sends it to bed.
+                let goodnight = reading.tone == Some(Tone::Farewell)
+                    && *understanding == Understanding::Nothing
+                    && self.bedtime()
+                    && self.options().contains(&Activity::Rest);
+                if goodnight {
+                    self.begin(Activity::Rest);
+                } else if self.ghost.plan.activity != Activity::Visit {
                     self.begin(Activity::Visit);
                 }
             }
@@ -2473,6 +2480,17 @@ mod tests {
             world.life.vocabulary.meaning(&catch),
             Some(("catch".to_owned(), Activity::Fetch))
         );
+        // Darting the pointer across the glass shows the finger game.
+        world.hear("finger");
+        world.point_at(Some(Vec3::new(-0.6, 1.2, ROOM_MAX.z)));
+        world.point_at(Some(Vec3::new(0.6, 1.2, ROOM_MAX.z)));
+        assert!(
+            world
+                .life
+                .vocabulary
+                .evidence(&["finger".to_owned()], Activity::Pounce)
+                > 1.0
+        );
     }
 
     #[test]
@@ -2536,6 +2554,19 @@ mod tests {
             world.life.vocabulary.meaning(&["peekaboo".to_owned()]),
             Some(("peekaboo".to_owned(), Activity::Hide))
         );
+    }
+
+    #[test]
+    fn a_goodnight_at_bedtime_sends_the_ghost_to_bed() {
+        let mut world = World::new(6, 23.0);
+        world.notice_viewer();
+        world.hear("goodnight!");
+        assert_eq!(world.ghost.plan.activity, Activity::Rest);
+        assert!(world.ghost.plan.overnight);
+        let mut world = World::new(6, 15.0);
+        world.notice_viewer();
+        world.hear("goodnight!");
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
     }
 
     #[test]

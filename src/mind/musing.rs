@@ -268,6 +268,12 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     if today.dances > 0 {
         lines.push("…dancing with the light motes, round and round…");
     }
+    if today.pounces > 0 {
+        lines.push("…a finger of light on the glass, always just out of reach…");
+    }
+    if !today.words.is_empty() {
+        lines.push("…your words drift by like light motes, and I catch one…");
+    }
     if today.waterings > 0 {
         lines.push("…the plant grows right up through the ceiling…");
     }

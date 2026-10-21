@@ -172,7 +172,8 @@ blink over the hills on summer nights.
 
 The ghost naps when tired by day. Bedtime runs from ten at night to half past
 six in the morning: it turns the lamp off if you're away and sleeps through
-until morning. Keep it company and it stays up a while longer. Opening the
+until morning. Keep it company and it stays up a while longer, until you
+wish it goodnight ("goodnight", "잘자"), which sends it to bed. Opening the
 app at bedtime finds it asleep on its cushion; poking or talking wakes it,
 and leaves it drowsy for a couple of minutes. In the morning it stretches,
 looks out of the window, and comes to the glass to greet you.
