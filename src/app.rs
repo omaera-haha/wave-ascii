@@ -856,6 +856,10 @@ impl App {
             }
             _ => {}
         }
+        if crate::world::music::hit_box(view.eye, direction).is_some() {
+            self.world.wind_music_box();
+            return;
+        }
         if view.on_window(point).is_some() {
             self.world.ask_window(!self.world.window_open);
             return;
@@ -956,7 +960,7 @@ impl App {
         {
             reactions.push((spell.pulse_started(world.time), expression));
         }
-        let face = face::mood::face(
+        let mut face = face::mood::face(
             world.time,
             &Cues {
                 mood: ghost.mood,
@@ -967,6 +971,13 @@ impl App {
                 focusing: world.focus.is_some(),
             },
         );
+        if world.music.is_some()
+            && ghost.plan.activity == crate::world::Activity::Music
+            && ghost.plan.count > 0
+            && world.life.nature.unwrap_or_default().tender > 0.55
+        {
+            face.shut = [1.0; 2];
+        }
         let energy = ghost.needs.energy;
         let aura = Aura {
             color: self.aura.lerp(
@@ -985,6 +996,15 @@ impl App {
                 + self.stroke_side * world.petting() * 1.2,
             ghost.velocity.y / (GHOST_SCALE * world.size()),
             ghost.asleep,
+        )
+        .to_music(
+            world
+                .music
+                .as_ref()
+                .filter(|_| {
+                    ghost.plan.activity == crate::world::Activity::Music && ghost.plan.count > 0
+                })
+                .map(|playing| playing.beat(world.time)),
         )
         .in_breeze(
             world.breeze_at(ghost.position).dot(view.right),
@@ -1288,6 +1308,29 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn clicking_the_music_box_winds_it_without_dropping_a_mote_or_waking_a_sleeper() {
+        let mut app = app();
+        let point = app
+            .view
+            .unwrap()
+            .project(crate::world::music::POSITION + Vec3::Y * 0.13)
+            .unwrap();
+        app.click(point);
+        assert!(app.world.music.is_some());
+        assert_eq!(app.world.ghost.plan.activity, Activity::Music);
+        assert!(app.world.motes.is_empty());
+        app.world.hour = 23.0;
+        app.world.tuck_in();
+        let plan = app.world.ghost.plan.clone();
+        app.click(point);
+        assert!(app.world.music.as_ref().unwrap().lullaby);
+        assert_eq!(app.world.ghost.asleep, 1.0);
+        assert_eq!(app.world.ghost.plan, plan);
+        assert!(app.world.motes.is_empty());
+    }
+
     use super::*;
     use crate::store::{Config, Memory};
     use crate::world::{Activity, EventKind};
@@ -1442,7 +1485,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..6000 {
+        for _ in 0..1200 {
             app.advance(0.05);
         }
         assert!(

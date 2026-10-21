@@ -190,6 +190,10 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             "Two ghosts, one moon.",
         ],
         Activity::Float => Vec::new(),
+        Activity::Music => vec![
+            "A little tune, just for this room.",
+            "I can feel the beat in my hem.",
+        ],
         Activity::Air if world.ghost.plan.window == Some(false) => {
             vec!["Better shut the window.", "Keep the rain outside."]
         }
@@ -587,6 +591,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Dance => "I've been working on a new twirl.",
             Activity::Hide => "Nobody hides like a ghost.",
             Activity::Game => "Another game on the glass?",
+            Activity::Music => "I could wind the music box again.",
             Activity::Puzzle => "I could think of another word for you.",
             Activity::Doodle => "I should draw on the glass again.",
             Activity::Look => "I like seeing what you draw.",
@@ -631,6 +636,12 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if today.tunes_played > 0 || world.music.is_some() {
+        lines.push("…music carries my little room over the clouds…");
+    }
+    if !world.life.tunes.is_empty() {
+        lines.push("…the tune you taught me turns into golden stars…");
+    }
     if world.window_open || today.airings > 0 {
         lines.push("…the wind carries a cloud through my little room…");
     }
@@ -806,6 +817,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::Focusing { .. }
             | Understanding::Airing { .. }
             | Understanding::Undressing
+            | Understanding::Music { .. }
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -823,6 +835,21 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
     };
     if heard.understanding == Understanding::Undressing {
         return lines(&[("All right, I took it off.", "응, 벗었어.")]);
+    }
+    if let Understanding::Music { lullaby } = heard.understanding {
+        if world.ghost.asleep >= 0.3 {
+            return Vec::new();
+        }
+        return if lullaby {
+            lines(&[("A soft lullaby for us.", "우리의 작은 자장가야.")])
+        } else if world.focus.is_some() {
+            lines(&[(
+                "I'll remember it for after work.",
+                "일이 끝나면 칠 수 있게 기억할게.",
+            )])
+        } else {
+            lines(&[("I'll play it back!", "따라 쳐 볼게!")])
+        };
     }
     if let Understanding::Airing { open, accepted } = heard.understanding {
         if world.ghost.asleep >= 0.3 {
@@ -1061,6 +1088,32 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
                 &["아직 제일 좋은 책을 찾는 중이야."],
             ),
         },
+        Question::Music => lines(
+            &["Yes! I like swaying with my little music box."],
+            &["응! 오르골에 맞춰 살랑이는 게 좋아."],
+        ),
+        Question::Songs => {
+            let learned = world.learned_tune_words();
+            if korean {
+                let extra = if world.life.tunes.is_empty() {
+                    "아직 네게 배운 곡은 없어.".to_owned()
+                } else {
+                    format!("네가 가르쳐 준 곡도 알아: {learned}.")
+                };
+                vec![format!(
+                    "작은 자장가, 빙글 왈츠, 꼬마 행진곡, 빛 알갱이 반짝임을 알아. {extra}"
+                )]
+            } else {
+                let extra = if world.life.tunes.is_empty() {
+                    "You can teach me a tune, too.".to_owned()
+                } else {
+                    format!("And the tunes you taught me: {learned}.")
+                };
+                vec![format!(
+                    "I know little lullaby, turning waltz, tiny march, and mote sparkle. {extra}"
+                )]
+            }
+        }
         Question::Story => Vec::new(),
         Question::Away => {
             let remembered = returned(world, korean);
@@ -1693,6 +1746,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Company => "네가 일하는 동안 옆에 있어 주는 중",
         Activity::Puzzle => "유리에 낱말 맞추기 하는 중",
         Activity::Read => "그림책 읽는 중",
+        Activity::Music => "오르골 음악을 듣는 중",
     }
 }
 
@@ -1722,6 +1776,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Company => "일하는 네 옆에 있기",
         Activity::Puzzle => "낱말 맞추기",
         Activity::Read => "그림책 읽기",
+        Activity::Music => "오르골 듣기",
     }
 }
 

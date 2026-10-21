@@ -94,6 +94,7 @@ pub(crate) fn seeks_attention(activity: Activity) -> bool {
             | Activity::Dance
             | Activity::Fetch
             | Activity::Wait
+            | Activity::Music
     )
 }
 
@@ -115,6 +116,11 @@ impl World {
             length: minutes.clamp(5, 120) * 60,
             ended_early: false,
         });
+        self.music = None;
+        if self.queued_tune.take().is_some() && self.ghost.plan.activity == Activity::Rest {
+            self.ghost.plan.target = self.nook.bed(self.size());
+            self.ghost.plan.arrived = None;
+        }
         self.break_until = 0.0;
         self.viewer_present = true;
         self.viewer_gone = false;

@@ -796,6 +796,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::WordGame
                 | Understanding::Yawning
                 | Understanding::Undressing
+                | Understanding::Music { .. }
         )
 }
 
@@ -828,6 +829,69 @@ mod tests {
         mind.reflecting_story = Some((9, false));
         mind.apply(super::Answer::Reflected(Ok(None)), &mut world);
         assert!(!world.telling.as_ref().unwrap().lines.is_empty());
+    }
+
+    #[test]
+    fn music_lessons_and_lullabies_bypass_jev_and_reply_in_the_viewers_language() {
+        for (text, reply) in [
+            ("do re mi", "I'll play it back!"),
+            ("도레미", "따라 쳐 볼게!"),
+        ] {
+            let mut world = World::new(12, 12.0);
+            let heard = world.hear(text);
+            assert!(!routes_to_jev(&heard));
+            assert!(
+                musing::reply(&world, &heard, None)
+                    .iter()
+                    .any(|line| line == reply)
+            );
+            let observation = observation::observe(&world);
+            assert!(
+                observation["room"]["learned_tunes"]
+                    .as_str()
+                    .unwrap()
+                    .contains("do-re-mi")
+            );
+            assert!(
+                musing::dreams(&world)
+                    .iter()
+                    .any(|line| line.contains("tune"))
+            );
+        }
+        let mut world = World::new(13, 12.0);
+        for text in ["play a lullaby", "자장가 들려줘"] {
+            assert!(!routes_to_jev(&world.hear(text)));
+            assert!(world.music.as_ref().unwrap().lullaby);
+        }
+    }
+
+    #[test]
+    fn music_questions_answer_from_the_box_and_its_known_tunes() {
+        use crate::world::Question;
+        let mut world = World::new(14, 12.0);
+        world.hear("do re mi");
+        for (text, question) in [
+            ("do you like music?", Question::Music),
+            ("음악 좋아해?", Question::Music),
+            ("what songs do you know?", Question::Songs),
+            ("무슨 노래 알아?", Question::Songs),
+        ] {
+            let heard = world.hear(text);
+            assert!(
+                matches!(heard.understanding, Understanding::Asked { question: asked, .. } if asked == question)
+            );
+            assert!(!routes_to_jev(&heard));
+            let replies = musing::reply(&world, &heard, None);
+            assert!(!replies.is_empty());
+            if question == Question::Songs {
+                assert!(replies.iter().any(|line| line.contains("do-re-mi")));
+            }
+            assert!(world.life.vocabulary.known().is_empty());
+        }
+        assert_eq!(
+            crate::world::dream::DreamPicture::from_line("a tune of golden notes", None),
+            crate::world::dream::DreamPicture::Note
+        );
     }
 
     use super::*;

@@ -221,6 +221,13 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             &world.life.keepsakes,
             world.wearing.and_then(|accessory| accessory.keepsake()),
         ),
+        Furniture::MusicBox(
+            world.music.is_some(),
+            world
+                .music
+                .as_ref()
+                .map_or(0.0, |playing| playing.beat(world.time) * PI),
+        ),
     ];
     if let Some((index, position, turning)) = held_book {
         furniture.push(Furniture::OpenBook {
@@ -240,6 +247,13 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             world.ghost.position - Vec3::Y * 0.5,
         ));
     }
+    furniture.extend(world.music_notes.iter().map(|note| {
+        Furniture::MusicNote(
+            note.position(world.time),
+            note.flagged,
+            (note.fade(world.time) * 255.0) as u8,
+        )
+    }));
     furniture.extend(world.blocks.iter().copied().map(Furniture::Block));
     furniture.extend(world.seedlings.iter().enumerate().map(|(index, plant)| {
         Furniture::Seedling(plant, crate::world::garden::SPOTS[index], world.season())

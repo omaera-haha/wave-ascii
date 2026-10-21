@@ -67,6 +67,8 @@ pub fn observe(world: &World) -> Value {
             "pots": world.garden_words(),
             "tending": world.tend_description(),
             "ball": ball(world),
+            "music_box": world.music_words(),
+            "learned_tunes": world.learned_tune_words(),
             "light_motes": motes(world),
             "glass": glass(world),
             "books": world.life.books.words(),
@@ -341,6 +343,7 @@ fn thing(world: &World, thing: Thing) -> String {
             };
             format!("a little bird outside the window, {place}")
         }
+        Thing::MusicBox => world.music_words(),
         Thing::Moth => "a moth fluttering around the lamp".to_owned(),
     }
 }

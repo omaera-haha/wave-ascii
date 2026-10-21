@@ -26,10 +26,11 @@ pub enum DreamPicture {
     Noughts,
     Pumpkin,
     Spiral,
+    Note,
 }
 
 impl DreamPicture {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Tower,
         Self::Ball,
         Self::Bird,
@@ -44,6 +45,7 @@ impl DreamPicture {
         Self::Noughts,
         Self::Pumpkin,
         Self::Spiral,
+        Self::Note,
     ];
 
     /// Read in word order so the first image in a dream leads its picture.
@@ -61,12 +63,10 @@ impl DreamPicture {
                 return Self::Cloud;
             }
             for (roots, picture) in [
+                (&["music", "tune", "song", "lullaby"][..], Self::Note),
                 (&["tower", "block"][..], Self::Tower),
                 (&["ball", "fetch"][..], Self::Ball),
-                (
-                    &["bird", "feather", "song", "wing", "geese"][..],
-                    Self::Bird,
-                ),
+                (&["bird", "feather", "wing", "geese"][..], Self::Bird),
                 (&["kite", "plane"][..], Self::Cloud),
                 (&["squirrel"][..], Self::Bird),
                 (&["lantern"][..], Self::Star),
@@ -114,6 +114,10 @@ impl DreamPicture {
     fn make_strokes(self) -> Vec<Vec<Vec2>> {
         let line = |points: &[(f32, f32)]| points.iter().map(|&(x, y)| Vec2::new(x, y)).collect();
         match self {
+            Self::Note => vec![
+                arc(Vec2::new(-0.28, -0.55), Vec2::new(0.35, 0.2), 0.0, TAU),
+                line(&[(0.04, -0.55), (0.04, 0.85), (0.55, 0.5), (0.4, 0.2)]),
+            ],
             Self::Heart => Sketch::Heart.strokes(),
             Self::Star => Sketch::Star.strokes(),
             Self::Flower => Sketch::Flower.strokes(),

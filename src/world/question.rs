@@ -39,6 +39,8 @@ pub enum Question {
     Reading,
     FavoriteBook,
     ReadAloud,
+    Music,
+    Songs,
 }
 
 impl Question {
@@ -76,6 +78,20 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
             &["what", "is", "your", "favorite", "book"],
             &["whats", "your", "favourite", "book"],
             &["what", "is", "your", "favourite", "book"],
+        ],
+    ),
+    (
+        Question::Music,
+        &[
+            &["do", "you", "like", "music"],
+            &["do", "you", "like", "songs"],
+        ],
+    ),
+    (
+        Question::Songs,
+        &[
+            &["what", "songs", "do", "you", "know"],
+            &["what", "tunes", "do", "you", "know"],
         ],
     ),
     (
@@ -271,6 +287,12 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // and whether the message must end in a question mark, for words that are
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
+    (Question::Music, &["음악좋아", "노래좋아"], false),
+    (
+        Question::Songs,
+        &["무슨노래알아", "어떤노래알아", "아는노래"],
+        false,
+    ),
     (
         Question::Wearing,
         &["뭐입었어", "뭐입고있어", "그거뭐야"],

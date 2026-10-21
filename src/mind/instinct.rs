@@ -26,6 +26,14 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     * needs.energy
                     * age
             }
+            Activity::Music => {
+                if world.focus.is_some() || world.ghost.asleep >= 0.3 {
+                    0.0
+                } else {
+                    (0.16 + 0.45 * (1.0 - needs.fun) + if world.hour >= 18.0 { 0.2 } else { 0.0 })
+                        * needs.energy
+                }
+            }
             Activity::Air => {
                 if world.ghost.asleep >= 0.3
                     || (!world.window_open && !world.fresh_air_is_fair())

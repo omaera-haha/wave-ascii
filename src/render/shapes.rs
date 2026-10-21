@@ -45,6 +45,7 @@ pub enum Material {
     Water,
     BookCover(u8),
     BookPages,
+    MusicNote(u8),
 }
 
 impl Material {
@@ -60,6 +61,7 @@ impl Material {
                 _ => Vec3::new(0.98, 0.82, 0.56),
             },
             Self::BookPages => Vec3::new(1.0, 0.96, 0.84),
+            Self::MusicNote(fade) => Vec3::new(1.0, 0.78, 0.3) * (f32::from(fade) / 255.0),
             Self::Curtain => Vec3::new(0.95, 0.9, 0.8),
             Self::Water => Vec3::new(0.46, 0.65, 0.78),
             Self::Ball => Vec3::new(1.0, 0.45, 0.35),
@@ -126,6 +128,7 @@ impl Material {
         let strength = match self {
             Self::Ember => 1.4 * flicker(time),
             Self::Seed => 0.5,
+            Self::MusicNote(_) => 1.4,
             Self::TreeLight(index) => {
                 0.9 + 0.5 * ((time.rem_euclid(3600.0) as f32) * 2.1 + f32::from(index) * 1.7).sin()
             }
@@ -161,6 +164,8 @@ pub enum Furniture<'a> {
         rotation: Quat,
         turning: f32,
     },
+    MusicBox(bool, f32),
+    MusicNote(Vec3, bool, u8),
 }
 
 impl Furniture<'_> {
@@ -168,6 +173,8 @@ impl Furniture<'_> {
         match self {
             Self::Books(_, _) => (crate::world::books::POSITION + Vec3::Y * 0.09, 0.29),
             Self::OpenBook { position, size, .. } => (*position, 0.29 * size),
+            Self::MusicBox(_, _) => (crate::world::music::POSITION + Vec3::Y * 0.19, 0.4),
+            Self::MusicNote(position, _, _) => (*position + Vec3::Y * 0.04, 0.14),
             Self::Curtain(side, _) => (
                 Vec3::new(side * 0.88, 1.5, crate::world::ROOM_MIN.z + 0.14),
                 0.68,
@@ -244,6 +251,41 @@ impl Furniture<'_> {
                 let local = rotation.conjugate() * (point - *position) / *size;
                 let (distance, material) = open_book_distance(local, *index, *turning);
                 (distance * size, material)
+            }
+            Self::MusicBox(open, crank) => {
+                music_box_distance(point - crate::world::music::POSITION, *open, *crank)
+            }
+            Self::MusicNote(position, flagged, fade) => {
+                let fade_scale = (f32::from(*fade) / 255.0).max(0.001);
+                let local = (point - *position) / fade_scale;
+                let corner = (local - Vec3::Y * 0.04).abs() - Vec3::new(0.08, 0.11, 0.03);
+                if corner.max_element() > 0.0 {
+                    return (
+                        corner.max(Vec3::ZERO).length() * fade_scale,
+                        Material::MusicNote(*fade),
+                    );
+                }
+                let head = ellipsoid(local, Vec3::new(0.043, 0.026, 0.018));
+                let stem = capsule(
+                    local,
+                    Vec3::new(0.034, 0.0, 0.0),
+                    Vec3::new(0.034, 0.135, 0.0),
+                    0.009,
+                );
+                let flag = if *flagged {
+                    capsule(
+                        local,
+                        Vec3::new(0.034, 0.13, 0.0),
+                        Vec3::new(0.065, 0.075, 0.0),
+                        0.009,
+                    )
+                } else {
+                    f32::INFINITY
+                };
+                (
+                    head.min(stem).min(flag) * fade_scale,
+                    Material::MusicNote(*fade),
+                )
             }
             Self::Curtain(side, gust) => {
                 let mut local =
@@ -400,6 +442,30 @@ fn open_book_distance(point: Vec3, index: usize, turning: f32) -> (f32, Material
         }
     }
     nearest
+}
+
+fn music_box_distance(point: Vec3, open: bool, crank: f32) -> (f32, Material) {
+    let wooden_box = |point: Vec3, half: Vec3| {
+        let corner = point.abs() - half;
+        corner.max(Vec3::ZERO).length() + corner.max_element().min(0.0) - 0.012
+    };
+    let body = wooden_box(point - Vec3::Y * 0.11, Vec3::new(0.18, 0.09, 0.145));
+    let lid = if open {
+        let local = point - Vec3::new(0.0, 0.22, -0.15);
+        let turned = glam::Quat::from_rotation_x(0.65) * local - Vec3::Z * 0.15;
+        wooden_box(turned, Vec3::new(0.185, 0.016, 0.15))
+    } else {
+        wooden_box(point - Vec3::Y * 0.225, Vec3::new(0.185, 0.016, 0.15))
+    };
+    let axle = Vec3::new(0.19, 0.13, 0.0);
+    let tip = Vec3::new(0.23, 0.13 + crank.cos() * 0.045, crank.sin() * 0.045);
+    let handle =
+        capsule(point, axle, tip, 0.012).min(capsule(point, tip, tip + Vec3::X * 0.02, 0.016));
+    if handle < body.min(lid) {
+        (handle, Material::Brass)
+    } else {
+        (body.min(lid), Material::Wood)
+    }
 }
 
 // A plank and two diagonal brackets, with the gifts in a row above it.
@@ -1017,6 +1083,34 @@ pub fn ellipsoid(point: Vec3, radii: Vec3) -> f32 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn music_box_and_rising_notes_have_finite_distances_normals_and_ray_hits() {
+        for open in [false, true] {
+            for phase in [0.0, 1.5, 3.0, 5.0] {
+                for piece in [
+                    Furniture::MusicBox(open, phase),
+                    Furniture::MusicNote(Vec3::new(1.7, 0.9, 0.3), true, 255),
+                    Furniture::MusicNote(Vec3::new(1.7, 1.0, 0.3), false, 1),
+                ] {
+                    let (center, radius) = piece.bounds();
+                    for offset in [Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z, -Vec3::ONE] {
+                        let point = center + offset * radius;
+                        let (distance, material) = piece.distance(point);
+                        assert!(distance.is_finite());
+                        assert!(piece.normal(point).is_finite());
+                        assert!(material.emission(10.0, &Plant::default()).is_finite());
+                        if let Some((distance, _)) =
+                            piece.trace(point + Vec3::Z * 4.0, -Vec3::Z, 10.0)
+                        {
+                            assert!(distance.is_finite() && (0.0..=10.0).contains(&distance));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     use super::*;
 
     #[test]
