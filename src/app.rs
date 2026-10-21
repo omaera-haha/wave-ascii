@@ -1003,6 +1003,7 @@ impl App {
                     ),
                     constellation_base: 0.018,
                     constellation_glow: world.constellation_glow() * 0.085,
+                    passersby: world.passersby(),
                 },
                 view,
                 face,

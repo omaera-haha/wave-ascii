@@ -16,6 +16,7 @@ pub mod meteor;
 mod nature;
 mod needs;
 pub mod occasion;
+pub mod passerby;
 mod pounce;
 mod question;
 mod random;
@@ -48,6 +49,7 @@ pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
+pub use passerby::Passerby;
 pub use question::{Question, ask as asked_question};
 pub use random::Random;
 pub use room::Room;
@@ -230,12 +232,14 @@ pub enum EventKind {
     },
     ToldStory,
     FoundConstellation(String),
+    SawPasserby(Passerby),
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::SawPasserby(kind) => format!("noticed {} through the window", kind.name()),
             Self::ToldStory => "told the viewer a story".to_owned(),
             Self::FoundConstellation(name) => format!("found a constellation: {name}"),
             Self::Began(activity) => format!("started {}", activity.doing()),
@@ -583,6 +587,7 @@ pub struct World {
     /// The story of its time alone, kept only for this session.
     pub away: Option<away::Away>,
     found_constellation_at: Option<f64>,
+    seen_passersby: [Option<u64>; Passerby::ALL.len()],
 }
 
 impl World {
@@ -681,6 +686,7 @@ impl World {
             telling: None,
             away: None,
             found_constellation_at: None,
+            seen_passersby: [None; Passerby::ALL.len()],
         };
         world.scatter_blocks();
         world
