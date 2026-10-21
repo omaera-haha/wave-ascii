@@ -376,7 +376,8 @@ impl World {
 
     pub fn can_compose(&self) -> bool {
         self.stage() != super::Stage::Newborn
-            && self.life.total.tunes_played >= 20
+            && self.life.total.tunes_played >= super::creation::COMPOSES_AFTER_TUNES
+            && self.life.diary.len() >= super::creation::COMPOSES_AFTER_DAYS
             && self.focus.is_none()
             && self.ghost.asleep < 0.3
             && self.telling.is_none()
@@ -989,7 +990,7 @@ mod tests {
         let mut expected = world.random.clone();
         assert!(!world.try_compose());
         assert_eq!(world.random.next_u64(), expected.next_u64());
-        world.life.total.tunes_played = 20;
+        super::super::creation::tests::ready_to_compose(&mut world);
         assert!(world.can_compose());
         world.life.composition_day = Some(world.date.to_string());
         assert!(!world.can_compose());
@@ -1007,7 +1008,7 @@ mod tests {
     #[test]
     fn an_eligible_month_keeps_at_most_eight_songs_and_spaces_creation_by_local_days() {
         let mut world = World::new(42, 12.0);
-        world.life.total.tunes_played = 20;
+        super::super::creation::tests::ready_to_compose(&mut world);
         let mut days = Vec::new();
         for day in 0..30 {
             for _ in 0..10 {
@@ -1026,7 +1027,7 @@ mod tests {
     #[test]
     fn an_eligible_music_sitting_hums_before_winding_and_completes_playback() {
         let mut world = World::new(42, 12.0);
-        world.life.total.tunes_played = 20;
+        super::super::creation::tests::ready_to_compose(&mut world);
         let seed = (0..100)
             .find(|seed| Random::new(*seed).unit() < 0.1)
             .unwrap();
@@ -1045,7 +1046,10 @@ mod tests {
         );
         world.time += 100.0;
         world.advance_music();
-        assert_eq!(world.life.total.tunes_played, 21);
+        assert_eq!(
+            world.life.total.tunes_played,
+            super::super::creation::COMPOSES_AFTER_TUNES + 1
+        );
         assert!(
             world
                 .life

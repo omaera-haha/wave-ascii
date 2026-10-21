@@ -81,7 +81,7 @@ panel. Repeating a lesson keeps one copy. Later it may play your tune on its
 own or dream of it. Ask “do you like music?” or “what songs do you know?”
 (“음악 좋아해?” / “무슨 노래 알아?”) to hear about them.
 
-After newbornhood and twenty completed tunes, it may hum a song of its own
+Once past newbornhood, after forty completed tunes and five days of life, it may hum a song of its own
 before winding the box. Its mood shapes the melody and its memories name it;
 it keeps its newest eight, making at most one every three local days. Ask
 “sing me your song”, “play your song”, “do you have your own song?”,
@@ -294,7 +294,8 @@ spent together, including early endings. Quitting silently ends the timer.
   pages already read stay remembered. Finished books can become retold
   stories, and the life panel lists its library.
 
-  After finishing every book it owns and gathering eight milestones, it may
+  After a fortnight of days, once it has finished every book it owns and
+  gathered eight milestones, it may
   spend a quiet evening writing its own five-page picture book from its life.
   Drafts survive interruptions and resume later; unfinished ones lapse after
   seven days. It keeps up to six books, at least ten local days apart. Ask

@@ -21,6 +21,12 @@ pub struct WrittenBook {
     pub page: usize,
 }
 
+/// Tunes it must have played, and days it must have lived, before it makes
+/// up tunes of its own; days before it writes a book of its life.
+pub const COMPOSES_AFTER_TUNES: u32 = 40;
+pub const COMPOSES_AFTER_DAYS: usize = 5;
+pub const WRITES_AFTER_DAYS: usize = 14;
+
 pub fn elapsed_days(day: Option<&str>, today: Date) -> Option<i32> {
     day.and_then(|day| day.parse::<Date>().ok())
         .map(|day| (today - day).get_days())
@@ -387,6 +393,7 @@ impl World {
 
     pub fn can_write_book(&self) -> bool {
         self.stage() != Stage::Newborn
+            && self.life.diary.len() >= WRITES_AFTER_DAYS
             && !self.life.books.owned.is_empty()
             && self.life.books.owned.iter().all(|owned| owned.finished > 0)
             && self.life.milestones.len() >= 8
@@ -484,7 +491,7 @@ impl World {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::world::{
         Activity, Companion, Entry, Mood, Nature, Question, Understanding,
@@ -518,9 +525,39 @@ mod tests {
         book
     }
 
+    /// Days of diary, so a life has lived long enough to make things.
+    pub(in crate::world) fn lived(world: &mut World, days: usize) {
+        while world.life.diary.len() < days {
+            world.life.diary.push(Entry {
+                day: "2026-01-01".to_owned(),
+                text: "A quiet day.".to_owned(),
+            });
+        }
+    }
+
+    pub(in crate::world) fn ready_to_compose(world: &mut World) {
+        world.life.total.tunes_played = COMPOSES_AFTER_TUNES;
+        lived(world, COMPOSES_AFTER_DAYS);
+    }
+
+    #[test]
+    fn a_life_of_only_a_few_days_makes_no_songs_or_books_yet() {
+        let mut world = eligible_writer(3);
+        world.life.total.tunes_played = COMPOSES_AFTER_TUNES;
+        assert!(world.can_write_book() && world.can_compose());
+        world.life.diary.truncate(COMPOSES_AFTER_DAYS);
+        assert!(!world.can_write_book() && world.can_compose());
+        world.life.diary.truncate(COMPOSES_AFTER_DAYS - 1);
+        assert!(!world.can_compose());
+        lived(&mut world, COMPOSES_AFTER_DAYS);
+        world.life.total.tunes_played = COMPOSES_AFTER_TUNES - 1;
+        assert!(!world.can_compose());
+    }
+
     fn eligible_writer(seed: u64) -> World {
         let mut world = World::new(seed, 19.0);
         world.step(0.0);
+        lived(&mut world, WRITES_AFTER_DAYS);
         world.lamp.on = true;
         for owned in &mut world.life.books.owned {
             owned.finished = 1;
