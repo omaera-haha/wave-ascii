@@ -561,6 +561,8 @@ impl App {
             && let Some(friend) = &self.world.life.friend
         {
             format!("playing with {}", friend.name)
+        } else if self.world.ghost.plan.activity == crate::world::Activity::Air {
+            self.world.air_doing().to_owned()
         } else {
             self.world.ghost.plan.activity.doing().to_owned()
         }
@@ -818,6 +820,10 @@ impl App {
             }
             _ => {}
         }
+        if view.on_window(point).is_some() {
+            self.world.ask_window(!self.world.window_open);
+            return;
+        }
         // A mote appears where the ray meets the floor, a little above it,
         // or behind the glass if the ray misses the floor.
         let floor = view
@@ -916,6 +922,10 @@ impl App {
                 + self.stroke_side * world.petting() * 1.2,
             ghost.velocity.y / (GHOST_SCALE * world.size()),
             ghost.asleep,
+        )
+        .in_breeze(
+            world.breeze_at(ghost.position).dot(view.right),
+            world.window_shake(),
         );
         let friend =
             world
@@ -1003,6 +1013,9 @@ impl App {
                     ),
                     constellation_base: 0.018,
                     constellation_glow: world.constellation_glow() * 0.085,
+                    wind: world.wind.sideways(world.time),
+                    window_lift: world.window_lift(),
+                    wind_travel: world.wind.travel,
                 },
                 view,
                 face,
@@ -1270,6 +1283,31 @@ mod tests {
             .to_pixels()
             .transform_point2(point);
         (pixel.x as usize, pixel.y as usize)
+    }
+
+    #[test]
+    fn window_clicks_request_the_sash_and_sleeping_ghosts_ignore_them() {
+        let mut app = app();
+        let (column, row) = cell_of(&app, crate::world::WINDOW_CENTER);
+        click(&mut app, column, row);
+        assert_eq!(app.world.ghost.plan.activity, Activity::Air);
+        assert_eq!(app.world.ghost.plan.window, Some(true));
+        assert!(app.world.motes.is_empty());
+        assert_eq!(app.doing(), "opening the window for fresh air");
+        app.world.ghost.position = app.world.ghost.plan.target;
+        app.world.step(1.2);
+        assert!(app.world.window_open);
+        app.world.ghost.position = Vec3::new(-1.2, 1.0, 0.5);
+        click(&mut app, column, row);
+        assert_eq!(app.world.ghost.plan.window, Some(false));
+        assert_eq!(app.doing(), "closing the window");
+        app.world.hour = 23.0;
+        app.world.tuck_in();
+        let plan = app.world.ghost.plan.clone();
+        click(&mut app, column, row);
+        assert_eq!(app.world.ghost.asleep, 1.0);
+        assert_eq!(app.world.ghost.plan, plan);
+        assert!(app.world.motes.is_empty());
     }
 
     #[test]

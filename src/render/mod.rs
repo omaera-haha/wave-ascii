@@ -122,8 +122,21 @@ impl View {
         (distance.is_finite() && distance > 0.0 && inside).then_some(hit)
     }
 
-    /// Whether the ray through `point` of the screen meets the ghost's
-    /// billboard inside its outline's bounds.
+    /// Where the ray meets the window rectangle on the back wall.
+    pub fn on_window(&self, point: Vec2) -> Option<Vec3> {
+        let direction = self.ray(point);
+        if direction.z.abs() < 1e-6 {
+            return None;
+        }
+        let distance = (ROOM_MIN.z - self.eye.z) / direction.z;
+        let position = self.eye + direction * distance;
+        (distance > 0.0
+            && position.truncate().cmpge(window::WINDOW_LOW).all()
+            && position.truncate().cmple(window::WINDOW_HIGH).all())
+        .then_some(position)
+    }
+
+    /// Whether the ray meets the ghost's billboard inside its outline's bounds.
     pub fn touches_ghost(&self, point: Vec2, ghost: Vec3, scale: f32) -> bool {
         self.billboard(self.ray(point), ghost, scale)
             .is_some_and(|(_, local)| local.abs().cmple(Vec2::new(0.6, 0.75)).all())
@@ -183,9 +196,20 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     }
     let lights = Lights::of(scene);
     let world = scene.world;
+    let curtain_gust = if world.window_open {
+        world.wind.gust(world.time)
+    } else {
+        0.0
+    };
     let mut furniture = vec![
+        Furniture::Curtain(-1.0, curtain_gust),
+        Furniture::Curtain(1.0, curtain_gust),
         Furniture::Lamp(world.lamp),
-        Furniture::Plant(world.plant),
+        if world.window_open {
+            Furniture::SwayingPlant(world.plant, world.breeze_at(world.plant.top()))
+        } else {
+            Furniture::Plant(world.plant)
+        },
         Furniture::Nook(world.nook),
         Furniture::Shelf(&world.life.keepsakes),
     ];
@@ -208,6 +232,16 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             .iter()
             .copied()
             .map(|petal| Furniture::Petal(petal, world.time)),
+    );
+    if world.puddle > 0.0 {
+        furniture.push(Furniture::Puddle(world.puddle));
+    }
+    furniture.extend(
+        world
+            .leaves
+            .iter()
+            .copied()
+            .map(|leaf| Furniture::Leaf(leaf, world.time)),
     );
     if let Some(seed) = world.carried_seed() {
         furniture.push(Furniture::Seed(seed));
@@ -259,6 +293,10 @@ fn trace(
             color = albedo * lights.at(point, normal)
                 + material.emission(world.time, &world.plant)
                 + match material {
+                    Material::Water => {
+                        Vec3::new(0.4, 0.55, 0.7)
+                            * (0.2 + 0.6 * (1.0 - normal.dot(-direction).abs()).powi(3))
+                    }
                     Material::Bulb if world.lamp.on => albedo * 1.4,
                     Material::Lampshade if world.lamp.on => LAMP_LIGHT * 0.35,
                     _ => Vec3::ZERO,

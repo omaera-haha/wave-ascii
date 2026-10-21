@@ -347,6 +347,12 @@ impl Mind {
             text: text.to_owned(),
         });
         trim(&mut self.journal.conversation, REMARKS_KEPT);
+        if world.ghost.asleep >= 0.3 && matches!(heard.understanding, Understanding::Airing { .. })
+        {
+            self.next_id += 1;
+            self.latest_request = self.next_id;
+            return;
+        }
         let story = matches!(
             heard.understanding,
             Understanding::Asked {
@@ -710,6 +716,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
             Understanding::Asked { .. }
                 | Understanding::Named { .. }
                 | Understanding::Focusing { .. }
+                | Understanding::Airing { .. }
         )
 }
 

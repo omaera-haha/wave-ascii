@@ -57,6 +57,9 @@ impl DreamPicture {
             if friend_name.as_deref() == Some(word) {
                 return Self::Friend;
             }
+            if matches!(word, "wind" | "winds") {
+                return Self::Cloud;
+            }
             for (roots, picture) in [
                 (&["tower", "block"][..], Self::Tower),
                 (&["ball", "fetch"][..], Self::Ball),
@@ -72,7 +75,7 @@ impl DreamPicture {
                     Self::Flower,
                 ),
                 (
-                    &["rain", "thunder", "storm", "cloud", "drum"][..],
+                    &["rain", "thunder", "storm", "cloud", "drum", "breeze"][..],
                     Self::Cloud,
                 ),
                 (&["snow"][..], Self::Snowflake),

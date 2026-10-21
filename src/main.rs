@@ -71,8 +71,8 @@ Keys:
   o            focus together for twenty-five minutes; o again ends it
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
-flick it, a block to nudge it or a tower to topple it, and anywhere else in
-the room to drop in a light mote. Press on the ghost and drag across it to
+flick it, a block to nudge it or a tower to topple it, the window to ask it
+to open or shut, and elsewhere in the room to drop in a light mote. Press on the ghost and drag across it to
 stroke it; drag elsewhere to turn the view, and scroll to zoom. Right-drag
 draws in the fog on the glass. In the journal, help, or life panel, the
 mouse selects text. In the journal, PageUp/PageDown and Home/End also

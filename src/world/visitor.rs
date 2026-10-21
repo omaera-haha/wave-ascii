@@ -399,8 +399,12 @@ impl World {
         }
 
         if self.visitors.moth.is_none() && time >= self.visitors.next_moth {
-            self.visitors.next_moth = time + f64::from(self.random.range(300.0, 600.0));
-            if self.is_night() && self.lamp.on {
+            let gap = self.random.range(300.0, 600.0);
+            self.visitors.next_moth = time + f64::from(gap);
+            // An open window lets moths in; a shut one only now and then,
+            // through the gaps.
+            let finds_a_way = self.window_open || gap < 400.0;
+            if self.is_night() && self.lamp.on && finds_a_way {
                 self.visitors.moth = Some(Moth::new(time, &mut self.random));
                 self.record(EventKind::MothArrived);
             }
@@ -684,20 +688,24 @@ mod tests {
     }
 
     #[test]
-    fn moths_arrive_only_on_lit_nights_orbit_the_bulb_and_leave() {
-        for (hour, lamp_on, expected) in [
-            (12.0, true, false),
-            (22.0, false, false),
-            (22.0, true, true),
+    fn moths_arrive_on_lit_nights_mostly_through_open_windows_orbit_the_bulb_and_leave() {
+        let mut through_open = 0;
+        for (hour, lamp_on, window_open, expected) in [
+            (12.0, true, true, Some(false)),
+            (22.0, false, true, Some(false)),
+            (22.0, true, true, Some(true)),
+            (22.0, true, false, None),
         ] {
             let mut world = quiet_world(hour);
             world.lamp.on = lamp_on;
+            world.window_open = window_open;
             let mut arrived = false;
             let mut visits = 0;
             let mut departures = 0;
             for _ in 0..36_000 {
                 let before = world.time;
-                world.step(0.1);
+                world.time += 0.1;
+                world.advance_visitors(0.1);
                 for event in world.events.iter().filter(|event| event.time > before) {
                     match event.kind {
                         EventKind::MothArrived => {
@@ -723,8 +731,15 @@ mod tests {
                     }
                 }
             }
-            assert_eq!(visits > 0, expected);
-            assert_eq!(departures > 0, expected);
+            if let Some(expected) = expected {
+                assert_eq!(visits > 0, expected);
+                assert_eq!(departures > 0, expected);
+            }
+            if window_open && expected == Some(true) {
+                through_open = visits;
+            } else if !window_open {
+                assert!(visits <= through_open);
+            }
         }
     }
 

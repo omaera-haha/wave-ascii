@@ -189,6 +189,10 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             "Two ghosts, one moon.",
         ],
         Activity::Float => Vec::new(),
+        Activity::Air if world.ghost.plan.window == Some(false) => {
+            vec!["Better shut the window.", "Keep the rain outside."]
+        }
+        Activity::Air => vec!["A little fresh air.", "Let the breeze in."],
         Activity::Company => vec!["I'll stay right here."],
         Activity::Look => vec!["What did you draw?", "Let me have a look."],
         Activity::Explore => vec![
@@ -342,6 +346,12 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if world.enjoying_air() {
+        lines.extend(["The air smells like rain.", "The breeze tickles my hem."]);
+        if world.season() == crate::world::Season::Autumn {
+            lines.push("Leaves are dancing in.");
+        }
+    }
     if ghost.plan.activity == Activity::Window
         && world.starry_night()
         && !world.life.constellations.is_empty()
@@ -541,6 +551,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Game => "Another game on the glass?",
             Activity::Doodle => "I should draw on the glass again.",
             Activity::Look => "I like seeing what you draw.",
+            Activity::Air => "A breeze makes the room feel new.",
             Activity::Company => "I like working quietly beside you.",
         });
     }
@@ -580,6 +591,9 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if world.window_open || today.airings > 0 {
+        lines.push("…the wind carries a cloud through my little room…");
+    }
     if today.focus_minutes > 0 || today.focus_sessions > 0 || world.focus.is_some() {
         lines.push("…we work side by side, and the little room holds its breath…");
     }
@@ -745,7 +759,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
     let mut lines = reply_in_words(world, heard, guessed);
     if !matches!(
         heard.understanding,
-        Understanding::Asked { .. } | Understanding::Focusing { .. }
+        Understanding::Asked { .. } | Understanding::Focusing { .. } | Understanding::Airing { .. }
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -761,6 +775,21 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             .map(|&(english, hangul)| if korean { hangul } else { english }.to_owned())
             .collect()
     };
+    if let Understanding::Airing { open, accepted } = heard.understanding {
+        if world.ghost.asleep >= 0.3 {
+            return Vec::new();
+        }
+        return if !accepted {
+            lines(&[(
+                "Better leave it shut for now.",
+                "지금은 닫아 두는 게 좋겠어.",
+            )])
+        } else if open {
+            lines(&[("A little fresh air!", "신선한 바람 좀 쐬자!")])
+        } else {
+            lines(&[("I'll shut the window.", "창문 닫을게.")])
+        };
+    }
     if matches!(heard.understanding, Understanding::Focusing { .. }) {
         return lines(&[("Let's do it. I'll be right here.", "좋아, 옆에 있을게.")]);
     }
@@ -1534,6 +1563,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Build => "블록으로 탑 쌓는 중",
         Activity::Friend => "유령 친구와 노는 중",
         Activity::Look => "네가 그린 그림을 보는 중",
+        Activity::Air => "창문을 여닫는 중",
         Activity::Company => "네가 일하는 동안 옆에 있어 주는 중",
     }
 }
@@ -1560,6 +1590,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Build => "블록 쌓기",
         Activity::Friend => "유령 친구와 놀기",
         Activity::Look => "네 그림 보기",
+        Activity::Air => "신선한 바람 쐬기",
         Activity::Company => "일하는 네 옆에 있기",
     }
 }
@@ -1639,6 +1670,33 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_requests_answer_in_both_languages_without_teaching_words_or_routing() {
+        for (text, answer) in [("open the window", "fresh air"), ("창문 열어", "바람")] {
+            let mut world = World::new(7, 12.0);
+            let heard = world.hear(text);
+            assert!(!super::super::routes_to_jev(&heard));
+            assert!(
+                reply(&world, &heard, None)
+                    .iter()
+                    .any(|line| line.contains(answer))
+            );
+            world.window_open = true;
+            assert!(
+                idle(&world)
+                    .iter()
+                    .all(|line| !line.contains("Leaves are dancing in."))
+            );
+            world.ghost.position = crate::world::WINDOW_CENTER + glam::Vec3::Z * 0.5;
+            assert!(idle(&world).contains(&"The breeze tickles my hem."));
+            assert!(dreams(&world).iter().any(|line| line.contains("wind")));
+            world.hour = 23.0;
+            world.tuck_in();
+            let heard = world.hear(text);
+            assert!(reply(&world, &heard, None).is_empty());
+        }
+    }
 
     #[test]
     fn company_answers_what_it_is_doing_in_both_languages_and_dreams_of_work() {

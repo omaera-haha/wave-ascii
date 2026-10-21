@@ -198,14 +198,14 @@ impl Mote {
     pub const LIFETIME: f64 = 150.0;
 
     /// Drifts the mote along its wandering path, keeping it in the room.
-    pub fn drift(&mut self, time: f64, seconds: f32) {
+    pub fn drift(&mut self, time: f64, seconds: f32, breeze: Vec3) {
         let phase = time as f32 + self.seed * 10.0;
         let velocity = Vec3::new(
             (phase * 0.7).sin(),
             -0.25 + 0.6 * (phase * 0.45 + self.seed).sin(),
             (phase * 0.6 + self.seed * 2.0).cos(),
         ) * 0.14;
-        self.position += velocity * seconds;
+        self.position += (velocity + breeze) * seconds;
         let margin = Vec3::new(0.25, 0.3, 0.25);
         self.position = self
             .position
@@ -320,7 +320,7 @@ mod tests {
             seed: 0.4,
         };
         for step in 0..2000 {
-            mote.drift(step as f64 * 0.05, 0.05);
+            mote.drift(step as f64 * 0.05, 0.05, Vec3::new(0.17, 0.015, 0.36));
             assert!(mote.position.cmpge(ROOM_MIN).all() && mote.position.cmple(ROOM_MAX).all());
         }
         assert_eq!(mote.glow(0.0), 0.0);

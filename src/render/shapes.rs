@@ -41,6 +41,8 @@ pub enum Material {
     Flower(Flower),
     Center(Flower),
     Seed,
+    Curtain,
+    Water,
 }
 
 impl Material {
@@ -48,6 +50,8 @@ impl Material {
     /// shapes keep their contrast in plain styles.
     pub fn albedo(self, plant: &Plant) -> Vec3 {
         match self {
+            Self::Curtain => Vec3::new(0.95, 0.9, 0.8),
+            Self::Water => Vec3::new(0.46, 0.65, 0.78),
             Self::Ball => Vec3::new(1.0, 0.45, 0.35),
             Self::Block(index) => match index % 5 {
                 0 => Vec3::new(1.0, 0.4, 0.4),
@@ -135,11 +139,24 @@ pub enum Furniture<'a> {
     Seedling(&'a Seedling, Vec3, Season),
     Petal(Petal, f64),
     Seed(Vec3),
+    Curtain(f32, f32),
+    Puddle(f32),
+    Leaf(crate::world::Leaf, f64),
+    SwayingPlant(Plant, Vec3),
 }
 
 impl Furniture<'_> {
     pub fn bounds(&self) -> (Vec3, f32) {
         match self {
+            Self::Curtain(side, _) => (
+                Vec3::new(side * 0.88, 1.5, crate::world::ROOM_MIN.z + 0.14),
+                0.68,
+            ),
+            Self::Puddle(amount) => (
+                Vec3::new(0.0, 0.008, crate::world::ROOM_MIN.z + 0.4),
+                0.52 * amount.sqrt().max(0.01),
+            ),
+            Self::Leaf(leaf, _) => (leaf.position, 0.065),
             Self::Seedling(plant, position, _) => {
                 let height = plant.height();
                 (*position + Vec3::Y * height * 0.5, height * 0.5 + 0.14)
@@ -148,7 +165,7 @@ impl Furniture<'_> {
             Self::Seed(position) => (*position, 0.025),
             Self::Block(block) => (block.position, crate::world::blocks::RADIUS),
             Self::Lamp(lamp) => (lamp.position + Vec3::Y * 0.72, 0.78),
-            Self::Plant(plant) => {
+            Self::Plant(plant) | Self::SwayingPlant(plant, _) => {
                 let height = plant.height();
                 (plant.position + Vec3::Y * height * 0.5, height * 0.5 + 0.28)
             }
@@ -169,6 +186,44 @@ impl Furniture<'_> {
     /// nearest it.
     pub fn distance(&self, point: Vec3) -> (f32, Material) {
         match self {
+            Self::Curtain(side, gust) => {
+                let mut local =
+                    point - Vec3::new(side * 0.88, 1.5, crate::world::ROOM_MIN.z + 0.045);
+                let hanging = ((0.58 - local.y) / 1.16).clamp(0.0, 1.0);
+                local.x -= side * gust * 0.035 * hanging;
+                local.z -= 0.018 * (local.x * 90.0).sin() + gust * 0.28 * hanging.powi(2);
+                let corner = local.abs() - Vec3::new(0.13, 0.58, 0.009);
+                (
+                    (corner.max(Vec3::ZERO).length() + corner.max_element().min(0.0)) * 0.55,
+                    Material::Curtain,
+                )
+            }
+            Self::Puddle(amount) => {
+                let center = Vec3::new(0.0, 0.008, crate::world::ROOM_MIN.z + 0.4);
+                (
+                    ellipsoid(
+                        point - center,
+                        Vec3::new(0.48, 0.008, 0.24) * amount.sqrt().max(0.01),
+                    ),
+                    Material::Water,
+                )
+            }
+            Self::Leaf(leaf, time) => {
+                let local = point - leaf.position;
+                let (sine, cosine) = leaf.spin.sin_cos();
+                let turned = Vec3::new(
+                    local.x * cosine + local.z * sine,
+                    local.y,
+                    local.z * cosine - local.x * sine,
+                );
+                (
+                    ellipsoid(
+                        turned,
+                        Vec3::new(0.05, 0.006, 0.025) * leaf.fade(*time).max(0.001),
+                    ),
+                    Material::AutumnLeaf,
+                )
+            }
             Self::Block(block) => {
                 let point = block.orientation.conjugate() * (point - block.position);
                 let corner = point.abs() - Vec3::splat(crate::world::blocks::EDGE * 0.5 - 0.012);
@@ -182,6 +237,13 @@ impl Furniture<'_> {
             }
             Self::Lamp(lamp) => lamp_distance(point - lamp.position),
             Self::Plant(plant) => plant_distance(point - plant.position, plant),
+            Self::SwayingPlant(plant, breeze) => {
+                let mut local = point - plant.position;
+                let height = ((local.y - Plant::POT_HEIGHT) / plant.height()).clamp(0.0, 1.0);
+                local -= Vec3::new(breeze.x, 0.0, breeze.z) * height.powi(2) * 0.25;
+                let (distance, material) = plant_distance(local, plant);
+                (distance * 0.85, material)
+            }
             Self::Seedling(plant, position, season) => {
                 seedling_distance(point - *position, plant, *season)
             }
@@ -855,6 +917,47 @@ pub fn ellipsoid(point: Vec3, radii: Vec3) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn curtains_puddles_and_windfalls_have_finite_distances_normals_and_ray_hits() {
+        for gust in [0.0, 0.5, 1.0] {
+            for amount in [0.0001, 0.1, 1.0] {
+                for piece in [
+                    Furniture::Curtain(-1.0, gust),
+                    Furniture::Curtain(1.0, gust),
+                    Furniture::Puddle(amount),
+                    Furniture::SwayingPlant(
+                        Plant {
+                            growth: 1.0,
+                            ..Plant::default()
+                        },
+                        Vec3::new(gust * 0.17, 0.015, gust * 0.36),
+                    ),
+                    Furniture::Leaf(
+                        crate::world::Leaf {
+                            position: Vec3::new(0.0, 0.012, -0.9),
+                            spin: gust * 20.0,
+                            dropped: 0.0,
+                        },
+                        200.0,
+                    ),
+                ] {
+                    let (center, radius) = piece.bounds();
+                    assert!(center.is_finite() && radius.is_finite() && radius > 0.0);
+                    for offset in [Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z, -Vec3::ONE] {
+                        let point = center + offset * radius;
+                        assert!(piece.distance(point).0.is_finite());
+                        assert!(piece.normal(point).is_finite());
+                        if let Some((distance, _)) =
+                            piece.trace(point + Vec3::Z * 4.0, -Vec3::Z, 10.0)
+                        {
+                            assert!(distance.is_finite() && (0.0..=10.0).contains(&distance));
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn a_ray_through_a_sphere_enters_before_it_leaves() {

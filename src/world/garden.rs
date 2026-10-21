@@ -184,10 +184,15 @@ pub struct Petal {
 impl Petal {
     pub const LIFETIME: f64 = 60.0;
 
-    fn drift(&mut self, seconds: f32) {
+    fn drift(&mut self, seconds: f32, breeze: Vec3) {
         self.spin += seconds * 1.7;
         self.velocity.y = (self.velocity.y - seconds * 0.12).max(-0.12);
-        self.position += self.velocity * seconds;
+        self.position +=
+            (self.velocity + breeze * if self.position.y > 0.02 { 1.5 } else { 0.1 }) * seconds;
+        self.position = self.position.clamp(
+            super::ROOM_MIN + Vec3::splat(0.01),
+            super::ROOM_MAX - Vec3::splat(0.01),
+        );
         if self.position.y < 0.012 {
             self.position.y = 0.012;
             self.velocity *= (-seconds * 4.0).exp();
@@ -502,7 +507,10 @@ impl World {
         }
         if !self.petals.is_empty() {
             for petal in &mut self.petals {
-                petal.drift(seconds);
+                petal.drift(
+                    seconds,
+                    super::breeze::breeze(self.window_open, &self.wind, self.time, petal.position),
+                );
             }
             self.petals
                 .retain(|petal| self.time - petal.dropped < Petal::LIFETIME);
