@@ -432,6 +432,8 @@ fn prune(entries: &mut Vec<(PathBuf, Page)>) {
 
 fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
     let (caption, daily) = match kind {
+        // Counting motes eaten is no moment to keep a picture of.
+        EventKind::Milestone(words) if words.starts_with("Ate my ") => return None,
         EventKind::Milestone(words) => (words.clone(), None),
         EventKind::WishGranted(wish) => (
             format!(
@@ -627,6 +629,22 @@ mod tests {
         assert_eq!(fs::read_dir(paths.album()).unwrap().count(), 62);
         assert_eq!(Album::load(&paths, 100).pages, album.pages);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn counted_motes_make_no_picture_but_a_first_mote_does() {
+        assert!(
+            caption(&EventKind::Milestone(
+                "Ate my hundredth light mote.".to_owned()
+            ))
+            .is_none()
+        );
+        assert!(
+            caption(&EventKind::Milestone(
+                "Caught my first light mote.".to_owned()
+            ))
+            .is_some()
+        );
     }
 
     #[test]
