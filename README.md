@@ -100,6 +100,7 @@ the next requests use them at once.
 | `j`             | Journal: memories, moments, diary, conversation            |
 | `l`             | Its life: age, growth, skills, bond, today so far           |
 | `p`             | Save a postcard of the moment                             |
+| `b`             | Open the album of moments the ghost kept                  |
 | `o`             | Focus together for twenty-five minutes; `o` again ends it |
 | `g`             | Invite it to noughts and crosses on the glass              |
 | `f`             | Toggle finger drawing in the fog; `f` or Esc stops         |
@@ -131,7 +132,7 @@ The journal wraps all retained memories, its moments to remember, the diary,
 the conversation, the latest ten events, and any model errors. It opens at
 the newest lines; arrows on its borders and a line range show where you are.
 Other keys leave it open. The help and life panels close on any key. `q`
-quits from any of the three. While one of them is open, the terminal handles
+quits from any of these panels. While one of them is open, the terminal handles
 the mouse so you can select and copy text directly. Many terminals send wheel
 movements as arrow keys here, which scroll the journal. Elsewhere, hold Shift
 (Option in iTerm2) to select text while the app has the mouse.
@@ -148,6 +149,34 @@ second gets `-2`, then `-3`. Use `cat` to view an `.ans` file in a truecolor
 terminal. In plain block mode, the ANSI copy uses colored blocks from the
 same rendered moment. A ghost without a saved life cannot save postcards;
 piped output never saves them.
+
+### Album of moments
+
+The ghost keeps its own pictures when something memorable happens: every
+milestone, the first celebration of each occasion day, the first rainbow or
+snowfall it sees through the window that day, shooting star wishes,
+constellations found, towers five blocks high, games it wins against you,
+its friend's arrival, flowers opening in the main plant or little pots,
+finished stories, and completed focus sessions.
+
+It takes a picture after about two seconds, from the next watching frame,
+including the scene, speech, symbols, and words line. Panels and pause defer
+it for up to a minute; after that the moment passes. Ordinary pictures are
+at least five minutes apart. Milestones always earn a picture, and replace
+a simultaneous ordinary picture with the milestone's own caption.
+
+Press `b` to open the album, newest first. Left/right flip toward newer/older
+pages; Home/End jump to the newest/oldest. Esc or `b` closes it, and `q` quits.
+Each page shows its picture, the ghost's caption and name, the local date,
+and its place in the album. Smaller terminals crop pictures around the
+center. Pictures follow the current color mode, and the mouse selects text
+while the album is open. The life panel (`l`) shows how many moments it holds.
+
+The newest sixty pages live in `~/.local/share/wave-ascii/album/`
+(`$XDG_DATA_HOME` if set), beside the saved life, as private JSON files with
+local timestamp names and run-length encoded truecolor cells. Older pages
+are deleted as new ones arrive; missing, damaged, and foreign files are
+skipped. Without a saved life, including piped previews, no pictures are kept.
 
 ### Focus together
 

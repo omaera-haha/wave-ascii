@@ -42,6 +42,7 @@ pub fn draw(app: &mut App, screen: &mut Canvas, scene_rows: usize) {
         Mode::Settings => settings_panel(app, screen),
         Mode::Journal => journal_panel(app, screen),
         Mode::Life => life_panel(app, screen),
+        Mode::Album => album_panel(app, screen),
         Mode::Watching | Mode::Talking => {}
     }
 }
@@ -567,25 +568,25 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "",
     ];
     let keys = [
-        "t, Enter   talk to it          click ghost   poke or find it",
-        "k          keys and models     click ball    flick it",
-        "j          journal and diary   click room    drop a light mote",
-        "l          life and growth     click blocks  nudge or topple",
-        "p          save a postcard     click friend  make it giggle",
-        "o          focus (o ends it)   drag ghost    stroke it",
-        "g          noughts and crosses 1-9, click    choose a square",
-        "f          finger in the fog   right-drag    draw on glass",
-        "           f or Esc stops      click window  open or shut",
-        "arrows     turn the view       drag          turn the view",
-        "+ -, wheel zoom                r             reset the view",
-        "m  c       style, color        space         pause",
-        "?          this help           q, Esc        quit",
+        "t, Enter   talk to it           click ghost   poke or find it",
+        "k          keys and models      click ball    flick it",
+        "j          journal and diary    click room    drop a light mote",
+        "l          life and growth      click blocks  nudge or topple",
+        "p          save a postcard      click friend  make it giggle",
+        "o          focus (o ends it)    drag ghost    stroke it",
+        "g          noughts and crosses  1-9, click    choose a square",
+        "f          draw (f/Esc stops)   right-drag    draw on glass",
+        "b          album of moments     click window  open or shut",
+        "arrows     turn the view        drag          turn the view",
+        "+ -, wheel zoom                 r             reset the view",
+        "m  c       style, color         space         pause",
+        "?          this help            q, Esc        quit",
     ];
     let notes = [
         "",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "While a reading panel is open, the mouse selects text.",
-        "On clear evenings, most of all by moonlight, a ghost friend may visit.",
+        "In the album: left/right, Home/End · Esc or b closes it.",
     ];
     let room = rows.saturating_sub(3);
     let mut lines = keys.to_vec();
@@ -839,6 +840,93 @@ fn life_panel(app: &App, screen: &mut Canvas) {
     panel(screen, "Life", &lines);
 }
 
+pub fn album_panel(app: &App, screen: &mut Canvas) {
+    let columns = screen.columns();
+    let rows = screen.rows();
+    if columns == 0 || rows == 0 {
+        return;
+    }
+    let Some(page) = app.album.pages.get(app.album.index) else {
+        write(screen, 0, 0, columns, "Album", TITLE, None);
+        write(
+            screen,
+            0,
+            rows / 2,
+            columns,
+            "The ghost hasn't kept any moments yet.",
+            TEXT,
+            None,
+        );
+        write(
+            screen,
+            0,
+            rows - 1,
+            columns,
+            "Esc or b closes · q quits",
+            DIM,
+            None,
+        );
+        return;
+    };
+    write(
+        screen,
+        0,
+        0,
+        columns,
+        &format!("Album · {}", page.name),
+        TITLE,
+        None,
+    );
+    let mut caption = wrap(&page.caption, columns);
+    caption.truncate(rows.saturating_sub(4));
+    let picture_rows = rows.saturating_sub(caption.len() + 4);
+    let picture = page.canvas();
+    let width = columns.min(picture.columns());
+    let height = picture_rows.min(picture.rows());
+    let source_column = picture.columns().saturating_sub(width) / 2;
+    let source_row = picture.rows().saturating_sub(height) / 2;
+    let column = columns.saturating_sub(width) / 2;
+    let row = 1 + picture_rows.saturating_sub(height) / 2;
+    for down in 0..height {
+        for across in 0..width {
+            let cell = picture
+                .get(source_column + across, source_row + down)
+                .unwrap();
+            // A crop must keep both halves of a wide character together.
+            if (across == 0 && cell == Cell::CONTINUATION)
+                || (across + 1 == width && cell.glyph.width() == Some(2))
+            {
+                continue;
+            }
+            screen.set(column + across, row + down, cell);
+        }
+    }
+    let mut row = 1 + picture_rows;
+    for line in caption {
+        write(screen, 0, row, columns, &line, TEXT, None);
+        row += 1;
+    }
+    write(screen, 0, row, columns, &page.date_words(), DIM, None);
+    write(
+        screen,
+        0,
+        row + 1,
+        columns,
+        &format!("{} of {}", app.album.index + 1, app.album.pages.len()),
+        DIM,
+        None,
+    );
+    write(
+        screen,
+        0,
+        rows - 1,
+        columns,
+        "←/→ flip · Home/End · Esc or b closes · q quits",
+        DIM,
+        None,
+    );
+}
+
 /// The life panel's lines for a screen of `columns` by `rows`. Sections that
 /// don't fit are left out, the least needed first.
 // The viewer's words the ghost knows, the most heard first, as many as fit
@@ -920,6 +1008,15 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ),
         (format!("Knows     {}", known_words(life, columns)), TEXT),
     ];
+    if header.len() < rows.saturating_sub(2) {
+        header.push((
+            format!(
+                "Album     {} moments kept · b to open",
+                app.album.pages.len()
+            ),
+            TEXT,
+        ));
+    }
     if let Some(usual) = life.usual_time()
         && header.len() < rows.saturating_sub(2)
     {
