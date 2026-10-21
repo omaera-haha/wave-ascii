@@ -80,7 +80,14 @@ pub fn puffs(world: &World) -> Vec<Puff> {
     };
 
     let source = if ghost.asleep > 0.5 {
-        Some((Emote::Sleep, SLEEP_BEAT, 1.0))
+        if world
+            .dream
+            .is_some_and(|dream| dream.envelope(world.time) > 0.0)
+        {
+            None
+        } else {
+            Some((Emote::Sleep, SLEEP_BEAT, 1.0))
+        }
     } else if world.petting() >= 0.35 {
         Some((Emote::Heart, 1.1, 0.85))
     } else {

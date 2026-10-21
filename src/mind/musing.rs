@@ -1294,6 +1294,228 @@ mod tests {
     }
 
     #[test]
+    fn every_dream_from_occasions_weather_friends_gardening_skills_and_empty_days_has_its_picture()
+    {
+        use crate::world::dream::DreamPicture;
+        use crate::world::{Companion, LearnedPicture, Petal};
+        use glam::{Vec2, Vec3};
+        use jiff::civil::Date;
+
+        let expected: &[(DreamPicture, &[&str])] = &[
+            (
+                DreamPicture::Tower,
+                &[
+                    "…my wobbly tower stands as tall as the stars…",
+                    "…a tower of blocks all the way to the moon…",
+                ],
+            ),
+            (
+                DreamPicture::Ball,
+                &["…the ball rolls on and on, out into the hills…"],
+            ),
+            (
+                DreamPicture::Bird,
+                &[
+                    "…a little bird, singing…",
+                    "…the bird brings me a feather as big as the sky…",
+                ],
+            ),
+            (
+                DreamPicture::Moon,
+                &[
+                    "…every little light turns back into my arms…",
+                    "…bringing the moon back like a ball…",
+                    "…one twirl becomes a sky full of loops…",
+                    "…a present wrapped in moonlight…",
+                    "…fireworks turn into light motes I can catch…",
+                    "…a new year opens like a window…",
+                    "…everyone sings, even the plant…",
+                    "…bowing to a new year made of light…",
+                    "…half-moon rice cakes floating around the harvest moon…",
+                    "…watching the moon together, year after year…",
+                    "…a whole sky spelling hello…",
+                    "…the moon keeps my little wish safe…",
+                    "…a whole sky of light motes, and all of them mine…",
+                    "…chasing a mote that keeps getting bigger…",
+                    "…waiting at the glass, until you wave from the moon…",
+                    "…hiding somewhere nobody will ever look…",
+                    "…dancing with the light motes, round and round…",
+                    "…a finger of light on the glass, always just out of reach…",
+                    "…a warm hand, stroking softly, and the glass is gone…",
+                    "…little leaves reaching up to say hello…",
+                    "…the plant grows right up through the ceiling…",
+                    "…someone at the glass, waving…",
+                    "…floating, floating…",
+                    "…a room with no glass at all…",
+                    "…zzz…",
+                ],
+            ),
+            (
+                DreamPicture::Star,
+                &[
+                    "…the little tree grows stars instead of needles…",
+                    "…a cake as big as the room, and a wish for every candle…",
+                    "…a lucky pouch spilling little stars…",
+                    "…you arrive just as the stars come out, like always…",
+                    "…riding a shooting star across the hills, wishing all the way…",
+                ],
+            ),
+            (
+                DreamPicture::Heart,
+                &[
+                    "…pink lights leaving hearts wherever they drift…",
+                    "…a heart drawn on the moon…",
+                ],
+            ),
+            (
+                DreamPicture::Flower,
+                &[
+                    "…a tiny seed dreaming of a whole garden…",
+                    "…flowers I grew myself, taller than the moon…",
+                    "…pink petals drifting like sleepy butterflies…",
+                ],
+            ),
+            (
+                DreamPicture::Cloud,
+                &[
+                    "…thunder far away, like a drum…",
+                    "…sliding down a rainbow…",
+                    "…rain, but every drop is a little light…",
+                ],
+            ),
+            (
+                DreamPicture::Snowflake,
+                &["…the snow falls inside the glass, soft as light…"],
+            ),
+            (
+                DreamPicture::Friend,
+                &[
+                    "…two ghosts chasing each other past the moon…",
+                    "…my ghost friend and I twirl among the stars…",
+                ],
+            ),
+            (
+                DreamPicture::Letter,
+                &[
+                    "…my shaky letters learn to fly straight…",
+                    "…Hangul letters drifting through the fog…",
+                    "…your words drift by like light motes, and I catch one…",
+                ],
+            ),
+            (
+                DreamPicture::Noughts,
+                &[
+                    "…the noughts show me where to draw next…",
+                    "…noughts and crosses drifting over the glass…",
+                ],
+            ),
+            (
+                DreamPicture::Pumpkin,
+                &[
+                    "…a pumpkin so big I can hide inside its grin…",
+                    "…all the pumpkins shout boo, and I laugh…",
+                ],
+            ),
+            (
+                DreamPicture::Spiral,
+                &[
+                    "…the pictures you taught me climb off the glass…",
+                    "…we draw a whole world, one finger each…",
+                    "…your finger draws a door in the mist…",
+                    "…drawing pictures in the clouds…",
+                ],
+            ),
+        ];
+        let mut world = World::new(1, 23.0);
+        world.tuck_in();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut check = |world: &mut World| {
+            for line in dreams(world) {
+                let picture = expected
+                    .iter()
+                    .find_map(|(picture, lines)| lines.contains(&line).then_some(*picture))
+                    .expect(line);
+                assert_eq!(DreamPicture::from_line(line, None), picture, "{line}");
+                let named = named_friend_line(world, line);
+                world.dream_of(&named);
+                assert_eq!(world.dream.unwrap().picture, picture, "{named}");
+                seen.insert(line);
+            }
+        };
+        check(&mut world);
+        world.life.friend = Some(Companion {
+            name: "Lumi".into(),
+            ..Companion::default()
+        });
+        world.life.skills.stacking = 1.0;
+        world.life.skills.catching = 1.0;
+        world.life.skills.fetching = 1.0;
+        world.life.skills.games = 1.0;
+        world.life.skills.writing = 1.0;
+        world.life.skills.dancing = 1.0;
+        world.life.pictures.push(LearnedPicture {
+            name: "hill".into(),
+            strokes: vec![vec![Vec2::ZERO, Vec2::ONE]],
+        });
+        world.petals.push(Petal {
+            position: Vec3::ZERO,
+            velocity: Vec3::ZERO,
+            spin: 0.0,
+            dropped: 0.0,
+        });
+        let today = &mut world.life.today;
+        today.drawings_seen = 1;
+        today.friend_visits = 1;
+        today.moon_wishes = 1;
+        today.motes = 1;
+        today.birds = 1;
+        today.gifts = 1;
+        today.expected = 1;
+        today.missed = 1;
+        today.nudges = 1;
+        today.fetches = 1;
+        today.games = 1;
+        today.towers = 1;
+        today.doodles = 1;
+        today.finds = 1;
+        today.dances = 1;
+        today.pounces = 1;
+        today.pets = 1;
+        today.words.push("ball".into());
+        today.planted = 1;
+        today.sprouted = 1;
+        today.flowered = 1;
+        today.waterings = 1;
+        today.snowfalls = 1;
+        today.storms = 1;
+        today.shooting_stars = 1;
+        today.rainbows = 1;
+        today.showers = 1;
+        today.heard = 1;
+        check(&mut world);
+        world.life.today.rainbows = 0;
+        check(&mut world);
+        for (date, birthday) in [
+            (Date::constant(2026, 10, 31), None),
+            (Date::constant(2026, 12, 24), None),
+            (Date::constant(2026, 12, 31), None),
+            (Date::constant(2027, 2, 14), None),
+            (Date::constant(2027, 3, 1), Some(Date::constant(2026, 3, 1))),
+            (Date::constant(2027, 2, 7), None),
+            (Date::constant(2026, 9, 25), None),
+            (Date::constant(2026, 10, 9), None),
+        ] {
+            world.date = date;
+            world.birthday = birthday;
+            check(&mut world);
+        }
+        assert_eq!(
+            seen.len(),
+            expected.iter().map(|(_, lines)| lines.len()).sum::<usize>()
+        );
+    }
+
+    #[test]
     fn company_at_bedtime_brings_a_few_reluctant_goodnights() {
         let mut world = World::new(1, 23.0);
         assert!(!idle(&world).contains(&"Just a little longer."));

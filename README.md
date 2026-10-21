@@ -49,7 +49,7 @@ does. It can't hold a conversation, but it reads your tone the way a pet does,
 answers in a few words of its own, answers simple questions about itself, and
 slowly learns what your words mean. It
 still thinks to itself now and then ("The plant looks thirsty."), and dreams of
-its day while it sleeps.
+its day while it sleeps, with glowing pictures in a little thought cloud above its head.
 
 ## Run
 

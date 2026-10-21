@@ -1,3 +1,4 @@
+mod dream;
 pub mod ghost;
 mod shapes;
 pub mod window;
@@ -162,10 +163,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         let (fine, across, down) = grid.refine(samples);
         return render(scene, fine, 1).downsample(across, down);
     }
+    let ghost_scale = GHOST_SCALE * scene.world.size();
+    let dream = dream::Bubble::new(scene, ghost_scale, grid.scale());
     let mut bodies = [
         Some(Body {
             position: scene.world.ghost.position,
-            scale: GHOST_SCALE * scene.world.size(),
+            scale: ghost_scale,
             pose: scene.pose,
             face: scene.face,
             aura: scene.aura,
@@ -213,7 +216,10 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     let spread = grid.scale() / FOCAL;
     Frame::sample(grid, |point| {
         let direction = scene.view.ray(point);
-        let color = trace(scene, &lights, &furniture, &bodies, direction, spread);
+        let dream = dream.as_ref().filter(|bubble| bubble.contains(point));
+        let color = trace(
+            scene, &lights, &furniture, &bodies, dream, direction, spread,
+        );
         Shade::from_rgb(color.min(Vec3::ONE))
     })
 }
@@ -223,6 +229,7 @@ fn trace(
     lights: &Lights,
     furniture: &[Furniture<'_>],
     bodies: &[Option<Body>; 2],
+    dream: Option<&dream::Bubble>,
     direction: Vec3,
     spread: f32,
 ) -> Vec3 {
@@ -291,6 +298,23 @@ fn trace(
     // and under the ghost when the ghost is nearer.
     let glass = glass_distance(eye, direction).filter(|distance| *distance <= limit + 1e-3);
     let mut glazed = false;
+    let mut dream = dream.and_then(|bubble| {
+        scene
+            .view
+            .billboard(direction, bubble.position, bubble.scale)
+            .filter(|(distance, _)| *distance < limit)
+            .map(|(distance, local)| (distance, local, bubble))
+    });
+    let mut overlay = |distance: f32, glow: ghost::Glow| {
+        if let Some(glass) = glass
+            && glass > distance
+            && !glazed
+        {
+            color = glass_color(scene, direction, spread, glass, color);
+            glazed = true;
+        }
+        color = glow.over(color);
+    };
     for body in bodies.iter().flatten() {
         if body.opacity <= 0.0 {
             continue;
@@ -309,15 +333,22 @@ fn trace(
         {
             continue;
         }
-        if let Some(glass) = glass
-            && glass > distance
-            && !glazed
+        if let Some((distance, local, bubble)) =
+            dream.take_if(|(dream_distance, _, _)| *dream_distance >= distance)
         {
-            color = glass_color(scene, direction, spread, glass, color);
-            glazed = true;
+            overlay(
+                distance,
+                bubble.shade(local, distance * spread / bubble.scale),
+            );
         }
         let pixel = distance * spread / body.scale;
-        color = ghost::shade(local, pixel, world.time, body).over(color);
+        overlay(distance, ghost::shade(local, pixel, world.time, body));
+    }
+    if let Some((distance, local, bubble)) = dream {
+        overlay(
+            distance,
+            bubble.shade(local, distance * spread / bubble.scale),
+        );
     }
     if let Some(glass) = glass
         && !glazed
