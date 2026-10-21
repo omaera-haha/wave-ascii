@@ -33,6 +33,8 @@ const WORDS_MARKED: [(usize, &str); 4] = [
     (50, "I know fifty of your words now."),
     (100, "I know a hundred of your words now."),
 ];
+/// Deeds a diary entry keeps, the ones that stood out most.
+const DIARY_DEEDS: usize = 6;
 /// Words learned in a day that the diary names.
 const WORDS_NAMED: usize = 4;
 /// Light motes eaten that the ghost marks, after the first.
@@ -54,6 +56,17 @@ const FADING: f32 = 0.03;
 const PRIOR: f32 = 3.0;
 /// How much yesterday's visiting routine still counts today.
 const ROUTINE_DECAY: f32 = 0.9;
+
+/// How much something the ghost did stands out in its day, from the
+/// everyday to what it will remember for good.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Salience {
+    Routine,
+    Small,
+    Notable,
+    Special,
+    Momentous,
+}
 
 /// What the ghost did and what happened to it over some span of time.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -427,82 +440,126 @@ impl Tally {
         self.activities.get(activity.name()).copied().unwrap_or(0)
     }
 
-    /// The day in a few sentences, as the ghost would write it in its diary
-    /// to the viewer.
+    /// Everything that happened in a few sentences, as the ghost would tell
+    /// the viewer what it has been up to.
     pub fn words(&self) -> String {
-        let mut deeds: Vec<String> = self
+        let deeds: Vec<String> = self.deeds().into_iter().map(|(_, deed)| deed).collect();
+        self.written(&deeds)
+    }
+
+    /// The day as the ghost writes it in its diary: only what stood out
+    /// most, the most notable first, then how the viewer spent it.
+    pub fn diary(&self) -> String {
+        let mut deeds = self.deeds();
+        // A stable sort keeps deeds of equal weight in their usual order.
+        deeds.sort_by(|(first, _), (second, _)| second.cmp(first));
+        deeds.truncate(DIARY_DEEDS);
+        let deeds: Vec<String> = deeds.into_iter().map(|(_, deed)| deed).collect();
+        self.written(&deeds)
+    }
+
+    // Each thing it did or saw, with how much it stood out.
+    fn deeds(&self) -> Vec<(Salience, String)> {
+        let mut deeds: Vec<(Salience, String)> = self
             .occasions
             .iter()
-            .map(|occasion| occasion.diary_words().to_owned())
+            .map(|occasion| (Salience::Momentous, occasion.diary_words().to_owned()))
             .collect();
         deeds.extend(super::Quirk::ALL.into_iter().filter_map(|kind| {
             self.quirks
                 .get(&kind)
                 .filter(|count| **count > 0)
-                .map(|count| kind.diary(*count))
+                .map(|count| (Salience::Small, kind.diary(*count)))
         }));
         if self.letters_written > 0 {
-            deeds.push("wrote you a letter".to_owned());
+            deeds.push((Salience::Special, "wrote you a letter".to_owned()));
         }
         if self.letters_read > 0 {
-            deeds.push("watched you read my letter".to_owned());
+            deeds.push((Salience::Special, "watched you read my letter".to_owned()));
         }
         if self.outfits > 0 {
-            deeds.push("wore a little accessory".to_owned());
+            deeds.push((Salience::Small, "wore a little accessory".to_owned()));
         }
         if self.pages > 0 {
-            deeds.push(format!(
-                "read {} {}",
-                count_words(self.pages),
-                if self.pages == 1 { "page" } else { "pages" }
+            deeds.push((
+                Salience::Notable,
+                format!(
+                    "read {} {}",
+                    count_words(self.pages),
+                    if self.pages == 1 { "page" } else { "pages" }
+                ),
             ));
         }
         if self.books_finished > 0 {
-            deeds.push(format!(
-                "finished {} picture {}",
-                count_words(self.books_finished),
-                if self.books_finished == 1 {
-                    "book"
-                } else {
-                    "books"
-                }
+            deeds.push((
+                Salience::Special,
+                format!(
+                    "finished {} picture {}",
+                    count_words(self.books_finished),
+                    if self.books_finished == 1 {
+                        "book"
+                    } else {
+                        "books"
+                    }
+                ),
             ));
         }
         if self.books_received > 0 {
-            deeds.push(format!(
-                "received {} new picture {}",
-                count_words(self.books_received),
-                if self.books_received == 1 {
-                    "book"
-                } else {
-                    "books"
-                }
+            deeds.push((
+                Salience::Special,
+                format!(
+                    "received {} new picture {}",
+                    count_words(self.books_received),
+                    if self.books_received == 1 {
+                        "book"
+                    } else {
+                        "books"
+                    }
+                ),
             ));
         }
-        deeds.extend(self.wish_words.iter().cloned());
+        deeds.extend(self.wish_words.iter().map(|words| {
+            let salience = if words.starts_with("made a wish") {
+                Salience::Notable
+            } else if words.contains("came true") {
+                Salience::Special
+            } else {
+                Salience::Small
+            };
+            (salience, words.clone())
+        }));
         if self.focus_sessions > 0 {
-            deeds.push(format!(
-                "kept you company through {} focus {}",
-                count_words(self.focus_sessions),
-                if self.focus_sessions == 1 {
-                    "session"
-                } else {
-                    "sessions"
-                },
+            deeds.push((
+                Salience::Special,
+                format!(
+                    "kept you company through {} focus {}",
+                    count_words(self.focus_sessions),
+                    if self.focus_sessions == 1 {
+                        "session"
+                    } else {
+                        "sessions"
+                    },
+                ),
             ));
         }
         if self.airings > 0 {
-            deeds.push("opened the window for fresh air".to_owned());
+            deeds.push((
+                Salience::Small,
+                "opened the window for fresh air".to_owned(),
+            ));
         }
         if self.focus_minutes > 0 {
-            deeds.push(format!(
-                "focused together for {} {}",
-                count_words(self.focus_minutes),
-                if self.focus_minutes == 1 {
-                    "minute"
-                } else {
-                    "minutes"
-                }
+            deeds.push((
+                Salience::Small,
+                format!(
+                    "focused together for {} {}",
+                    count_words(self.focus_minutes),
+                    if self.focus_minutes == 1 {
+                        "minute"
+                    } else {
+                        "minutes"
+                    }
+                ),
             ));
         }
         if let Some(name) = &self.friend_name {
@@ -518,40 +575,46 @@ impl Tally {
                     .iter()
                     .map(|game| game.words().to_owned())
                     .collect();
-                deeds.push(if games.is_empty() {
-                    visit
-                } else {
-                    format!("{visit} and we played {}", listed(&games))
-                });
+                deeds.push((
+                    Salience::Special,
+                    if games.is_empty() {
+                        visit
+                    } else {
+                        format!("{visit} and we played {}", listed(&games))
+                    },
+                ));
             }
         }
         match self.motes {
             0 => {}
-            1 => deeds.push("ate a light mote".to_owned()),
-            motes => deeds.push(format!("ate {} light motes", count_words(motes))),
+            1 => deeds.push((Salience::Routine, "ate a light mote".to_owned())),
+            motes => deeds.push((
+                Salience::Routine,
+                format!("ate {} light motes", count_words(motes)),
+            )),
         }
         match self.nudges {
             0 => {}
-            1 => deeds.push("nudged the ball".to_owned()),
-            nudges => deeds.push(format!(
-                "pushed the ball around {} times",
-                count_words(nudges)
+            1 => deeds.push((Salience::Routine, "nudged the ball".to_owned())),
+            nudges => deeds.push((
+                Salience::Routine,
+                format!("pushed the ball around {} times", count_words(nudges)),
             )),
         }
         match self.fetches {
             0 => {}
-            1 => deeds.push("fetched the ball for you".to_owned()),
-            fetches => deeds.push(format!(
-                "fetched the ball for you {} times",
-                count_words(fetches)
+            1 => deeds.push((Salience::Notable, "fetched the ball for you".to_owned())),
+            fetches => deeds.push((
+                Salience::Notable,
+                format!("fetched the ball for you {} times", count_words(fetches)),
             )),
         }
         match self.pounces {
             0 => {}
-            1 => deeds.push("pounced on your finger".to_owned()),
-            pounces => deeds.push(format!(
-                "pounced on your finger {} times",
-                count_words(pounces)
+            1 => deeds.push((Salience::Small, "pounced on your finger".to_owned())),
+            pounces => deeds.push((
+                Salience::Small,
+                format!("pounced on your finger {} times", count_words(pounces)),
             )),
         }
         let tower = match self.towers {
@@ -567,33 +630,54 @@ impl Tally {
                     tower.push_str(&format!(", and you knocked {} down", count_words(toppled)))
                 }
             }
-            deeds.push(tower);
+            deeds.push((Salience::Notable, tower));
         } else if self.toppled > 0 {
-            deeds.push("watched you knock my tower down".to_owned());
+            deeds.push((
+                Salience::Small,
+                "watched you knock my tower down".to_owned(),
+            ));
         }
         if self.learned_about > 0 {
-            deeds.push("learned a little more about you".to_owned());
+            deeds.push((
+                Salience::Special,
+                "learned a little more about you".to_owned(),
+            ));
         }
         if self.moon_wishes > 0 {
-            deeds.push("made a wish on the Chuseok moon".to_owned());
+            deeds.push((
+                Salience::Special,
+                "made a wish on the Chuseok moon".to_owned(),
+            ));
         }
         if self.constellations > 0 {
-            deeds.push(if self.constellations == 1 {
-                "found a picture in the stars".to_owned()
-            } else {
-                "found new constellations in the stars".to_owned()
-            });
+            deeds.push((
+                Salience::Special,
+                if self.constellations == 1 {
+                    "found a picture in the stars".to_owned()
+                } else {
+                    "found new constellations in the stars".to_owned()
+                },
+            ));
         }
         match self.dances {
             0 => {}
-            1 => deeds.push("danced a twirl".to_owned()),
-            dances => deeds.push(format!("danced {} twirls", count_words(dances))),
+            1 => deeds.push((Salience::Small, "danced a twirl".to_owned())),
+            dances => deeds.push((
+                Salience::Small,
+                format!("danced {} twirls", count_words(dances)),
+            )),
         }
         match (self.finds, self.jumps) {
             (0, 0) => {}
-            (0, _) => deeds.push("played hide-and-seek, and you never found me".to_owned()),
-            (_, 0) => deeds.push("played hide-and-seek, and you found me".to_owned()),
-            _ => deeds.push("played hide-and-seek".to_owned()),
+            (0, _) => deeds.push((
+                Salience::Notable,
+                "played hide-and-seek, and you never found me".to_owned(),
+            )),
+            (_, 0) => deeds.push((
+                Salience::Notable,
+                "played hide-and-seek, and you found me".to_owned(),
+            )),
+            _ => deeds.push((Salience::Notable, "played hide-and-seek".to_owned())),
         }
         if self.games == 1 {
             let result = if self.wins > 0 {
@@ -603,7 +687,10 @@ impl Tally {
             } else {
                 "and drew"
             };
-            deeds.push(format!("played noughts and crosses with you {result}"));
+            deeds.push((
+                Salience::Notable,
+                format!("played noughts and crosses with you {result}"),
+            ));
         } else if self.games > 1 {
             let mut results = Vec::new();
             if self.wins > 0 {
@@ -615,68 +702,92 @@ impl Tally {
             if self.draws > 0 {
                 results.push("we drew".to_owned());
             }
-            deeds.push(format!(
-                "played games of noughts and crosses with you: {}",
-                listed(&results)
+            deeds.push((
+                Salience::Notable,
+                format!(
+                    "played games of noughts and crosses with you: {}",
+                    listed(&results)
+                ),
             ));
         }
         match self.doodles {
             0 => {}
-            1 => deeds.push("drew a picture on the glass".to_owned()),
-            doodles => deeds.push(format!(
-                "drew {} pictures on the glass",
-                count_words(doodles)
+            1 => deeds.push((Salience::Small, "drew a picture on the glass".to_owned())),
+            doodles => deeds.push((
+                Salience::Small,
+                format!("drew {} pictures on the glass", count_words(doodles)),
             )),
         }
         if self.drawings_seen > 0 {
-            deeds.push("looked at the pictures you drew on the glass".to_owned());
+            deeds.push((
+                Salience::Notable,
+                "looked at the pictures you drew on the glass".to_owned(),
+            ));
         }
         if self.pictures_learned > 0 {
-            deeds.push("learned new pictures from you".to_owned());
+            deeds.push((
+                Salience::Special,
+                "learned new pictures from you".to_owned(),
+            ));
         }
         for word in &self.written_words {
-            deeds.push(format!(
-                "wrote “{}” on the glass for you",
-                super::doodle::writing_words(word)
+            deeds.push((
+                Salience::Notable,
+                format!(
+                    "wrote “{}” on the glass for you",
+                    super::doodle::writing_words(word)
+                ),
             ));
         }
         if self.writings > 0 && self.written_words.is_empty() {
-            deeds.push("wrote words on the glass for you".to_owned());
+            deeds.push((
+                Salience::Small,
+                "wrote words on the glass for you".to_owned(),
+            ));
         }
         for name in &self.viewer_names {
-            deeds.push(format!("learned your name: {name}"));
+            deeds.push((Salience::Momentous, format!("learned your name: {name}")));
         }
         match (self.waterings, self.blooms) {
             (0, 0) => {}
-            (0, _) => deeds.push("saw the plant flower".to_owned()),
-            (_, 0) => deeds.push("watered the plant".to_owned()),
-            _ => deeds.push("watered the plant until it flowered".to_owned()),
+            (0, _) => deeds.push((Salience::Notable, "saw the plant flower".to_owned())),
+            (_, 0) => deeds.push((Salience::Small, "watered the plant".to_owned())),
+            _ => deeds.push((
+                Salience::Notable,
+                "watered the plant until it flowered".to_owned(),
+            )),
         }
         for kind in &self.planted_kinds {
-            deeds.push(format!("planted a {} seed", kind.name()));
+            deeds.push((Salience::Special, format!("planted a {} seed", kind.name())));
         }
         for kind in &self.sprouted_kinds {
-            deeds.push(format!("saw the {} sprout", kind.name()));
+            deeds.push((Salience::Special, format!("saw the {} sprout", kind.name())));
         }
         for kind in &self.flowered_kinds {
-            deeds.push(format!("the {} came into flower", kind.name()));
+            deeds.push((
+                Salience::Momentous,
+                format!("the {} came into flower", kind.name()),
+            ));
         }
         if self.drooped > 0 {
-            deeds.push("noticed the plant drooping from thirst".to_owned());
+            deeds.push((
+                Salience::Notable,
+                "noticed the plant drooping from thirst".to_owned(),
+            ));
         }
         match self.naps {
             0 => {}
-            1 => deeds.push("took a nap".to_owned()),
-            naps => deeds.push(format!("took {} naps", count_words(naps))),
+            1 => deeds.push((Salience::Small, "took a nap".to_owned())),
+            naps => deeds.push((Salience::Small, format!("took {} naps", count_words(naps)))),
         }
         if self.nights > 0 {
-            deeds.push("slept through the night".to_owned());
+            deeds.push((Salience::Small, "slept through the night".to_owned()));
         }
         if self.snowfalls > 0 {
-            deeds.push("watched the snow fall".to_owned());
+            deeds.push((Salience::Special, "watched the snow fall".to_owned()));
         }
         if self.birds > 0 {
-            deeds.push("watched a bird at the window".to_owned());
+            deeds.push((Salience::Small, "watched a bird at the window".to_owned()));
         }
         if self.gifts > 0 {
             let gifts: Vec<String> = self
@@ -689,101 +800,139 @@ impl Tally {
             } else {
                 listed(&gifts)
             };
-            deeds.push(if self.gifts == 1 {
-                format!("the bird brought me {gifts}")
-            } else {
-                format!("the bird brought me gifts, including {gifts}")
-            });
+            deeds.push((
+                Salience::Special,
+                if self.gifts == 1 {
+                    format!("the bird brought me {gifts}")
+                } else {
+                    format!("the bird brought me gifts, including {gifts}")
+                },
+            ));
         }
         if self.moths > 0 {
-            deeds.push("saw a moth at the lamp".to_owned());
+            deeds.push((Salience::Small, "saw a moth at the lamp".to_owned()));
         }
         if self.expected > 0 {
-            deeds.push("you came at your usual time".to_owned());
+            deeds.push((Salience::Notable, "you came at your usual time".to_owned()));
         }
         if self.missed > 0 {
-            deeds.push("waited for you at your usual time, but you didn't come".to_owned());
+            deeds.push((
+                Salience::Notable,
+                "waited for you at your usual time, but you didn't come".to_owned(),
+            ));
         }
         if self.storms > 0 {
-            deeds.push("sat out a thunderstorm".to_owned());
+            deeds.push((Salience::Notable, "sat out a thunderstorm".to_owned()));
         }
         if !self.words.is_empty() {
             let quoted: Vec<String> = self.words.iter().map(|word| format!("“{word}”")).collect();
-            deeds.push(match quoted.as_slice() {
-                [word] => format!("learned what {word} means"),
-                words => format!("learned what {} mean", listed(words)),
-            });
+            deeds.push((
+                Salience::Special,
+                match quoted.as_slice() {
+                    [word] => format!("learned what {word} means"),
+                    words => format!("learned what {} mean", listed(words)),
+                },
+            ));
         }
         if self.passersby > 0 {
             if self.passerby_kinds.is_empty() {
-                deeds.push("watched passing life outside the window".to_owned());
+                deeds.push((
+                    Salience::Notable,
+                    "watched passing life outside the window".to_owned(),
+                ));
             } else {
                 let kinds: Vec<String> = self
                     .passerby_kinds
                     .iter()
                     .map(|kind| kind.name().to_owned())
                     .collect();
-                deeds.push(format!("saw {} through the window", listed(&kinds)));
+                deeds.push((
+                    Salience::Notable,
+                    format!("saw {} through the window", listed(&kinds)),
+                ));
             }
         }
         match self.shooting_stars {
             0 => {}
-            1 => deeds.push("wished on a shooting star".to_owned()),
-            stars => deeds.push(format!("wished on {} shooting stars", count_words(stars))),
+            1 => deeds.push((Salience::Notable, "wished on a shooting star".to_owned())),
+            stars => deeds.push((
+                Salience::Notable,
+                format!("wished on {} shooting stars", count_words(stars)),
+            )),
         }
         if self.word_games > 0 {
-            deeds.push(format!(
-                "played {} word {} with you; you guessed {}",
-                count_words(self.word_games),
-                if self.word_games == 1 {
-                    "game"
-                } else {
-                    "games"
-                },
-                count_words(self.words_guessed)
+            deeds.push((
+                Salience::Notable,
+                format!(
+                    "played {} word {} with you; you guessed {}",
+                    count_words(self.word_games),
+                    if self.word_games == 1 {
+                        "game"
+                    } else {
+                        "games"
+                    },
+                    count_words(self.words_guessed)
+                ),
             ));
         }
         if self.tunes_played > 0 {
-            deeds.push(format!(
-                "played {} {} on the music box",
-                count_words(self.tunes_played),
-                if self.tunes_played == 1 {
-                    "tune"
-                } else {
-                    "tunes"
-                }
+            deeds.push((
+                Salience::Small,
+                format!(
+                    "played {} {} on the music box",
+                    count_words(self.tunes_played),
+                    if self.tunes_played == 1 {
+                        "tune"
+                    } else {
+                        "tunes"
+                    }
+                ),
             ));
         }
         if self.tunes_learned > 0 {
-            deeds.push("learned a tune from you".to_owned());
+            deeds.push((Salience::Special, "learned a tune from you".to_owned()));
         }
         if self.mirror_visits > 0 {
-            deeds.push("looked in the mirror".to_owned());
+            deeds.push((Salience::Small, "looked in the mirror".to_owned()));
         }
         if self.met_reflection {
-            deeds.push("met the ghost in the mirror".to_owned());
+            deeds.push((Salience::Special, "met the ghost in the mirror".to_owned()));
         }
         if self.recognized_self {
-            deeds.push("learned the ghost in the mirror is me".to_owned());
+            deeds.push((
+                Salience::Momentous,
+                "learned the ghost in the mirror is me".to_owned(),
+            ));
         }
         if self.lullaby_sleeps > 0 {
-            deeds.push("fell asleep to a lullaby".to_owned());
+            deeds.push((Salience::Small, "fell asleep to a lullaby".to_owned()));
         }
         match self.stories {
             0 => {}
-            1 => deeds.push("told you a story".to_owned()),
-            count => deeds.push(format!("told you {} stories", count_words(count))),
+            1 => deeds.push((Salience::Special, "told you a story".to_owned())),
+            count => deeds.push((
+                Salience::Special,
+                format!("told you {} stories", count_words(count)),
+            )),
         }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
-            (0, _) => deeds.push("listened to the rain".to_owned()),
-            (1, _) => deeds.push("saw a rainbow".to_owned()),
-            (rainbows, _) => deeds.push(format!("saw {} rainbows", count_words(rainbows))),
+            (0, _) => deeds.push((Salience::Routine, "listened to the rain".to_owned())),
+            (1, _) => deeds.push((Salience::Special, "saw a rainbow".to_owned())),
+            (rainbows, _) => deeds.push((
+                Salience::Special,
+                format!("saw {} rainbows", count_words(rainbows)),
+            )),
         }
+        deeds
+    }
+
+    // The deeds as a sentence, then the viewer's part in the day.
+    fn written(&self, deeds: &[String]) -> String {
         let mut text = if deeds.is_empty() {
             "A quiet day.".to_owned()
         } else {
-            format!("{}.", capitalized(&listed(&deeds)))
+            format!("{}.", capitalized(&listed(deeds)))
         };
         if self.together < 60.0 && self.heard == 0 && self.expected == 0 {
             text.push_str(" You didn't come by.");
@@ -1221,7 +1370,7 @@ impl Life {
         if !self.day.is_empty() && !self.today.is_empty() {
             self.diary.push(Entry {
                 day: self.day.clone(),
-                text: self.today.words(),
+                text: self.today.diary(),
             });
             if self.diary.len() > DAYS_KEPT {
                 let excess = self.diary.len() - DAYS_KEPT;
@@ -2254,6 +2403,51 @@ mod tests {
     }
 
     #[test]
+    fn a_diary_entry_keeps_only_what_stood_out_most_first() {
+        let day = Tally {
+            motes: 300,
+            nudges: 120,
+            dances: 40,
+            doodles: 30,
+            naps: 4,
+            pounces: 12,
+            showers: 1,
+            rainbows: 1,
+            stories: 1,
+            pages: 20,
+            towers: 9,
+            occasions: vec![Occasion::Halloween],
+            viewer_names: vec!["Sam".to_owned()],
+            together: 3900.0,
+            heard: 3,
+            ..Tally::default()
+        };
+        let diary = day.diary();
+        assert!(
+            diary.starts_with("Celebrated Halloween, learned your name: Sam, "),
+            "{diary}"
+        );
+        for kept in ["told you a story", "saw a rainbow", "read twenty pages"] {
+            assert!(diary.contains(kept), "{diary}");
+        }
+        for left in ["light motes", "the ball", "twirls", "naps"] {
+            assert!(!diary.contains(left), "{diary}");
+            assert!(day.words().contains(left));
+        }
+        assert!(diary.ends_with("You were here for about an hour, and we talked."));
+        // A small day keeps everything, the most notable first.
+        let quiet = Tally {
+            motes: 4,
+            naps: 1,
+            ..Tally::default()
+        };
+        assert_eq!(
+            quiet.diary(),
+            "Took a nap and ate four light motes. You didn't come by."
+        );
+    }
+
+    #[test]
     fn events_are_counted_for_the_day_and_for_all_time() {
         let mut life = Life::default();
         life.begin_day("2026-10-20");
@@ -2765,7 +2959,7 @@ mod tests {
         life.begin_day("2026-11-01");
         assert_eq!(life.today.celebrations, 0);
         assert_eq!(life.total.celebrations, 11);
-        assert_eq!(life.diary[0].text, words);
+        assert!(life.diary[0].text.starts_with("Celebrated Halloween, celebrated the winter"));
         assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().celebrations, 0);
     }
 

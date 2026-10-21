@@ -652,8 +652,10 @@ grows closer to you. It lights up when it reaches one.
 It also grows habits. The more often it chooses something, the more it leans
 toward it, so over days each ghost becomes its own: one loves the ball,
 another the window. At the end of each day it writes a line in its diary
-("Ate four light motes, watered the plant until it flowered, and saw a rainbow.
-You were here for about an hour, and we talked."). Press `l` to see its age,
+about what stood out most, the most notable first, leaving everyday things
+like motes and ball pushes out of a busy day ("Learned your name: Sam, saw a
+rainbow, and watered the plant until it flowered. You were here for about an
+hour, and we talked."). Press `l` to see its age,
 nature, your bond, what it loves, what it has done in all its days, and today so far;
 the diary and its moments are in the journal (`j`). Claude reads the last few
 days of the diary and its latest moments.
