@@ -42,10 +42,10 @@ const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
 const DREAMS_EVERY: (f32, f32) = (45.0, 90.0);
 /// Seconds until a thought it had feels fresh again. Until then it comes
 /// back only rarely, and less the more recently it was had.
-const THOUGHT_FRESHENS: f64 = 4.0 * 3600.0;
+const THOUGHT_FRESHENS: f64 = 6.0 * 3600.0;
 /// How fresh the freshest musing that fits must be for the ghost to bother
 /// thinking it; with only lately-had thoughts to hand, it stays quiet.
-const QUIET_BELOW: f32 = 0.2;
+const QUIET_BELOW: f32 = 0.4;
 /// Distinct thoughts remembered before those already fresh again are let go.
 const THOUGHTS_REMEMBERED: usize = 512;
 /// Seconds the ghost's own words get before it brings up something new.
@@ -699,7 +699,18 @@ impl Mind {
         if optional && weights.iter().all(|weight| *weight < QUIET_BELOW) {
             return;
         }
-        let weights: Vec<f32> = weights.into_iter().map(|weight| weight.max(1e-3)).collect();
+        // A musing it could leave unsaid waits until its lines feel fresh
+        // again; one it must think picks the least stale.
+        let weights: Vec<f32> = weights
+            .into_iter()
+            .map(|weight| {
+                if optional && weight < QUIET_BELOW {
+                    0.0
+                } else {
+                    weight.max(1e-3)
+                }
+            })
+            .collect();
         if let Some(index) = world.pick(&weights) {
             self.thought_at.insert(lines[index].clone(), world.time);
             if self.thought_at.len() > THOUGHTS_REMEMBERED {
