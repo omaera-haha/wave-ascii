@@ -2,12 +2,13 @@
 
 A ghost lives in a glass box in your terminal.
 
-The box is a small room drawn in dots: a floor lamp, a potted plant, a ball,
-five bright toy blocks, a cushion to sleep on, a little shelf of keepsakes,
-specks of light that drift in, and a window onto hills where the seasons
-turn, birds come to perch, storms roll through, snow falls in winter, and
-rain can leave a rainbow. On lit nights, a little moth sometimes flutters in
-and circles the lamp. The ghost is a point in that room with a body, needs, a
+The box is a small room drawn in dots: a floor lamp, a potted plant and the
+little pots its seeds grow in, a ball, five bright toy blocks, a cushion to
+sleep on, a little shelf of keepsakes, specks of light that drift in, and a
+window onto hills where the seasons turn, birds come to perch, storms roll
+through, snow falls in winter, rain can leave a rainbow, and shooting stars
+fall on clear nights. On lit nights, a little moth sometimes flutters in and
+circles the lamp. The ghost is a point in that room with a body, needs, a
 mood, and a gaze: it sees what lies within sixty degrees of where it faces,
 and furniture hides what's behind it. You see it as an abstract shape made of
 dots, and its glow shows how it is.
@@ -18,25 +19,19 @@ them down, pounces on your pointer through the glass, waters the plant,
 switches the lamp, watches the birds from the window, naps when tired, and
 comes to the glass to look at you. When delighted it dances a little twirl in
 the air. It plays hide-and-seek, draws little pictures and writes words in
-the fog on the glass, and challenges you to noughts and crosses there. Stroke
-it and it melts. At night it goes to bed and sleeps until morning. Each ghost
-is born with a nature of its own, and over days it grows close to you, learns
-your words and your name, learns when you usually come and waits for you,
-befriends the bird, which brings it little gifts, forms habits, keeps a
-diary, and marks its special days.
+the fog on the glass, and challenges you to noughts and crosses there. Draw
+in the fog yourself and it comes to look, names what it recognizes, and
+learns the pictures you teach it. Stroke it and it melts. At night it goes
+to bed and sleeps until morning. On some moonlit evenings a smaller ghost,
+its friend, drifts in through the window to play.
 
-The plant flowers in spells: buds open over about an hour, flowers last
-about a day, petals drift down, and a ripe seed is left behind. After half a
-day's rest it can bloom again. The ghost sometimes carries a seed to one of
-three little pots below the window and plants it. Daisies, tulips,
-sunflowers, bluebells, and poppies sprout, leaf out, bud, and flower with
-care over about four to six days (roughly twenty-five waterings). Repeated
-watering cannot rush a flower into bloom before four days. The ghost waters
-the thirstiest pot first. Spring helps growth; winter is a rest from flowers.
-Neglected plants only droop, and lift their heads again after watering;
-nothing dies. Its garden and first seeds, sprouts, and flowers are in its
-life panel (`l`), thoughts, and diary. Pots and their ages are saved, and
-the garden ages while the app is closed, bounded to a week per absence.
+Each ghost is born a small wisp with a nature of its own, and grows up over
+its first month, getting better at what it practices. Over days it grows
+close to you, learns your words, your name, and the name you give it, learns
+when you usually come and waits for you, befriends the bird, which brings it
+little gifts, plants a garden from its plant's seeds, forms habits, keeps a
+diary, and marks its special days, Seollal and Chuseok among them. Speak
+Korean to it and it answers in Korean and writes Hangul in the fog.
 
 Two models give it a mind:
 
@@ -324,6 +319,21 @@ The life panel (`l`), diary, dreams, and thoughts remember it between runs,
 though a visit in progress ends when you close the app. You can ask “Who is
 your friend?” or “친구 이름은 뭐야?” even without model keys.
 
+### The garden
+
+The plant flowers in spells: buds open over about an hour, flowers last
+about a day, petals drift down, and a ripe seed is left behind. After half a
+day's rest it can bloom again. The ghost sometimes carries a seed to one of
+three little pots below the window and plants it. Daisies, tulips,
+sunflowers, bluebells, and poppies sprout, leaf out, bud, and flower with
+care over about four to six days (roughly twenty-five waterings). Repeated
+watering cannot rush a flower into bloom before four days. The ghost waters
+the thirstiest pot first. Spring helps growth; winter is a rest from flowers.
+Neglected plants only droop, and lift their heads again after watering;
+nothing dies. Its garden and first seeds, sprouts, and flowers are in its
+life panel (`l`), thoughts, and diary. Pots and their ages are saved, and
+the garden ages while the app is closed, bounded to a week per absence.
+
 ### Special days
 
 From October 24–31, a grinning jack-o'-lantern warms the room with candlelight.
@@ -414,15 +424,16 @@ nature, your bond, what it loves, what it has done in all its days, and today so
 the diary and its moments are in the journal (`j`). Claude reads the last few
 days of the diary and its latest moments.
 
-The ghost's name, needs, the plant, the lamp, its goal, its memories, its
-nature, bond, habits, moments, diary, the words it has learned, your name, the
-hours you usually come, its practiced skills, its friendship with the bird, keepsakes, any gift
-waiting on the sill, and the recent conversation are saved in
-`~/.local/share/wave-ascii/ghost.json` (`$XDG_DATA_HOME` if set) every minute
-and on quit. Games, block towers, and pictures on the glass are not. While the
-app is closed,
-time passes: the plant gets thirsty and the ghost lonely, and it notices how
-long you were away. Delete the file to start a new ghost.
+The ghost's name, needs, the plant and its little pots, the lamp, its goal,
+its memories, its nature, bond, habits, moments, diary, the words and pictures
+it has learned, your name and whether you speak Korean, the hours you usually
+come, its practiced skills, its friend, its friendship with the bird,
+keepsakes, any gift waiting on the sill, and the recent conversation are saved
+in `~/.local/share/wave-ascii/ghost.json` (`$XDG_DATA_HOME` if set) every
+minute and on quit. Games, block towers, a friend's visit in progress, and
+pictures on the glass are not. While the app is closed, time passes: the plant
+gets thirsty and the ghost lonely, the garden ages, and it notices how long you
+were away. Delete the file to start a new ghost.
 
 Settings live in `~/.config/wave-ascii/config.json` (`$XDG_CONFIG_HOME` if set),
 readable only by you since it may hold keys. Not next to the binary, so moving
