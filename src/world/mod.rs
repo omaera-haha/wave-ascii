@@ -412,18 +412,20 @@ impl World {
                 Activity::Rest => self.ghost.needs.energy < 0.85,
                 Activity::Tend => self.plant.thirst > 0.25,
                 Activity::Visit => self.viewer_present() || self.ghost.needs.company < 0.6,
+                // The viewer threw the ball, or is there to bring it to.
                 Activity::Fetch => {
                     self.ghost.asleep < 0.3
                         && self.ghost.needs.energy > 0.3
-                        && self
-                            .events
-                            .iter()
-                            .rev()
-                            .find(|event| event.kind == EventKind::KickedBall)
-                            .is_some_and(|event| {
-                                self.time - event.time < 20.0
-                                    || self.ball.velocity.length_squared() > 0.0
-                            })
+                        && (self.viewer_present()
+                            || self
+                                .events
+                                .iter()
+                                .rev()
+                                .find(|event| event.kind == EventKind::KickedBall)
+                                .is_some_and(|event| {
+                                    self.time - event.time < 20.0
+                                        || self.ball.velocity.length_squared() > 0.0
+                                }))
                 }
                 Activity::Dance => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.35,
                 Activity::Hide => self.viewer_present() && self.ghost.needs.energy > 0.3,
@@ -492,9 +494,12 @@ impl World {
                      and above all when something is happening outside."
                 )
             }
-            Activity::Fetch => "The viewer just threw the ball. Go and get it and bring it back \
-                                to the glass for them. Fits when playful and the viewer is around."
-                .to_owned(),
+            Activity::Fetch => {
+                "Go and get the ball and bring it to the glass for the viewer. Fits \
+                                above all when the viewer just threw it, or when playful and the \
+                                viewer is around."
+                    .to_owned()
+            }
             Activity::Dance => "Do a happy little twirl in the air. Fits when delighted, after \
                                 something good happened, or to show off for the viewer."
                 .to_owned(),
@@ -1403,6 +1408,16 @@ mod tests {
         world.ghost.asleep = 0.8;
         world.kick_ball(Vec3::X);
         assert!(!world.needs_decision());
+        assert!(!world.options().contains(&Activity::Fetch));
+    }
+
+    #[test]
+    fn a_viewer_can_ask_for_fetch_without_throwing_first() {
+        let mut world = World::new(6, 12.0);
+        assert!(!world.options().contains(&Activity::Fetch));
+        world.notice_viewer();
+        assert!(world.options().contains(&Activity::Fetch));
+        world.ghost.needs.energy = 0.2;
         assert!(!world.options().contains(&Activity::Fetch));
     }
 

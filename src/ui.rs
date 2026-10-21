@@ -922,7 +922,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         .collect()
 }
 
-fn hours_and_minutes(seconds: f32) -> String {
+fn hours_and_minutes(seconds: f64) -> String {
     let minutes = (seconds / 60.0) as u32;
     match (minutes / 60, minutes % 60) {
         (0, minutes) => format!("{minutes} min"),

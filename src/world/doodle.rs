@@ -55,12 +55,11 @@ impl Sketch {
             return path.last();
         }
         let mut remaining = self.length() * progress.clamp(0.0, 1.0);
-        for (start, end) in path.segments() {
-            let length = start.distance(end);
-            if remaining < length {
-                return start.lerp(end, remaining / length);
+        for segment in &path.segments {
+            if remaining < segment.length {
+                return segment.start + segment.along * (remaining / segment.length);
             }
-            remaining -= length;
+            remaining -= segment.length;
         }
         path.last()
     }
@@ -72,37 +71,46 @@ impl Sketch {
             return f32::INFINITY;
         }
         let mut remaining = self.length() * progress.min(1.0);
-        let mut distance = f32::INFINITY;
-        for (start, end) in self.path().segments() {
-            let length = start.distance(end);
-            if length == 0.0 {
-                continue;
-            }
-            let along = end - start;
-            let fraction = ((point - start).dot(along) / (length * length))
-                .clamp(0.0, (remaining / length).min(1.0));
-            distance = distance.min(point.distance(start + along * fraction));
-            remaining -= length;
+        let mut nearest = f32::INFINITY;
+        for segment in &self.path().segments {
+            let drawn = (remaining / segment.length).min(1.0);
+            let fraction =
+                ((point - segment.start).dot(segment.along) / segment.squared).clamp(0.0, drawn);
+            nearest = nearest.min(point.distance_squared(segment.start + segment.along * fraction));
+            remaining -= segment.length;
             if remaining <= 0.0 {
                 break;
             }
         }
-        distance
+        nearest.sqrt()
     }
 
     fn path(self) -> &'static Path {
         static PATHS: OnceLock<[Path; Sketch::ALL.len()]> = OnceLock::new();
         let paths = PATHS.get_or_init(|| {
             Sketch::ALL.map(|sketch| {
-                let mut path = Path {
-                    strokes: sketch.strokes(),
-                    length: 0.0,
-                };
-                path.length = path
-                    .segments()
-                    .map(|(start, end)| start.distance(end))
-                    .sum();
-                path
+                let strokes = sketch.strokes();
+                // The drawn segments in drawing order, leaving out the pen's
+                // jumps between strokes, measured once.
+                let segments: Vec<Segment> = strokes
+                    .iter()
+                    .flat_map(|stroke| stroke.windows(2))
+                    .map(|pair| {
+                        let along = pair[1] - pair[0];
+                        Segment {
+                            start: pair[0],
+                            along,
+                            length: along.length(),
+                            squared: along.length_squared(),
+                        }
+                    })
+                    .filter(|segment| segment.length > 0.0)
+                    .collect();
+                Path {
+                    length: segments.iter().map(|segment| segment.length).sum(),
+                    strokes,
+                    segments,
+                }
             })
         });
         &paths[self as usize]
@@ -222,18 +230,18 @@ impl Sketch {
 
 struct Path {
     strokes: Vec<Vec<Vec2>>,
+    segments: Vec<Segment>,
     length: f32,
 }
 
-impl Path {
-    /// The drawn segments, in drawing order, leaving out the pen's jumps
-    /// between strokes.
-    fn segments(&self) -> impl Iterator<Item = (Vec2, Vec2)> + '_ {
-        self.strokes
-            .iter()
-            .flat_map(|stroke| stroke.windows(2).map(|pair| (pair[0], pair[1])))
-    }
+struct Segment {
+    start: Vec2,
+    along: Vec2,
+    length: f32,
+    squared: f32,
+}
 
+impl Path {
     fn last(&self) -> Vec2 {
         *self
             .strokes

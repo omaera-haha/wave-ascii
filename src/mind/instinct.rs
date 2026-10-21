@@ -56,8 +56,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     .map_or(0.0, |event| {
                         (1.0 - (world.time - event.time) as f32 / 20.0).clamp(0.0, 1.0)
                     });
-                let present = if world.viewer_present() { 0.5 } else { 0.0 };
-                (0.1 + 1.5 * thrown + 0.7 * (1.0 - needs.fun) + present) * needs.energy
+                // Unasked, it only now and then brings the viewer the ball.
+                let playful = if thrown > 0.0 {
+                    0.1 + 0.7 * (1.0 - needs.fun) + if world.viewer_present() { 0.5 } else { 0.0 }
+                } else {
+                    0.04 + 0.12 * (1.0 - needs.fun)
+                };
+                (1.5 * thrown + playful) * needs.energy
             }
             Activity::Dance => {
                 let delighted = world

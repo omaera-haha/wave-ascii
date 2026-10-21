@@ -215,11 +215,21 @@ fn trace(
         }
     }
 
+    // The glass, with whatever is drawn on it, lies over what is behind it,
+    // and under the ghost when the ghost is nearer.
+    let glass = glass_distance(eye, direction).filter(|distance| *distance <= limit + 1e-3);
+    let mut glazed = false;
     if let Some((distance, local)) = scene.view.billboard(direction, world.ghost.position)
         && distance < limit
         && local.cmpge(BOUNDS[0]).all()
         && local.cmple(BOUNDS[1]).all()
     {
+        if let Some(glass) = glass
+            && glass > distance
+        {
+            color = glass_color(scene, direction, spread, glass, color);
+            glazed = true;
+        }
         let pixel = distance * spread / GHOST_SCALE;
         let glow = ghost::shade(
             local,
@@ -230,6 +240,11 @@ fn trace(
             &scene.aura,
         );
         color = glow.over(color);
+    }
+    if let Some(glass) = glass
+        && !glazed
+    {
+        color = glass_color(scene, direction, spread, glass, color);
     }
 
     // Light motes and the lamp's bulb glow in front of whatever is behind.
@@ -242,19 +257,33 @@ fn trace(
         color +=
             LAMP_LIGHT * sprite(eye, direction, world.lamp.bulb(), limit + 0.3, spread, 0.12) * 0.3;
     }
-    glass_color(scene, direction, spread, color)
+    color
 }
 
-// The fog and its strokes lie on the glass whichever side the camera sees.
-fn glass_color(scene: &Scene, direction: Vec3, spread: f32, mut color: Vec3) -> Vec3 {
-    let distance = (ROOM_MAX.z - scene.view.eye.z) / direction.z;
+// How far along the ray it meets the glass, if it does.
+fn glass_distance(eye: Vec3, direction: Vec3) -> Option<f32> {
+    let distance = (ROOM_MAX.z - eye.z) / direction.z;
     if !distance.is_finite() || distance <= 0.0 {
+        return None;
+    }
+    let hit = eye + direction * distance;
+    ((ROOM_MIN.x..=ROOM_MAX.x).contains(&hit.x) && (ROOM_MIN.y..=ROOM_MAX.y).contains(&hit.y))
+        .then_some(distance)
+}
+
+// The fog and its strokes on the glass, which the ray meets at `distance`,
+// laid over `color`.
+fn glass_color(
+    scene: &Scene,
+    direction: Vec3,
+    spread: f32,
+    distance: f32,
+    mut color: Vec3,
+) -> Vec3 {
+    if scene.world.doodles.is_empty() {
         return color;
     }
     let hit = scene.view.eye + direction * distance;
-    if !(ROOM_MIN.x..=ROOM_MAX.x).contains(&hit.x) || !(ROOM_MIN.y..=ROOM_MAX.y).contains(&hit.y) {
-        return color;
-    }
     let point = Vec2::new(hit.x, hit.y);
     let footprint = distance * spread / direction.z.abs().max(0.01);
     let frost = Vec3::new(0.8, 0.92, 1.0);
@@ -572,6 +601,20 @@ mod tests {
         assert!(daylight(2.0).max_element() < daylight(12.0).max_element() * 0.3);
         let dusk = daylight(19.2);
         assert!(dusk.x > dusk.z);
+    }
+
+    #[test]
+    fn rays_meet_the_glass_only_within_its_pane_and_ahead_of_the_eye() {
+        let front = Vec3::new(0.0, 1.0, 5.0);
+        let distance = glass_distance(front, -Vec3::Z).unwrap();
+        assert!((distance - (5.0 - ROOM_MAX.z)).abs() < 1e-5);
+        assert_eq!(glass_distance(front, Vec3::Z), None);
+        assert_eq!(glass_distance(front, Vec3::X), None);
+        let wide = (Vec3::new(ROOM_MAX.x + 1.0, 1.0, ROOM_MAX.z) - front).normalize();
+        assert_eq!(glass_distance(front, wide), None);
+        let behind = Vec3::new(0.0, 1.0, -5.0);
+        let far = glass_distance(behind, Vec3::Z).unwrap();
+        assert!((far - (5.0 + ROOM_MAX.z)).abs() < 1e-5);
     }
 
     #[test]

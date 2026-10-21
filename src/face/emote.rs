@@ -151,6 +151,11 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 // has grown fond of the viewer.
 fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
     Some(match event {
+        EventKind::Noticed(thing)
+            if thing.starts_with("the rainbow") || thing == "the falling snow" =>
+        {
+            Emote::Sparkle
+        }
         EventKind::Noticed(_)
         | EventKind::KickedBall
         | EventKind::DroppedMote
@@ -160,7 +165,6 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Jumped => Emote::Alarm,
         EventKind::AteMote
         | EventKind::Bloomed
-        | EventKind::RainbowAppeared
         | EventKind::Fetched
         | EventKind::Found
         | EventKind::Milestone(_) => Emote::Sparkle,

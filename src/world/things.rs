@@ -63,7 +63,9 @@ impl Ball {
         self.position += self.velocity * seconds;
         if self.position.y <= Self::RADIUS {
             self.position.y = Self::RADIUS;
-            if self.velocity.y < -0.6 {
+            // A bounce must outrun what one step of gravity adds, or the
+            // ball would hop forever on long steps.
+            if self.velocity.y < -0.6 - Self::GRAVITY * seconds {
                 bounce = bounce.max(-self.velocity.y);
                 self.velocity.y *= -0.45;
             } else {
@@ -243,6 +245,20 @@ mod tests {
         assert_eq!(lowest, Ball::RADIUS);
         assert_eq!(ball.position.y, Ball::RADIUS);
         assert_eq!(ball.velocity, Vec3::ZERO);
+    }
+
+    #[test]
+    fn a_dropped_ball_settles_even_with_long_steps() {
+        for step in [0.01, 0.05, 0.1] {
+            let mut ball = Ball::at(0.0, 0.0);
+            ball.position.y = 0.18;
+            ball.velocity.y = 0.25;
+            for _ in 0..(5.0 / step) as usize {
+                ball.roll(step, &[]);
+            }
+            assert_eq!(ball.position.y, Ball::RADIUS, "{step}");
+            assert_eq!(ball.velocity, Vec3::ZERO, "{step}");
+        }
     }
 
     #[test]

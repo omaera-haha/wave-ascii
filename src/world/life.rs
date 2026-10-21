@@ -16,7 +16,7 @@ const CLOSER: [(f32, &str); 4] = [
 ];
 /// Hours together the ghost marks, and what it says about them. Milestones
 /// reach the minds as events, so they are written in words, not digits.
-const HOURS_MARKED: [(f32, &str); 3] = [
+const HOURS_MARKED: [(f64, &str); 3] = [
     (1.0, "We spent our first hour together."),
     (10.0, "We've spent ten hours together."),
     (100.0, "We've spent a hundred hours together."),
@@ -66,8 +66,9 @@ pub struct Tally {
     /// Messages the viewer typed to it.
     pub heard: u32,
     pub pokes: u32,
-    /// Seconds the viewer was around.
-    pub together: f32,
+    /// Seconds the viewer was around, kept in double precision so years of
+    /// frames still add up.
+    pub together: f64,
     /// Times it set out on each activity, by the activity's name.
     pub activities: BTreeMap<String, u32>,
 }
@@ -219,6 +220,9 @@ pub struct Life {
     pub diary: Vec<Entry>,
     /// Its firsts and landmarks, kept for good, oldest first.
     pub milestones: Vec<Entry>,
+    /// Seconds since the viewer was last around, while the app ran and
+    /// while it was closed.
+    pub alone: f64,
 }
 
 impl Life {
@@ -248,11 +252,13 @@ impl Life {
     /// this reached, if any.
     pub fn pass(&mut self, seconds: f32, present: bool) -> Option<String> {
         if !present {
+            self.miss(seconds);
             return None;
         }
+        self.alone = 0.0;
         let (bond, together) = (self.bond, self.total.together);
-        self.total.together += seconds;
-        self.today.together += seconds;
+        self.total.together += f64::from(seconds);
+        self.today.together += f64::from(seconds);
         self.warm(GROWING * (1.0 - self.bond).powi(2) * seconds);
         let milestone = HOURS_MARKED
             .into_iter()
@@ -261,11 +267,17 @@ impl Life {
         milestone.or_else(|| self.closer(bond))
     }
 
-    /// The viewer stayed away for `seconds`. After the first day, the bond
-    /// fades a little each day, but never below half of the closest it was.
+    /// The viewer stayed away for `seconds` more. After the first day alone,
+    /// the bond fades a little each day, but never below half of the
+    /// closest it was.
     pub fn miss(&mut self, seconds: f32) {
-        let days = (seconds / 86_400.0 - 1.0).max(0.0);
-        self.warm(-FADING * days);
+        let before = self.alone;
+        self.alone += f64::from(seconds.max(0.0));
+        let past_first = |alone: f64| (alone / 86_400.0 - 1.0).max(0.0);
+        let days = past_first(self.alone) - past_first(before);
+        if days > 0.0 {
+            self.warm(-FADING * days as f32);
+        }
     }
 
     /// Starts counting `day`, a local date as YYYY-MM-DD. When it is a new
@@ -352,6 +364,9 @@ impl Life {
                 tally.together = 0.0;
             }
         }
+        if !self.alone.is_finite() || self.alone < 0.0 {
+            self.alone = 0.0;
+        }
         self
     }
 
@@ -427,7 +442,7 @@ impl Life {
 }
 
 /// A span of time in loose words, for the diary.
-fn duration_words(seconds: f32) -> String {
+fn duration_words(seconds: f64) -> String {
     let minutes = seconds / 60.0;
     match minutes {
         minutes if minutes < 5.0 => "for a few minutes".to_owned(),
@@ -594,6 +609,40 @@ mod tests {
     }
 
     #[test]
+    fn days_alone_fade_the_bond_whether_the_app_runs_or_not() {
+        let mut running = Life {
+            bond: 0.8,
+            closest: 0.8,
+            ..Life::default()
+        };
+        let mut closed = running.clone();
+        for _ in 0..(3 * 24 * 60) {
+            running.pass(60.0, false);
+        }
+        closed.miss(86_400.0);
+        closed.miss(86_400.0 * 2.0);
+        assert!((running.bond - 0.74).abs() < 1e-3, "{}", running.bond);
+        assert!((closed.bond - 0.74).abs() < 1e-3, "{}", closed.bond);
+        running.pass(1.0, true);
+        assert_eq!(running.alone, 0.0);
+    }
+
+    #[test]
+    fn long_times_together_still_add_up() {
+        let mut life = Life {
+            total: Tally {
+                together: 600_000.0,
+                ..Tally::default()
+            },
+            ..Life::default()
+        };
+        for _ in 0..600 {
+            life.pass(1.0 / 60.0, true);
+        }
+        assert!((life.total.together - 600_010.0).abs() < 1e-3);
+    }
+
+    #[test]
     fn talking_warms_the_bond_and_pestering_cools_it() {
         let mut life = Life::default();
         life.note(&EventKind::Heard("hello".into()));
@@ -615,7 +664,8 @@ mod tests {
         life.miss(3600.0 * 20.0);
         assert_eq!(life.bond, 0.8);
         life.miss(86_400.0 * 3.0);
-        assert!((life.bond - 0.74).abs() < 1e-4, "{}", life.bond);
+        // Twenty hours and then three days: almost four days alone in all.
+        assert!((life.bond - 0.715).abs() < 1e-4, "{}", life.bond);
         life.miss(86_400.0 * 365.0);
         assert_eq!(life.bond, 0.4);
         assert_eq!(life.closest, 0.8);
