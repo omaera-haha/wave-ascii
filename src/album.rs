@@ -434,6 +434,8 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
             Some("snow".to_owned()),
         ),
         EventKind::ShootingStar => ("I wished on a shooting star.".to_owned(), None),
+        EventKind::FinishedBook(title) => (format!("I finished reading {title}."), None),
+        EventKind::LearnedTune(tune) => (format!("You taught me a tune: {tune}."), None),
         EventKind::FoundConstellation(name) => (format!("I found a constellation: {name}."), None),
         EventKind::Built { height: 5.. } => ("My tower reached five blocks high.".to_owned(), None),
         EventKind::GameOver(Outcome::GhostWon { .. }) => {

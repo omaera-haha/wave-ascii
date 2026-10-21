@@ -578,11 +578,13 @@ Older days gradually fade from its routine, so it learns when your hours
 change. Press `l` to see when it usually expects you. This needs no model.
 
 It holds one wish at a time: a rainbow or a shooting star, a bird's gift,
-a friend's return, a garden flower, a taller tower, or something to do with
-you. Its nature helps choose, and it leans a little toward activities that
+a friend's return, a garden flower, a taller tower (up to five blocks),
+finishing an unread picture book, or something to do with you, such as
+teaching it a tune. Its nature helps choose, and it leans a little toward activities that
 could bring the wish about. At the glass it may tell you a wish in English
 or Korean, with a short hint on the words line: press `g` for a game,
-right-drag a picture, stroke it gently, or ask for a story. It stays quiet
+right-drag a picture, stroke it gently, ask for a story, or type notes such
+as “do re mi”. It stays quiet
 about wishes while you focus together. Ask “What do you wish for?” or
 “소원이 뭐야?” to hear its current hope and the last one that came true.
 

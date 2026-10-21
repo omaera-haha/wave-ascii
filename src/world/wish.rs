@@ -11,8 +11,12 @@ pub enum Wish {
     Passerby(Passerby),
     BirdGift,
     Flower,
-    Friend { name: String },
-    Tower { height: u32 },
+    Friend {
+        name: String,
+    },
+    Tower {
+        height: u32,
+    },
     ViewerName,
     GivenName,
     Game,
@@ -23,6 +27,12 @@ pub enum Wish {
     Story,
     Company,
     Breeze,
+    /// To finish reading one of its picture books for the first time.
+    Book {
+        index: usize,
+    },
+    /// For the viewer to teach it a tune.
+    Tune,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,6 +79,8 @@ impl Wish {
             Self::Story => "to tell you a story".to_owned(),
             Self::Company => "to keep you company while you work".to_owned(),
             Self::Breeze => "to feel the breeze with you".to_owned(),
+            Self::Book { index } => format!("to finish reading {}", book_title(*index, false)),
+            Self::Tune => "for you to teach me a tune".to_owned(),
         }
     }
 
@@ -120,6 +132,11 @@ impl Wish {
             Self::Story => "너에게 이야기를 들려주는 것".to_owned(),
             Self::Company => "네가 일하는 동안 곁에 있어 주는 것".to_owned(),
             Self::Breeze => "너와 산들바람을 느끼는 것".to_owned(),
+            Self::Book { index } => {
+                let title = book_title(*index, true);
+                format!("《{title}》{} 끝까지 읽는 것", object_particle(title))
+            }
+            Self::Tune => "네가 노래를 가르쳐 주는 것".to_owned(),
         }
     }
 
@@ -145,7 +162,11 @@ impl Wish {
                     completed: true, ..
                 },
             )
-            | (Self::Breeze, EventKind::OpenedWindow) => true,
+            | (Self::Breeze, EventKind::OpenedWindow)
+            | (Self::Tune, EventKind::LearnedTune(_)) => true,
+            (Self::Book { index }, EventKind::FinishedBook(title)) => {
+                book_title(*index, false) == title
+            }
             (Self::Tower { height: target }, EventKind::Built { height }) => height >= target,
             (Self::Passerby(wanted), EventKind::SawPasserby(seen)) => wanted == seen,
             (Self::Game, EventKind::GameOver(outcome)) => outcome.finished(),
@@ -166,6 +187,7 @@ impl Wish {
                 | Self::Story
                 | Self::Company
                 | Self::Breeze
+                | Self::Tune
         )
     }
 
@@ -181,6 +203,7 @@ impl Wish {
             Self::Story => "ask it for a story",
             Self::Company => "press o",
             Self::Breeze => "click the window",
+            Self::Tune => "type notes like \"do re mi\"",
             _ => return None,
         })
     }
@@ -197,6 +220,7 @@ impl Wish {
                 activity == Activity::Window && super::meteor::dark(world.hour)
             }
             Self::Tower { .. } => activity == Activity::Build,
+            Self::Book { .. } => activity == Activity::Read,
             Self::Flower => activity == Activity::Tend,
             Self::Breeze => activity == Activity::Air && !world.window_open,
             _ => false,
@@ -239,6 +263,12 @@ impl Wish {
             Self::Friend { .. } => world.life.friend.is_some(),
             Self::ViewerName => world.life.viewer_name.is_none(),
             Self::GivenName => world.life.total.names == 0,
+            Self::Book { index } => world
+                .life
+                .books
+                .owned
+                .iter()
+                .any(|owned| owned.index == *index && owned.finished == 0),
             Self::Breeze => world.fresh_air_is_fair(),
             _ => true,
         }
@@ -269,9 +299,12 @@ impl Wish {
         }
         if matches!(
             self,
-            Self::Petting | Self::Story | Self::Flower | Self::BirdGift
+            Self::Petting | Self::Story | Self::Flower | Self::BirdGift | Self::Tune
         ) {
             weight *= 0.5 + nature.tender;
+        }
+        if matches!(self, Self::Book { .. }) {
+            weight *= 0.5 + 0.5 * (nature.curious + nature.tender);
         }
         if matches!(self, Self::ShootingStar | Self::Constellation | Self::Story) {
             weight *= 0.5 + nature.sleepy;
@@ -284,7 +317,9 @@ impl Wish {
 
     pub(super) fn valid(&self, life: &Life) -> bool {
         match self {
-            Self::Tower { height } => (2..=6).contains(height),
+            // Five blocks make the tallest tower the room allows.
+            Self::Tower { height } => (2..=5).contains(height),
+            Self::Book { index } => *index < super::books::LIBRARY.len(),
             Self::Friend { name } => {
                 life.friend.is_some()
                     && !name.trim().is_empty()
@@ -334,6 +369,10 @@ impl Wish {
                 "I wish we could feel the breeze together.",
                 "같이 산들바람을 느끼고 싶어.",
             ),
+            Self::Tune => (
+                "I wish you'd teach me a tune.",
+                "노래를 하나 가르쳐 주면 좋겠어.",
+            ),
             _ => return "",
         };
         if korean { hangul } else { english }
@@ -351,6 +390,7 @@ impl Wish {
             Self::Story => "ask for a story",
             Self::Company => "work with it beside you",
             Self::Breeze => "open the window together",
+            Self::Tune => "teach it a tune",
             _ => return None,
         };
         Some(format!("{name} wishes you'd {action} ({})", self.hint()?))
@@ -385,6 +425,8 @@ impl Wish {
             Self::Story => "I hope they'll ask me for a story.",
             Self::Company => "Maybe we can work side by side today.",
             Self::Breeze => "I hope we feel the breeze together soon.",
+            Self::Book { .. } => "I want to find out how my book ends.",
+            Self::Tune => "Maybe someone will teach me a new tune.",
         }
     }
 
@@ -409,6 +451,8 @@ impl Wish {
             Self::Story => "…my story carries us through a forest of stars…",
             Self::Company => "…we work side by side until the moon smiles…",
             Self::Breeze => "…the breeze carries us both over the hills…",
+            Self::Book { .. } => "…the last page of my book opens into a meadow…",
+            Self::Tune => "…a tune of golden notes I've never heard before…",
         }
     }
 
@@ -434,6 +478,7 @@ impl Wish {
                     "My tower is {} blocks high!",
                     super::friend::count_words(*height)
                 ),
+                Self::Book { index } => format!("I finished {}!", book_title(*index, false)),
                 _ => unreachable!(),
             };
             return format!("{delight} My wish came true.");
@@ -467,6 +512,10 @@ impl Wish {
                 "We felt the breeze! My wish came true.",
                 "같이 산들바람을 느꼈어! 소원이 이루어졌어.",
             ),
+            Self::Tune => (
+                "You taught me a tune! My wish came true.",
+                "노래를 가르쳐 줬네! 소원이 이루어졌어.",
+            ),
             _ => (
                 "You played with me! My wish came true.",
                 "같이 놀아 줬네! 소원이 이루어졌어.",
@@ -498,7 +547,7 @@ impl World {
         let height = if self.stage() == Stage::Newborn {
             2
         } else {
-            self.life.total.tallest.saturating_add(1).clamp(3, 6)
+            self.life.total.tallest.saturating_add(1).clamp(3, 5)
         };
         let mut wishes = vec![
             Wish::Rainbow,
@@ -523,6 +572,17 @@ impl World {
             wishes.push(Wish::Friend {
                 name: friend.name.clone(),
             });
+        }
+        wishes.push(Wish::Tune);
+        // The first unread book on the pile.
+        if let Some(owned) = self
+            .life
+            .books
+            .owned
+            .iter()
+            .find(|owned| owned.finished == 0)
+        {
+            wishes.push(Wish::Book { index: owned.index });
         }
         wishes.extend(Passerby::ALL.map(Wish::Passerby));
         wishes.retain(|wish| {
@@ -662,10 +722,21 @@ impl World {
 }
 
 fn object_name(name: &str) -> String {
+    format!("{name}{}", object_particle(name))
+}
+
+/// The object particle after `name`: 을 after a final consonant, else 를.
+fn object_particle(name: &str) -> &'static str {
     let final_consonant = name.chars().last().is_some_and(|letter| {
         ('가'..='힣').contains(&letter) && (u32::from(letter) - u32::from('가')) % 28 != 0
     });
-    format!("{name}{}", if final_consonant { "을" } else { "를" })
+    if final_consonant { "을" } else { "를" }
+}
+
+fn book_title(index: usize, korean: bool) -> &'static str {
+    super::books::LIBRARY
+        .get(index)
+        .map_or("my picture book", |book| book.title(korean))
 }
 
 #[cfg(test)]
@@ -798,7 +869,7 @@ mod tests {
         for tallest in 0..=5 {
             world.life.total.tallest = tallest;
             assert!(world.wish_options().contains(&Wish::Tower {
-                height: (tallest + 1).clamp(3, 6)
+                height: (tallest + 1).clamp(3, 5)
             }));
         }
     }
@@ -927,7 +998,49 @@ mod tests {
                 },
             ),
             (Wish::Breeze, EventKind::OpenedWindow),
+            (
+                Wish::Book { index: 1 },
+                EventKind::FinishedBook(super::super::books::LIBRARY[1].title.0.to_owned()),
+            ),
+            (Wish::Tune, EventKind::LearnedTune("do-re-mi".to_owned())),
         ]
+    }
+
+    #[test]
+    fn an_unread_book_and_a_tune_from_the_viewer_can_be_wished_for() {
+        let mut world = awake();
+        world.date = Date::constant(2026, 12, 13);
+        world.life.bond = 0.6;
+        let unread = world
+            .life
+            .books
+            .owned
+            .iter()
+            .find(|owned| owned.finished == 0)
+            .unwrap()
+            .index;
+        let choices = world.wish_options();
+        assert!(choices.contains(&Wish::Book { index: unread }));
+        assert!(choices.contains(&Wish::Tune));
+        let book = Wish::Book { index: unread };
+        assert!(book.serves(Activity::Read, &world));
+        assert!(!book.with_viewer());
+        assert!(Wish::Tune.with_viewer());
+        assert!(Wish::Tune.hint().unwrap().contains("do re mi"));
+        let korean = book.korean(&world.life);
+        assert!(korean.contains(super::super::books::LIBRARY[unread].title(true)));
+        assert!(korean.ends_with("끝까지 읽는 것"));
+        for owned in &mut world.life.books.owned {
+            owned.finished = 1;
+        }
+        assert!(
+            !world
+                .wish_options()
+                .iter()
+                .any(|wish| matches!(wish, Wish::Book { .. }))
+        );
+        assert!(!Wish::Book { index: 99 }.valid(&world.life));
+        assert!(!Wish::Tower { height: 6 }.valid(&world.life));
     }
 
     #[test]
@@ -1335,7 +1448,11 @@ mod tests {
             assert!(!wish.korean(&world.life).is_empty());
             assert_eq!(wish.with_viewer(), wish.hint().is_some());
         }
-        assert!(Wish::Tower { height: 6 }.words(&world.life).contains("six"));
+        assert!(
+            Wish::Tower { height: 5 }
+                .words(&world.life)
+                .contains("five")
+        );
         hold(&mut world, Wish::Rainbow);
         world.date = Date::constant(2026, 6, 23);
         world.life.begin_day(&world.date.to_string());
