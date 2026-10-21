@@ -49,6 +49,8 @@ pub struct Tally {
     pub nudges: u32,
     /// Times it brought the ball back to the viewer.
     pub fetches: u32,
+    /// Times it caught the viewer's finger on the glass.
+    pub pounces: u32,
     pub dances: u32,
     pub celebrations: u32,
     /// The occasions it marked, kept once each for the diary.
@@ -94,6 +96,7 @@ impl Tally {
             EventKind::AteMote => self.motes += 1,
             EventKind::NudgedBall => self.nudges += 1,
             EventKind::Fetched => self.fetches += 1,
+            EventKind::Pounced => self.pounces += 1,
             EventKind::Danced => self.dances += 1,
             EventKind::Celebrated(occasion) => {
                 self.celebrations += 1;
@@ -144,6 +147,11 @@ impl Tally {
             0 => {}
             1 => deeds.push("fetched the ball for you".to_owned()),
             fetches => deeds.push(format!("fetched the ball for you {fetches} times")),
+        }
+        match self.pounces {
+            0 => {}
+            1 => deeds.push("pounced on your finger".to_owned()),
+            pounces => deeds.push(format!("pounced on your finger {pounces} times")),
         }
         match self.dances {
             0 => {}
@@ -254,6 +262,7 @@ impl Life {
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
             EventKind::Fetched => 0.01,
+            EventKind::Pounced => 0.003,
             EventKind::Found => 0.015,
             EventKind::ViewerArrived => 0.003,
             EventKind::DroppedMote | EventKind::KickedBall => 0.002,
@@ -403,6 +412,9 @@ impl Life {
             }
             EventKind::Fetched if total.fetches == 1 => {
                 "Played fetch with you for the first time.".to_owned()
+            }
+            EventKind::Pounced if total.pounces == 1 => {
+                "Caught your finger on the glass for the first time.".to_owned()
             }
             EventKind::Danced if total.dances == 1 => "Danced my first twirl.".to_owned(),
             EventKind::Found if total.finds == 1 => "You found me hiding.".to_owned(),
@@ -588,6 +600,30 @@ mod tests {
         assert_eq!(life.diary.len(), 1);
         assert_eq!(life.diary[0].day, "2026-10-20");
         assert!(life.diary[0].text.starts_with("Ate 2 light motes"));
+    }
+
+    #[test]
+    fn pounces_count_warm_the_bond_and_mark_the_first_catch() {
+        let mut life = Life::default();
+        life.begin_day("2026-10-20");
+        let first = life.note(&EventKind::Pounced).unwrap();
+        assert_eq!(first, "Caught your finger on the glass for the first time.");
+        assert!(!first.chars().any(|character| character.is_ascii_digit()));
+        assert_eq!((life.today.pounces, life.total.pounces), (1, 1));
+        assert!((life.bond - 0.003).abs() < 1e-6);
+        assert!(life.today.words().starts_with("Pounced on your finger."));
+        assert_eq!(life.note(&EventKind::Pounced), None);
+        assert!((life.bond - 0.006).abs() < 1e-6);
+        life.begin_day("2026-10-21");
+        assert_eq!((life.today.pounces, life.total.pounces), (0, 2));
+        assert!(
+            life.diary[0]
+                .text
+                .starts_with("Pounced on your finger 2 times.")
+        );
+        assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().pounces, 0);
+        let saved = serde_json::to_string(&life).unwrap();
+        assert_eq!(serde_json::from_str::<Life>(&saved).unwrap(), life);
     }
 
     #[test]

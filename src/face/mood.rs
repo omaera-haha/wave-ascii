@@ -66,6 +66,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Bloomed
         | EventKind::DroppedMote
         | EventKind::Fetched
+        | EventKind::Pounced
         | EventKind::Found
         | EventKind::Celebrated(_)
         | EventKind::Milestone(_) => Expression::Sparkle,

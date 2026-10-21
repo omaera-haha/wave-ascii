@@ -280,21 +280,32 @@ fn motes(world: &World) -> String {
     format!("{count}, the nearest {}", distance_words(nearest))
 }
 
-fn viewer(world: &World) -> &'static str {
-    if world.viewer.typing {
+fn viewer(world: &World) -> String {
+    let words = if world.viewer.typing {
         "typing a message to the ghost"
-    } else if world.viewer.pointer.is_some() && world.viewer_present() {
-        "watching through the glass, pointer moving"
+    } else if world.viewer.pointer.is_some() {
+        "watching through the glass"
     } else if world.viewer_present() {
         "nearby"
     } else {
         "away"
+    };
+    if world.viewer.pointer.is_some() {
+        let motion = if world.viewer.pointer_is_lively() {
+            "darting about"
+        } else {
+            "still"
+        };
+        format!("{words}, pointer {motion}")
+    } else {
+        words.to_owned()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::EventKind;
     use glam::Vec3;
 
     #[test]
@@ -326,6 +337,48 @@ mod tests {
         assert!(
             !text.chars().any(|character| character.is_ascii_digit()),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn the_viewers_pointer_can_be_darting_or_still_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.point_at(Some(Vec3::new(-0.6, 1.2, 1.4)));
+        assert_eq!(
+            observe(&world)["viewer"],
+            "watching through the glass, pointer still"
+        );
+        world.viewer.typing = true;
+        assert_eq!(
+            observe(&world)["viewer"],
+            "typing a message to the ghost, pointer still"
+        );
+        world.viewer.typing = false;
+        world.point_at(Some(Vec3::new(0.6, 1.2, 1.4)));
+        world.begin(Activity::Pounce);
+        world.ghost.position = world.ghost.plan.target;
+        world.step(0.05);
+        assert_eq!(
+            observe(&world)["viewer"],
+            "watching through the glass, pointer darting about"
+        );
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::Pounced)
+        );
+        assert!(
+            !observe(&world)
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.step(3.0);
+        assert_eq!(
+            observe(&world)["viewer"],
+            "watching through the glass, pointer still"
         );
     }
 

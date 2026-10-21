@@ -101,6 +101,9 @@ fn request(activity: Activity) -> &'static str {
             "Asks it to look out of the window, or at the sky, the rain, or a rainbow."
         }
         Activity::Fetch => "Asks it to fetch, catch, or bring back the ball.",
+        Activity::Pounce => {
+            "Asks it to chase or catch the viewer's finger, cursor, or pointer on the glass."
+        }
         Activity::Dance => "Asks it to dance, spin, twirl, or do a trick.",
         Activity::Hide => "Asks it to hide, or to play hide-and-seek.",
         Activity::Doodle => "Asks it to draw, doodle, or write something on the glass.",

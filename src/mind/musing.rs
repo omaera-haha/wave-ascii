@@ -49,6 +49,11 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Visit if present => vec!["Someone's at the glass.", "Who's there?"],
         Activity::Visit => vec!["Is anyone out there?", "Maybe someone will come by."],
         Activity::Fetch => vec!["I'll get it!", "Wait for me, ball!"],
+        Activity::Pounce => vec![
+            "What's that? I'll get it!",
+            "Your finger! I'm coming.",
+            "Gotcha… almost.",
+        ],
         Activity::Hide => vec!["Ready or not…", "Bet you can't find me."],
         Activity::Doodle if world.life.bond >= 0.3 => {
             vec!["I'll draw you something.", "This one's for you."]
@@ -118,6 +123,9 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     } else if present && world.life.bond < 0.12 {
         lines.extend(["Who is that, out there?", "They're looking at me."]);
     }
+    if world.viewer.pointer_is_lively() && needs.energy > 0.25 {
+        lines.push("Your finger keeps getting away!");
+    }
     if world.plant.thirst > 0.7 {
         lines.push("The plant looks thirsty.");
     }
@@ -154,6 +162,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Lamp => "I like the lamp's warm light.",
             Activity::Float => "Floating is nice.",
             Activity::Fetch => "Throw the ball again! Please?",
+            Activity::Pounce => "Move your finger again!",
             Activity::Dance => "I've been working on a new twirl.",
             Activity::Hide => "Nobody hides like a ghost.",
             Activity::Doodle => "I should draw on the glass again.",

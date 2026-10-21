@@ -4,6 +4,7 @@ mod doodle;
 mod life;
 mod needs;
 pub mod occasion;
+mod pounce;
 mod random;
 mod sight;
 mod things;
@@ -97,6 +98,7 @@ pub enum EventKind {
     Jumped,
     Doodled(&'static str),
     Celebrated(Occasion),
+    Pounced,
 }
 
 impl EventKind {
@@ -110,6 +112,7 @@ impl EventKind {
             Self::NudgedBall => "nudged the ball".to_owned(),
             Self::PickedUpBall => "picked up the ball".to_owned(),
             Self::Fetched => "brought the ball back to the viewer".to_owned(),
+            Self::Pounced => "pounced on the viewer's finger on the glass".to_owned(),
             Self::Danced => "danced a little twirl".to_owned(),
             Self::Tended => "watered the plant".to_owned(),
             Self::Bloomed => "the plant came into flower".to_owned(),
@@ -198,6 +201,10 @@ pub struct Ghost {
 pub struct Viewer {
     /// Where the pointer touches the glass, while it is over the room.
     pub pointer: Option<Vec3>,
+    /// Recent travel on the glass, fading as the pointer holds still.
+    pub liveliness: f32,
+    /// When the pointer last moved on the glass.
+    pub moved_at: f64,
     /// When the viewer last did anything.
     pub active_at: f64,
     /// While the viewer is typing a message.
@@ -235,6 +242,8 @@ pub struct World {
     next_mote: u32,
     next_mote_at: f64,
     viewer_present: bool,
+    /// When a darting pointer last interrupted an idle plan.
+    pointer_interrupted_at: Option<f64>,
     /// Which way the ghost means to push the ball next.
     push: Vec3,
 }
@@ -295,6 +304,7 @@ impl World {
             next_mote: 0,
             next_mote_at: 8.0,
             viewer_present: false,
+            pointer_interrupted_at: None,
             push: Vec3::X,
         }
     }
@@ -313,6 +323,7 @@ impl World {
 
     fn advance(&mut self, seconds: f32) {
         self.time += f64::from(seconds);
+        self.viewer.liveliness *= (-seconds / 0.7).exp();
         self.doodles
             .retain(|doodle| doodle.opacity(self.time) > 0.0);
 
@@ -455,6 +466,7 @@ impl World {
                 Activity::Dance => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.35,
                 Activity::Hide => self.viewer_present() && self.ghost.needs.energy > 0.3,
                 Activity::Doodle => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.25,
+                Activity::Pounce => self.pounce_is_open(),
                 Activity::Float
                 | Activity::Explore
                 | Activity::Play
@@ -497,6 +509,9 @@ impl World {
             }
             Activity::Visit => "Go up to the glass to be near the viewer and look at them. Fits \
                                 when the viewer is around, or when lonely."
+                .to_owned(),
+            Activity::Pounce => "Chase the viewer's darting finger along the inside of the \
+                                 glass and pounce on it. Fits when playful and full of energy."
                 .to_owned(),
             Activity::Hide => "Play hide-and-seek with the viewer: hide somewhere in the room \
                                and turn faint until they find you by clicking you. Fits when \
@@ -554,6 +569,7 @@ impl World {
             Activity::Fetch => 6.0,
             Activity::Dance => self.random.range(5.0, 7.0),
             Activity::Hide => self.random.range(25.0, 45.0),
+            Activity::Pounce => 25.0,
             _ => 0.0,
         };
         let target = match activity {
@@ -562,6 +578,7 @@ impl World {
             Activity::Tend => self.plant.top() + Vec3::new(0.0, 0.25, 0.3),
             Activity::Lamp => self.lamp.bulb() + Vec3::new(0.35, -0.15, 0.25),
             Activity::Visit => self.glass_spot(),
+            Activity::Pounce => self.glass_spot(),
             Activity::Window => WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.55),
             Activity::Fetch => self.ball.position + Vec3::Y * 0.42,
             Activity::Dance => position.clamp(
@@ -1012,6 +1029,7 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
+            Activity::Pounce => look = self.pounce(seconds),
             Activity::Fetch => {
                 if self.ghost.plan.count == 0 {
                     let target = self.ball.position + Vec3::Y * 0.42;
@@ -1145,6 +1163,7 @@ impl World {
             Activity::Rest => 0.5,
             Activity::Explore => 0.7,
             Activity::Dance => 1.5,
+            Activity::Pounce => 1.6,
             _ => 0.8,
         } * (0.6 + 0.4 * ghost.needs.energy);
 
@@ -1273,6 +1292,7 @@ impl World {
                     | EventKind::Bloomed
                     | EventKind::Fetched
                     | EventKind::Found
+                    | EventKind::Pounced
                     | EventKind::Milestone(_)
             )
         }) {

@@ -1,4 +1,4 @@
-use crate::world::{Activity, EventKind, GREETS_FROM, Occasion, World, flat};
+use crate::world::{Activity, EventKind, GREETS_FROM, Mood, Occasion, World, flat};
 
 /// How much the ghost's needs, surroundings, and habits pull it toward each
 /// of the activities open to it, as chances that add up to 1. This is the mind it
@@ -71,6 +71,30 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     0.04 + 0.12 * (1.0 - needs.fun)
                 };
                 (1.5 * thrown + playful) * needs.energy
+            }
+            Activity::Pounce => {
+                let annoyed = world
+                    .events
+                    .iter()
+                    .rev()
+                    .take_while(|event| world.time - event.time < 10.0)
+                    .any(|event| matches!(event.kind, EventKind::Poked { count } if count >= 3));
+                if !world.viewer.pointer_is_lively()
+                    || world.ghost.asleep >= 0.3
+                    || needs.energy <= 0.25
+                    || matches!(world.ghost.mood, Mood::Sleepy | Mood::Grumpy)
+                    || annoyed
+                {
+                    0.0
+                } else {
+                    let lively = world.viewer.liveliness.min(1.0);
+                    let playful = if matches!(world.ghost.mood, Mood::Cheerful | Mood::Excited) {
+                        0.5
+                    } else {
+                        0.0
+                    };
+                    (0.4 + 1.2 * lively + 0.8 * (1.0 - needs.fun) + playful) * needs.energy
+                }
             }
             Activity::Dance => {
                 let delighted = world
@@ -174,6 +198,49 @@ mod tests {
         let weights = weigh(&world, &world.options());
         let total: f32 = weights.iter().map(|(_, chance)| chance).sum();
         assert!((total - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_darting_pointer_strongly_draws_a_playful_ghost_to_pounce() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.point_at(Some(Vec3::new(-0.6, 1.2, 1.4)));
+        world.point_at(Some(Vec3::new(0.6, 1.2, 1.4)));
+        let options = world.options();
+        let weights = weigh(&world, &options);
+        assert!(chance(&weights, Activity::Pounce) > chance(&weights, Activity::Float) * 3.0);
+        assert_eq!(
+            weights
+                .iter()
+                .max_by(|first, second| first.1.total_cmp(&second.1))
+                .unwrap()
+                .0,
+            Activity::Pounce
+        );
+        world.ghost.needs.fun = 0.1;
+        let bored = weigh(&world, &options);
+        let pull = |weights: &[(Activity, f32)]| {
+            chance(weights, Activity::Pounce) / chance(weights, Activity::Float)
+        };
+        assert!(pull(&bored) > pull(&weights));
+        for mood in [Mood::Cheerful, Mood::Excited] {
+            world.ghost.mood = mood;
+            assert!(
+                chance(&weigh(&world, &options), Activity::Pounce)
+                    > chance(&bored, Activity::Pounce)
+            );
+        }
+        for mood in [Mood::Sleepy, Mood::Grumpy] {
+            world.ghost.mood = mood;
+            assert_eq!(chance(&weigh(&world, &options), Activity::Pounce), 0.0);
+        }
+        world.ghost.mood = Mood::Content;
+        for _ in 0..3 {
+            world.poke();
+        }
+        assert_eq!(chance(&weigh(&world, &options), Activity::Pounce), 0.0);
+        world.step(11.0);
+        assert_eq!(chance(&weigh(&world, &options), Activity::Pounce), 0.0);
     }
 
     #[test]

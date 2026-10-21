@@ -94,6 +94,10 @@ movements as arrow keys here, which scroll the journal. Elsewhere, hold Shift
   to spare goes after it, carries it back to the glass, lets it drop in front
   of you, and waits a few seconds for another throw. It lets go of the ball if
   you poke it or it starts something else.
+- **Catch your finger.** Move the mouse quickly over the room and a playful
+  ghost chases your pointer along the inside of the glass and pounces on it.
+  It tires of the game after a few catches. Hold still and it lingers at the
+  last spot, or let it rest if it's sleepy or grumpy. No API keys needed.
 - **Hide-and-seek.** While you're around, it may slip behind the furniture or
   into a back corner and turn faint. Look for the glimmer of its eyes and click
   it to find it. If you don't find it after a while, it jumps toward the glass
@@ -104,7 +108,8 @@ movements as arrow keys here, which scroll the journal. Elsewhere, hold Shift
   admire it. Up to three pictures linger, fading after about two and a half
   minutes.
 - **Asking.** With a Jev key, what you type can ask it to do things: play,
-  fetch, dance, hide, draw, rest, look out of the window, or come closer.
+  fetch, catch your finger, dance, hide, draw, rest, look out of the window,
+  or come closer.
 
 ### What you see
 
