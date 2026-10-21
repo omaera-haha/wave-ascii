@@ -2,7 +2,7 @@ use std::env;
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -44,6 +44,11 @@ impl Paths {
                 .join(APP)
                 .join("ghost.json"),
         })
+    }
+
+    /// Postcards beside the ghost's saved life.
+    pub fn postcards(&self) -> PathBuf {
+        self.save.with_file_name("postcards")
     }
 
     /// Both files in one directory, for tests.
@@ -223,8 +228,7 @@ pub fn load_json<T: DeserializeOwned>(path: &Path) -> io::Result<Option<T>> {
 /// file only once the new one is complete.
 pub fn save_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
     if let Some(directory) = path.parent() {
-        fs::create_dir_all(directory)?;
-        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+        create_directory(directory)?;
     }
     let bytes = serde_json::to_vec_pretty(value)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
@@ -249,6 +253,15 @@ pub fn save_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
         let _ = fs::remove_file(&partial);
     }
     written
+}
+
+/// Creates a directory readable only by its owner, including missing parents.
+pub fn create_directory(directory: &Path) -> io::Result<()> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(directory)?;
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
 }
 
 #[cfg(test)]

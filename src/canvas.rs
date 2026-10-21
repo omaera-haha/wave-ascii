@@ -286,6 +286,36 @@ impl Canvas {
         output
     }
 
+    /// The glyphs alone, with trailing spaces removed from each row.
+    pub fn postcard_text(&self) -> String {
+        self.postcard_lines(ColorMode::Plain)
+    }
+
+    /// Trimmed rows with the cells' full colors and a reset on every line.
+    pub fn postcard_ansi(&self) -> String {
+        self.postcard_lines(ColorMode::TrueColor)
+    }
+
+    fn postcard_lines(&self, color: ColorMode) -> String {
+        let mut output = String::new();
+        for row in 0..self.rows {
+            let cells = &self.cells[row * self.columns..(row + 1) * self.columns];
+            let end = cells
+                .iter()
+                .rposition(|cell| !matches!(cell.glyph, ' ' | '\0'))
+                .map_or(0, |index| index + 1);
+            let mut pen = Pen::default();
+            for cell in &cells[..end] {
+                pen.write(cell, color, &mut output);
+            }
+            if color.is_colored() {
+                output.push_str("\x1b[0m");
+            }
+            output.push('\n');
+        }
+        output
+    }
+
     /// Escapes that turn the screen from `previous` into this canvas, moving
     /// the cursor past unchanged cells. Without a previous canvas, every cell
     /// is drawn. Positions are absolute, starting at the top-left corner.
@@ -393,6 +423,61 @@ mod tests {
         let canvas = uniform(Style::Ascii, Shade::new(0.8, Vec3::X));
         assert!(!canvas.ansi(ColorMode::Plain).contains('\x1b'));
         assert!(canvas.ansi(ColorMode::TrueColor).contains("\x1b[38;2;"));
+    }
+
+    #[test]
+    fn postcard_rows_trim_spaces_and_write_wide_characters_once() {
+        let mut canvas = Canvas::blank(6, 3);
+        for (column, glyph) in [(0, ' '), (1, '안'), (3, '!')] {
+            canvas.set(
+                column,
+                0,
+                Cell {
+                    glyph,
+                    ..Cell::BLANK
+                },
+            );
+        }
+        canvas.set(2, 0, Cell::CONTINUATION);
+        canvas.set(
+            0,
+            2,
+            Cell {
+                glyph: '녕',
+                ..Cell::BLANK
+            },
+        );
+        canvas.set(1, 2, Cell::CONTINUATION);
+        assert_eq!(canvas.postcard_text(), " 안!\n\n녕\n");
+        assert_eq!(Canvas::blank(0, 2).postcard_text(), "\n\n");
+    }
+
+    #[test]
+    fn postcard_colors_use_truecolor_and_reset_at_every_line_end() {
+        let mut canvas = Canvas::blank(4, 2);
+        canvas.set(
+            0,
+            0,
+            Cell {
+                glyph: '안',
+                foreground: Some(Rgb([12, 34, 56])),
+                background: Some(Rgb([78, 90, 123])),
+            },
+        );
+        canvas.set(1, 0, Cell::CONTINUATION);
+        canvas.set(
+            2,
+            0,
+            Cell {
+                glyph: '!',
+                ..Cell::BLANK
+            },
+        );
+        assert_eq!(
+            canvas.postcard_ansi(),
+            "\x1b[48;2;78;90;123m\x1b[38;2;12;34;56m안\x1b[49m\x1b[39m!\x1b[0m\n\x1b[0m\n"
+        );
+        assert_eq!(Canvas::blank(0, 2).postcard_ansi(), "\x1b[0m\n\x1b[0m\n");
     }
 
     #[test]

@@ -62,6 +62,7 @@ the next requests use them at once.
 | `k`             | Settings: keys, models, effort, cache                      |
 | `j`             | Journal: memories, moments, diary, conversation            |
 | `l`             | Its life: age, bond with you, what it loves, today so far  |
+| `p`             | Save a postcard of the moment                             |
 | `?`             | Help                                                       |
 | Arrows, WASD    | Turn the view; ↑/↓ scroll the journal one line             |
 | PageUp/PageDown | Scroll the journal by a page                               |
@@ -87,6 +88,19 @@ quits from any of the three. While one of them is open, the terminal handles
 the mouse so you can select and copy text directly. Many terminals send wheel
 movements as arrow keys here, which scroll the journal. Elsewhere, hold Shift
 (Option in iTerm2) to select text while the app has the mouse.
+
+### Postcards
+
+Press `p` while watching to save the scene and the words line, including its
+speech bubble and little symbols, with a caption naming the ghost, the local
+date and time, and what it is doing. The status bar and panels stay out of the
+picture. Each postcard is a plain `.txt` file and a truecolor `.ans` file in
+`~/.local/share/wave-ascii/postcards/` (`$XDG_DATA_HOME` if set). Names follow
+the moment's local time, such as `2026-10-21-153012.txt`; another in the same
+second gets `-2`, then `-3`. Use `cat` to view an `.ans` file in a truecolor
+terminal. In plain block mode, the ANSI copy uses colored blocks from the
+same rendered moment. A ghost without a saved life cannot save postcards;
+piped output never saves them.
 
 ### Playing with it
 
@@ -126,6 +140,8 @@ movements as arrow keys here, which scroll the journal. Elsewhere, hold Shift
   `✕` failed (the journal says why), and `○` off.
 - **The line above the status bar** shows what it said, a thought, or its
   goal. What it says also appears in a bubble over its head.
+- **The window title** shows the ghost's name and what it is doing. Your
+  previous title comes back on quit in terminals that support title saving.
 
 ### The world outside
 
