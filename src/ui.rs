@@ -799,8 +799,16 @@ impl JournalPanel {
 }
 
 // The ghost's life at a glance: its age, its bond with the viewer, what it
-// loves doing, what it has done in all its days, and today so far.
+// loves doing, what it has done in all its days, its latest milestone, and
+// today so far.
 fn life_panel(app: &App, screen: &mut Canvas) {
+    let lines = life_lines(app, screen.columns(), screen.rows());
+    panel(screen, "Life", &lines);
+}
+
+/// The life panel's lines for a screen of `columns` by `rows`. Sections that
+/// don't fit are left out, the least needed first.
+fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     let life = &app.world.life;
     let ghost = &app.world.ghost;
     let days = (crate::mind::now() - app.born()).max(0) / 86_400;
@@ -809,7 +817,7 @@ fn life_panel(app: &App, screen: &mut Canvas) {
         1 => "one day old".to_owned(),
         days => format!("{days} days old"),
     };
-    let mut lines = vec![
+    let header = vec![
         (
             format!("{} · {age} · born {}", ghost.name, date(app.born())),
             TITLE,
@@ -839,11 +847,13 @@ fn life_panel(app: &App, screen: &mut Canvas) {
             ),
             TEXT,
         ),
+    ];
+    let total = &life.total;
+    let mut counts = vec![
         (String::new(), TEXT),
         ("In all its days".to_owned(), ACCENT),
     ];
-    let total = &life.total;
-    let counts = [
+    for (first, first_count, second, second_count) in [
         (
             "light motes eaten",
             total.motes,
@@ -855,30 +865,61 @@ fn life_panel(app: &App, screen: &mut Canvas) {
         ("plant watered", total.waterings, "flowers", total.blooms),
         ("naps", total.naps, "rainbows seen", total.rainbows),
         ("messages from you", total.heard, "pokes", total.pokes),
-    ];
-    for (first, first_count, second, second_count) in counts {
-        lines.push((
+    ] {
+        counts.push((
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),
             TEXT,
         ));
     }
-    if let Some(milestone) = life.milestones.last() {
-        lines.push((String::new(), TEXT));
-        lines.push(("Its latest moment to remember".to_owned(), ACCENT));
-        lines.push((format!("  {}", milestone.text), TEXT));
-    }
-    lines.push((String::new(), TEXT));
-    lines.push(("Today so far".to_owned(), ACCENT));
-    let room = screen.columns().saturating_sub(10).clamp(20, 56);
+    let latest = match life.milestones.last() {
+        Some(milestone) => vec![
+            (String::new(), TEXT),
+            ("Its latest moment to remember".to_owned(), ACCENT),
+            (format!("  {}", milestone.text), TEXT),
+        ],
+        None => Vec::new(),
+    };
+    let mut today = vec![(String::new(), TEXT), ("Today so far".to_owned(), ACCENT)];
+    let room = columns.saturating_sub(10).clamp(20, 56);
     for line in wrap(&life.today.words(), room) {
-        lines.push((format!("  {line}"), TEXT));
+        today.push((format!("  {line}"), TEXT));
     }
-    lines.push((String::new(), TEXT));
-    lines.push((
-        "Its diary and moments are in the journal (j). Any key closes this.".to_owned(),
-        DIM,
-    ));
-    panel(screen, "Life", &lines);
+    let footer = vec![
+        (String::new(), TEXT),
+        (
+            "Its diary and moments are in the journal (j). Any key closes this.".to_owned(),
+            DIM,
+        ),
+    ];
+
+    // In the order they show, with the order they are kept in when space
+    // runs short.
+    let sections = [
+        (header, 0),
+        (counts, 3),
+        (latest, 2),
+        (today, 1),
+        (footer, 4),
+    ];
+    let mut room = rows.saturating_sub(2);
+    let mut kept = [false; 5];
+    let mut by_need: Vec<usize> = (0..sections.len()).collect();
+    by_need.sort_by_key(|index| sections[*index].1);
+    for index in by_need {
+        let length = sections[index].0.len();
+        if length <= room {
+            room -= length;
+            kept[index] = true;
+        } else if index == 0 {
+            break;
+        }
+    }
+    sections
+        .into_iter()
+        .zip(kept)
+        .filter(|(_, kept)| *kept)
+        .flat_map(|((lines, _), _)| lines)
+        .collect()
 }
 
 fn hours_and_minutes(seconds: f32) -> String {
@@ -1077,6 +1118,28 @@ mod tests {
         assert_eq!(visible_start(&text, text.len(), 11), 6);
         assert_eq!(visible_start(&text, text.len(), 10), 7);
         assert_eq!(visible_start(&text, 0, 5), 0);
+    }
+
+    #[test]
+    fn the_life_panel_leaves_out_what_does_not_fit_the_screen() {
+        let mut app = app();
+        app.world.life.milestones.push(crate::world::Entry {
+            day: "2026-10-21".into(),
+            text: "Saw my first rainbow.".into(),
+        });
+        let full = life_lines(&app, 100, 60);
+        for rows in [60, 24, 16, 12, 9] {
+            let lines = life_lines(&app, 100, rows);
+            assert!(lines.len() + 2 <= rows, "{rows}: {}", lines.len());
+            assert!(lines[0].0.starts_with("Boo"), "{rows}");
+        }
+        assert!(life_lines(&app, 100, 20).len() < full.len());
+        assert!(
+            life_lines(&app, 100, 16)
+                .iter()
+                .any(|(line, _)| line == "Today so far")
+        );
+        assert!(life_lines(&app, 100, 4).is_empty());
     }
 
     #[test]
