@@ -1120,13 +1120,20 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ));
     }
     let korean = app.world.speaks_korean();
-    match (&life.viewer_name, korean) {
-        (Some(name), true) => {
-            header.extend(labeled("You", format!("{name} · talks to it in Korean")))
+    let mut viewer = Vec::new();
+    if let Some(name) = &life.viewer_name {
+        viewer.push(name.clone());
+    }
+    if korean {
+        viewer.push("talks to it in Korean".to_owned());
+    }
+    for topic in crate::world::acquaintance::Topic::ALL {
+        if let Some(answer) = life.viewer.answer(topic, false) {
+            viewer.push(format!("{}: {answer}", topic.name()));
         }
-        (Some(name), false) => header.extend(labeled("You", name.clone())),
-        (None, true) => header.extend(labeled("You", "talk to it in Korean".to_owned())),
-        (None, false) => {}
+    }
+    if !viewer.is_empty() {
+        header.extend(labeled("You", viewer.join(" · ")));
     }
     let practiced: Vec<String> = Skill::ALL
         .into_iter()

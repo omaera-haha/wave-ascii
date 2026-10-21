@@ -43,6 +43,7 @@ pub enum Question {
     Songs,
     Wish,
     Mirror,
+    Viewer(super::acquaintance::Topic),
 }
 
 impl Question {
@@ -62,6 +63,45 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
             &["whos", "in", "the", "mirror"],
             &["whos", "that", "in", "the", "mirror"],
             &["who", "is", "that", "in", "the", "mirror"],
+        ],
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Color),
+        &[
+            &["whats", "my", "favorite", "color"],
+            &["what", "is", "my", "favorite", "color"],
+            &["whats", "my", "favourite", "colour"],
+            &["do", "you", "know", "my", "favorite", "color"],
+        ],
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Season),
+        &[
+            &["whats", "my", "favorite", "season"],
+            &["what", "is", "my", "favorite", "season"],
+        ],
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Animal),
+        &[
+            &["whats", "my", "favorite", "animal"],
+            &["what", "is", "my", "favorite", "animal"],
+        ],
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Food),
+        &[
+            &["whats", "my", "favorite", "food"],
+            &["what", "is", "my", "favorite", "food"],
+        ],
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Birthday),
+        &[
+            &["do", "you", "know", "my", "birthday"],
+            &["when", "is", "my", "birthday"],
+            &["whens", "my", "birthday"],
+            &["remember", "my", "birthday"],
         ],
     ),
     (
@@ -310,6 +350,51 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
     (
         Question::Mirror,
         &["거울속에누구", "거울에누가있어", "거울속엔누가"],
+        false,
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Color),
+        &[
+            "내가좋아하는색이뭐",
+            "내가좋아하는색뭐",
+            "내가좋아하는색알아",
+            "내가제일좋아하는색이뭐",
+        ],
+        false,
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Season),
+        &[
+            "내가좋아하는계절이뭐",
+            "내가좋아하는계절뭐",
+            "내가좋아하는계절알아",
+            "내가제일좋아하는계절이뭐",
+        ],
+        false,
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Animal),
+        &[
+            "내가좋아하는동물이뭐",
+            "내가좋아하는동물뭐",
+            "내가좋아하는동물알아",
+            "내가제일좋아하는동물이뭐",
+        ],
+        false,
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Food),
+        &[
+            "내가좋아하는음식이뭐",
+            "내가좋아하는음식뭐",
+            "내가좋아하는음식알아",
+            "내가제일좋아하는음식이뭐",
+        ],
+        false,
+    ),
+    (
+        Question::Viewer(super::acquaintance::Topic::Birthday),
+        &["내생일언제", "내생일알아", "내생일기억"],
         false,
     ),
     (Question::Music, &["음악좋아", "노래좋아"], false),

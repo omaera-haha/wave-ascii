@@ -304,7 +304,10 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 };
                 (0.03
                     + rainbow
-                    + if world.occasion() == Some(Occasion::Birthday) {
+                    + if matches!(
+                        world.occasion(),
+                        Some(Occasion::Birthday | Occasion::ViewerBirthday)
+                    ) {
                         0.6
                     } else {
                         0.0

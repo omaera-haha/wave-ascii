@@ -221,6 +221,7 @@ pub struct Tally {
     pub letters_written: u32,
     #[serde(default)]
     pub letters_read: u32,
+    pub learned_about: u32,
 }
 
 impl Tally {
@@ -236,6 +237,9 @@ impl Tally {
             EventKind::RecognizedSelf => self.recognized_self = true,
             EventKind::WroteLetter => self.letters_written = self.letters_written.saturating_add(1),
             EventKind::ReadLetter => self.letters_read = self.letters_read.saturating_add(1),
+            EventKind::LearnedAboutViewer(_) => {
+                self.learned_about = self.learned_about.saturating_add(1)
+            }
             EventKind::Quirk(quirk) => {
                 let count = self.quirks.entry(*quirk).or_default();
                 *count = count.saturating_add(1);
@@ -566,6 +570,9 @@ impl Tally {
             deeds.push(tower);
         } else if self.toppled > 0 {
             deeds.push("watched you knock my tower down".to_owned());
+        }
+        if self.learned_about > 0 {
+            deeds.push("learned a little more about you".to_owned());
         }
         if self.moon_wishes > 0 {
             deeds.push("made a wish on the Chuseok moon".to_owned());
@@ -900,6 +907,7 @@ pub struct Life {
     #[serde(default)]
     pub mirror: super::mirror::MirrorLife,
     pub letters: Vec<super::mail::Letter>,
+    pub viewer: super::acquaintance::Acquaintance,
 }
 
 impl Life {
@@ -1052,6 +1060,7 @@ impl Life {
                 completed: true, ..
             } => 0.01,
             EventKind::ToldStory | EventKind::ReadLetter => 0.005,
+            EventKind::LearnedAboutViewer(_) => 0.005,
             EventKind::LearnedTune(_) => 0.005,
             EventKind::WordGame { .. } => 0.003,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
@@ -1279,6 +1288,7 @@ impl Life {
         if self.letters.len() > super::mail::KEPT {
             self.letters.drain(..self.letters.len() - super::mail::KEPT);
         }
+        self.viewer.sanitize();
         self.books.sanitize();
         self.tunes = self
             .tunes
@@ -1393,6 +1403,7 @@ impl Life {
             tally.tunes_learned = tally.tunes_learned.min(100_000_000);
             tally.mirror_visits = tally.mirror_visits.min(100_000_000);
             tally.lullaby_sleeps = tally.lullaby_sleeps.min(100_000_000);
+            tally.learned_about = tally.learned_about.min(100_000_000);
             tally.names = tally.names.min(100_000_000);
             tally.wishes_made = tally.wishes_made.min(100_000_000);
             tally.wishes_granted = tally.wishes_granted.min(100_000_000);
@@ -1482,6 +1493,13 @@ impl Life {
         }
         if matches!(kind, EventKind::RecognizedSelf) {
             return self.reach("I know the ghost in the mirror is me.".to_owned());
+        }
+        if let EventKind::LearnedAboutViewer(topic) = kind {
+            let first = self.reach("You told me about yourself.".to_owned());
+            let birthday = (*topic == super::acquaintance::Topic::Birthday)
+                .then(|| self.reach("I know your birthday now.".to_owned()))
+                .flatten();
+            return first.or(birthday);
         }
         if matches!(kind, EventKind::LearnedTune(_)) {
             return self.reach("You taught me my first tune.".to_owned());
@@ -1664,6 +1682,7 @@ impl Life {
                 Occasion::NewYear => "Saw in my first new year.",
                 Occasion::Valentine => "My first Valentine's Day.",
                 Occasion::Birthday => "My first birthday!",
+                Occasion::ViewerBirthday => "Celebrated your birthday together for the first time.",
                 Occasion::Seollal => "Celebrated my first Seollal.",
                 Occasion::Chuseok => "Celebrated my first Chuseok under the harvest moon.",
                 Occasion::HangulDay => "My first Hangul Day, drawing letters in the fog.",

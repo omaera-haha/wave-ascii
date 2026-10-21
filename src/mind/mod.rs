@@ -426,7 +426,10 @@ impl Mind {
         }
         if matches!(
             heard.understanding,
-            Understanding::WordGame | Understanding::Yawning
+            Understanding::WordGame
+                | Understanding::Yawning
+                | Understanding::Answered(_)
+                | Understanding::Unanswered(_)
         ) {
             self.next_id += 1;
             self.latest_request = self.next_id;
@@ -520,7 +523,8 @@ impl Mind {
     fn muse(&mut self, world: &mut World) {
         // It tells what it did while the viewer was away once nothing else
         // it says is still showing.
-        let speaking = world.telling.is_some()
+        let speaking = world.asking.is_some()
+            || world.telling.is_some()
             || world
                 .ghost
                 .speech
@@ -781,7 +785,7 @@ impl Mind {
         if !reflection.thought.is_empty() {
             world.think(&reflection.thought);
         }
-        if !reflection.say.is_empty() {
+        if world.asking.is_none() && !reflection.say.is_empty() {
             world.say(&reflection.say);
             self.remember_speech(world);
         }
@@ -807,7 +811,7 @@ impl Mind {
         if self.reflection_renamed == self.renamed {
             world.take_name(&reflection.name);
         }
-        if !reflection.write.is_empty() {
+        if world.asking.is_none() && !reflection.write.is_empty() {
             world.write(&reflection.write);
         }
         if !reflection.look_at.is_empty() {
@@ -885,6 +889,8 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Yawning
                 | Understanding::Undressing
                 | Understanding::Music { .. }
+                | Understanding::Answered(_)
+                | Understanding::Unanswered(_)
         )
 }
 
@@ -1951,5 +1957,139 @@ mod tests {
             Some(&conversation[1].text)
         );
         assert_eq!(world.ghost.plan.activity, Activity::Visit);
+    }
+}
+
+#[cfg(test)]
+mod acquaintance_tests {
+    use super::*;
+    use crate::world::acquaintance::{Birthday, Color, Topic};
+
+    #[test]
+    fn viewer_answers_stay_in_code_and_keep_the_worlds_reply() {
+        for (text, expected) in [
+            ("blue", "Blue! I'll remember."),
+            ("파랑", "파란색! 기억할게."),
+            ("blurble", "Hmm, I'll ask again another day."),
+        ] {
+            let mut world = World::new(6, 12.0);
+            world.asking = Some((Topic::Color, world.time + 180.0));
+            let heard = world.hear(text);
+            assert!(!routes_to_jev(&heard));
+            assert_eq!(
+                musing::reply(&world, &heard, None),
+                vec![expected.to_owned()]
+            );
+            let mut world = World::new(6, 12.0);
+            world.asking = Some((Topic::Color, world.time + 180.0));
+            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
+            mind.hear(&mut world, text);
+            assert_eq!(world.ghost.speech.as_ref().unwrap().text, expected);
+            assert!(mind.heard.is_empty());
+        }
+    }
+
+    #[test]
+    fn viewer_memory_questions_are_answered_in_both_languages() {
+        for (text, topic, korean) in [
+            ("what's my favorite color?", Topic::Color, false),
+            ("내가 좋아하는 색이 뭐야?", Topic::Color, true),
+            ("do you know my birthday?", Topic::Birthday, false),
+            ("when is my birthday?", Topic::Birthday, false),
+            ("내 생일 언제야?", Topic::Birthday, true),
+            ("what's my favorite season?", Topic::Season, false),
+            ("what's my favorite animal?", Topic::Animal, false),
+            ("what's my favorite food?", Topic::Food, false),
+        ] {
+            let mut world = World::new(6, 12.0);
+            let heard = world.hear(text);
+            assert!(
+                matches!(heard.understanding, Understanding::Asked { question: Question::Viewer(asked), .. } if asked == topic),
+                "{text}"
+            );
+            assert!(!routes_to_jev(&heard));
+            let reply = musing::reply(&world, &heard, None);
+            assert_eq!(
+                reply,
+                vec![
+                    if korean {
+                        "아직 말 안 해 줬어!"
+                    } else {
+                        "You haven't told me yet!"
+                    }
+                    .to_owned()
+                ]
+            );
+            world.life.viewer.color = Some(Color::Blue);
+            world.life.viewer.birthday = Some(Birthday { month: 3, day: 3 });
+            world.life.viewer.season = Some(crate::world::Season::Spring);
+            world.life.viewer.animal = Some("cats".to_owned());
+            world.life.viewer.food = Some("kimchi".to_owned());
+            let reply = musing::reply(&world, &heard, None).join(" ");
+            assert!(
+                reply.contains(&world.life.viewer.answer(topic, korean).unwrap())
+                    || reply.contains("Blue")
+                    || reply.contains("Spring")
+                    || reply.contains("Cats")
+                    || reply.contains("Kimchi")
+            );
+            assert!(!reply.chars().any(char::is_numeric));
+        }
+    }
+
+    #[test]
+    fn viewer_facts_reach_observations_and_reflections_without_losing_presence() {
+        let mut world = World::new(6, 12.0);
+        world.life.viewer.color = Some(Color::Blue);
+        world.life.viewer.birthday = Some(Birthday { month: 3, day: 3 });
+        world.life.viewer_name = Some("Sam".to_owned());
+        let observation = observation::observe(&world);
+        assert!(observation["viewer"].as_str().is_some());
+        let facts = observation["viewer_facts"].as_str().unwrap();
+        assert_eq!(
+            facts,
+            "their favorite color is blue; their birthday is March third"
+        );
+        let conversation = [Remark {
+            at: 0,
+            speaker: Speaker::Viewer,
+            text: "3월 3일".to_owned(),
+        }];
+        let request = reflection::request(
+            &observation,
+            &[],
+            &world.life,
+            &conversation,
+            Some("March 3rd"),
+            None,
+            None,
+        );
+        for block in &request.messages[0].content {
+            assert!(block.text.contains("my birthday is March third"));
+            assert!(!block.text.contains("3월") && !block.text.contains("3rd"));
+        }
+        assert!(
+            request
+                .system
+                .iter()
+                .any(|block| block.text.contains(facts) && block.text.contains("Sam"))
+        );
+    }
+
+    #[test]
+    fn offline_thoughts_and_dreams_recall_the_viewers_animal_and_food_as_written() {
+        let mut world = World::new(6, 12.0);
+        world.life.viewer.animal = Some("고양이".to_owned());
+        world.life.viewer.food = Some("kimchi".to_owned());
+        for pool in [musing::idle(&world), musing::dreams(&world)] {
+            let lines = pool
+                .iter()
+                .map(|line| musing::named_friend_line(&world, line))
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(lines.contains("고양이"));
+            assert!(lines.contains("kimchi"));
+            assert!(!lines.contains("{animal}") && !lines.contains("{food}"));
+        }
     }
 }

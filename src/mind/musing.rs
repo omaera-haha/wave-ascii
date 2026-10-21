@@ -174,6 +174,17 @@ fn babble<Line: From<&'static str>>(world: &World, lines: &mut Vec<Line>, korean
 
 /// Gives remembered friends and star pictures their names in the thought pools.
 pub fn named_friend_line(world: &World, line: &str) -> String {
+    if line.contains("{animal}") || line.contains("{food}") {
+        return line
+            .replace(
+                "{animal}",
+                world.life.viewer.animal.as_deref().unwrap_or("animals"),
+            )
+            .replace(
+                "{food}",
+                world.life.viewer.food.as_deref().unwrap_or("clouds"),
+            );
+    }
     let line = match &world.life.friend {
         Some(friend) => line
             .replace("My ghost friend", &friend.name)
@@ -334,6 +345,10 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             "A heart on the glass, just for you.",
             "Even the light motes look fond today.",
         ]),
+        Some(Occasion::ViewerBirthday) => lines.extend([
+            "Today is your birthday. I'm glad you're here.",
+            "I wonder if birthday wishes taste like light.",
+        ]),
         Some(Occasion::Birthday) => lines.extend([
             "It's my birthday!",
             "Another year in my glass box.",
@@ -460,6 +475,12 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             "The glass is cool.",
         ]);
     }
+    if world.life.viewer.animal.is_some() {
+        lines.push("I wonder if {animal} can see my little glow.");
+    }
+    if world.life.viewer.food.is_some() {
+        lines.push("I wonder if {food} tastes like light.");
+    }
     babble(world, &mut lines, false);
     lines
 }
@@ -555,6 +576,10 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
         Some(Occasion::Valentine) => lines.extend([
             "…pink lights leaving hearts wherever they drift…",
             "…a heart drawn on the moon…",
+        ]),
+        Some(Occasion::ViewerBirthday) => lines.extend([
+            "…a birthday cake made of light, just for you…",
+            "…we dance around your birthday candles…",
         ]),
         Some(Occasion::Birthday) => lines.extend([
             "…a cake as big as the room, and a wish for every candle…",
@@ -667,6 +692,12 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
             "…zzz…",
         ]);
     }
+    if world.life.viewer.animal.is_some() {
+        lines.push("…a field full of {animal}…");
+    }
+    if world.life.viewer.food.is_some() {
+        lines.push("…a cloud made of {food}…");
+    }
     lines
 }
 
@@ -682,6 +713,8 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::Airing { .. }
             | Understanding::Undressing
             | Understanding::Music { .. }
+            | Understanding::Answered(_)
+            | Understanding::Unanswered(_)
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -697,6 +730,17 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             .map(|&(english, hangul)| if korean { hangul } else { english }.to_owned())
             .collect()
     };
+    if matches!(
+        heard.understanding,
+        Understanding::Answered(_) | Understanding::Unanswered(_)
+    ) {
+        return world
+            .ghost
+            .speech
+            .as_ref()
+            .map(|line| vec![line.text.clone()])
+            .unwrap_or_default();
+    }
     if heard.understanding == Understanding::Undressing {
         return lines(&[("All right, I took it off.", "응, 벗었어.")]);
     }
@@ -1137,6 +1181,7 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
                 vec![format!("I'm {name}."), format!("{name}! That's me.")]
             }
         }
+        Question::Viewer(topic) => vec![world.life.viewer.reply(topic, korean)],
         Question::ViewerName => match &world.life.viewer_name {
             Some(name) if korean => vec![format!("{name}! 맞지?"), format!("당연히 알지, {name}.")],
             Some(name) => vec![

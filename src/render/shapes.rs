@@ -1080,7 +1080,9 @@ fn decoration_distance(point: Vec3, decoration: Decoration, time: f64) -> (f32, 
     match decoration.occasion {
         Occasion::Halloween => pumpkin_distance(point),
         Occasion::WinterHolidays | Occasion::NewYear => tree_distance(point),
-        Occasion::Birthday => cake_distance(point, decoration.candles, time),
+        Occasion::Birthday | Occasion::ViewerBirthday => {
+            cake_distance(point, decoration.candles, time)
+        }
         Occasion::Valentine | Occasion::HangulDay => (f32::INFINITY, Material::Frosting),
         Occasion::Seollal | Occasion::Chuseok => {
             holiday_table_distance(point, decoration.occasion, time)
@@ -1095,7 +1097,7 @@ fn flicker(time: f64) -> f32 {
 
 pub fn decoration_light(decoration: Decoration, time: f64) -> Vec3 {
     match decoration.occasion {
-        Occasion::Halloween | Occasion::Birthday => {
+        Occasion::Halloween | Occasion::Birthday | Occasion::ViewerBirthday => {
             Vec3::new(1.0, 0.57, 0.2) * 0.65 * flicker(time)
         }
         Occasion::WinterHolidays | Occasion::NewYear => {

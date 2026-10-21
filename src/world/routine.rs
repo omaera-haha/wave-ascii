@@ -66,6 +66,7 @@ impl World {
         }
         let expected = self.life.expectation(self.hour) >= 0.5;
         let waiting = self.ghost.plan.activity == Activity::Wait && !self.ghost.plan.done;
+        self.viewer_blush_at = Some(self.time);
         self.record(EventKind::ViewerArrived);
         if let Some(milestone) = self.life.arrive(self.hour) {
             self.record(EventKind::Milestone(milestone));

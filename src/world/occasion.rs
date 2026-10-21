@@ -13,6 +13,7 @@ pub enum Occasion {
     Seollal,
     Chuseok,
     HangulDay,
+    ViewerBirthday,
 }
 
 impl Occasion {
@@ -23,6 +24,7 @@ impl Occasion {
             Self::NewYear => "New Year",
             Self::Valentine => "Valentine's Day",
             Self::Birthday => "birthday",
+            Self::ViewerBirthday => "your birthday",
             Self::Seollal => "Seollal",
             Self::Chuseok => "Chuseok",
             Self::HangulDay => "Hangul Day",
@@ -44,6 +46,7 @@ impl Occasion {
             Self::NewYear => "celebrated the new year",
             Self::Valentine => "celebrated Valentine's Day",
             Self::Birthday => "had a birthday",
+            Self::ViewerBirthday => "it was your birthday",
             Self::Seollal => "celebrated Seollal",
             Self::Chuseok => "celebrated Chuseok",
             Self::HangulDay => "celebrated Hangul Day",
@@ -181,7 +184,7 @@ impl Decoration {
         match self.occasion {
             Occasion::Halloween => "a glowing jack-o'-lantern",
             Occasion::WinterHolidays | Occasion::NewYear => "a little tree with twinkling lights",
-            Occasion::Birthday => "a birthday cake with candles",
+            Occasion::Birthday | Occasion::ViewerBirthday => "a birthday cake with candles",
             Occasion::Valentine | Occasion::HangulDay => "",
             Occasion::Seollal => "a little table with rice-cake soup and a lucky pouch",
             Occasion::Chuseok => "a little table with half-moon rice cakes and persimmons",
@@ -191,7 +194,21 @@ impl Decoration {
 
 impl super::World {
     pub fn occasion(&self) -> Option<Occasion> {
-        occasion(self.date, self.hour, self.birthday)
+        if self
+            .birthday
+            .is_some_and(|birthday| birthday_years(self.date, birthday).is_some())
+        {
+            Some(Occasion::Birthday)
+        } else if self
+            .life
+            .viewer
+            .birthday
+            .is_some_and(|birthday| birthday.falls_on(self.date))
+        {
+            Some(Occasion::ViewerBirthday)
+        } else {
+            occasion(self.date, self.hour, self.birthday)
+        }
     }
 
     pub fn occasion_words(&self) -> String {
@@ -230,6 +247,15 @@ impl super::World {
 
     /// The evening's New Year celebration comes before midnight.
     pub fn event_words(&self, event: &super::Event) -> String {
+        if let super::EventKind::LearnedAboutViewer(topic) = event.kind
+            && let Some(answer) = self.life.viewer.answer(topic, false)
+        {
+            return if topic == super::acquaintance::Topic::Birthday {
+                format!("learned that your birthday is on {answer}")
+            } else {
+                format!("learned that your {} is {answer}", topic.name())
+            };
+        }
         if matches!(event.kind, super::EventKind::FriendArrived(_))
             && self.first_friend_at == Some(event.time)
         {
@@ -267,6 +293,41 @@ impl super::World {
                     anchor: self.ghost.plan.target,
                     started: None,
                 });
+            }
+            Occasion::ViewerBirthday => {
+                if self.telling.is_some()
+                    || self.game.is_some()
+                    || self.puzzle_active()
+                    || self.reading.is_some()
+                    || self.asking.is_some()
+                    || self
+                        .ghost
+                        .speech
+                        .as_ref()
+                        .is_some_and(|line| self.time - line.time < 12.0)
+                    || self.life.viewer.birthday_greeted.as_deref()
+                        == Some(self.date.to_string().as_str())
+                {
+                    return;
+                }
+                let name = self
+                    .life
+                    .viewer_name
+                    .as_ref()
+                    .map_or(String::new(), |name| format!(", {name}"));
+                let greeting = if self.speaks_korean() {
+                    format!("생일 축하해{name}!")
+                } else {
+                    format!("Happy birthday{name}!")
+                };
+                self.say(&greeting);
+                self.write(if self.speaks_korean() {
+                    "생일축하"
+                } else {
+                    "HBD♥"
+                });
+                self.life.viewer.birthday_greeted = Some(self.date.to_string());
+                self.reconsider_wardrobe();
             }
             Occasion::Chuseok => self.say(self.spoken("Happy Chuseok!", "즐거운 한가위 보내!")),
             Occasion::HangulDay if self.speaks_korean() => self.say("한글은 그리는 것도 재밌어!"),
@@ -357,7 +418,10 @@ impl super::World {
             }
             self.new_year_at = Some(self.time);
         }
-        if occasion == Some(Occasion::Birthday) {
+        if matches!(
+            occasion,
+            Some(Occasion::Birthday | Occasion::ViewerBirthday)
+        ) {
             self.ghost.mood = self.feeling();
         }
         self.calendar_at = Some(self.date);

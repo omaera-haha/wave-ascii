@@ -80,6 +80,8 @@ pub fn observe(world: &World) -> Value {
         }).unwrap_or_else(|| "no ghost friend visiting just now".to_owned()),
         "viewer": viewer(world),
         "viewer_language": if world.speaks_korean() { "the viewer speaks Korean" } else { "not known yet" },
+        "viewer_facts": world.life.viewer.words(),
+        "asking_viewer": world.asking.map(|(topic, _)| format!("waiting for an answer about their {}", topic.name())),
         "viewer_name": world.life.viewer_name.as_ref().map_or_else(|| "not known yet".to_owned(), |name| format!("The viewer's name is {name}.")),
         "bond_with_viewer": world.life.bond_words(),
         "visiting_routine": world.life.usual_time().map(|usual| {

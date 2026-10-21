@@ -326,7 +326,13 @@ fn accessory_shade(point: Vec2, pixel: f32, accessory: Accessory, aura: Aura) ->
             let knit = 0.9 + 0.1 * (local.y * 140.0 + (local.x * 100.0).sin()).cos();
             (
                 collar.min(first).min(second),
-                palette[usize::from(color).min(2)] * knit,
+                if color < 3 {
+                    palette[usize::from(color)]
+                } else {
+                    crate::world::acquaintance::Color::ALL
+                        .get(usize::from(color - 3))
+                        .map_or(palette[0], |color| color.rgb())
+                } * knit,
             )
         }
         Accessory::Feather => {

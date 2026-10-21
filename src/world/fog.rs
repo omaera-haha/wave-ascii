@@ -71,6 +71,10 @@ impl Drawing {
         }
     }
 
+    pub(super) fn awaiting_name(&self, time: f64) -> bool {
+        self.naming && self.seen_at.is_some_and(|at| time - at <= 60.0)
+    }
+
     pub(super) fn close_naming(&mut self) {
         self.naming = false;
     }
@@ -1038,5 +1042,30 @@ mod tests {
             world.ghost.speech.as_ref().unwrap().text,
             "고양이! 기억할게."
         );
+    }
+}
+
+#[cfg(test)]
+mod acquaintance_tests {
+    use super::*;
+
+    #[test]
+    fn a_pending_picture_name_keeps_the_ghost_from_asking_about_the_viewer() {
+        let mut world = World::new(5, 12.0);
+        world.time = 20.0;
+        world.life.bond = 0.4;
+        world.last_message_at = Some(15.0);
+        world.notice_viewer();
+        world.begin(Activity::Visit);
+        world.ghost.plan.arrived = Some(10.0);
+        let mut drawing = Drawing::new(Vec2::ZERO, world.time);
+        drawing.naming = true;
+        drawing.seen_at = Some(world.time);
+        world.drawing = Some(drawing);
+        world.ask_viewer();
+        assert!(world.asking.is_none());
+        world.drawing.as_mut().unwrap().close_naming();
+        world.ask_viewer();
+        assert!(world.asking.is_some());
     }
 }
