@@ -753,6 +753,23 @@ impl World {
         {
             return None;
         }
+        // A request or a question of its own isn't the answer; the window
+        // stays open for the reply that is.
+        if super::question::ask(text).is_some()
+            || super::focus::requested(text).is_some()
+            || super::breeze::requested(text).is_some()
+            || super::music::lesson(text).is_some()
+            || super::music::lullaby_requested(text)
+            || super::music::own_song_requested(text)
+            || super::puzzle::requested(text)
+            || super::cranes::requested(text)
+            || super::quirks::yawn_message(text)
+            || super::vocabulary::introduced_name(text).is_some()
+            || super::vocabulary::given_name(text).is_some()
+        {
+            self.agenda_answer = Some((errand, day, until));
+            return None;
+        }
         let outcome = outcome(text, &self.ghost.name);
         let engagement = self
             .life
@@ -817,6 +834,32 @@ fn outcome(text: &str, name: &str) -> Outcome {
         .filter(|character| !character.is_whitespace())
         .collect();
     let tone = super::vocabulary::read(&text, name).tone;
+    let negator = |word: &str| {
+        matches!(
+            word,
+            "not" | "didnt" | "wasnt" | "isnt" | "dont" | "never" | "couldnt" | "hardly"
+        )
+    };
+    // A negator governs the next word or the one after ("not too bad",
+    // "didn't go well").
+    let negates = |matching: fn(&str) -> bool| {
+        tokens.iter().enumerate().any(|(index, word)| {
+            negator(word)
+                && tokens[index + 1..]
+                    .iter()
+                    .take(2)
+                    .any(|next| matching(next))
+        })
+    };
+    // "Not bad" is a modest yes; "didn't go well" is a no.
+    if negates(|word| matches!(word, "bad" | "badly" | "terrible" | "awful"))
+        || compact.contains("나쁘지않")
+    {
+        return Outcome::Well;
+    }
+    if negates(|word| matches!(word, "good" | "great" | "well" | "pass" | "passed")) {
+        return Outcome::Badly;
+    }
     if tokens
         .iter()
         .any(|word| matches!(*word, "no" | "nope" | "아니" | "아니야"))
@@ -826,7 +869,7 @@ fn outcome(text: &str, name: &str) -> Outcome {
         || tokens
             .windows(2)
             .any(|part| matches!(part, ["not", "well" | "good" | "great"] | ["didnt", "pass"]))
-        || ["망했", "떨어졌", "별로였", "못봤", "안됐", "안좋"]
+        || ["망했", "떨어졌", "별로였", "못봤", "못했", "안됐", "안좋"]
             .iter()
             .any(|word| compact.contains(word))
     {
@@ -884,6 +927,43 @@ mod tests {
         world.follow_up_agenda();
         assert!(world.awaiting_plan_answer());
         world
+    }
+
+    #[test]
+    fn a_request_while_an_answer_waits_goes_to_its_own_handler() {
+        let mut world = fresh_world();
+        world.agenda_answer = Some((Errand::Exam, today().to_string(), world.time + 180.0));
+        world.life.agenda.push(Engagement {
+            errand: Errand::Exam,
+            day: today().to_string(),
+            said: today().to_string(),
+            wished: true,
+            asked: true,
+            asked_on: Some(today().to_string()),
+            outcome: None,
+        });
+        world.hear("tell me a story");
+        assert!(world.telling.is_some());
+        assert!(world.awaiting_plan_answer());
+        world.telling = None;
+        let heard = world.hear("It didn't go well");
+        assert_eq!(
+            heard.understanding,
+            Understanding::PlanAnswered {
+                errand: Errand::Exam,
+                went_well: Some(false)
+            }
+        );
+    }
+
+    #[test]
+    fn a_break_suggestion_waits_while_a_plan_answer_is_pending() {
+        let mut world = fresh_world();
+        world.agenda_answer = Some((Errand::Exam, today().to_string(), world.time + 180.0));
+        assert!(!world.rhythm_quiet());
+        world.agenda_answer = None;
+        world.rhythm.reply_until = Some(world.time + 60.0);
+        assert!(!world.quiet_for_question());
     }
 
     #[test]
@@ -1429,6 +1509,18 @@ mod tests {
             assert_eq!(outcome(text, "Pip"), Outcome::Badly, "{text}");
         }
         assert_eq!(outcome("I'm not sure yet", "Pip"), Outcome::Unclear);
+        for text in [
+            "It didn't go well",
+            "it wasnt good",
+            "I didn't pass",
+            "not so great",
+        ] {
+            assert_eq!(outcome(text, "Pip"), Outcome::Badly, "{text}");
+        }
+        for text in ["not bad!", "it wasn't too bad", "나쁘지 않았어"] {
+            assert_eq!(outcome(text, "Pip"), Outcome::Well, "{text}");
+        }
+        assert_eq!(outcome("잘 못했어", "Pip"), Outcome::Badly);
     }
 
     #[test]

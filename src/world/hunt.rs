@@ -203,7 +203,12 @@ impl World {
         self.begin_day();
         self.notice_viewer();
         self.begin(Activity::Float);
+        // Answers waiting from before belong to that conversation, not
+        // to the game's warmer and colder.
         self.asking = None;
+        self.agenda_answer = None;
+        self.feeling_follow_up = None;
+        self.rhythm.reply_until = None;
         self.ghost.plan.target = self.ghost.position;
         self.ghost.velocity = Vec3::ZERO;
         self.ghost.attention = None;
@@ -527,6 +532,21 @@ mod tests {
             world.ghost.plan.target
         );
         world.life.total.fastest_treasure.unwrap()
+    }
+
+    #[test]
+    fn hiding_closes_earlier_answer_windows_and_a_lesson_waits_for_the_hunt() {
+        let mut world = World::new(1, 12.0);
+        world.rhythm.reply_until = Some(world.time + 100.0);
+        world.start_hiding().unwrap();
+        assert!(!world.awaiting_break_reply());
+        world.hide_treasure(glam::Vec3::new(-1.8, 0.0, -1.2));
+        world.hear("do re mi fa sol");
+        assert_eq!(world.ghost.plan.activity, Activity::Seek);
+        world.cancel_hunt();
+        world.step(0.1);
+        world.step(0.1);
+        assert_eq!(world.ghost.plan.activity, Activity::Music);
     }
 
     #[test]

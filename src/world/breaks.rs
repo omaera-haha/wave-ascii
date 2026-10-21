@@ -18,7 +18,7 @@ pub struct Rhythm {
     skipped_break_at: Option<f64>,
     last_suggested: Option<(bool, f64)>,
     next_stretch_at: f64,
-    reply_until: Option<f64>,
+    pub(super) reply_until: Option<f64>,
     pending_long_at: Option<f64>,
     welcome_at: Option<f64>,
     stretch_waiting: bool,
@@ -151,7 +151,7 @@ impl World {
         }
     }
 
-    fn rhythm_quiet(&self) -> bool {
+    pub(super) fn rhythm_quiet(&self) -> bool {
         self.focus.is_none()
             && self.viewer_present()
             && self.telling.is_none()
@@ -163,7 +163,16 @@ impl World {
                 .is_some_and(|game| game.outcome.is_none())
             && self.asking.is_none()
             && self.feeling_follow_up.is_none()
+            && !self.awaiting_plan_answer()
+            && self.hunt.is_none()
             && self.comforting.is_none()
+    }
+
+    /// Whether a break suggestion still waits for the viewer's reply.
+    pub(super) fn awaiting_break_reply(&self) -> bool {
+        self.rhythm
+            .reply_until
+            .is_some_and(|until| self.time <= until)
     }
 
     fn suggestion_available(&mut self) -> bool {

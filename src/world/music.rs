@@ -439,7 +439,12 @@ impl World {
     }
 
     fn queue_music_request(&mut self, tune: Tune) {
-        if self.focus.is_none() && self.ghost.asleep < 0.3 && self.telling.is_none() {
+        // A treasure hunt, like work, keeps the lesson for afterwards.
+        if self.focus.is_none()
+            && self.hunt.is_none()
+            && self.ghost.asleep < 0.3
+            && self.telling.is_none()
+        {
             self.music = None;
             self.begin(Activity::Music);
             self.compose_on_arrival = false;
@@ -767,6 +772,7 @@ impl World {
     pub(super) fn advance_music(&mut self) {
         if self.pending_tune.is_some()
             && self.focus.is_none()
+            && self.hunt.is_none()
             && self.ghost.asleep < 0.3
             && self.telling.is_none()
             && (self.ghost.plan.done

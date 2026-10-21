@@ -671,6 +671,8 @@ impl World {
             || self.awaiting_plan_answer()
             || self.feeling_follow_up.is_some()
             || self.asking.is_some()
+            || self.awaiting_break_reply()
+            || self.hunt.is_some()
             || self.ghost.asleep >= 0.3
             || self.focus.is_some()
             || self.telling.is_some()

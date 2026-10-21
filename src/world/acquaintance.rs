@@ -632,6 +632,8 @@ impl World {
                 .is_some_and(|drawing| drawing.awaiting_name(self.time))
             && self.sebae.is_none()
             && self.pending_wish.is_none()
+            && self.hunt.is_none()
+            && !self.awaiting_break_reply()
     }
 
     pub(super) fn ask_viewer(&mut self) {
