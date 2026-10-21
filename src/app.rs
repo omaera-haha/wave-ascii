@@ -1384,7 +1384,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..3600 {
+        for _ in 0..5200 {
             app.advance(0.05);
         }
         assert!(

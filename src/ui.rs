@@ -1075,6 +1075,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         }
         header.extend(labeled("Friend", words));
     }
+    header.extend(labeled("Books", life.books.words()));
     let garden = labeled("Garden", app.world.garden_words());
     let sky = if life.constellations.is_empty() {
         Vec::new()

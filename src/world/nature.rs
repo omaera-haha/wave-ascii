@@ -99,6 +99,7 @@ impl Nature {
             Activity::Explore | Activity::Window | Activity::Build | Activity::Look => {
                 signed(self.curious)
             }
+            Activity::Read => (signed(self.curious) + signed(self.tender)) / 2.0,
             Activity::Rest => signed(self.sleepy),
             Activity::Tend | Activity::Doodle => signed(self.tender),
             Activity::Visit => {

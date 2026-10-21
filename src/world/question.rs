@@ -35,6 +35,9 @@ pub enum Question {
     Story,
     Away,
     Constellations,
+    Reading,
+    FavoriteBook,
+    ReadAloud,
 }
 
 impl Question {
@@ -47,6 +50,26 @@ impl Question {
 // lowercased and without apostrophes. More particular questions come first,
 // so "are you tired" is not taken for "are you okay".
 const ENGLISH: &[(Question, &[&[&str]])] = &[
+    (
+        Question::ReadAloud,
+        &[&["read", "to", "me"], &["read", "me", "a", "book"]],
+    ),
+    (
+        Question::Reading,
+        &[
+            &["what", "are", "you", "reading"],
+            &["what", "book", "are", "you", "reading"],
+        ],
+    ),
+    (
+        Question::FavoriteBook,
+        &[
+            &["whats", "your", "favorite", "book"],
+            &["what", "is", "your", "favorite", "book"],
+            &["whats", "your", "favourite", "book"],
+            &["what", "is", "your", "favourite", "book"],
+        ],
+    ),
     (
         Question::Story,
         &[
@@ -240,6 +263,21 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // and whether the message must end in a question mark, for words that are
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
+    (
+        Question::ReadAloud,
+        &["책읽어줘", "책읽어줄래", "책읽어주라"],
+        false,
+    ),
+    (
+        Question::Reading,
+        &["무슨책읽", "어떤책읽", "뭐읽어"],
+        false,
+    ),
+    (
+        Question::FavoriteBook,
+        &["제일좋아하는책", "가장좋아하는책"],
+        false,
+    ),
     (
         Question::Story,
         &[
