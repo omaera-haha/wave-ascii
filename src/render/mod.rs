@@ -9,9 +9,9 @@ use glam::{Vec2, Vec3};
 use crate::face::Face;
 use crate::frame::{Frame, Grid, Shade};
 use crate::sdf::{coverage, mix, smoothstep};
-use crate::world::{Ball, ROOM_MAX, ROOM_MIN, World};
+use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
 use ghost::{Aura, BOUNDS, Pose};
-use shapes::{Furniture, Material, sphere_span};
+use shapes::{Furniture, Material, decoration_light, sphere_span};
 
 /// World units per unit of the ghost's own space.
 pub const GHOST_SCALE: f32 = 0.45;
@@ -162,11 +162,14 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     }
     let lights = Lights::of(scene);
     let world = scene.world;
-    let furniture = [
+    let mut furniture = vec![
         Furniture::Lamp(world.lamp),
         Furniture::Plant(world.plant),
         Furniture::Nook(world.nook),
     ];
+    if let Some(decoration) = world.decoration() {
+        furniture.push(Furniture::Decoration(decoration, world.time));
+    }
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
     Frame::sample(grid, |point| {
@@ -179,7 +182,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
 fn trace(
     scene: &Scene,
     lights: &Lights,
-    furniture: &[Furniture; 3],
+    furniture: &[Furniture],
     direction: Vec3,
     spread: f32,
 ) -> Vec3 {
@@ -207,6 +210,7 @@ fn trace(
             let normal = piece.normal(point);
             let albedo = material.albedo(&world.plant);
             color = albedo * lights.at(point, normal)
+                + material.emission(world.time, &world.plant)
                 + match material {
                     Material::Bulb if world.lamp.on => albedo * 1.4,
                     Material::Lampshade if world.lamp.on => LAMP_LIGHT * 0.35,
@@ -249,7 +253,7 @@ fn trace(
 
     // Light motes and the lamp's bulb glow in front of whatever is behind.
     for mote in &world.motes {
-        color += MOTE_COLOR
+        color += mote_color(world)
             * sprite(eye, direction, mote.position, limit, spread, 0.035)
             * mote.glow(world.time);
     }
@@ -258,6 +262,14 @@ fn trace(
             LAMP_LIGHT * sprite(eye, direction, world.lamp.bulb(), limit + 0.3, spread, 0.12) * 0.3;
     }
     color
+}
+
+fn mote_color(world: &World) -> Vec3 {
+    if world.occasion() == Some(Occasion::Valentine) {
+        Vec3::new(1.0, 0.5, 0.75)
+    } else {
+        MOTE_COLOR
+    }
 }
 
 // How far along the ray it meets the glass, if it does.
@@ -457,10 +469,17 @@ impl Lights {
                 * scene.aura.visibility.clamp(0.0, 1.0),
             falloff: 5.0,
         });
+        if let Some(decoration) = world.decoration() {
+            points.push(Light {
+                position: Decoration::POSITION + Vec3::Y * decoration.height() * 0.65,
+                color: decoration_light(decoration, world.time),
+                falloff: 3.0,
+            });
+        }
         for mote in &world.motes {
             points.push(Light {
                 position: mote.position,
-                color: MOTE_COLOR * 0.25 * mote.glow(world.time),
+                color: mote_color(world) * 0.25 * mote.glow(world.time),
                 falloff: 10.0,
             });
         }
@@ -650,6 +669,60 @@ mod tests {
                         },
                         pose: Pose::new(time, 0.0, 0.0, 0.0),
                     };
+                    let frame = render(&scene, grid, 1);
+                    for row in 0..frame.height() {
+                        for column in 0..frame.width() {
+                            let shade = frame.shade(column, row);
+                            assert!(shade.brightness.is_finite());
+                            assert!(shade.color.is_finite());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn occasions_with_each_decoration_and_fireworks_render_finite_frames() {
+        use jiff::civil::Date;
+
+        let grid = Grid::cells(48, 18);
+        let mut world = World::new(1, 23.75);
+        for (date, birthday) in [
+            (Date::constant(2026, 10, 31), None),
+            (Date::constant(2026, 12, 24), None),
+            (Date::constant(2026, 12, 31), None),
+            (Date::constant(2027, 1, 1), None),
+            (Date::constant(2027, 2, 14), None),
+            (Date::constant(2027, 3, 1), Some(Date::constant(2026, 3, 1))),
+            (Date::constant(2032, 3, 1), Some(Date::constant(2026, 3, 1))),
+        ] {
+            world.date = date;
+            world.birthday = birthday;
+            for time in [0.5, 1.0, 4.2, 1e9, f64::MAX] {
+                world.time = time;
+                for yaw in [0.0, PI * 0.5, PI] {
+                    let scene = Scene {
+                        world: &world,
+                        outside: window::Outside {
+                            fireworks: world.fireworks(),
+                            ..window::Outside::clear(world.hour, time)
+                        },
+                        view: Camera {
+                            yaw,
+                            ..Camera::default()
+                        }
+                        .view(grid),
+                        face: Face::REST,
+                        aura: Aura {
+                            color: Vec3::ONE,
+                            visibility: 1.0,
+                            brightness: 0.7,
+                            beat: 1.0,
+                        },
+                        pose: Pose::new(0.0, 0.0, 0.0, 0.0),
+                    };
+                    assert!(window::light_through(&scene.outside).is_finite());
                     let frame = render(&scene, grid, 1);
                     for row in 0..frame.height() {
                         for column in 0..frame.width() {

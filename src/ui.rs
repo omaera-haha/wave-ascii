@@ -865,6 +865,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ("plant watered", total.waterings, "flowers", total.blooms),
         ("naps", total.naps, "rainbows seen", total.rainbows),
         ("messages from you", total.heard, "pokes", total.pokes),
+        (
+            "storms sat out",
+            total.storms,
+            "celebrations",
+            total.celebrations,
+        ),
     ] {
         counts.push((
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),

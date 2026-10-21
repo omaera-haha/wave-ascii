@@ -20,6 +20,7 @@ pub struct Outside {
     pub snow: f32,
     pub snow_cover: f32,
     pub moon_phase: f32,
+    pub fireworks: bool,
     pub time: f64,
 }
 
@@ -37,6 +38,7 @@ impl Outside {
             snow: 0.0,
             snow_cover: 0.0,
             moon_phase: 0.5,
+            fireworks: false,
             time,
         }
     }
@@ -68,7 +70,7 @@ pub fn window(point: Vec2, footprint: f32, outside: &Outside) -> Option<WindowHi
 }
 
 /// The sky's broad light, kept separate from the sun, stars, and rain streaks
-/// so tiny animated details do not make the room's illumination flicker.
+/// so tiny animated details stay steady. Fireworks briefly tint this light.
 pub fn light_through(outside: &Outside) -> Vec3 {
     let sky = Sky::at_hour(outside.hour);
     let noon = (1.0 - (outside.hour.rem_euclid(24.0) - 12.0).abs() / 6.0).max(0.0);
@@ -78,6 +80,7 @@ pub fn light_through(outside: &Outside) -> Vec3 {
     weather_color((sky.horizon + sky.zenith) * 0.5, cloud) * strength * (1.0 - storm * 0.35)
         + Vec3::new(0.055, 0.075, 0.1) * outside.snow_cover.clamp(0.0, 1.0) * sky.day
         + Vec3::new(1.4, 1.7, 2.2) * outside.flash.clamp(0.0, 1.0)
+        + firework(outside).map_or(Vec3::ZERO, |burst| burst.color * burst.brightness() * 0.5)
 }
 
 struct Sky {
@@ -169,6 +172,10 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
         .lerp(Vec3::new(0.86, 0.57, 0.63), sky.twilight);
     color = weather_color(color.lerp(cloud_color, clouds * 0.6), cloud) * (1.0 - storm * 0.35);
     color = color.lerp(Vec3::new(0.75, 0.86, 1.0), flash * 0.85);
+
+    if let Some(burst) = firework(outside) {
+        color += burst.sparks(coordinates, footprint);
+    }
 
     let land = match outside.season {
         Season::Spring => [
@@ -288,6 +295,68 @@ fn lightning(coordinates: Vec2, footprint: f32, last_flash: f64) -> f32 {
         .min(capsule(coordinates, points[2], branch, 0.0015))
         .min(capsule(coordinates, branch, end, 0.001));
     coverage(distance, footprint * 0.5) + 0.2 * coverage(distance - 0.008, footprint * 0.5)
+}
+
+struct Firework {
+    center: Vec2,
+    color: Vec3,
+    age: f32,
+    seed: f32,
+}
+
+impl Firework {
+    fn brightness(&self) -> f32 {
+        smoothstep(0.0, 0.12, self.age) * (1.0 - self.age / 1.8).max(0.0).powi(2)
+    }
+
+    fn sparks(&self, point: Vec2, footprint: f32) -> Vec3 {
+        let mut light = 0.0;
+        for index in 0..14 {
+            let seed = Vec2::new(self.seed, index as f32);
+            let angle = index as f32 * TAU / 14.0 + hash(seed) * 0.18;
+            let velocity =
+                Vec2::new(angle.cos(), angle.sin()) * (0.08 + 0.07 * hash(seed + Vec2::Y));
+            let position = |age: f32| self.center + velocity * age - Vec2::Y * 0.045 * age * age;
+            let start = position((self.age - 0.08).max(0.0));
+            let end = position(self.age);
+            let distance = if start.distance_squared(end) > 1e-12 {
+                capsule(point, start, end, 0.0025)
+            } else {
+                point.distance(end) - 0.0025
+            };
+            light += coverage(distance, footprint * 0.5);
+        }
+        self.color * light * self.brightness() * 1.8
+    }
+}
+
+// Each time slot holds a burst with its own position, color, and sparks.
+// The window and its room light share the same burst and fading.
+fn firework(outside: &Outside) -> Option<Firework> {
+    if !outside.fireworks || (6.5..19.5).contains(&outside.hour) {
+        return None;
+    }
+    let time = phase(outside.time, 1.0, 2048.0);
+    let slot = (time / 3.2).floor();
+    let age = time - slot * 3.2 - hash(Vec2::new(slot, 5.0)) * 0.8;
+    if !(0.0..1.8).contains(&age) {
+        return None;
+    }
+    let colors = [
+        Vec3::new(1.0, 0.5, 0.4),
+        Vec3::new(0.45, 0.8, 1.0),
+        Vec3::new(1.0, 0.85, 0.35),
+        Vec3::new(0.8, 0.55, 1.0),
+    ];
+    Some(Firework {
+        center: Vec2::new(
+            0.2 + 0.6 * hash(Vec2::new(slot, 1.0)),
+            0.57 + 0.28 * hash(Vec2::new(slot, 2.0)),
+        ),
+        color: colors[(hash(Vec2::new(slot, 3.0)) * colors.len() as f32) as usize % colors.len()],
+        age,
+        seed: slot,
+    })
 }
 
 fn tree(
@@ -662,5 +731,41 @@ mod tests {
             ..Outside::clear(12.0, 0.0)
         };
         assert!(light_through(&rainy).element_sum() < noon.element_sum());
+    }
+
+    #[test]
+    fn fireworks_and_their_room_light_stay_finite_at_burst_boundaries_and_old_times() {
+        for hour in [0.0, 0.999, 12.0, 23.5, 23.999] {
+            for time in [-1e6, 0.0, 0.8, 1.799, 1.8, 3.2, 2048.0, 1e9, f64::MAX] {
+                let outside = Outside {
+                    fireworks: true,
+                    ..Outside::clear(hour, time)
+                };
+                assert!(light_through(&outside).is_finite());
+                for column in 0..=20 {
+                    for row in 0..=16 {
+                        let sample = window(
+                            point(column as f32 / 20.0, row as f32 / 16.0),
+                            0.0,
+                            &outside,
+                        )
+                        .unwrap();
+                        assert!(sample.sky.is_finite());
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn a_spark_with_no_travel_yet_has_a_finite_distance() {
+        for age in [0.0, 1e-8, 1e-6, 1e-4, 0.1] {
+            let burst = Firework {
+                center: Vec2::splat(0.5),
+                color: Vec3::ONE,
+                age,
+                seed: 0.0,
+            };
+            assert!(burst.sparks(Vec2::splat(0.5), 0.0).is_finite());
+        }
     }
 }
