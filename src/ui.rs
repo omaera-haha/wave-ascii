@@ -1,5 +1,5 @@
 use glam::Vec3;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Mode, mood_color};
 use crate::canvas::{Canvas, Cell};
@@ -808,6 +808,35 @@ fn life_panel(app: &App, screen: &mut Canvas) {
 
 /// The life panel's lines for a screen of `columns` by `rows`. Sections that
 /// don't fit are left out, the least needed first.
+// The viewer's words the ghost knows, the most heard first, as many as fit
+// a line of the life panel.
+fn known_words(life: &crate::world::Life, columns: usize) -> String {
+    let known = life.vocabulary.known();
+    if known.is_empty() {
+        return "none of your words yet".to_owned();
+    }
+    let room = columns.saturating_sub(24).clamp(16, 52);
+    let mut line = String::new();
+    for (shown, (word, _)) in known.iter().enumerate() {
+        let more = format!(" and {} more", known.len() - shown);
+        let next = if line.is_empty() {
+            format!("“{word}”")
+        } else {
+            format!("{line}, “{word}”")
+        };
+        let rest = if shown + 1 < known.len() {
+            more.len()
+        } else {
+            0
+        };
+        if !line.is_empty() && UnicodeWidthStr::width(next.as_str()) + rest > room {
+            return line + &more;
+        }
+        line = next;
+    }
+    line
+}
+
 fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     let life = &app.world.life;
     let ghost = &app.world.ghost;
@@ -847,6 +876,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             ),
             TEXT,
         ),
+        (format!("Knows     {}", known_words(life, columns)), TEXT),
     ];
     let total = &life.total;
     let mut counts = vec![

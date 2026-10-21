@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind, Occasion};
+use super::{Activity, EventKind, Occasion, Vocabulary};
 
 /// Days of the diary kept.
 const DAYS_KEPT: usize = 60;
@@ -21,6 +21,16 @@ const HOURS_MARKED: [(f64, &str); 3] = [
     (10.0, "We've spent ten hours together."),
     (100.0, "We've spent a hundred hours together."),
 ];
+/// Numbers of the viewer's words it knows that the ghost marks, after the
+/// first.
+const WORDS_MARKED: [(usize, &str); 4] = [
+    (10, "I know ten of your words now."),
+    (25, "I know twenty-five of your words now."),
+    (50, "I know fifty of your words now."),
+    (100, "I know a hundred of your words now."),
+];
+/// Words learned in a day that the diary names.
+const WORDS_NAMED: usize = 4;
 /// Light motes eaten that the ghost marks, after the first.
 const MOTES_MARKED: [(u32, &str); 4] = [
     (50, "Ate my fiftieth light mote."),
@@ -69,6 +79,12 @@ pub struct Tally {
     pub rainbows: u32,
     /// Messages the viewer typed to it.
     pub heard: u32,
+    /// Times the viewer sounded pleased with it.
+    pub praises: u32,
+    /// Times it worked out what one of the viewer's words means.
+    pub learned: u32,
+    /// The first few words it worked out, kept for the diary.
+    pub words: Vec<String>,
     pub pokes: u32,
     /// Seconds the viewer was around, kept in double precision so years of
     /// frames still add up.
@@ -112,6 +128,13 @@ impl Tally {
             EventKind::SnowStarted => self.snowfalls += 1,
             EventKind::Noticed(thing) if thing.starts_with("the rainbow") => self.rainbows += 1,
             EventKind::Heard(_) => self.heard += 1,
+            EventKind::Praised => self.praises += 1,
+            EventKind::LearnedWord { word, .. } => {
+                self.learned += 1;
+                if self.words.len() < WORDS_NAMED && !self.words.contains(word) {
+                    self.words.push(word.clone());
+                }
+            }
             EventKind::Poked { .. } => self.pokes += 1,
             _ => {}
         }
@@ -178,6 +201,13 @@ impl Tally {
         if self.storms > 0 {
             deeds.push("sat out a thunderstorm".to_owned());
         }
+        if !self.words.is_empty() {
+            let quoted: Vec<String> = self.words.iter().map(|word| format!("“{word}”")).collect();
+            deeds.push(match quoted.as_slice() {
+                [word] => format!("learned what {word} means"),
+                words => format!("learned what {} mean", listed(words)),
+            });
+        }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
             (0, _) => deeds.push("listened to the rain".to_owned()),
@@ -241,6 +271,8 @@ pub struct Life {
     /// Seconds since the viewer was last around, while the app ran and
     /// while it was closed.
     pub alone: f64,
+    /// The viewer's words it has picked up, and what it thinks they mean.
+    pub vocabulary: Vocabulary,
 }
 
 impl Life {
@@ -253,6 +285,7 @@ impl Life {
         let milestone = self.first(kind);
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
+            EventKind::Praised | EventKind::LearnedWord { .. } => 0.005,
             EventKind::Fetched => 0.01,
             EventKind::Found => 0.015,
             EventKind::ViewerArrived => 0.003,
@@ -385,6 +418,7 @@ impl Life {
         if !self.alone.is_finite() || self.alone < 0.0 {
             self.alone = 0.0;
         }
+        self.vocabulary = self.vocabulary.sanitized();
         self
     }
 
@@ -433,6 +467,17 @@ impl Life {
             .to_owned(),
             EventKind::Heard(_) if total.heard == 1 => {
                 "You talked to me for the first time.".to_owned()
+            }
+            EventKind::LearnedWord { word, .. } if total.learned == 1 => {
+                format!("Learned my first word from you: “{word}”.")
+            }
+            EventKind::LearnedWord { .. } => {
+                let known = self.vocabulary.known().len();
+                WORDS_MARKED
+                    .into_iter()
+                    .find(|(count, _)| *count == known)?
+                    .1
+                    .to_owned()
             }
             _ => return None,
         };

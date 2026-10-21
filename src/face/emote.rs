@@ -117,8 +117,17 @@ pub fn puffs(world: &World) -> Vec<Puff> {
     }
 
     if ghost.asleep <= 0.5 {
-        for event in &world.events {
-            if let Some(emote) = reaction(&event.kind, world.life.bond) {
+        for (index, event) in world.events.iter().enumerate() {
+            // What the ghost made of a message says more than having
+            // heard it.
+            let answered = matches!(event.kind, EventKind::Heard(_))
+                && world.events[index + 1..]
+                    .iter()
+                    .take_while(|later| later.time == event.time)
+                    .any(|later| reaction(&later.kind, world.life.bond).is_some());
+            if let Some(emote) = reaction(&event.kind, world.life.bond)
+                && !answered
+            {
                 add(event.time, emote);
             }
         }
@@ -173,6 +182,10 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Tended | EventKind::NudgedBall | EventKind::Danced => Emote::Note,
         EventKind::Doodled(_) if bond >= 0.3 => Emote::Heart,
         EventKind::Doodled(_) => Emote::Note,
+        EventKind::Praised => Emote::Heart,
+        EventKind::Scolded => Emote::Sigh,
+        EventKind::Puzzled(_) => Emote::Question,
+        EventKind::LearnedWord { .. } => Emote::Sparkle,
         EventKind::Heard(_) | EventKind::ViewerArrived if bond >= 0.3 => Emote::Heart,
         EventKind::Heard(_) | EventKind::ViewerArrived => Emote::Alarm,
         _ => return None,

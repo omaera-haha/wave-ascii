@@ -11,6 +11,7 @@ const MEMORIES_SENT: usize = 40;
 const MILESTONES_SENT: usize = 12;
 const DAYS_SENT: usize = 3;
 const REMARKS_SENT: usize = 16;
+const WORDS_SENT: usize = 30;
 
 /// What the ghost makes of its situation after thinking it over. Empty
 /// strings mean "nothing" or "no change".
@@ -38,6 +39,8 @@ The box holds a floor lamp, a potted plant, a ball, a cushion to sleep on, and l
 drift in and that the ghost eats for energy. The person watches from the other side of the glass \
 and can move a pointer over it, poke the ghost, drop light motes in, flick the ball, and type to \
 it. The ghost cannot leave the box or do anything outside it.
+
+The ghost learns the person's words the way a pet does, from what it was doing when it heard them, what the person did next, and whether they sounded pleased; `Words it has learned` lists the ones it knows and what it takes them to mean.
 
 The observation's `sight` is what the ghost sees right now from where it faces; it knows of \
 everything else only from memory. A window in the back wall looks out on hills and the sky, \
@@ -123,6 +126,13 @@ pub fn request(
             .collect()
     };
     let milestones = dated(&life.milestones, MILESTONES_SENT);
+    let words: Vec<String> = life
+        .vocabulary
+        .known()
+        .into_iter()
+        .take(WORDS_SENT)
+        .map(|(word, activity)| format!("“{word}”: {}", activity.doing()))
+        .collect();
     let days = dated(&life.diary, DAYS_SENT);
     let conversation: Vec<String> = conversation
         .iter()
@@ -147,10 +157,11 @@ pub fn request(
             Block::new(SYSTEM),
             block(format!(
                 "What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
-                 Its diary of the last few days:\n{}",
+                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}",
                 bullets(&memories),
                 bullets(&milestones),
-                bullets(&days)
+                bullets(&days),
+                bullets(&words)
             )),
         ],
         messages: vec![Message {
@@ -244,6 +255,9 @@ mod tests {
             }],
             ..Life::default()
         };
+        let mut life = life;
+        life.vocabulary
+            .teach(&["ball".to_owned()], crate::world::Activity::Fetch, 2.0);
         let request = request(
             &json!({"time_of_day": "night"}),
             &memories,
@@ -266,7 +280,12 @@ mod tests {
         assert!(
             request.system[1]
                 .text
-                .ends_with("diary of the last few days:\n- 2026-10-20: Took a nap.")
+                .contains("diary of the last few days:\n- 2026-10-20: Took a nap.")
+        );
+        assert!(
+            request.system[1]
+                .text
+                .ends_with("Words it has learned:\n- “ball”: fetching the ball for the viewer")
         );
         let content = &request.messages[0].content;
         assert!(content[0].text.contains("- ghost: Hello!"));
