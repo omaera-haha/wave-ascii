@@ -202,6 +202,9 @@ mod tests {
                 world.life.keepsakes.push(super::super::Keepsake::Acorn);
                 world.notice_viewer();
             }
+            if activity == Activity::Tidy {
+                world.hour = 22.0;
+            }
             world.begin(activity);
             wiggle(&mut world);
             assert_eq!(

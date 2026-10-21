@@ -51,6 +51,7 @@ mod sleep;
 pub mod stars;
 mod story;
 mod things;
+pub mod tidy;
 pub mod upbringing;
 pub mod visitor;
 mod vocabulary;
@@ -362,6 +363,10 @@ pub enum EventKind {
         name: String,
     },
     ShowedThing(show::Kind),
+    Tidied {
+        blocks: u32,
+        ball: bool,
+    },
 }
 
 impl EventKind {
@@ -632,6 +637,13 @@ impl EventKind {
             ),
             Self::Pinned { kind, name } => kind.pinned(name),
             Self::ShowedThing(kind) => format!("showed the viewer my {}", kind.name()),
+            Self::Tidied { blocks, ball } => match (*blocks > 0, *ball) {
+                (true, true) => "tidied up the blocks and the ball before bed",
+                (true, false) => "tidied up the blocks before bed",
+                (false, true) => "put the ball beside the cushion before bed",
+                (false, false) => "looked around the tidy room",
+            }
+            .to_owned(),
         }
     }
 }
@@ -718,6 +730,7 @@ pub enum Understanding {
         accepted: bool,
     },
     Showing,
+    Tidying,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -937,6 +950,9 @@ pub struct World {
     pending_pins: Vec<gallery::Pin>,
     pub showing: Option<show::Showing>,
     show_praise_until: Option<f64>,
+    tidying: Option<tidy::Tidying>,
+    pending_tidy: bool,
+    tidy_rest: bool,
 }
 
 impl World {
@@ -1090,6 +1106,9 @@ impl World {
             pending_pins: Vec::new(),
             showing: None,
             show_praise_until: None,
+            tidying: None,
+            pending_tidy: false,
+            tidy_rest: false,
         };
         world.scatter_blocks();
         world
@@ -1125,6 +1144,7 @@ impl World {
         self.follow_up_agenda();
         self.advance_rhythm();
         self.offer_show(seconds.max(0.0));
+        self.resume_tidy_request();
     }
 
     fn advance(&mut self, seconds: f32) {
@@ -1417,7 +1437,12 @@ impl World {
                 Activity::Build => {
                     self.ghost.asleep < 0.3
                         && self.ghost.needs.energy > 0.3
-                        && self.blocks.iter().filter(|block| block.on_floor()).count() >= 2
+                        && self
+                            .blocks
+                            .iter()
+                            .filter(|block| block.on_floor() || block.tidy.is_some())
+                            .count()
+                            >= 2
                         && self.tower_height() < self.blocks.len()
                 }
                 Activity::Friend => self.friend_is_open(),
@@ -1440,6 +1465,7 @@ impl World {
                 }
                 Activity::Pin => self.pin_is_open(),
                 Activity::Show => self.show_is_open(),
+                Activity::Tidy => self.tidy_is_open(),
             })
             .collect()
     }
@@ -1568,6 +1594,7 @@ impl World {
 
             Activity::Fold => "Fold a colored paper crane for the viewer, then hang it on the ceiling garland. A quiet pastime, a few cranes each day.".to_owned(),
             Activity::Show => "Fetch a treasure from your life, show it at the glass, tell its little story, and put it back. Only during a quiet visit.".to_owned(),
+            Activity::Tidy => "Gather the loose blocks into neat corner stacks and put the ball beside the cushion before bed. Leave a standing tower alone.".to_owned(),
         }
     }
 
@@ -1585,6 +1612,9 @@ impl World {
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
         if activity == Activity::Show && !self.show_can_begin() {
+            return;
+        }
+        if activity == Activity::Tidy && !self.may_begin_tidy() {
             return;
         }
         if activity == Activity::Bubbles && !self.bubbles_are_open() {
@@ -1682,6 +1712,8 @@ impl World {
         self.drop_ball();
         self.drop_block();
         self.building = None;
+        self.tidying = None;
+        self.tidy_rest = false;
         if let Some(friend) = &mut self.friend {
             friend.game = None;
         }
@@ -1780,6 +1812,7 @@ impl World {
             Activity::Bubbles => self.bubble_spot(),
             Activity::Pin => gallery::APPROACH,
             Activity::Show => position,
+            Activity::Tidy => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         if activity == Activity::Explore
@@ -1843,6 +1876,9 @@ impl World {
         }
         if activity == Activity::Show {
             self.begin_show();
+        }
+        if activity == Activity::Tidy {
+            self.begin_tidy();
         }
         self.record(EventKind::Began(activity));
     }
@@ -2081,7 +2117,7 @@ impl World {
         let heard = self.hear_message(text);
         if heard.tone == Some(Tone::Farewell) {
             self.goodnight_together();
-        } else {
+        } else if heard.understanding != Understanding::Tidying {
             self.notice_late_night(heard.korean || self.speaks_korean());
         }
         heard
@@ -2184,6 +2220,12 @@ impl World {
         if introduction.is_none()
             && naming.is_none()
             && let Some(heard) = self.hear_bubbles(text, korean)
+        {
+            return heard;
+        }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_tidy(text, korean)
         {
             return heard;
         }
@@ -2930,7 +2972,11 @@ impl World {
         let waiting = self.telling.is_some()
             || matches!(
                 self.ghost.plan.activity,
-                Activity::Wait | Activity::Company | Activity::Seek | Activity::Show
+                Activity::Wait
+                    | Activity::Company
+                    | Activity::Seek
+                    | Activity::Show
+                    | Activity::Tidy
             )
             || (self.ghost.plan.activity == Activity::Visit && self.asking.is_some())
             || (self.ghost.plan.activity == Activity::Fold && self.ghost.plan.count > 0)
@@ -3086,7 +3132,7 @@ impl World {
                     }
                     let overnight = self.ghost.plan.overnight;
                     let rested = if overnight {
-                        !self.bedtime()
+                        !self.bedtime() && self.hour < tidy::EVENING_HOUR
                     } else {
                         self.ghost.needs.energy >= 0.98
                     };
@@ -3256,8 +3302,13 @@ impl World {
             Activity::Pin => look = self.carry_out_pin(),
             Activity::Explore => look = self.visit_gallery(),
             Activity::Show => look = self.carry_out_show(),
+            Activity::Tidy => look = self.carry_out_tidy(),
         }
         self.ghost.look = look;
+        if self.tidy_rest && self.ghost.plan.activity == Activity::Lamp && self.ghost.plan.done {
+            self.begin(Activity::Rest);
+            self.ghost.plan.overnight = true;
+        }
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
             self.begin(Activity::Rest);
             self.ghost.plan.count = 1;
@@ -3335,6 +3386,15 @@ impl World {
                 blocks::EDGE,
                 self.tower_height() as f32 * blocks::EDGE + 0.36,
             )
+        });
+        let tidy_stacks = [0, 1].map(|index| {
+            let height = self.tidy_height(index);
+            (height > 0 && !matches!(self.ghost.plan.activity, Activity::Tidy | Activity::Build))
+                .then_some((
+                    tidy::SPOTS[index],
+                    blocks::EDGE,
+                    height as f32 * blocks::EDGE + 0.36,
+                ))
         });
         let size = self.size();
         let ghost = &mut self.ghost;
@@ -3420,7 +3480,12 @@ impl World {
                 decoration.height() + 0.3,
             )
         });
-        for (center, radius, top) in obstacles.into_iter().chain(decoration).chain(tower) {
+        for (center, radius, top) in obstacles
+            .into_iter()
+            .chain(decoration)
+            .chain(tower)
+            .chain(tidy_stacks.into_iter().flatten())
+        {
             let offset = flat(ghost.position - center);
             // Hiding tucks the ghost closer behind furniture than its
             // usual steering allows, especially beside the back wall.

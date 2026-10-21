@@ -27,6 +27,8 @@ pub struct Cube {
     pub color: u8,
     #[serde(default)]
     pub stacked: bool,
+    #[serde(default)]
+    pub tidy: Option<usize>,
 }
 
 fn inside(position: Vec3, margin: f32) -> bool {
@@ -141,6 +143,7 @@ impl World {
                     orientation: block.orientation.to_array(),
                     color: block.color,
                     stacked: block.stacked,
+                    tidy: block.tidy,
                 })
                 .collect(),
             tower: self.tower.map(|base| base.to_array()),
@@ -190,15 +193,20 @@ impl World {
             block.position = position;
             block.orientation = orientation.normalize();
             block.stacked = cube.stacked;
+            block.tidy = cube.tidy;
             if block.orientation.angle_between(block.resting_orientation()) > 0.005 {
                 return None;
             }
             if cube.stacked {
-                let base = tower?;
+                let base = if let Some(index) = cube.tidy {
+                    *super::tidy::SPOTS.get(index)?
+                } else {
+                    tower?
+                };
                 if super::flat(position - base).length() > 0.06 {
                     return None;
                 }
-            } else if (position.y - EDGE * 0.5).abs() > 0.001 {
+            } else if cube.tidy.is_some() || (position.y - EDGE * 0.5).abs() > 0.001 {
                 return None;
             }
             if blocks.iter().any(|other| overlaps(&block, other)) {
@@ -208,7 +216,7 @@ impl World {
         }
         let mut levels: Vec<f32> = blocks
             .iter()
-            .filter(|block| block.stacked)
+            .filter(|block| block.stacked && block.tidy.is_none())
             .map(|block| block.position.y)
             .collect();
         levels.sort_by(f32::total_cmp);
@@ -219,6 +227,22 @@ impl World {
                 .any(|(index, height)| (*height - (index as f32 + 0.5) * EDGE).abs() > 0.001)
         {
             return None;
+        }
+        for index in 0..super::tidy::SPOTS.len() {
+            let mut levels: Vec<f32> = blocks
+                .iter()
+                .filter(|block| block.tidy == Some(index))
+                .map(|block| block.position.y)
+                .collect();
+            levels.sort_by(f32::total_cmp);
+            if levels.len() > 3
+                || levels
+                    .iter()
+                    .enumerate()
+                    .any(|(level, height)| (*height - (level as f32 + 0.5) * EDGE).abs() > 0.001)
+            {
+                return None;
+            }
         }
         Some((Ball::at(ball.x, ball.z), blocks, tower))
     }

@@ -470,6 +470,7 @@ impl Mind {
                 | Understanding::Hint { .. }
                 | Understanding::Folding
                 | Understanding::Showing
+                | Understanding::Tidying
         ) {
             self.next_id += 1;
             self.latest_request = self.next_id;
@@ -980,6 +981,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Hint { .. }
                 | Understanding::BreakReply { .. }
                 | Understanding::Folding
+                | Understanding::Tidying
                 | Understanding::Bubbles { .. }
                 | Understanding::Showing
         )
@@ -2665,6 +2667,24 @@ mod acquaintance_tests {
             assert!(world.life.vocabulary.words.is_empty());
             assert_eq!(world.ghost.plan.activity, Activity::Show);
             assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
+        }
+    }
+
+    #[test]
+    fn tidy_requests_bypass_jev_and_keep_the_direct_reply_in_both_languages() {
+        for message in ["tidy up", "clean up your room", "정리하자", "방 치워"] {
+            let mut world = World::new(7, 12.0);
+            let heard = world.hear(message);
+            assert_eq!(heard.understanding, Understanding::Tidying);
+            assert!(!routes_to_jev(&heard));
+            let expected = world.ghost.speech.as_ref().unwrap().text.clone();
+            assert_eq!(musing::reply(&world, &heard, None), vec![expected.clone()]);
+            let mut world = World::new(7, 12.0);
+            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
+            mind.hear(&mut world, message);
+            assert_eq!(world.ghost.speech.as_ref().unwrap().text, expected);
+            assert_eq!(world.ghost.plan.activity, Activity::Tidy);
+            assert!(world.life.vocabulary.words.is_empty());
         }
     }
 }

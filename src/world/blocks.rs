@@ -17,6 +17,7 @@ pub struct Block {
     pub color: u8,
     pub held: bool,
     pub stacked: bool,
+    pub tidy: Option<usize>,
 }
 
 impl Block {
@@ -29,6 +30,7 @@ impl Block {
             color,
             held: false,
             stacked: false,
+            tidy: None,
         }
     }
 
@@ -181,22 +183,46 @@ fn accident_chance(level: f32) -> f32 {
 }
 
 fn place(block: &mut Block, spot: Vec3, height: usize, level: f32, random: &mut super::Random) {
+    place_with_jitter(block, spot, height, placement_jitter(level), 0.18, random);
+}
+
+pub(super) fn place_neatly(
+    block: &mut Block,
+    spot: Vec3,
+    height: usize,
+    random: &mut super::Random,
+) {
+    place_with_jitter(block, spot, height, 0.04, 0.0, random);
+}
+
+fn place_with_jitter(
+    block: &mut Block,
+    spot: Vec3,
+    height: usize,
+    jitter: f32,
+    turn: f32,
+    random: &mut super::Random,
+) {
     let jitter = Vec3::new(
-        random.range(-0.018, 0.018) * placement_jitter(level),
+        random.range(-0.018, 0.018) * jitter,
         0.0,
-        random.range(-0.018, 0.018) * placement_jitter(level),
+        random.range(-0.018, 0.018) * jitter,
     );
     block.position = spot + Vec3::Y * ((height as f32 + 0.5) * EDGE) + jitter;
-    block.orientation = Quat::from_rotation_y(random.range(-0.18, 0.18));
+    block.orientation = Quat::from_rotation_y(random.range(-turn, turn));
     block.velocity = Vec3::ZERO;
     block.spin = Vec3::ZERO;
     block.held = false;
     block.stacked = true;
+    block.tidy = None;
 }
 
 impl World {
     pub fn tower_height(&self) -> usize {
-        self.blocks.iter().filter(|block| block.stacked).count()
+        self.blocks
+            .iter()
+            .filter(|block| block.stacked && block.tidy.is_none())
+            .count()
     }
 
     pub(super) fn scatter_blocks(&mut self) {
@@ -233,12 +259,19 @@ impl World {
         // Once the ball and the loose blocks lie still, clear of the
         // furniture and the tower, nothing moves until something touches
         // them and sets them moving again.
-        let mut solid = furniture.clone();
-        solid.extend(self.tower.map(|spot| (spot, EDGE)));
+        let stacks = [
+            self.tower,
+            (self.tidy_height(0) > 0).then_some(super::tidy::SPOTS[0]),
+            (self.tidy_height(1) > 0).then_some(super::tidy::SPOTS[1]),
+        ];
         let clear = |position: Vec3, radius: f32| {
-            solid
+            furniture
                 .iter()
                 .all(|(center, reach)| flat(position - *center).length() >= reach + radius)
+                && stacks
+                    .iter()
+                    .flatten()
+                    .all(|center| flat(position - *center).length() >= EDGE + radius)
         };
         if self.ball.velocity == Vec3::ZERO
             && self.ball.position.y <= Ball::RADIUS
@@ -267,10 +300,29 @@ impl World {
                     self.topple(motion);
                 }
             }
+            for index in 0..super::tidy::SPOTS.len() {
+                let height = self.tidy_height(index);
+                if height == 0 {
+                    continue;
+                }
+                let motion = self.ball.velocity;
+                let toward = flat(motion) * slice;
+                let offset = flat(super::tidy::SPOTS[index] - self.ball.position);
+                let fraction =
+                    (offset.dot(toward) / toward.length_squared().max(1e-6)).clamp(0.0, 1.0);
+                if !self.ball.held
+                    && flat(motion).length() > 0.6
+                    && self.ball.position.y < height as f32 * EDGE + Ball::RADIUS
+                    && (offset - toward * fraction).length() < EDGE + Ball::RADIUS
+                {
+                    self.topple_tidy(index, motion);
+                }
+            }
             let mut ball_obstacles = furniture.clone();
             if let Some(spot) = self.tower {
                 ball_obstacles.push((spot, EDGE));
             }
+            ball_obstacles.extend(self.tidy_stacks().map(|(_, spot, _)| (spot, EDGE)));
             ball_obstacles.extend(
                 self.blocks
                     .iter()
@@ -284,6 +336,7 @@ impl World {
             if let Some(spot) = self.tower {
                 block_obstacles.push((spot, EDGE));
             }
+            block_obstacles.extend(self.tidy_stacks().map(|(_, spot, _)| (spot, EDGE)));
             for block in &mut self.blocks {
                 block.step(slice, &block_obstacles);
             }
@@ -332,13 +385,22 @@ impl World {
         let Some(spot) = self.tower.take() else {
             return;
         };
+        self.topple_stack(spot, None, direction);
+        if self.ghost.plan.activity == Activity::Build && self.ghost.plan.count > 0 {
+            self.drop_block();
+            self.ghost.plan.done = true;
+        }
+    }
+
+    pub(super) fn topple_stack(&mut self, spot: Vec3, tidy: Option<usize>, direction: Vec3) {
         let along = Vec3::new(direction.x, 0.0, direction.z).normalize_or(Vec3::Z);
         for block in &mut self.blocks {
-            if !block.stacked {
+            if !block.stacked || block.tidy != tidy {
                 continue;
             }
             let height = (block.position.y / EDGE).max(0.5);
             block.stacked = false;
+            block.tidy = None;
             block.velocity = along * (0.35 + height * 0.28)
                 + Vec3::new(
                     self.random.range(-0.25, 0.25),
@@ -351,10 +413,6 @@ impl World {
                 self.random.range(-5.0, 5.0),
             );
         }
-        if self.ghost.plan.activity == Activity::Build && self.ghost.plan.count > 0 {
-            self.drop_block();
-            self.ghost.plan.done = true;
-        }
         self.ghost.look = Some(spot + Vec3::Y * EDGE);
     }
 
@@ -364,7 +422,11 @@ impl World {
             return;
         };
         if block.stacked {
-            self.topple(direction);
+            if let Some(index) = block.tidy {
+                self.topple_tidy(index, direction);
+            } else {
+                self.topple(direction);
+            }
             self.record(EventKind::Toppled { by_viewer: true });
             let delighted = self.life.temperament().playful >= 0.5 || self.life.bond >= 0.55;
             let lines = if delighted {
@@ -588,7 +650,7 @@ impl World {
                     .blocks
                     .iter()
                     .enumerate()
-                    .filter(|(_, block)| block.on_floor())
+                    .filter(|(index, _)| self.building_block(*index))
                     .min_by(|(_, first), (_, second)| {
                         first
                             .position
@@ -602,6 +664,8 @@ impl World {
                     self.ghost.plan.target = target;
                     if self.ghost.position.distance(target) < ARRIVED {
                         block.held = true;
+                        block.stacked = false;
+                        block.tidy = None;
                         block.spin = Vec3::ZERO;
                         building.stage = Stage::Carry;
                     }

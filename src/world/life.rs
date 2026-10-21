@@ -395,6 +395,8 @@ pub struct Tally {
     pub things_shown: u32,
     #[serde(default)]
     pub shown_kinds: Vec<super::show::Kind>,
+    #[serde(default)]
+    pub tidies: u32,
 }
 
 impl Tally {
@@ -749,6 +751,7 @@ impl Tally {
                     self.shown_kinds.push(*kind);
                 }
             }
+            EventKind::Tidied { .. } => self.tidies = self.tidies.saturating_add(1).min(1_000_000),
             _ => {}
         }
     }
@@ -1859,6 +1862,13 @@ impl Tally {
                 ),
             )
         }));
+        if self.tidies > 0 {
+            deeds.push((
+                Salience::Routine,
+                "tidied up before bed".to_owned(),
+                "자기 전에 방을 정리했어".to_owned(),
+            ));
+        }
         deeds
     }
 
@@ -2080,6 +2090,8 @@ pub struct Life {
     pub weekly_letter: Option<String>,
     #[serde(default)]
     pub showing: super::show::ShowingLife,
+    #[serde(default)]
+    pub tidied_day: Option<String>,
 }
 
 impl Life {
@@ -2637,6 +2649,13 @@ impl Life {
             }
         }
         super::breaks::sanitize(&mut self);
+        self.tidied_day = self.tidied_day.filter(|day| {
+            day.parse::<jiff::civil::Date>().is_ok_and(|date| {
+                self.day
+                    .parse::<jiff::civil::Date>()
+                    .is_ok_and(|today| date <= today)
+            })
+        });
         self.cranes.sanitize(&self.day);
         self.showing.sanitize(&self.day);
         for (tally, maximum) in [
@@ -2927,6 +2946,7 @@ impl Life {
             tally.bubble_sessions = tally.bubble_sessions.min(1_000_000);
             tally.bubbles_blown = tally.bubbles_blown.min(tally.bubble_sessions * 10);
             tally.bubbles_popped = tally.bubbles_popped.min(tally.bubbles_blown);
+            tally.tidies = tally.tidies.min(1_000_000);
             for errands in [
                 &mut tally.heard_plans,
                 &mut tally.wished_plans,
@@ -3428,6 +3448,10 @@ impl Life {
             EventKind::ShowedThing(_) if total.things_shown == 1 => (
                 "I showed you one of my treasures for the first time.".to_owned(),
                 "처음으로 내 보물을 너에게 보여 줬어.".to_owned(),
+            ),
+            EventKind::Tidied { .. } if total.tidies == 1 => (
+                "I tidied my room before bed for the first time.".to_owned(),
+                "처음으로 자기 전에 방을 정리했어.".to_owned(),
             ),
             _ => return None,
         };

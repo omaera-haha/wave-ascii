@@ -129,6 +129,7 @@ fn request(activity: Activity) -> &'static str {
         Activity::Company => "Asks it to keep the viewer quiet company while they work or study.",
         Activity::Fold => "Asks it to fold or make a paper crane for the viewer.",
         Activity::Show => "Asks it to show something or bring its treasures to the glass.",
+        Activity::Tidy => "Asks it to tidy up or clean up its room.",
     }
 }
 

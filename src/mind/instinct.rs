@@ -444,6 +444,14 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     0.0
                 }
             }
+            Activity::Tidy => {
+                if world.tidy_is_open() {
+                    let nature = world.life.temperament();
+                    0.16 * needs.energy * (0.7 + nature.tender) * (1.4 - 0.6 * nature.playful)
+                } else {
+                    0.0
+                }
+            }
             // Quiet visits offer show and tell on their own timer.
             Activity::Show => 0.0,
         })
@@ -1266,5 +1274,25 @@ mod tests {
             world.hear("bubbles!").understanding,
             Understanding::Bubbles { accepted: true }
         );
+    }
+
+    #[test]
+    fn a_tender_quiet_nature_favors_evening_tidying_but_low_energy_favors_sleep() {
+        let mut world = World::new(7, 21.5);
+        world.ghost.needs.energy = 0.8;
+        let options = [Activity::Float, Activity::Rest, Activity::Tidy];
+        let usual = chance(&weigh(&world, &options), Activity::Tidy);
+        let nature = world.life.nature.as_mut().unwrap();
+        nature.tender = 1.0;
+        nature.playful = 0.0;
+        let tender = chance(&weigh(&world, &options), Activity::Tidy);
+        let nature = world.life.nature.as_mut().unwrap();
+        nature.tender = 0.0;
+        nature.playful = 1.0;
+        let playful = chance(&weigh(&world, &options), Activity::Tidy);
+        assert!(tender > usual && tender > playful);
+        world.ghost.needs.energy = 0.1;
+        assert_eq!(chance(&weigh(&world, &options), Activity::Tidy), 0.0);
+        assert!(chance(&weigh(&world, &options), Activity::Rest) > 0.5);
     }
 }

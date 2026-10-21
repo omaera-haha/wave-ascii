@@ -123,6 +123,7 @@ impl Nature {
             Activity::Bubbles => (signed(self.playful) + signed(self.curious)) / 2.0,
             Activity::Pin => 0.0,
             Activity::Show => signed(self.tender),
+            Activity::Tidy => (self.tender - self.playful) * 0.5,
         };
         let strength = if inclination > 0.0 { 0.35 } else { 0.25 };
         (1.0 + strength * inclination).clamp(0.75, 1.35)
