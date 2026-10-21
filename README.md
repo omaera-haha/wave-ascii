@@ -628,6 +628,13 @@ ghost remembers how often you speak Korean and follows that language in its
 greetings, games, and offline replies. A Korean message gets a Korean reply
 straight away; its private thoughts stay in English.
 
+Before leaving, tell it “see you tomorrow”, “I'll be away for two weeks”,
+“내일 봐”, or “일주일 동안 여행 가”. It remembers when you said you would
+return and trusts the promise: its bond stays warm through that day and one
+extra day. Coming back brings a welcome, and a trip home becomes an album
+moment. “See you later” means today; weekends mean the coming Sunday, and
+trips without a length mean a week.
+
 ### Its life between runs
 
 The room stays as you left it, including the ball, blocks, and standing towers.

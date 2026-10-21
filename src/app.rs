@@ -413,6 +413,21 @@ impl App {
             .chars()
             .filter(|character| !character.is_control())
             .collect();
+        if let Some((promise, korean)) = world.promised_this_session() {
+            return if korean {
+                let subject = if name.chars().last().is_some_and(|last| {
+                    ('가'..='힣').contains(&last)
+                        && (u32::from(last) - u32::from('가')).is_multiple_of(28)
+                }) {
+                    "가"
+                } else {
+                    "이"
+                };
+                format!("{name}{subject} {} 기다릴게요.", promise.kind.korean())
+            } else {
+                format!("{name} will be waiting for you {}.", promise.kind.words())
+            };
+        }
         if world.speaks_korean() {
             return self.farewell_in_korean(&name);
         }
@@ -1463,7 +1478,7 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
         world.restore_room(room);
     }
     let away = now.saturating_sub(save.last_seen).max(0) as f32;
-    world.life.miss(away);
+    world.life.miss_at(away, world.hour);
     world.age_garden(away);
     world
         .ghost
@@ -1495,6 +1510,53 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn quitting_echoes_only_a_promise_made_this_session_in_its_original_language() {
+        let mut app = app();
+        app.world.ghost.name = "Pip".to_owned();
+        app.world.hear("see you tomorrow");
+        assert_eq!(app.farewell(), "Pip will be waiting for you tomorrow.");
+        app.world.hear("내일 봐");
+        assert_eq!(app.farewell(), "Pip이 내일 기다릴게요.");
+        app.world.ghost.name = "뽀삐".to_owned();
+        assert_eq!(app.farewell(), "뽀삐가 내일 기다릴게요.");
+        let mut loaded = World::new(4, 12.0);
+        loaded.life = app.world.life.clone();
+        assert!(loaded.promised_this_session().is_none());
+    }
+
+    #[test]
+    fn restoring_a_promised_trip_protects_the_bond_writes_a_letter_and_resolves_on_arrival_once() {
+        let mut original = World::new(3, 12.0);
+        original.hear("back in a week");
+        original.life.bond = 0.6;
+        original.life.closest = 0.6;
+        let mut save = garden_save(&original);
+        save.born = local_seconds("2026-05-01T12:00:00");
+        let mut restored = World::new(4, 12.0);
+        restore(&mut restored, &save, local_seconds("2026-06-28T12:00:00"));
+        assert_eq!(restored.life.bond, save.life.bond);
+        assert!(restored.life.promise.is_some());
+        assert!(
+            restored
+                .life
+                .letters
+                .last()
+                .unwrap()
+                .lines
+                .iter()
+                .any(|line| line == "I hope your trip was lovely.")
+        );
+        restored.notice_viewer();
+        restored.step(0.1);
+        assert!(restored.life.promise.is_none());
+        assert_eq!(restored.life.total.promises_kept, 1);
+        restored.notice_viewer();
+        restored.step(0.1);
+        assert_eq!(restored.life.total.promises_kept, 1);
+        assert!(restored.life.bond > save.life.bond);
+    }
+
     fn letter(day: &str, read: bool) -> crate::world::mail::Letter {
         crate::world::mail::Letter {
             day: day.to_owned(),

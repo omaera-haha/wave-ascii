@@ -210,6 +210,9 @@ pub fn request(
     let name = life.viewer_name.as_ref().map_or_else(String::new, |name| {
         format!("\nThe viewer's name is {name}.")
     });
+    let promise = life
+        .promise
+        .map_or_else(String::new, |promise| format!("\n{}", promise.words()));
     let feelings = crate::world::feelings::memories(&life.feelings, &life.day);
     let viewer = life.viewer.words();
     let viewer = if viewer.is_empty() {
@@ -315,7 +318,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\n\
                  You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}
+                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}
 Recent feelings the viewer shared: {feelings}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
@@ -406,6 +409,28 @@ pub fn read(value: Value) -> Option<Reflection> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    #[test]
+    fn reflection_context_remembers_a_promised_return_without_digits() {
+        let life = Life {
+            promise: crate::world::promise::promised(
+                "back in three days",
+                jiff::civil::Date::constant(2026, 10, 21),
+                12.0,
+            ),
+            ..Life::default()
+        };
+        let request = request(&serde_json::json!({}), &[], &life, &[], None, None, None);
+        let promise = life.promise.unwrap().words();
+        assert!(
+            request
+                .system
+                .iter()
+                .any(|block| block.text.contains(&promise))
+        );
+        assert!(promise.contains("in three days"));
+        assert!(!promise.chars().any(char::is_numeric));
+    }
+
     #[test]
     fn the_system_prompt_remembers_self_recognition() {
         let mut life = crate::world::Life::default();

@@ -155,6 +155,10 @@ pub struct Tally {
     pub expected: u32,
     #[serde(default)]
     pub missed: u32,
+    pub promises_made: u32,
+    pub promises_kept: u32,
+    /// Kept trip promises are remembered separately for diary salience.
+    pub trips_kept: u32,
     /// Towers built, highest tower, and towers the viewer knocked down.
     #[serde(default)]
     pub towers: u32,
@@ -272,6 +276,13 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::Promised(_) => self.promises_made = self.promises_made.saturating_add(1),
+            EventKind::PromiseKept(kind) => {
+                self.promises_kept = self.promises_kept.saturating_add(1);
+                if kind.trip() {
+                    self.trips_kept = self.trips_kept.saturating_add(1);
+                }
+            }
             EventKind::ViewerFelt(feeling) => {
                 self.feelings_heard = self.feelings_heard.saturating_add(1);
                 if !self.feelings.contains(feeling) {
@@ -530,6 +541,21 @@ impl Tally {
             .iter()
             .map(|occasion| (Salience::Momentous, occasion.diary_words().to_owned()))
             .collect();
+        if self.promises_made > 0 {
+            deeds.push((
+                Salience::Small,
+                "you told me when you would return".to_owned(),
+            ));
+        }
+        if self.promises_kept > self.trips_kept {
+            deeds.push((
+                Salience::Notable,
+                "you came back when you said you would".to_owned(),
+            ));
+        }
+        if self.trips_kept > 0 {
+            deeds.push((Salience::Special, "you came home from your trip".to_owned()));
+        }
         deeds.extend(self.anniversary_words.iter().map(|line| {
             let mut letters = line.trim_end_matches('.').chars();
             let line = letters.next().map_or_else(String::new, |first| {
@@ -1129,6 +1155,9 @@ pub struct Life {
     /// Seconds since the viewer was last around, while the app ran and
     /// while it was closed.
     pub alone: f64,
+    /// The viewer's most recent promise of when to return.
+    #[serde(default, deserialize_with = "super::promise::deserialize")]
+    pub promise: Option<super::promise::Promise>,
     /// The viewer's words it has picked up, and what it thinks they mean.
     pub vocabulary: Vocabulary,
     /// How safe the bird feels with the ghost, from wary to trusting.
@@ -1362,6 +1391,8 @@ impl Life {
             self.reach("My garden has three little pots.".to_owned());
         }
         let warmth = match kind {
+            EventKind::PromiseKept(kind) if kind.trip() => 0.02,
+            EventKind::PromiseKept(_) => 0.01,
             EventKind::WishGranted(wish) if wish.with_viewer() => 0.01,
             EventKind::FocusEnded {
                 completed: true, ..
@@ -1432,10 +1463,27 @@ impl Life {
     /// the bond fades a little each day, but never below half of the
     /// closest it was.
     pub fn miss(&mut self, seconds: f32) {
+        self.miss_at(seconds, 0.0);
+    }
+
+    /// The same rule with the local hour, so a restore spanning the grace
+    /// deadline fades only the part of the absence after that deadline.
+    pub fn miss_at(&mut self, seconds: f32, hour: f32) {
         let before = self.alone;
         self.alone += f64::from(seconds.max(0.0));
         let past_first = |alone: f64| (alone / 86_400.0 - 1.0).max(0.0);
-        let days = past_first(self.alone) - past_first(before);
+        let mut days = past_first(self.alone) - past_first(before);
+        if let Some(promise) = self.promise.filter(|promise| promise.valid())
+            && let Ok(today) = self.day.parse::<jiff::civil::Date>()
+        {
+            // Deadlines cover whole local days, including one day of grace.
+            // A long restore must not retroactively fade the protected days.
+            let deadline = promise.back_by.checked_add(jiff::Span::new().days(2));
+            let overdue = deadline.map_or(0.0, |deadline| {
+                today.duration_since(deadline).as_secs_f64() + f64::from(hour) * 3600.0
+            });
+            days = days.min((overdue / 86_400.0).max(0.0));
+        }
         if days > 0.0 {
             let holding = 1.15 - 0.3 * self.nature.unwrap_or_default().shy;
             self.warm(-FADING * days as f32 * holding);
@@ -1608,6 +1656,13 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.promise = self.promise.filter(|promise| {
+            promise.valid()
+                && self
+                    .day
+                    .parse::<jiff::civil::Date>()
+                    .is_ok_and(|day| promise.said <= day)
+        });
         self.anniversary_said = self
             .anniversary_said
             .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
@@ -1881,6 +1936,14 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if let EventKind::PromiseKept(kind) = kind {
+            let first = self.reach("You came back when you said you would.".to_owned());
+            let trip = kind
+                .trip()
+                .then(|| self.reach("You came home from a trip.".to_owned()))
+                .flatten();
+            return first.or(trip);
+        }
         if matches!(kind, EventKind::MetReflection) {
             return self.reach("I met a ghost in the mirror.".to_owned());
         }
@@ -2201,6 +2264,23 @@ fn capitalized(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_diary_ranks_a_kept_trip_above_an_everyday_return() {
+        let mut tally = Tally::default();
+        tally.note(&EventKind::PromiseKept(
+            super::super::promise::Return::Tomorrow,
+        ));
+        tally.note(&EventKind::PromiseKept(super::super::promise::Return::Week));
+        let deeds = tally.deeds();
+        assert!(deeds.contains(&(
+            Salience::Notable,
+            "you came back when you said you would".to_owned()
+        )));
+        assert!(deeds.contains(&(Salience::Special, "you came home from your trip".to_owned())));
+        assert_eq!(tally.promises_kept, 2);
+        assert_eq!(tally.trips_kept, 1);
+    }
+
     #[test]
     fn completed_care_warms_the_bond_and_diary_distinguishes_shared_and_completed_feelings() {
         use crate::world::Feeling;

@@ -708,7 +708,9 @@ impl World {
 
     pub(super) fn answer_viewer(&mut self, text: &str, korean: bool) -> Option<Heard> {
         let (topic, until) = self.asking.take()?;
-        if super::feelings::felt(text).is_some() {
+        if super::feelings::felt(text).is_some()
+            || super::promise::promised(text, self.date, self.hour).is_some()
+        {
             return None;
         }
         let definite_answer = match topic {

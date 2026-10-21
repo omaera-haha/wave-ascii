@@ -936,6 +936,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Named { .. }
                 | Understanding::Felt(_)
                 | Understanding::FeltBetter
+                | Understanding::Promised(_)
                 | Understanding::Focusing { .. }
                 | Understanding::Airing { .. }
                 | Understanding::WordGame
@@ -964,6 +965,25 @@ pub fn now() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn promises_bypass_jev_but_still_queue_a_claude_reflection() {
+        let config = Config {
+            anthropic_api_key: Some("test-key".to_owned()),
+            ..Config::default()
+        };
+        let mut mind = Mind::new(&config, Journal::default(), false);
+        let mut world = World::new(3, 12.0);
+        let heard = world.hear("see you tomorrow");
+        assert!(!routes_to_jev(&heard));
+        mind.hear(&mut world, "I'll be away for two weeks");
+        assert_eq!(mind.heard.len(), 1);
+        assert_eq!(
+            mind.heard.front().unwrap().text,
+            "I'll be away for two weeks"
+        );
+        assert_eq!(world.life.vocabulary, crate::world::Vocabulary::default());
+    }
+
     fn offline_letter() -> crate::world::mail::Letter {
         crate::world::mail::Letter {
             day: "2026-06-21".to_owned(),

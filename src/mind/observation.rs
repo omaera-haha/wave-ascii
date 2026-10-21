@@ -87,6 +87,7 @@ pub fn observe(world: &World) -> Value {
         "viewer_language": if world.speaks_korean() { "the viewer speaks Korean" } else { "not known yet" },
         "viewer_facts": world.life.viewer.words(),
         "viewer_feelings": world.feeling_words(),
+        "viewer_promise": world.life.promise.map(|promise| promise.words()).unwrap_or_else(|| "no promised return".to_owned()),
         "asking_viewer": world.asking.map(|(topic, _)| format!("waiting for an answer about their {}", topic.name())),
         "viewer_name": world.life.viewer_name.as_ref().map_or_else(|| "not known yet".to_owned(), |name| format!("The viewer's name is {name}.")),
         "bond_with_viewer": world.life.bond_words(),
@@ -539,6 +540,17 @@ fn viewer(world: &World) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn observations_describe_the_promised_return_in_words() {
+        let mut world = World::new(4, 12.0);
+        world.hear("I'll be away for two weeks");
+        let observation = observe(&world);
+        let promise = observation["viewer_promise"].as_str().unwrap();
+        assert!(promise.contains("in two weeks"));
+        assert!(promise.contains("July fifth"));
+        assert!(!promise.chars().any(char::is_numeric));
+    }
+
     #[test]
     fn the_mirror_is_visible_and_its_description_changes_after_recognition() {
         let mut world = World::new(1, 12.0);

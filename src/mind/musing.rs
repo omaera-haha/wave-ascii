@@ -237,6 +237,15 @@ pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<String> {
     let mut lines: Vec<_> = idle_lines(world).into_iter().map(str::to_owned).collect();
+    if !world.viewer_present()
+        && let Some(promise) = world.life.promise
+    {
+        lines.push(format!(
+            "They said they'd be back {}.",
+            promise.kind.words()
+        ));
+        lines.push("I can count the days by the window. They told me they'd return.".to_owned());
+    }
     for (span, entry) in world.life.anniversaries(&world.date.to_string()) {
         let recalled = crate::world::anniversary::recalled(span, &entry.text);
         lines.push(recalled.clone());
@@ -827,6 +836,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
         Understanding::Asked { .. }
             | Understanding::Felt(_)
             | Understanding::FeltBetter
+            | Understanding::Promised(_)
             | Understanding::Focusing { .. }
             | Understanding::Airing { .. }
             | Understanding::Undressing
@@ -849,6 +859,10 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             .map(|&(english, hangul)| if korean { hangul } else { english }.to_owned())
             .collect()
     };
+    if matches!(heard.understanding, Understanding::Promised(_)) {
+        // The direct handler already said goodbye, in the message's language.
+        return Vec::new();
+    }
     if matches!(
         heard.understanding,
         Understanding::Answered(_) | Understanding::Unanswered(_) | Understanding::OwnSong
@@ -1957,6 +1971,20 @@ fn capitalized(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn offline_promises_keep_the_direct_goodbye_and_supply_trusting_absent_thoughts() {
+        let mut world = World::new(4, 12.0);
+        let heard = world.hear("see you tomorrow");
+        assert!(reply(&world, &heard, None).is_empty());
+        world.look_away(true);
+        world.step(21.0);
+        assert!(
+            idle(&world)
+                .iter()
+                .any(|line| line == "They said they'd be back tomorrow.")
+        );
+    }
+
     use super::*;
 
     #[test]

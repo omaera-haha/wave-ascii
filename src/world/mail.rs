@@ -149,8 +149,16 @@ impl World {
                     .days_ago(self.date)
                     .is_some_and(|days| (0..=3).contains(&days))
         });
+        let promised_trip = self.life.promise.is_some_and(|promise| promise.kind.trip());
         let lines = if self.stage() == Stage::Newborn {
             let mut lines = vec![language("Ooh! Miss yoo!", "응! 보고 시퍼!", korean)];
+            if promised_trip {
+                lines.push(language(
+                    "I hope your trip was lovely.",
+                    "여행은 즐거웠어?",
+                    korean,
+                ));
+            }
             if recently_unhappy {
                 lines.push(language(
                     "I hope you're feeling better.",
@@ -221,8 +229,16 @@ impl World {
                     korean,
                 ));
             }
-            let index = self.pick(&vec![1.0; now.len()]).unwrap();
-            lines.push(now.swap_remove(index));
+            if promised_trip {
+                lines.push(language(
+                    "I hope your trip was lovely.",
+                    "여행은 즐거웠어?",
+                    korean,
+                ));
+            } else {
+                let index = self.pick(&vec![1.0; now.len()]).unwrap();
+                lines.push(now.swap_remove(index));
+            }
             let nature = self.life.nature.unwrap_or_default();
             let feeling = if recently_unhappy {
                 language(
@@ -325,6 +341,61 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn return_letters_remember_promised_trips_in_both_languages_without_digits() {
+        for korean in [false, true] {
+            for newborn in [false, true] {
+                let mut world = returning(7, korean);
+                if newborn {
+                    world.birthday = Some(jiff::civil::Date::constant(2026, 6, 19));
+                }
+                world.life.promise =
+                    super::super::promise::promised("back in three days", world.date, 12.0);
+                world
+                    .life
+                    .feelings
+                    .push(crate::world::feelings::FeelingNote {
+                        feeling: crate::world::Feeling::Sad,
+                        day: world.date.to_string(),
+                        hour: 12.0,
+                        asked: false,
+                    });
+                world.write_return_letter(86400.0);
+                let letter = world.life.letters.last().unwrap();
+                assert!(letter.lines.iter().any(|line| line
+                    == if korean {
+                        "여행은 즐거웠어?"
+                    } else {
+                        "I hope your trip was lovely."
+                    }));
+                assert!(letter.valid());
+                assert!(letter.lines.iter().any(|line| line
+                    == if korean {
+                        "네 기분이 좀 나아졌으면 좋겠어."
+                    } else {
+                        "I hope you're feeling better."
+                    }));
+                assert!(
+                    world.life.promise.is_some(),
+                    "writing does not resolve an arrival"
+                );
+            }
+        }
+        let mut world = returning(7, false);
+        world.life.promise = super::super::promise::promised("see you tomorrow", world.date, 12.0);
+        world.write_return_letter(86400.0);
+        assert!(
+            !world
+                .life
+                .letters
+                .last()
+                .unwrap()
+                .lines
+                .iter()
+                .any(|line| line.contains("trip"))
+        );
+    }
+
     #[test]
     fn away_letters_remember_recent_negative_feelings_in_both_languages_including_newborns() {
         use crate::world::feelings::{Feeling, FeelingNote};

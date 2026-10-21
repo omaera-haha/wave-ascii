@@ -40,6 +40,7 @@ pub enum Happening {
     StarGazed,
     FriendVisited,
     Waited,
+    CountedDays,
     MissedViewer,
 }
 
@@ -61,6 +62,7 @@ impl Happening {
             Self::WishedOnStar => "wished on a shooting star",
             Self::StarGazed => "said goodnight to my constellations",
             Self::FriendVisited => "spent an evening with my ghost friend",
+            Self::CountedDays => "waited at the window, counting the days until your return",
             Self::Waited => "waited at the glass for you",
             Self::MissedViewer => "missed you",
         }
@@ -207,6 +209,16 @@ impl Happening {
                     "유령 친구와 저녁을 보냈어.",
                 ),
             ],
+            Happening::CountedDays => [
+                (
+                    "I counted the days by the window.",
+                    "창가에서 날을 세며 기다렸어.",
+                ),
+                (
+                    "I remembered when you said you'd return.",
+                    "돌아온다고 한 날을 기억하고 있었어.",
+                ),
+            ],
             Happening::Waited => [
                 (
                     "I waited for you at the glass.",
@@ -234,7 +246,11 @@ impl Happening {
     fn importance(self) -> u8 {
         match self {
             Self::BuiltTower { .. } | Self::WishedOnStar | Self::FriendVisited => 5,
-            Self::Drew(_) | Self::SawRainbow | Self::Waited | Self::StarGazed => 4,
+            Self::Drew(_)
+            | Self::SawRainbow
+            | Self::Waited
+            | Self::CountedDays
+            | Self::StarGazed => 4,
             Self::WatchedSnow | Self::WatchedStorm | Self::WatchedBird | Self::MissedViewer => 3,
             Self::PlayedBall | Self::WateredPlant | Self::WatchedRain => 2,
             Self::SleptNight | Self::Napped => 1,
@@ -476,7 +492,13 @@ pub fn story(
             if evening && weather == 0 && life.friend.is_some() {
                 add(Happening::FriendVisited, Activity::Friend, 0.8);
             }
-            if awake && usual.is_some_and(|usual| overlaps(usual, usual + 1.0)) {
+            if awake && life.promise.is_some_and(|promise| promise.holds(date)) {
+                add(Happening::CountedDays, Activity::Window, 2.0);
+            }
+            if awake
+                && !life.promise.is_some_and(|promise| promise.holds(date))
+                && usual.is_some_and(|usual| overlaps(usual, usual + 1.0))
+            {
                 add(Happening::Waited, Activity::Wait, 0.5 + life.bond * 2.0);
             }
             add(
@@ -595,6 +617,29 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_promised_absence_can_count_days_without_inventing_kept_promises() {
+        let left = Date::constant(2026, 6, 21).at(12, 0, 0, 0);
+        let now = Date::constant(2026, 6, 28).at(12, 0, 0, 0);
+        let life = Life {
+            promise: super::super::promise::promised("back in a week", left.date(), 12.0),
+            ..Life::default()
+        };
+        let mut waits = 0;
+        for seed in 0..40 {
+            let away = story(left, now, seed, &life, None);
+            assert_eq!(away, story(left, now, seed, &life, None));
+            waits += usize::from(away.happenings.contains(&Happening::CountedDays));
+            assert!(
+                !story(left, now, seed, &Life::default(), None)
+                    .happenings
+                    .contains(&Happening::CountedDays)
+            );
+        }
+        assert!(waits > 0);
+        assert_eq!(life.total.promises_kept, 0);
+    }
+
     use super::*;
 
     fn time(text: &str) -> DateTime {
