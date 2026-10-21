@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use glam::{Quat, Vec3};
 
 use super::things::{Nook, Plant, ROOM_MAX, WINDOW_CENTER};
-use super::{Ball, EventKind, World};
+use super::{Ball, Decoration, EventKind, World};
 
 /// Half the ghost's field of view: it sees what lies within this angle of
 /// where it faces.
@@ -23,12 +23,13 @@ pub enum Thing {
     Plant,
     Ball,
     Cushion,
+    Decoration,
     Mote(u32),
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 7] = [
+    pub const NAMES: [&str; 8] = [
         "viewer",
         "window",
         "plant",
@@ -36,6 +37,7 @@ impl Thing {
         "lamp",
         "cushion",
         "light mote",
+        "decoration",
     ];
 
     pub fn name(self) -> &'static str {
@@ -46,6 +48,7 @@ impl Thing {
             Self::Plant => "plant",
             Self::Ball => "ball",
             Self::Cushion => "cushion",
+            Self::Decoration => "decoration",
             Self::Mote(_) => "light mote",
         }
     }
@@ -89,6 +92,10 @@ impl World {
             Thing::Plant => self.plant.position + Vec3::Y * self.plant.height() * 0.6,
             Thing::Ball => self.ball.position,
             Thing::Cushion => self.nook.position + Vec3::Y * 0.1,
+            Thing::Decoration => {
+                let decoration = self.decoration()?;
+                Decoration::POSITION + Vec3::Y * decoration.height() * 0.5
+            }
             Thing::Mote(id) => self.motes.iter().find(|mote| mote.id == id)?.position,
         })
     }
@@ -106,6 +113,7 @@ impl World {
             Thing::Ball,
             Thing::Lamp,
             Thing::Cushion,
+            Thing::Decoration,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -162,9 +170,10 @@ impl World {
                 Thing::Ball,
                 Thing::Lamp,
                 Thing::Cushion,
+                Thing::Decoration,
             ]
             .into_iter()
-            .find(|thing| thing.name() == name),
+            .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
         };
         if let Some(thing) = thing {
             self.ghost.attention = Some((thing, self.time + f64::from(seconds)));
@@ -190,15 +199,25 @@ impl World {
         ];
         let along = target - eye;
         let length = along.length();
-        blockers.into_iter().find_map(|(blocker, center, radius)| {
-            if blocker == thing {
-                return None;
-            }
-            let fraction = ((center - eye).dot(along) / (length * length)).clamp(0.0, 1.0);
-            let closest = eye + along * fraction;
-            (fraction > 0.02 && fraction < 0.95 && closest.distance(center) < radius)
-                .then_some(blocker)
-        })
+        let decoration = self.decoration().map(|decoration| {
+            (
+                Thing::Decoration,
+                Decoration::POSITION + Vec3::Y * decoration.height() * 0.5,
+                decoration.radius(),
+            )
+        });
+        blockers
+            .into_iter()
+            .chain(decoration)
+            .find_map(|(blocker, center, radius)| {
+                if blocker == thing {
+                    return None;
+                }
+                let fraction = ((center - eye).dot(along) / (length * length)).clamp(0.0, 1.0);
+                let closest = eye + along * fraction;
+                (fraction > 0.02 && fraction < 0.95 && closest.distance(center) < radius)
+                    .then_some(blocker)
+            })
     }
 
     /// Turns the ghost's gaze toward what holds its attention: what a mind
@@ -414,6 +433,7 @@ mod tests {
     #[test]
     fn every_name_minds_may_use_is_a_thing() {
         let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 31);
         world.drop_mote(Vec3::ONE);
         for name in Thing::NAMES {
             world.ghost.attention = None;
@@ -479,5 +499,20 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn the_decoration_hides_what_stands_behind_it_only_while_present() {
+        let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 31);
+        let eye = Decoration::POSITION + Vec3::new(0.0, 0.18, 1.0);
+        let target = Decoration::POSITION + Vec3::new(0.0, 0.18, -0.24);
+        assert_eq!(
+            world.blocker(eye, target, Thing::Ball),
+            Some(Thing::Decoration)
+        );
+        assert_eq!(world.blocker(eye, target, Thing::Decoration), None);
+        world.date = jiff::civil::Date::constant(2026, 11, 1);
+        assert_eq!(world.blocker(eye, target, Thing::Ball), None);
     }
 }

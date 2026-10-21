@@ -30,6 +30,7 @@ pub fn observe(world: &World) -> Value {
         },
         "time_of_day": time_of_day(world.hour),
         "season": world.season().name(),
+        "occasion": world.occasion_words(),
         "outside_the_window": outside_the_window(world),
         "sight": sight(world),
         "room": {
@@ -54,7 +55,13 @@ pub fn recent(world: &World, count: usize) -> Vec<String> {
         .rev()
         .filter(|event| !matches!(event.kind, crate::world::EventKind::Began(Activity::Float)))
         .take(count)
-        .map(|event| format!("{} ({})", event.kind.words(), ago(world.time - event.time)))
+        .map(|event| {
+            format!(
+                "{} ({})",
+                world.event_words(event),
+                ago(world.time - event.time)
+            )
+        })
         .collect();
     lines.reverse();
     lines
@@ -116,6 +123,9 @@ fn outside_the_window(world: &World) -> String {
     if weather.sky != Sky::Snow && weather.snow_cover > 0.5 {
         outside.push_str(", the hills white with snow");
     }
+    if world.fireworks() {
+        outside.push_str(", fireworks bursting in the sky");
+    }
     outside
 }
 
@@ -173,6 +183,10 @@ fn thing(world: &World, thing: Thing) -> String {
         Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
         Thing::Ball => "the ball".to_owned(),
         Thing::Cushion => "the cushion".to_owned(),
+        Thing::Decoration => world
+            .decoration()
+            .map_or("a decoration", |decoration| decoration.words())
+            .to_owned(),
         Thing::Mote(_) => "a light mote".to_owned(),
     }
 }
@@ -472,6 +486,82 @@ mod tests {
         assert_eq!(
             observe(&world)["ghost"]["doing"],
             "just finished hiding from the viewer"
+        );
+    }
+
+    #[test]
+    fn occasions_and_decorations_are_named_in_words_without_digits() {
+        use jiff::civil::Date;
+
+        let mut world = World::new(1, 22.0);
+        for (date, birthday, occasion, decoration) in [
+            (
+                Date::constant(2026, 10, 24),
+                None,
+                "Halloween",
+                "a glowing jack-o'-lantern",
+            ),
+            (
+                Date::constant(2026, 12, 24),
+                None,
+                "the winter holidays",
+                "a little tree with twinkling lights",
+            ),
+            (
+                Date::constant(2026, 12, 31),
+                None,
+                "New Year's Eve",
+                "a little tree with twinkling lights",
+            ),
+            (
+                Date::constant(2027, 1, 1),
+                None,
+                "New Year's Day",
+                "a little tree with twinkling lights",
+            ),
+            (
+                Date::constant(2027, 2, 14),
+                None,
+                "Valentine's Day",
+                "a decoration",
+            ),
+            (
+                Date::constant(2028, 3, 1),
+                Some(Date::constant(2026, 3, 1)),
+                "its second birthday",
+                "a birthday cake with candles",
+            ),
+            (
+                Date::constant(2026, 6, 21),
+                None,
+                "an ordinary day",
+                "a decoration",
+            ),
+        ] {
+            world.date = date;
+            world.birthday = birthday;
+            world.step(0.05);
+            assert_eq!(observe(&world)["occasion"], occasion);
+            assert_eq!(thing(&world, Thing::Decoration), decoration);
+            let text = observe(&world).to_string();
+            assert!(
+                !text.chars().any(|character| character.is_ascii_digit()),
+                "{text}"
+            );
+        }
+        world.date = Date::constant(2026, 12, 31);
+        world.hour = 23.5;
+        world.step(0.05);
+        assert!(outside_the_window(&world).contains("fireworks"));
+        world.date = Date::constant(2027, 1, 1);
+        world.hour = 0.0;
+        world.step(0.05);
+        assert!(recent(&world, 8).contains(&"a new year began (just now)".to_owned()));
+        assert!(
+            !observe(&world)
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
         );
     }
 }

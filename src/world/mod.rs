@@ -3,6 +3,7 @@ pub mod calendar;
 mod doodle;
 mod life;
 mod needs;
+pub mod occasion;
 mod random;
 mod sight;
 mod things;
@@ -15,6 +16,7 @@ pub use calendar::Season;
 pub use doodle::{Doodle, Sketch};
 pub use life::{Entry, Life};
 pub use needs::{Mood, Needs};
+pub use occasion::{Decoration, Occasion};
 pub use random::Random;
 pub use sight::{Seen, Thing};
 pub use things::{Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, WINDOW_CENTER, flat};
@@ -90,6 +92,7 @@ pub enum EventKind {
     Found,
     Jumped,
     Doodled(&'static str),
+    Celebrated(Occasion),
 }
 
 impl EventKind {
@@ -136,6 +139,8 @@ impl EventKind {
             Self::Found => "the viewer found you hiding".to_owned(),
             Self::Jumped => "jumped out from hiding at the viewer".to_owned(),
             Self::Doodled(name) => format!("drew a {name} on the glass"),
+            Self::Celebrated(Occasion::NewYear) => "a new year began".to_owned(),
+            Self::Celebrated(occasion) => format!("it is {}", occasion.words()),
         }
     }
 }
@@ -202,6 +207,8 @@ pub struct World {
     pub hour: f32,
     /// The local date, fixed for seeded pictures and set by the clock in live mode.
     pub date: jiff::civil::Date,
+    /// The local date it was born, absent in seeded pictures unless requested.
+    pub birthday: Option<jiff::civil::Date>,
     pub ghost: Ghost,
     pub lamp: Lamp,
     pub ball: Ball,
@@ -214,6 +221,9 @@ pub struct World {
     pub weather: Weather,
     /// Its life over days: its bond with the viewer, habits, and diary.
     pub life: Life,
+    last_celebrated: Option<(jiff::civil::Date, Occasion)>,
+    calendar_at: Option<jiff::civil::Date>,
+    new_year_at: Option<f64>,
     random: Random,
     next_mote: u32,
     next_mote_at: f64,
@@ -231,6 +241,7 @@ impl World {
             time: 0.0,
             hour,
             date: jiff::civil::Date::constant(2026, 6, 21),
+            birthday: None,
             ghost: Ghost {
                 name: "Boo".to_owned(),
                 position: start,
@@ -270,6 +281,9 @@ impl World {
             viewer: Viewer::default(),
             weather,
             life: Life::default(),
+            last_celebrated: None,
+            calendar_at: None,
+            new_year_at: None,
             random,
             next_mote: 0,
             next_mote_at: 8.0,
@@ -281,6 +295,7 @@ impl World {
     /// Moves the world forward by `seconds`, at most a tenth of a second at
     /// a time.
     pub fn step(&mut self, seconds: f32) {
+        self.celebrate();
         let mut remaining = seconds.max(0.0);
         while remaining > 0.0 {
             let slice = remaining.min(0.1);
@@ -720,12 +735,16 @@ impl World {
 
     // Floor circles the ball bounces off and the ghost flies around, with
     // the height they reach.
-    fn obstacles(&self) -> [(Vec3, f32); 3] {
-        [
+    fn obstacles(&self) -> Vec<(Vec3, f32)> {
+        let mut obstacles = vec![
             (self.lamp.position, Lamp::BASE_RADIUS),
             (self.plant.position, Plant::POT_RADIUS),
             (self.nook.position, Nook::RADIUS),
-        ]
+        ];
+        if let Some(decoration) = self.decoration() {
+            obstacles.push((Decoration::POSITION, decoration.radius()));
+        }
+        obstacles
     }
 
     fn random_spot(&mut self) -> Vec3 {
@@ -752,6 +771,9 @@ impl World {
     }
 
     fn choose_sketch(&mut self) -> Sketch {
+        if self.occasion() == Some(Occasion::Valentine) {
+            return Sketch::Heart;
+        }
         let mut sketches = Vec::new();
         if self.viewer_present() && self.life.bond >= GREETS_FROM {
             sketches.push(Sketch::Heart);
@@ -1003,7 +1025,11 @@ impl World {
                     self.ghost.plan.target = self.glass_spot();
                     self.ghost.velocity =
                         (self.ghost.plan.target - position).normalize_or_zero() * 1.6;
-                    self.say("Boo!");
+                    self.say(if self.date.month() == 10 && self.date.day() == 31 {
+                        "BOO!"
+                    } else {
+                        "Boo!"
+                    });
                     self.record(EventKind::Jumped);
                     self.ghost.plan.done = true;
                 }
@@ -1048,6 +1074,7 @@ impl World {
     // Steers toward the plan's target, around obstacles and away from the
     // walls.
     fn move_ghost(&mut self, seconds: f32) {
+        let decoration = self.decoration();
         let ghost = &mut self.ghost;
         let mut target = ghost.plan.target;
         if ghost.plan.activity == Activity::Float {
@@ -1101,7 +1128,14 @@ impl World {
             ),
             (self.nook.position, Nook::RADIUS, Nook::HEIGHT + 0.2),
         ];
-        for (center, radius, top) in obstacles {
+        let decoration = decoration.map(|decoration| {
+            (
+                Decoration::POSITION,
+                decoration.radius() + 0.05,
+                decoration.height() + 0.3,
+            )
+        });
+        for (center, radius, top) in obstacles.into_iter().chain(decoration) {
             let offset = flat(ghost.position - center);
             // Hiding tucks the ghost closer behind furniture than its
             // usual steering allows, especially beside the back wall.
@@ -1191,6 +1225,9 @@ impl World {
         }
         if self.weather.rainbow(self.time) > 0.3 && ghost.saw_rainbow {
             return Mood::Excited;
+        }
+        if self.occasion() == Some(Occasion::Birthday) {
+            return Mood::Cheerful;
         }
         if self.weather.snow(self.time) > 0.3 && ghost.saw_snow {
             return Mood::Curious;
@@ -1872,5 +1909,216 @@ mod tests {
             (world.ghost.position, world.motes.len())
         };
         assert_eq!(play(), play());
+    }
+
+    #[test]
+    fn each_occasion_is_celebrated_once_a_day_and_new_year_again_at_midnight() {
+        use jiff::civil::Date;
+
+        let mut world = World::new(1, 12.0);
+        world.date = Date::constant(2026, 10, 24);
+        world.step(0.0);
+        world.step(1.0);
+        assert_eq!(world.life.total.celebrations, 1);
+        assert_eq!(
+            world.events[0].kind,
+            EventKind::Celebrated(Occasion::Halloween)
+        );
+        world.date = Date::constant(2026, 10, 25);
+        world.step(0.1);
+        assert_eq!(world.life.total.celebrations, 2);
+        world.date = Date::constant(2026, 11, 1);
+        world.step(0.1);
+        assert_eq!(world.life.total.celebrations, 2);
+        world.date = Date::constant(2026, 12, 31);
+        world.hour = 19.999;
+        world.step(0.1);
+        assert_eq!(world.life.total.celebrations, 3);
+        world.hour = 20.0;
+        world.step(0.1);
+        assert_eq!(world.life.total.celebrations, 4);
+        world.hour = 23.999;
+        world.step(0.1);
+        assert_eq!(world.life.total.celebrations, 4);
+        world.date = Date::constant(2027, 1, 1);
+        world.hour = 0.0;
+        world.step(0.1);
+        assert_eq!(world.life.total.celebrations, 5);
+        let celebrations: Vec<_> = world
+            .events
+            .iter()
+            .filter(|event| event.kind == EventKind::Celebrated(Occasion::NewYear))
+            .collect();
+        assert_eq!(celebrations.len(), 2);
+        assert_eq!(world.event_words(celebrations[0]), "it is New Year");
+        assert_eq!(world.event_words(celebrations[1]), "a new year began");
+        world.step(0.1);
+        world.hour = 12.0;
+        world.step(0.1);
+        assert_eq!(world.life.total.celebrations, 5);
+    }
+
+    #[test]
+    fn a_birthday_at_midnight_keeps_its_priority_and_also_marks_the_new_year() {
+        use jiff::civil::Date;
+
+        let mut world = World::new(1, 23.999);
+        world.date = Date::constant(2026, 12, 31);
+        world.birthday = Some(Date::constant(2026, 1, 1));
+        world.step(0.1);
+        world.date = Date::constant(2027, 1, 1);
+        world.hour = 0.0;
+        world.step(0.1);
+        world.step(0.1);
+        assert_eq!(world.occasion(), Some(Occasion::Birthday));
+        assert_eq!(world.decoration().unwrap().occasion, Occasion::Birthday);
+        assert!(world.fireworks());
+        assert_eq!(world.life.total.celebrations, 3);
+        assert_eq!(
+            world
+                .events
+                .iter()
+                .filter(|event| event.kind == EventKind::Celebrated(Occasion::Birthday))
+                .count(),
+            1
+        );
+        assert_eq!(
+            world
+                .events
+                .iter()
+                .filter(|event| event.kind == EventKind::Celebrated(Occasion::NewYear))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn decorations_are_obstacles_and_visible_things_only_while_present() {
+        use jiff::civil::Date;
+
+        let mut world = World::new(1, 22.0);
+        for (date, birthday, present) in [
+            (Date::constant(2026, 10, 24), None, true),
+            (Date::constant(2026, 12, 24), None, true),
+            (Date::constant(2026, 12, 31), None, true),
+            (Date::constant(2027, 1, 1), None, true),
+            (
+                Date::constant(2027, 3, 1),
+                Some(Date::constant(2026, 3, 1)),
+                true,
+            ),
+            (Date::constant(2027, 2, 14), None, false),
+            (Date::constant(2026, 6, 21), None, false),
+        ] {
+            world.date = date;
+            world.birthday = birthday;
+            world.ghost.position = Vec3::new(0.95, 0.4, 0.2);
+            let target = world.position_of(Thing::Decoration);
+            assert_eq!(target.is_some(), present);
+            assert_eq!(world.obstacles().len(), if present { 4 } else { 3 });
+            world.ghost.heading =
+                (target.unwrap_or(Decoration::POSITION) - world.ghost.position - Vec3::Y * 0.1)
+                    .normalize();
+            let sight = world.sight();
+            assert_eq!(
+                sight
+                    .in_view
+                    .iter()
+                    .any(|seen| seen.thing == Thing::Decoration),
+                present
+            );
+            assert!(!sight.out_of_view.contains(&Thing::Decoration));
+            world.ghost.attention = None;
+            world.attend("decoration", 5.0);
+            assert_eq!(world.ghost.attention.is_some(), present);
+        }
+    }
+
+    #[test]
+    fn a_ball_bounces_off_the_decoration_and_passes_the_same_spot_on_ordinary_days() {
+        let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 31);
+        world.ball = Ball::at(Decoration::POSITION.x, Decoration::POSITION.z + 0.55);
+        world.ball.velocity = -Vec3::Z * 1.8;
+        let mut ordinary = world.clone();
+        ordinary.date = jiff::civil::Date::constant(2026, 11, 1);
+        let radius = world.decoration().unwrap().radius();
+        for _ in 0..80 {
+            world.step(0.005);
+            ordinary.step(0.005);
+            assert!(
+                flat(world.ball.position - Decoration::POSITION).length()
+                    >= radius + Ball::RADIUS - 1e-4
+            );
+        }
+        assert!(world.ball.velocity.z > 0.0);
+        assert!(ordinary.ball.position.z < Decoration::POSITION.z);
+    }
+
+    #[test]
+    fn the_ghost_steers_around_the_decoration_when_flying_low() {
+        let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2026, 12, 24);
+        world.ghost.position = Decoration::POSITION + Vec3::new(-0.3, 0.45, 0.0);
+        world.ghost.plan = Plan::new(
+            Activity::Explore,
+            0.0,
+            Decoration::POSITION + Vec3::new(0.7, 0.45, 0.0),
+            0.0,
+        );
+        let mut ordinary = world.clone();
+        ordinary.date = jiff::civil::Date::constant(2026, 6, 21);
+        world.move_ghost(0.1);
+        ordinary.move_ghost(0.1);
+        assert!(world.ghost.velocity.x < ordinary.ghost.velocity.x);
+    }
+
+    #[test]
+    fn an_unfound_ghost_shouts_louder_on_halloween_night() {
+        let mut world = World::new(9, 22.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 31);
+        world.notice_viewer();
+        world.begin(Activity::Hide);
+        for _ in 0..1400 {
+            world.step(0.05);
+            if world.needs_decision() {
+                break;
+            }
+        }
+        assert_eq!(world.events.last().unwrap().kind, EventKind::Jumped);
+        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "BOO!");
+    }
+
+    #[test]
+    fn birthdays_are_cheerful_unless_sleepiness_irritation_or_delight_takes_over() {
+        let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2027, 3, 1);
+        world.birthday = Some(jiff::civil::Date::constant(2026, 3, 1));
+        world.ghost.needs.fun = 0.1;
+        world.ghost.needs.company = 0.1;
+        assert_eq!(world.feeling(), Mood::Cheerful);
+        world.ghost.needs.energy = 0.1;
+        assert_eq!(world.feeling(), Mood::Sleepy);
+        world.ghost.needs.energy = 0.8;
+        world.record(EventKind::Poked { count: 3 });
+        assert_eq!(world.feeling(), Mood::Grumpy);
+        world.events.clear();
+        world.record(EventKind::AteMote);
+        assert_eq!(world.feeling(), Mood::Excited);
+    }
+
+    #[test]
+    fn valentine_doodles_are_hearts_whatever_the_weather_or_mood() {
+        let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2027, 2, 14);
+        for sky in [Sky::Clear, Sky::Rain, Sky::Snow, Sky::Rainbow] {
+            world.weather.sky = sky;
+            for mood in Mood::ALL {
+                world.ghost.mood = mood;
+                for _ in 0..10 {
+                    assert_eq!(world.choose_sketch(), Sketch::Heart);
+                }
+            }
+        }
     }
 }

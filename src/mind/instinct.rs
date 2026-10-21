@@ -1,4 +1,4 @@
-use crate::world::{Activity, EventKind, World, flat};
+use crate::world::{Activity, EventKind, Occasion, World, flat};
 
 /// How much the ghost's needs, surroundings, and habits pull it toward each
 /// of the activities open to it, as chances that add up to 1. This is the mind it
@@ -46,6 +46,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + 0.6 * outside.rain(world.time)
                     + 0.6 * outside.snow(world.time)
                     + 2.5 * outside.rainbow(world.time)
+                    + if world.fireworks() { 1.5 } else { 0.0 }
             }
             Activity::Fetch => {
                 let thrown = world
@@ -68,7 +69,10 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     .any(|event| {
                         matches!(
                             event.kind,
-                            EventKind::Bloomed | EventKind::Fetched | EventKind::AteMote
+                            EventKind::Bloomed
+                                | EventKind::Fetched
+                                | EventKind::AteMote
+                                | EventKind::Celebrated(Occasion::NewYear)
                         )
                     });
                 let rainbow = if world.ghost.saw_rainbow {
@@ -82,6 +86,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     0.0
                 };
                 (0.1 + rainbow
+                    + if world.occasion() == Some(Occasion::Birthday) {
+                        0.6
+                    } else {
+                        0.0
+                    }
                     + if delighted { 0.7 } else { 0.0 }
                     + company
                     + if needs.fun > 0.7 { 0.3 } else { 0.0 })
@@ -90,6 +99,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             Activity::Hide => {
                 if world.viewer_present() {
                     0.15 + 0.7 * (1.0 - needs.fun) * needs.energy
+                        + if world.occasion() == Some(Occasion::Halloween) {
+                            0.5
+                        } else {
+                            0.0
+                        }
                 } else {
                     0.0
                 }
@@ -276,5 +290,39 @@ mod tests {
         let bored = weigh(&world, &options);
         assert!(ratio(&bored, Activity::Hide) > ratio(&together, Activity::Hide));
         assert!(ratio(&bored, Activity::Doodle) > ratio(&together, Activity::Doodle));
+    }
+
+    #[test]
+    fn special_days_draw_the_ghost_to_hiding_dancing_and_fireworks() {
+        use jiff::civil::Date;
+
+        let mut world = World::new(1, 23.5);
+        world.notice_viewer();
+        let options = [
+            Activity::Float,
+            Activity::Hide,
+            Activity::Dance,
+            Activity::Window,
+        ];
+        let ordinary = weigh(&world, &options);
+        let ratio = |weights: &[(Activity, f32)], activity| {
+            chance(weights, activity) / chance(weights, Activity::Float)
+        };
+        world.date = Date::constant(2026, 10, 31);
+        assert!(ratio(&weigh(&world, &options), Activity::Hide) > ratio(&ordinary, Activity::Hide));
+        world.date = Date::constant(2027, 3, 1);
+        world.birthday = Some(Date::constant(2026, 3, 1));
+        assert!(
+            ratio(&weigh(&world, &options), Activity::Dance) > ratio(&ordinary, Activity::Dance)
+        );
+        world.date = Date::constant(2026, 12, 31);
+        assert!(
+            ratio(&weigh(&world, &options), Activity::Window) > ratio(&ordinary, Activity::Window)
+        );
+        world.hour = 23.499;
+        assert_eq!(
+            ratio(&weigh(&world, &options), Activity::Window),
+            ratio(&ordinary, Activity::Window)
+        );
     }
 }

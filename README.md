@@ -138,6 +138,22 @@ night. The ghost lights up when it spots a rainbow or falling snow.
 - **Its eyes** follow where it faces, so its face shows what it's looking at,
   except while your pointer moves, which it watches instead.
 
+### Special days
+
+From October 24–31, a grinning jack-o'-lantern warms the room with candlelight.
+The ghost loves hide-and-seek that week, and shouts "BOO!" on Halloween itself.
+A little fir tree with twinkling lights stands for the winter holidays from
+December 18–31. At eight on December 31, the New Year celebration takes over
+through New Year's Day; fireworks burst outside from half past eleven until one in
+the morning, briefly lighting the room. The ghost marks midnight, too.
+On Valentine's Day, the motes glow pink and every doodle is a heart.
+
+Starting with its first anniversary, the ghost's birthday brings a cake with
+one candle per year, up to five, and a cheerful urge to dance. Its birth date
+comes from its saved life in your local time zone; a February 29 birthday falls
+on February 28 in other years. Birthdays take precedence over other occasions.
+Special days find their way into its thoughts, dreams, and diary, even offline.
+
 ### Its life between runs
 
 The ghost grows close to you over time. Each minute you spend with it (it
@@ -221,15 +237,19 @@ ghost and exits. It never reads or writes the saved life or calls a model. The
 frame size comes from `COLUMNS` and `LINES` (default 80x24), and output is
 plain unless `--color` is given. `--time` runs the world that many seconds
 first, deciding on instinct. `--hour` sets the time of day (default noon),
-and `--date YYYY-MM-DD` sets the date (default 2026-06-21):
+`--date YYYY-MM-DD` sets the date (default 2026-06-21), and optional
+`--born YYYY-MM-DD` sets a birth date so you can preview birthdays:
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2027-03-01 --born 2026-03-01 < /dev/null | cat
 ```
 
-The same `--time`, `--hour`, and `--date` give the same frame. Piped time
+The same `--time`, `--hour`, `--date`, and `--born` give the same frame.
+Without `--born`, piped ghosts have no birthday. Piped time
 advances the simulation while the chosen date and hour stay fixed.
 
 ## Development

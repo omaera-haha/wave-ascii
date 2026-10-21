@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind};
+use super::{Activity, EventKind, Occasion};
 
 /// Days of the diary kept.
 const DAYS_KEPT: usize = 60;
@@ -28,6 +28,9 @@ pub struct Tally {
     /// Times it brought the ball back to the viewer.
     pub fetches: u32,
     pub dances: u32,
+    pub celebrations: u32,
+    /// The occasions it marked, kept once each for the diary.
+    pub occasions: Vec<Occasion>,
     /// Times the viewer found it hiding, and it jumped out unfound.
     pub finds: u32,
     pub jumps: u32,
@@ -68,6 +71,12 @@ impl Tally {
             EventKind::NudgedBall => self.nudges += 1,
             EventKind::Fetched => self.fetches += 1,
             EventKind::Danced => self.dances += 1,
+            EventKind::Celebrated(occasion) => {
+                self.celebrations += 1;
+                if !self.occasions.contains(occasion) {
+                    self.occasions.push(*occasion);
+                }
+            }
             EventKind::Found => self.finds += 1,
             EventKind::Jumped => self.jumps += 1,
             EventKind::Doodled(_) => self.doodles += 1,
@@ -91,7 +100,11 @@ impl Tally {
     /// The day in a few sentences, as the ghost would write it in its diary
     /// to the viewer.
     pub fn words(&self) -> String {
-        let mut deeds = Vec::new();
+        let mut deeds: Vec<String> = self
+            .occasions
+            .iter()
+            .map(|occasion| occasion.diary_words().to_owned())
+            .collect();
         match self.motes {
             0 => {}
             1 => deeds.push("ate a light mote".to_owned()),
@@ -585,5 +598,36 @@ mod tests {
         assert_eq!(listed(&items(1)), "a");
         assert_eq!(listed(&items(2)), "a and b");
         assert_eq!(listed(&items(3)), "a, b, and c");
+    }
+
+    #[test]
+    fn celebrations_are_counted_and_named_in_the_diary() {
+        let mut life = Life::default();
+        life.begin_day("2026-10-31");
+        for occasion in [
+            Occasion::Halloween,
+            Occasion::WinterHolidays,
+            Occasion::NewYear,
+            Occasion::Valentine,
+            Occasion::Birthday,
+        ] {
+            life.note(&EventKind::Celebrated(occasion));
+        }
+        life.note(&EventKind::Celebrated(Occasion::NewYear));
+        assert_eq!(life.total.celebrations, 6);
+        assert_eq!(life.today.celebrations, 6);
+        let words = life.today.words();
+        assert!(words.contains("Celebrated Halloween"));
+        assert!(words.contains("celebrated the winter holidays"));
+        assert!(words.contains("celebrated Valentine's Day"));
+        assert!(words.contains("had a birthday"));
+        assert_eq!(words.matches("celebrated the new year").count(), 1);
+        let restored: Life = serde_json::from_str(&serde_json::to_string(&life).unwrap()).unwrap();
+        assert_eq!(life, restored);
+        life.begin_day("2026-11-01");
+        assert_eq!(life.today.celebrations, 0);
+        assert_eq!(life.total.celebrations, 6);
+        assert_eq!(life.diary[0].text, words);
+        assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().celebrations, 0);
     }
 }

@@ -216,6 +216,9 @@ impl App {
     pub fn live(mut self, paths: Option<Paths>, born: i64) -> Self {
         self.paths = paths;
         self.born = born;
+        self.world.birthday = jiff::Timestamp::from_second(born)
+            .ok()
+            .map(|timestamp| timestamp.to_zoned(jiff::tz::TimeZone::system()).date());
         self.live_clock = true;
         (self.world.date, self.world.hour) = local_time();
         self
@@ -573,6 +576,7 @@ impl App {
                     snow: world.weather.snow(world.time),
                     snow_cover: world.weather.snow_cover,
                     moon_phase: world.moon_phase(),
+                    fireworks: world.fireworks(),
                     time: world.time,
                 },
                 view,
@@ -655,7 +659,7 @@ fn local_time() -> (jiff::civil::Date, f32) {
     let now = jiff::Zoned::now();
     (
         now.date(),
-        f32::from(now.hour()) + f32::from(now.minute()) / 60.0,
+        f32::from(now.hour()) + f32::from(now.minute()) / 60.0 + f32::from(now.second()) / 3600.0,
     )
 }
 
@@ -1194,5 +1198,16 @@ mod tests {
         assert!(app.world.ghost.plan.activity == Activity::Float || app.paused);
         app.input(Input::Key(Key::Character('?')));
         assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+    }
+
+    #[test]
+    fn a_live_ghost_takes_its_birth_date_from_the_saved_timestamp_in_local_time() {
+        let born = 1_790_000_000;
+        let expected = jiff::Timestamp::from_second(born)
+            .unwrap()
+            .to_zoned(jiff::tz::TimeZone::system())
+            .date();
+        let app = app().live(None, born);
+        assert_eq!(app.world.birthday, Some(expected));
     }
 }

@@ -853,6 +853,10 @@ fn life_panel(app: &App, screen: &mut Canvas) {
             TEXT,
         ));
     }
+    lines.push((
+        format!("  {:<18}{:>5}", "celebrations", total.celebrations),
+        TEXT,
+    ));
     lines.push((String::new(), TEXT));
     lines.push(("Today so far".to_owned(), ACCENT));
     let room = screen.columns().saturating_sub(10).clamp(20, 56);

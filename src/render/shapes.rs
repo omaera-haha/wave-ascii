@@ -1,7 +1,7 @@
 use glam::{Vec2, Vec3};
 
-use crate::sdf::trapezoid;
-use crate::world::{Lamp, Nook, Plant};
+use crate::sdf::{star, trapezoid};
+use crate::world::{Decoration, Lamp, Nook, Occasion, Plant};
 
 /// What a surface is made of, which sets its color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +15,12 @@ pub enum Material {
     Leaf,
     Petal,
     Cushion,
+    Pumpkin,
+    Fir,
+    Frosting,
+    Candle,
+    Ember,
+    TreeLight(u8),
 }
 
 impl Material {
@@ -33,7 +39,29 @@ impl Material {
             }
             Self::Petal => Vec3::new(1.0, 0.56, 0.76),
             Self::Cushion => Vec3::new(0.64, 0.57, 0.96),
+            Self::Pumpkin => Vec3::new(1.0, 0.5, 0.16),
+            Self::Fir => Vec3::new(0.35, 0.78, 0.48),
+            Self::Frosting => Vec3::new(1.0, 0.74, 0.83),
+            Self::Candle => Vec3::new(0.65, 0.85, 1.0),
+            Self::Ember => Vec3::new(1.0, 0.72, 0.24),
+            Self::TreeLight(index) => match index % 4 {
+                0 => Vec3::new(1.0, 0.4, 0.44),
+                1 => Vec3::new(0.45, 0.72, 1.0),
+                2 => Vec3::new(1.0, 0.85, 0.35),
+                _ => Vec3::new(0.6, 1.0, 0.7),
+            },
         }
+    }
+
+    pub fn emission(self, time: f64, plant: &Plant) -> Vec3 {
+        let strength = match self {
+            Self::Ember => 1.4 * flicker(time),
+            Self::TreeLight(index) => {
+                0.9 + 0.5 * ((time.rem_euclid(3600.0) as f32) * 2.1 + f32::from(index) * 1.7).sin()
+            }
+            _ => 0.0,
+        };
+        self.albedo(plant) * strength
     }
 }
 
@@ -44,6 +72,7 @@ pub enum Furniture {
     Lamp(Lamp),
     Plant(Plant),
     Nook(Nook),
+    Decoration(Decoration, f64),
 }
 
 impl Furniture {
@@ -55,6 +84,13 @@ impl Furniture {
                 (plant.position + Vec3::Y * height * 0.5, height * 0.5 + 0.28)
             }
             Self::Nook(nook) => (nook.position + Vec3::Y * 0.08, Nook::RADIUS + 0.06),
+            Self::Decoration(decoration, _) => {
+                let half = decoration.height() * 0.5;
+                (
+                    Decoration::POSITION + Vec3::Y * half,
+                    (half * half + decoration.radius().powi(2)).sqrt() + 0.02,
+                )
+            }
         }
     }
 
@@ -62,6 +98,9 @@ impl Furniture {
     /// nearest it.
     pub fn distance(&self, point: Vec3) -> (f32, Material) {
         match self {
+            Self::Decoration(decoration, time) => {
+                decoration_distance(point - Decoration::POSITION, *decoration, *time)
+            }
             Self::Lamp(lamp) => lamp_distance(point - lamp.position),
             Self::Plant(plant) => plant_distance(point - plant.position, plant),
             Self::Nook(nook) => (
@@ -185,6 +224,140 @@ fn plant_distance(point: Vec3, plant: &Plant) -> (f32, Material) {
         }
     }
     nearest
+}
+
+// A hollow ribbed pumpkin, with eyes and a grin cut through its front.
+fn pumpkin_distance(point: Vec3) -> (f32, Material) {
+    let center = point - Vec3::Y * 0.17;
+    let angle = center.x.atan2(center.z);
+    let radius = 0.17 + 0.008 * (angle * 10.0).cos();
+    let body = ellipsoid(center, Vec3::new(radius, 0.15, radius));
+    let inside = ellipsoid(center, Vec3::new(0.14, 0.12, 0.14));
+    let eye = trapezoid(
+        Vec2::new(point.x.abs() - 0.058, point.y - 0.215),
+        0.028,
+        0.0,
+        0.027,
+    );
+    let mouth_point = Vec2::new(point.x, (point.y - 0.168) * 1.3);
+    let grin = (mouth_point.length() - 0.085).abs() - 0.016;
+    let grin = grin.max(point.y - 0.15);
+    let tooth = ((point.x.abs() - 0.034).abs() - 0.011).max(0.113 - point.y);
+    let grin = grin.max(-tooth);
+    let cuts = eye.min(grin).max(0.075 - point.z);
+    let shell = body.max(-inside).max(-cuts);
+    let stem = capsule(point, Vec3::Y * 0.31, Vec3::new(0.015, 0.355, 0.0), 0.014);
+    let ember = ellipsoid(center, Vec3::new(0.126, 0.106, 0.126));
+    [
+        (shell, Material::Pumpkin),
+        (stem, Material::Stem),
+        (ember, Material::Ember),
+    ]
+    .into_iter()
+    .min_by(|first, second| first.0.total_cmp(&second.0))
+    .unwrap()
+}
+
+// Three boughs around a little trunk, with a star and a spiral of lights.
+fn tree_distance(point: Vec3) -> (f32, Material) {
+    let mut nearest = (rounded_cylinder(point, 0.035, 0.15, 0.008), Material::Brass);
+    for (bottom, radius, height) in [(0.08, 0.22, 0.3), (0.25, 0.17, 0.25), (0.4, 0.12, 0.2)] {
+        let cone = trapezoid(
+            Vec2::new(
+                Vec2::new(point.x, point.z).length(),
+                point.y - bottom - height * 0.5,
+            ),
+            radius,
+            0.0,
+            height * 0.5,
+        );
+        if cone < nearest.0 {
+            nearest = (cone, Material::Fir);
+        }
+    }
+    let crown = star(Vec2::new(point.x, point.y - 0.635), 0.04).max(point.z.abs() - 0.012);
+    if crown < nearest.0 {
+        nearest = (crown, Material::TreeLight(2));
+    }
+    for index in 0..16 {
+        let height = 0.12 + index as f32 * 0.028;
+        let radius = if height < 0.25 {
+            0.22 * (0.38 - height) / 0.3
+        } else if height < 0.4 {
+            0.17 * (0.5 - height) / 0.25
+        } else {
+            0.12 * (0.6 - height) / 0.2
+        };
+        let angle = index as f32 * 2.4;
+        let center = Vec3::new(
+            angle.cos() * (radius + 0.006),
+            height,
+            angle.sin() * (radius + 0.006),
+        );
+        let light = point.distance(center) - 0.016;
+        if light < nearest.0 {
+            nearest = (light, Material::TreeLight(index));
+        }
+    }
+    nearest
+}
+
+// A frosted cake with one candle per year, up to five.
+fn cake_distance(point: Vec3, candles: u16, time: f64) -> (f32, Material) {
+    let cake = rounded_cylinder(point, 0.17, 0.17, 0.025);
+    let icing = rounded_cylinder(point - Vec3::Y * 0.145, 0.177, 0.035, 0.012);
+    let mut nearest = (cake.min(icing), Material::Frosting);
+    for index in 0..candles {
+        let angle = f32::from(index) * std::f32::consts::TAU / f32::from(candles);
+        let radius = if candles == 1 { 0.0 } else { 0.085 };
+        let base = Vec3::new(angle.cos() * radius, 0.175, angle.sin() * radius);
+        let candle = rounded_cylinder(point - base, 0.013, 0.09, 0.003);
+        if candle < nearest.0 {
+            nearest = (candle, Material::Candle);
+        }
+        let flame = ellipsoid(
+            point
+                - base
+                - Vec3::new(
+                    0.003 * (time.rem_euclid(3600.0) as f32 * 7.0 + angle).sin(),
+                    0.112,
+                    0.0,
+                ),
+            Vec3::new(0.012, 0.024 * flicker(time), 0.012),
+        );
+        if flame < nearest.0 {
+            nearest = (flame, Material::Ember);
+        }
+    }
+    nearest
+}
+
+fn decoration_distance(point: Vec3, decoration: Decoration, time: f64) -> (f32, Material) {
+    match decoration.occasion {
+        Occasion::Halloween => pumpkin_distance(point),
+        Occasion::WinterHolidays | Occasion::NewYear => tree_distance(point),
+        Occasion::Birthday => cake_distance(point, decoration.candles, time),
+        Occasion::Valentine => (f32::INFINITY, Material::Frosting),
+    }
+}
+
+fn flicker(time: f64) -> f32 {
+    let phase = time.rem_euclid(3600.0) as f32;
+    0.86 + 0.08 * (phase * 7.1).sin() + 0.06 * (phase * 11.3 + 0.7).sin()
+}
+
+pub fn decoration_light(decoration: Decoration, time: f64) -> Vec3 {
+    match decoration.occasion {
+        Occasion::Halloween | Occasion::Birthday => {
+            Vec3::new(1.0, 0.57, 0.2) * 0.65 * flicker(time)
+        }
+        Occasion::WinterHolidays | Occasion::NewYear => {
+            let phase = time.rem_euclid(3600.0) as f32 * 0.7;
+            Vec3::new(0.8, 0.55, 0.65).lerp(Vec3::new(0.45, 0.8, 1.0), 0.5 + 0.5 * phase.sin())
+                * 0.4
+        }
+        Occasion::Valentine => Vec3::ZERO,
+    }
 }
 
 /// Where a ray meets a sphere: the distances at which it enters and leaves.

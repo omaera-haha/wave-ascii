@@ -48,6 +48,7 @@ Options:
                                  the frame is printed (default 0)
   --hour HOUR                    when piped: the hour of day (default 12)
   --date YYYY-MM-DD              when piped: the date (default 2026-06-21)
+  --born YYYY-MM-DD              when piped: the ghost's birth date (optional)
   -h, --help                     show this help
 
 Keys:
@@ -72,6 +73,7 @@ struct Options {
     time: f32,
     hour: f32,
     date: jiff::civil::Date,
+    born: Option<jiff::civil::Date>,
 }
 
 fn main() -> ExitCode {
@@ -115,6 +117,7 @@ fn parse_options() -> io::Result<Option<Options>> {
         time: 0.0,
         hour: 12.0,
         date: jiff::civil::Date::constant(2026, 6, 21),
+        born: None,
     };
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -167,6 +170,11 @@ fn parse_options() -> io::Result<Option<Options>> {
             }
             "--hour" => options.hour = number(value()?, 0.0, 24.0, "an hour from 0 to 24")? as f32,
             "--date" => options.date = parse_date(&value()?)?,
+            "--born" => {
+                options.born = Some(parse_date(&value()?).map_err(|error| {
+                    invalid_input(error.to_string().replace("--date", "--born"))
+                })?)
+            }
             "--offline" => options.offline = true,
             other => {
                 return Err(invalid_input(format!(
@@ -268,6 +276,8 @@ fn print_frame(options: &Options) -> io::Result<()> {
     let color = options.color.unwrap_or(ColorMode::Plain);
     let mut world = World::new(1, options.hour);
     world.date = options.date;
+    world.birthday = options.born;
+    world.step(0.0);
     let mind = Mind::new(&Config::default(), Journal::default(), true);
     let mut app = App::new(world, mind, Config::default(), options.style, color);
     let mut remaining = options.time;

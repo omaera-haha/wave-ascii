@@ -1,4 +1,4 @@
-use crate::world::{Activity, Mood, Sky, World};
+use crate::world::{Activity, Mood, Occasion, Sky, World};
 
 // Thoughts the ghost has on its own while it has no System Two to think
 // with: a few words that fit the moment, so a ghost without keys still has
@@ -76,6 +76,30 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    match world.occasion() {
+        Some(Occasion::Halloween) => lines.extend([
+            "Boo! Did I scare you?",
+            "The pumpkin is grinning at me.",
+            "A ghost is very good at Halloween.",
+        ]),
+        Some(Occasion::WinterHolidays) => lines.extend([
+            "The little tree is so pretty.",
+            "A tiny holiday in a tiny room.",
+        ]),
+        Some(Occasion::NewYear) => {
+            lines.extend(["Happy new year!", "I wonder what this year will bring."])
+        }
+        Some(Occasion::Valentine) => lines.extend([
+            "A heart on the glass, just for you.",
+            "Even the light motes look fond today.",
+        ]),
+        Some(Occasion::Birthday) => lines.extend([
+            "It's my birthday!",
+            "Another year in my glass box.",
+            "I made a wish. It's a secret.",
+        ]),
+        None => {}
+    }
     if needs.energy < 0.3 {
         lines.extend(["I'm getting sleepy.", "Running low on light."]);
     }
@@ -143,6 +167,29 @@ pub fn idle(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    match world.occasion() {
+        Some(Occasion::Halloween) => lines.extend([
+            "…a pumpkin so big I can hide inside its grin…",
+            "…all the pumpkins shout boo, and I laugh…",
+        ]),
+        Some(Occasion::WinterHolidays) => lines.extend([
+            "…the little tree grows stars instead of needles…",
+            "…a present wrapped in moonlight…",
+        ]),
+        Some(Occasion::NewYear) => lines.extend([
+            "…fireworks turn into light motes I can catch…",
+            "…a new year opens like a window…",
+        ]),
+        Some(Occasion::Valentine) => lines.extend([
+            "…pink lights leaving hearts wherever they drift…",
+            "…a heart drawn on the moon…",
+        ]),
+        Some(Occasion::Birthday) => lines.extend([
+            "…a cake as big as the room, and a wish for every candle…",
+            "…everyone sings, even the plant…",
+        ]),
+        None => {}
+    }
     if today.motes > 0 {
         lines.extend([
             "…a whole sky of light motes, and all of them mine…",
@@ -225,5 +272,34 @@ mod tests {
             dreams(&world),
             ["…the ball rolls on and on, out into the hills…"]
         );
+    }
+
+    #[test]
+    fn every_occasion_brings_its_own_thoughts_and_dreams() {
+        use jiff::civil::Date;
+
+        let mut world = World::new(1, 22.0);
+        let ordinary_thoughts = idle(&world);
+        let ordinary_dreams = dreams(&world);
+        for (month, day, birthday) in [
+            (10, 31, None),
+            (12, 24, None),
+            (12, 31, None),
+            (2, 14, None),
+            (3, 1, Some(Date::constant(2026, 3, 1))),
+        ] {
+            world.date = Date::new(2027, month, day).unwrap();
+            world.birthday = birthday;
+            assert!(
+                idle(&world)
+                    .iter()
+                    .any(|line| !ordinary_thoughts.contains(line))
+            );
+            assert!(
+                dreams(&world)
+                    .iter()
+                    .any(|line| !ordinary_dreams.contains(line))
+            );
+        }
     }
 }
