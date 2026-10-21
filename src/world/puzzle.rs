@@ -331,7 +331,7 @@ fn valid_word(word: &str, korean: bool) -> bool {
     (if korean { 2..=4 } else { 3..=8 }).contains(&length) && valid_script(word, korean)
 }
 
-fn requested(text: &str) -> bool {
+pub(super) fn requested(text: &str) -> bool {
     let words = text
         .to_lowercase()
         .split(|character: char| !character.is_alphabetic())

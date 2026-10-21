@@ -77,8 +77,11 @@ impl Accessory {
 
     pub(super) fn valid(self, occasion: Option<Occasion>) -> bool {
         match self {
-            Self::Scarf { color } => color < 3,
-            Self::PartyHat => matches!(occasion, Some(Occasion::Birthday | Occasion::NewYear)),
+            Self::Scarf { color } => usize::from(color) < 3 + super::acquaintance::Color::ALL.len(),
+            Self::PartyHat => matches!(
+                occasion,
+                Some(Occasion::Birthday | Occasion::NewYear | Occasion::ViewerBirthday)
+            ),
             Self::WitchHat => occasion == Some(Occasion::Halloween),
             Self::LuckyPouch => occasion == Some(Occasion::Seollal),
             Self::Holly => occasion == Some(Occasion::WinterHolidays),
@@ -111,7 +114,9 @@ impl World {
 
     fn occasion_accessory(&self) -> Option<Accessory> {
         match self.occasion() {
-            Some(Occasion::Birthday | Occasion::NewYear) => Some(Accessory::PartyHat),
+            Some(Occasion::Birthday | Occasion::NewYear | Occasion::ViewerBirthday) => {
+                Some(Accessory::PartyHat)
+            }
             Some(Occasion::Halloween) => Some(Accessory::WitchHat),
             Some(Occasion::Seollal) => Some(Accessory::LuckyPouch),
             Some(Occasion::WinterHolidays) => Some(Accessory::Holly),
@@ -119,11 +124,23 @@ impl World {
         }
     }
 
+    fn scarf_color(&mut self) -> u8 {
+        self.life.viewer.color.map_or_else(
+            || self.pick(&[1.0; 3]).unwrap() as u8,
+            |color| {
+                3 + super::acquaintance::Color::ALL
+                    .iter()
+                    .position(|&known| known == color)
+                    .unwrap() as u8
+            },
+        )
+    }
+
     fn choose_accessory(&mut self) -> Option<Accessory> {
         let nature = self.life.nature.unwrap_or_default();
         if self.bedtime() {
             return self.cold_for_scarf().then(|| Accessory::Scarf {
-                color: self.pick(&[1.0; 3]).unwrap() as u8,
+                color: self.scarf_color(),
             });
         }
         if let Some(accessory) = self.occasion_accessory() {
@@ -132,7 +149,7 @@ impl World {
         }
         if self.cold_for_scarf() {
             return (self.random_unit() < 0.9 - nature.shy * 0.2).then(|| Accessory::Scarf {
-                color: self.pick(&[1.0; 3]).unwrap() as u8,
+                color: self.scarf_color(),
             });
         }
         let flowers: Vec<Flower> = self
@@ -363,7 +380,7 @@ impl World {
     }
 }
 
-fn requested_off(text: &str, wearing: Option<Accessory>) -> bool {
+pub(super) fn requested_off(text: &str, wearing: Option<Accessory>) -> bool {
     if text.trim_end().ends_with(['?', '？']) {
         return false;
     }

@@ -291,7 +291,11 @@ impl App {
             self.post("It talks in a few words of its own. With a Claude key (press k), it can really talk.");
         }
         let ease = 1.0 - (-1.5 * seconds).exp();
-        self.aura = self.aura.lerp(mood_color(self.world.ghost.mood), ease);
+        let mut color = mood_color(self.world.ghost.mood);
+        if let Some((favorite, strength)) = self.world.viewer_blush() {
+            color = color.lerp(favorite, strength);
+        }
+        self.aura = self.aura.lerp(color, ease);
         if self.live_clock && self.world.time - self.last_save > SAVE_EVERY {
             self.last_save = self.world.time;
             if let Err(error) = self.save() {

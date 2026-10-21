@@ -353,6 +353,27 @@ spent together, including early endings. Quitting silently ends the timer.
   Claude key, Claude answers instead. It also answers "tell me a story"
   offline, weaving its own memories into a short tale in either language.
 
+### Getting to know you
+
+Once you are friends, the ghost sometimes asks about your favorite color,
+season, animal, food, or birthday while you chat at the glass. Answer in
+English or Korean; it remembers between visits. It asks at most once a day,
+or twice if it is curious, and waits three minutes for an answer. Questions
+and requests carry on normally. Dates can be “March 3”, “3월 14일”, or an
+unambiguous numeric date such as “3/14”; short animal and food answers can
+be up to twenty-four characters.
+
+Ask “what's my favorite color?” or “when is my birthday?” (“내가 좋아하는
+색이 뭐야?” / “내 생일 언제야?”) to hear what it remembers. Your favorite
+color warms its arrival glow and colors future scarves; your favorite
+season gets a greeting on its first morning, and animals and foods wander
+into its thoughts and dreams. The life panel's **You** row keeps these details.
+
+Your birthday brings a cake, a greeting, birthday writing in the fog, and
+sometimes a party hat. February twenty-ninth is celebrated on the
+twenty-eighth in other years. Its own birthday takes precedence if you share
+the date.
+
 ### What you see
 
 - **The glow around the ghost** takes the color of its mood: teal when

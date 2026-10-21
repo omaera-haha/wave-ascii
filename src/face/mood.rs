@@ -156,6 +156,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
             Expression::Sparkle
         }
         EventKind::SawDrawing { .. } | EventKind::Copied(_) => Expression::Smile,
+        EventKind::LearnedAboutViewer(_) => Expression::Smile,
         EventKind::LearnedPicture(_) => Expression::Sparkle,
         EventKind::Puzzled(_) => Expression::Skeptical,
         EventKind::LearnedWord { .. }

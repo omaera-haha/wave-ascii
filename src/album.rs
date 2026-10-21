@@ -421,6 +421,10 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
             ),
             None,
         ),
+        EventKind::Celebrated(crate::world::Occasion::ViewerBirthday) => (
+            "Your birthday, together.".to_owned(),
+            Some("occasion:your birthday".to_owned()),
+        ),
         EventKind::Celebrated(occasion) => (
             format!("{} with you.", occasion.name()),
             Some(format!("occasion:{}", occasion.name())),

@@ -305,6 +305,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
             Emote::Sparkle
         }
         EventKind::SawDrawing { name: None } => Emote::Question,
+        EventKind::LearnedAboutViewer(_) => Emote::Heart,
         EventKind::LearnedPicture(_) => Emote::Sparkle,
         EventKind::Copied(_) => Emote::Note,
         EventKind::Puzzled(_) => Emote::Question,

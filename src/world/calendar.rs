@@ -1,7 +1,8 @@
 use jiff::civil::Date;
+use serde::{Deserialize, Serialize};
 
 /// The northern hemisphere's season, by calendar month.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Season {
     Spring,
     Summer,
@@ -16,6 +17,15 @@ impl Season {
             6..=8 => Self::Summer,
             9..=11 => Self::Autumn,
             _ => Self::Winter,
+        }
+    }
+
+    pub fn korean(self) -> &'static str {
+        match self {
+            Self::Spring => "봄",
+            Self::Summer => "여름",
+            Self::Autumn => "가을",
+            Self::Winter => "겨울",
         }
     }
 

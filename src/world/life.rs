@@ -212,6 +212,8 @@ pub struct Tally {
     pub wishes_faded: u32,
     #[serde(default)]
     pub wish_words: Vec<String>,
+    #[serde(default)]
+    pub learned_about: u32,
 }
 
 impl Tally {
@@ -222,6 +224,9 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::LearnedAboutViewer(_) => {
+                self.learned_about = self.learned_about.saturating_add(1)
+            }
             EventKind::Quirk(quirk) => {
                 let count = self.quirks.entry(*quirk).or_default();
                 *count = count.saturating_add(1);
@@ -547,6 +552,9 @@ impl Tally {
         } else if self.toppled > 0 {
             deeds.push("watched you knock my tower down".to_owned());
         }
+        if self.learned_about > 0 {
+            deeds.push("learned a little more about you".to_owned());
+        }
         if self.moon_wishes > 0 {
             deeds.push("made a wish on the Chuseok moon".to_owned());
         }
@@ -868,6 +876,8 @@ pub struct Life {
     pub wish: Option<super::Wishing>,
     #[serde(default)]
     pub granted: Vec<super::Granted>,
+    #[serde(default)]
+    pub viewer: super::acquaintance::Acquaintance,
 }
 
 impl Life {
@@ -1020,6 +1030,7 @@ impl Life {
                 completed: true, ..
             } => 0.01,
             EventKind::ToldStory => 0.005,
+            EventKind::LearnedAboutViewer(_) => 0.005,
             EventKind::LearnedTune(_) => 0.005,
             EventKind::WordGame { .. } => 0.003,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
@@ -1240,6 +1251,7 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.viewer.sanitize();
         self.books.sanitize();
         self.tunes = self
             .tunes
@@ -1351,6 +1363,7 @@ impl Life {
             tally.tunes_played = tally.tunes_played.min(100_000_000);
             tally.tunes_learned = tally.tunes_learned.min(100_000_000);
             tally.lullaby_sleeps = tally.lullaby_sleeps.min(100_000_000);
+            tally.learned_about = tally.learned_about.min(100_000_000);
             tally.names = tally.names.min(100_000_000);
             tally.wishes_made = tally.wishes_made.min(100_000_000);
             tally.wishes_granted = tally.wishes_granted.min(100_000_000);
@@ -1435,6 +1448,13 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if let EventKind::LearnedAboutViewer(topic) = kind {
+            let first = self.reach("You told me about yourself.".to_owned());
+            let birthday = (*topic == super::acquaintance::Topic::Birthday)
+                .then(|| self.reach("I know your birthday now.".to_owned()))
+                .flatten();
+            return first.or(birthday);
+        }
         if matches!(kind, EventKind::LearnedTune(_)) {
             return self.reach("You taught me my first tune.".to_owned());
         }
@@ -1613,6 +1633,7 @@ impl Life {
                 Occasion::NewYear => "Saw in my first new year.",
                 Occasion::Valentine => "My first Valentine's Day.",
                 Occasion::Birthday => "My first birthday!",
+                Occasion::ViewerBirthday => "Celebrated your birthday together for the first time.",
                 Occasion::Seollal => "Celebrated my first Seollal.",
                 Occasion::Chuseok => "Celebrated my first Chuseok under the harvest moon.",
                 Occasion::HangulDay => "My first Hangul Day, drawing letters in the fog.",

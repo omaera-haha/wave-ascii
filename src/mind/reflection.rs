@@ -165,6 +165,14 @@ pub fn request(
     let finished_books = life.books.titles(true, false);
     let tunes: Vec<&str> = life.tunes.iter().map(|tune| tune.name.as_str()).collect();
     let days = dated(&life.diary, DAYS_SENT);
+    let viewer_words = |text: &str| {
+        crate::world::acquaintance::birthday(text)
+            .filter(|birthday| life.viewer.birthday == Some(*birthday))
+            .map_or_else(
+                || text.to_owned(),
+                |birthday| format!("my birthday is {}", birthday.words()),
+            )
+    };
     let conversation: Vec<String> = conversation
         .iter()
         .rev()
@@ -175,14 +183,19 @@ pub fn request(
                 Speaker::Viewer => "person",
                 Speaker::Ghost => "ghost",
             };
-            format!("{speaker}: {}", remark.text)
+            let text = if remark.speaker == Speaker::Viewer {
+                viewer_words(&remark.text)
+            } else {
+                remark.text.clone()
+            };
+            format!("{speaker}: {text}")
         })
         .collect();
     let prompt = match heard {
         Some(text) if crate::world::asked_question(text) == Some(Question::Story) => format!(
             "The person just said: {text}\nThe viewer asked for a story. In say, tell a short story from the ghost's life in three to five short sentences, each under seventy characters. Use only memories and facts you know, or a gentle imagined tale for a new ghost. At bedtime end softly and sleepily. This story may be longer than your usual reply."
         ),
-        Some(text) => format!("The person just said: {text}"),
+        Some(text) => format!("The person just said: {}", viewer_words(text)),
         None => "Nobody said anything just now. Think over the moment quietly.".to_owned(),
     };
     let routine = life.usual_time().map_or_else(String::new, |usual| {
@@ -191,6 +204,12 @@ pub fn request(
     let name = life.viewer_name.as_ref().map_or_else(String::new, |name| {
         format!("\nThe viewer's name is {name}.")
     });
+    let viewer = life.viewer.words();
+    let viewer = if viewer.is_empty() {
+        String::new()
+    } else {
+        format!("\nYou know about the viewer: {viewer}.")
+    };
     let stage = observation["ghost"]["stage"]
         .as_str()
         .unwrap_or("a grown ghost");
@@ -241,7 +260,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\n\
                  You are {stage}.{voice}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{friend}\n\n{wishes}\n\n\
+                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}",

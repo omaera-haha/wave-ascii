@@ -669,7 +669,8 @@ impl World {
 
     /// Says a viewer wish once a local day; the app posts the accompanying hint.
     pub fn share_wish(&mut self) -> Option<String> {
-        if !self.viewer_present()
+        if self.asking.is_some()
+            || !self.viewer_present()
             || self.ghost.asleep >= 0.3
             || self.focus.is_some()
             || self.telling.is_some()

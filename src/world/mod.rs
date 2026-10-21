@@ -1,3 +1,4 @@
+pub mod acquaintance;
 mod activity;
 pub mod away;
 pub mod blocks;
@@ -273,12 +274,16 @@ pub enum EventKind {
     MadeWish(Wish),
     WishFaded(Wish),
     WishGranted(Wish),
+    AskedViewer(acquaintance::Topic),
+    LearnedAboutViewer(acquaintance::Topic),
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::AskedViewer(topic) => format!("asked about your {}", topic.name()),
+            Self::LearnedAboutViewer(topic) => format!("learned about your {}", topic.name()),
             Self::Quirk(kind) => kind.words().to_owned(),
             Self::PutOn(accessory) => format!("put on {}", accessory.words()),
             Self::TookOff(accessory) => format!("took off {}", accessory.words()),
@@ -333,7 +338,10 @@ impl EventKind {
                     "the viewer asked to focus together for {} minutes",
                     friend::count_words(minutes)
                 ),
-                None => format!("the viewer said: {text}"),
+                None => acquaintance::birthday(text).map_or_else(
+                    || format!("the viewer said: {text}"),
+                    |birthday| format!("the viewer said their birthday is {}", birthday.words()),
+                ),
             },
             Self::Said(text) => format!("you said: {text}"),
             Self::ViewerArrived => "the viewer came to the glass".to_owned(),
@@ -509,6 +517,8 @@ pub enum Understanding {
     Music {
         lullaby: bool,
     },
+    Answered(acquaintance::Topic),
+    Unanswered(acquaintance::Topic),
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -693,6 +703,10 @@ pub struct World {
     queued_tune: Option<music::Tune>,
     pending_tune: Option<music::Tune>,
     pending_wish: Option<Wish>,
+    pub asking: Option<(acquaintance::Topic, f64)>,
+    last_message_at: Option<f64>,
+    last_question_at: Option<f64>,
+    viewer_blush_at: Option<f64>,
 }
 
 impl World {
@@ -816,6 +830,10 @@ impl World {
             queued_tune: None,
             pending_tune: None,
             pending_wish: None,
+            asking: None,
+            last_message_at: None,
+            last_question_at: None,
+            viewer_blush_at: None,
         };
         world.scatter_blocks();
         world
@@ -847,6 +865,8 @@ impl World {
             self.advance(slice);
         }
         self.celebrate_wish();
+        self.greet_favorite_season();
+        self.ask_viewer();
     }
 
     fn advance(&mut self, seconds: f32) {
@@ -1414,6 +1434,9 @@ impl World {
                 Some((i32::from(self.date.year()) + i32::from(self.date.month() == 12)).to_string())
             }
             Some(Occasion::Birthday) if self.random.unit() < 0.3 => Some("YAY".to_owned()),
+            Some(Occasion::ViewerBirthday) if self.random.unit() < 0.3 => {
+                Some(self.spoken("HBD♥", "생일축하").to_owned())
+            }
             Some(Occasion::Seollal) if self.random.unit() < 0.4 => Some("복".to_owned()),
             Some(Occasion::Chuseok) if self.random.unit() < 0.35 => Some("달".to_owned()),
             Some(Occasion::HangulDay) if self.random.unit() < 0.6 => {
@@ -1596,6 +1619,10 @@ impl World {
             self.life.korean += (language - self.life.korean) / 3.0;
         }
         self.latest_korean = korean;
+        self.last_message_at = Some(self.time);
+        if let Some(heard) = self.answer_viewer(text, korean) {
+            return heard;
+        }
         let introduction = vocabulary::introduced_name(text);
         let naming = introduction
             .is_none()
@@ -2985,7 +3012,10 @@ impl World {
                 Mood::Lonely
             };
         }
-        if self.occasion() == Some(Occasion::Birthday) {
+        if matches!(
+            self.occasion(),
+            Some(Occasion::Birthday | Occasion::ViewerBirthday)
+        ) {
             return Mood::Cheerful;
         }
         if self.weather.snow(self.time) > 0.3 && ghost.saw_snow {
@@ -4679,10 +4709,10 @@ mod tests {
     #[test]
     fn writing_sanitizes_text_and_requires_an_awake_ghost_with_energy() {
         let mut world = World::new(5, 12.0);
-        assert!(!world.write(" /ㄱ♥ "));
+        assert!(!world.write(" /ㄱ "));
         assert!(world.write(" /한글♥ "));
         assert!(
-            matches!(&world.ghost.plan.picture, Some(Picture::Word(writing)) if writing.text == "한글")
+            matches!(&world.ghost.plan.picture, Some(Picture::Word(writing)) if writing.text == "한글♥")
         );
         assert!(world.write(" hi /2027!? more"));
         let Some(Picture::Word(writing)) = &world.ghost.plan.picture else {

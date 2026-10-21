@@ -424,7 +424,7 @@ pub(super) fn sanitize(text: &str) -> String {
             }
             character.is_ascii_uppercase()
                 || character.is_ascii_digit()
-                || matches!(character, '!' | '?')
+                || matches!(character, '!' | '?' | '♥')
         })
         .take(8)
         .collect()
