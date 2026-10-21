@@ -34,15 +34,22 @@ cargo run --release -- --style blocks
 cargo run --release -- --offline        # never call a model
 ```
 
-Press `k` in the app to enter API keys, or set `ANTHROPIC_API_KEY` and
-`TYPESAFE_API_KEY` in the environment, which take precedence over saved keys.
-Get a Claude key from the [Claude Console](https://console.anthropic.com) and
-a Jev key from the [TypeSafe console](https://console.typesafe.ai).
+Press `k` in the app to open the settings and paste API keys, or set
+`ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` in the environment, which take
+precedence over saved keys. Get a Claude key from the
+[Claude Console](https://console.anthropic.com) and a Jev key from the
+[TypeSafe console](https://console.typesafe.ai). Keys entered in the app are
+saved, so you enter them once.
+
+The same panel changes the Claude model, Claude's effort, the prompt cache,
+and the Jev model while the app runs. Use ↑↓ to choose a row and ←→ to step
+through the choices, or type any model name. Enter saves the settings, and
+the next requests use them at once.
 
 | Key            | Action                                        |
 | -------------- | --------------------------------------------- |
 | `t`, Enter     | Talk to the ghost (Enter sends, Esc cancels)  |
-| `k`            | Enter API keys                                |
+| `k`            | Settings: keys, models, effort, cache         |
 | `j`            | Journal: what it remembers, what was said     |
 | `?`            | Help                                          |
 | Arrows, WASD   | Turn the view                                 |
@@ -85,15 +92,20 @@ time passes: the plant gets thirsty and the ghost lonely, and it notices how
 long you were away. Delete the file to start a new ghost.
 
 Settings live in `~/.config/wave-ascii/config.json` (`$XDG_CONFIG_HOME` if set),
-readable only by you since it may hold keys. Besides the keys it accepts:
+readable only by you since it may hold keys. Not next to the binary, so moving
+or rebuilding the app keeps them. Besides the keys it holds:
 
-| Setting           | Default           | Meaning                                         |
-| ----------------- | ----------------- | ----------------------------------------------- |
-| `claude_model`    | `claude-opus-5-5` | The Claude model                                |
-| `jev_model`       | `jev-latest`      | The Jev model or alias                          |
-| `reflect_every`   | `180`             | Seconds between reflections while you're around |
-| `claude_base_url` | none              | Another address for the Anthropic API           |
-| `jev_base_url`    | none              | Another address for the TypeSafe API            |
+| Setting           | Default           | Meaning                                              |
+| ----------------- | ----------------- | ---------------------------------------------------- |
+| `claude_model`    | `claude-opus-5-5` | The Claude model                                     |
+| `claude_effort`   | `low`             | `low` to `max`, or `null` for the model's default    |
+| `cache`           | `1h`              | Prompt cache lifetime: `1h`, `5m`, or `null` for off |
+| `jev_model`       | `jev-latest`      | The Jev model or alias                               |
+| `reflect_every`   | `180`             | Seconds between reflections while you're around      |
+| `claude_base_url` | none              | Another address for the Anthropic API                |
+| `jev_base_url`    | none              | Another address for the TypeSafe API                 |
+
+All but the last three can be changed in the app with `k`.
 
 ### What is sent, and what it costs
 
@@ -105,12 +117,25 @@ leaves your machine.
 Jev costs very little: each decision is a few hundred input tokens, billed per
 million, and output is free. Claude reflects every three minutes while you're
 around and every fifteen while you're away, and once for each message you
-type. With Claude Opus 5.5, a reflection costs a cent or two.
-Raise `reflect_every`, or set `claude_model`, to spend less.
+type. With Claude Opus 5.5 a reflection costs a cent or two; with Claude Haiku
+5.5 it costs a few hundredths of a cent. Raise `reflect_every`, or pick a
+cheaper model, to spend less.
 
-Claude requests turn on Anthropic's server-side fallbacks
+Each Claude request puts what changes least first: the ghost's persona and
+memories, then the conversation, and last the moment itself. The first two
+are marked for Anthropic's prompt cache, so later requests read them at a
+tenth of the input price. Writing an hour-long cache entry costs twice the
+input price (five minutes: 1.25 times), so it pays off when requests come
+more than once an hour, as they do while you're around. Prompts shorter than
+the model's minimum (512 tokens on current models) aren't cached, and nothing
+breaks.
+
+Requests to models that offer them turn on Anthropic's server-side fallbacks
 (`fallbacks: "default"`), so a request the model's safety classifiers decline
-is retried on another model. A declined reply leaves the ghost as it was.
+is retried on another model; Haiku models don't offer them. A declined reply
+leaves the ghost as it was. If the API rejects a request because a model
+doesn't take an option, it is sent once more without the effort, fallbacks,
+and cache markers, so any model name works.
 
 ## Piped output
 
