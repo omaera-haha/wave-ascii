@@ -210,6 +210,11 @@ fn outside_the_window(world: &World) -> String {
     if weather.sky != Sky::Snow && weather.snow_cover > 0.5 {
         outside.push_str(", the hills white with snow");
     }
+    match world.sensed_weather() {
+        Some(false) => outside.push_str(", and the ghost feels rain coming soon"),
+        Some(true) => outside.push_str(", and the ghost smells snow coming soon"),
+        None => {}
+    }
     if world.fireworks() {
         outside.push_str(", fireworks bursting in the sky");
     }

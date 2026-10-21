@@ -12,6 +12,7 @@ pub mod dream;
 pub mod feelings;
 pub mod focus;
 pub mod fog;
+pub mod forecast;
 pub mod friend;
 pub mod game;
 pub mod garden;
@@ -242,6 +243,10 @@ pub enum EventKind {
     Named(String),
     /// It saw a shooting star through the window and made a wish.
     ShootingStar,
+    /// Rain or snow came, as it had felt coming.
+    ForecastCameTrue {
+        snow: bool,
+    },
     FriendArrived(String),
     FriendLeft(String),
     Tagged {
@@ -462,6 +467,12 @@ impl EventKind {
             Self::ShootingStar => {
                 "saw a shooting star through the window and made a wish".to_owned()
             }
+            Self::ForecastCameTrue { snow: false } => {
+                "felt the rain coming, and it came".to_owned()
+            }
+            Self::ForecastCameTrue { snow: true } => {
+                "smelled snow in the air, and it came".to_owned()
+            }
             Self::FriendArrived(name) => {
                 format!("your friend {name}, another ghost, floated in through the window")
             }
@@ -667,6 +678,8 @@ pub struct World {
     pub events: Vec<Event>,
     pub viewer: Viewer,
     pub weather: Weather,
+    /// The shower the ghost felt coming, not saved.
+    pub forecast: Option<forecast::Forecast>,
     pub visitors: Visitors,
     /// Its life over days: its bond with the viewer, habits, and diary.
     pub life: Life,
@@ -819,6 +832,7 @@ impl World {
             events: Vec::new(),
             viewer: Viewer::default(),
             weather,
+            forecast: None,
             visitors,
             life: Life {
                 nature: Some(nature),
@@ -992,6 +1006,10 @@ impl World {
             if change == Change::SnowStopped {
                 self.ghost.saw_snow = false;
             }
+            let falling = matches!(
+                change,
+                Change::RainStarted | Change::StormStarted | Change::SnowStarted
+            );
             self.record(match change {
                 Change::RainStarted => EventKind::RainStarted,
                 Change::StormStarted => EventKind::StormStarted,
@@ -1002,7 +1020,11 @@ impl World {
                 Change::RainbowAppeared => EventKind::RainbowAppeared,
                 Change::RainbowFaded => EventKind::RainbowFaded,
             });
+            if falling {
+                self.weather_came();
+            }
         }
+        self.sense_weather();
         self.weather.advance(self.time, seconds, daytime);
         if self.weather.advance_storm(self.time, &mut self.random) == Some(Change::Thunder) {
             self.record(EventKind::Thunder);

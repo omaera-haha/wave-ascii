@@ -536,7 +536,10 @@ plant, or fetching the ball. Winter brings soft falling snow instead,
 whitening the hills and dusting the branches. Snow builds in about two
 minutes; in winter it lingers for hours, and once spring comes it melts over
 about twenty minutes by day or an hour at night. The ghost lights up when it
-spots a rainbow or falling snow.
+spots a rainbow or falling snow. Sometimes it feels a shower coming a few
+minutes before it falls (a curious ghost more often): its hem tingles, it
+tells you it thinks rain is on the way, and it is pleased with itself when it
+was right.
 
 **A friend.** On some clear evenings, between about half past five and a quarter
 to ten, a smaller ghost drifts in through the window. A full moon and a lonely

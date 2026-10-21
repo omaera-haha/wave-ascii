@@ -174,7 +174,8 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::LearnedWord { .. }
         | EventKind::LearnedName(_)
         | EventKind::Named(_)
-        | EventKind::ShootingStar => Expression::Sparkle,
+        | EventKind::ShootingStar
+        | EventKind::ForecastCameTrue { .. } => Expression::Sparkle,
         EventKind::Noticed(thing)
             if thing.starts_with("the rainbow")
                 || thing == "the falling snow"

@@ -165,6 +165,11 @@ pub struct Tally {
     /// Shooting stars it saw and wished on.
     #[serde(default)]
     pub shooting_stars: u32,
+    /// Rain and snow it felt coming before they fell.
+    #[serde(default)]
+    pub forecasts: u32,
+    #[serde(default)]
+    pub snow_forecasts: u32,
     #[serde(default)]
     pub friend_visits: u32,
     #[serde(default)]
@@ -461,6 +466,12 @@ impl Tally {
             }
             EventKind::ShootingStar => {
                 self.shooting_stars = self.shooting_stars.saturating_add(1);
+            }
+            EventKind::ForecastCameTrue { snow: false } => {
+                self.forecasts = self.forecasts.saturating_add(1)
+            }
+            EventKind::ForecastCameTrue { snow: true } => {
+                self.snow_forecasts = self.snow_forecasts.saturating_add(1)
             }
             EventKind::Noticed(thing) if thing == "a bird at the window" => {
                 self.birds = self.birds.saturating_add(1)
@@ -950,6 +961,18 @@ impl Tally {
         }
         if self.storms > 0 {
             deeds.push((Salience::Notable, "sat out a thunderstorm".to_owned()));
+        }
+        if self.forecasts > 0 {
+            deeds.push((
+                Salience::Notable,
+                "felt the rain coming before it fell".to_owned(),
+            ));
+        }
+        if self.snow_forecasts > 0 {
+            deeds.push((
+                Salience::Notable,
+                "smelled the snow coming before it fell".to_owned(),
+            ));
         }
         if !self.words.is_empty() {
             let quoted: Vec<String> = self.words.iter().map(|word| format!("“{word}”")).collect();
@@ -2065,6 +2088,12 @@ impl Life {
             }
             EventKind::ShootingStar if total.shooting_stars == 1 => {
                 "Saw my first shooting star, and made a wish.".to_owned()
+            }
+            EventKind::ForecastCameTrue { snow: false } if total.forecasts == 1 => {
+                "I felt the rain coming before it fell.".to_owned()
+            }
+            EventKind::ForecastCameTrue { snow: true } if total.snow_forecasts == 1 => {
+                "I smelled the snow coming before it fell.".to_owned()
             }
             EventKind::PutOn(_) if total.outfits == 1 => {
                 "I wore my first little accessory.".to_owned()
