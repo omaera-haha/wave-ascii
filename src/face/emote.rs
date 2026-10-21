@@ -3,7 +3,7 @@ use std::f32::consts::TAU;
 use glam::{Vec2, Vec3};
 
 use super::mood::random;
-use crate::world::{Activity, EventKind, Mood, Thing, World};
+use crate::world::{Activity, EventKind, Mood, Outcome, Thing, World};
 
 /// Seconds a symbol takes to rise and drift away.
 const LIFETIME: f64 = 2.2;
@@ -129,6 +129,12 @@ pub fn puffs(world: &World) -> Vec<Puff> {
                 }
                 continue;
             }
+            if matches!(event.kind, EventKind::GameOver(Outcome::ViewerWon { .. }))
+                && world.good_sport()
+            {
+                add(event.time, Emote::Heart);
+                continue;
+            }
             // What the ghost made of a message says more than having
             // heard it.
             let answered = matches!(event.kind, EventKind::Heard(_))
@@ -184,7 +190,8 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::Poked { count: 1 } => Emote::Alarm,
         EventKind::Poked { count } if *count >= 3 => Emote::Anger,
         EventKind::Jumped => Emote::Alarm,
-        EventKind::AteMote
+        EventKind::GameOver(Outcome::GhostWon { .. })
+        | EventKind::AteMote
         | EventKind::Bloomed
         | EventKind::Fetched
         | EventKind::Pounced

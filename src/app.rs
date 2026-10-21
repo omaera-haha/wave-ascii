@@ -375,6 +375,14 @@ impl App {
             }
             Key::Character('l') => self.mode = Mode::Life,
             Key::Character('p') => self.save_postcard(),
+            Key::Character('g') => {
+                if !self.world.challenge() {
+                    self.post("It's asleep.");
+                }
+            }
+            Key::Character(character @ '1'..='9') => {
+                self.world.mark(character as usize - '1' as usize);
+            }
             Key::Character('m') => {
                 self.style = self.style.next();
                 self.post(format!("Style: {}", self.style.label()));
@@ -533,6 +541,15 @@ impl App {
         let Some(view) = self.view else {
             return;
         };
+        if let Some(game) = &self.world.game
+            && game.outcome.is_none()
+            && let Some(cell) = view
+                .on_glass(point)
+                .and_then(|point| game.cell_at(point.truncate()))
+        {
+            self.world.mark(cell);
+            return;
+        }
         if view.touches_ghost(point, self.world.ghost.position) {
             self.world.poke();
             return;
@@ -599,7 +616,16 @@ impl App {
             .filter(|event| world.time - event.time < REACTION_WINDOW)
             .filter(|event| event.kind != crate::world::EventKind::BirdSang || ghost.asleep <= 0.5)
             .filter_map(|event| {
-                face::mood::reaction(&event.kind).map(|reaction| (event.time, reaction))
+                let reaction = if matches!(
+                    event.kind,
+                    crate::world::EventKind::GameOver(crate::world::Outcome::ViewerWon { .. })
+                ) && world.good_sport()
+                {
+                    Some(Expression::Smile)
+                } else {
+                    face::mood::reaction(&event.kind)
+                };
+                reaction.map(|reaction| (event.time, reaction))
             })
             .collect();
         // The first morning also earns a milestone; let the stretch take
@@ -1088,6 +1114,86 @@ mod tests {
             app.world.events.last().unwrap().kind,
             EventKind::DroppedMote
         );
+    }
+
+    #[test]
+    fn the_game_key_challenges_and_digits_place_crosses_only_when_allowed() {
+        use crate::world::Mark;
+
+        let mut app = app();
+        app.input(Input::Key(Key::Character('1')));
+        assert!(app.world.game.is_none());
+        app.world.ghost.asleep = 1.0;
+        app.input(Input::Key(Key::Character('g')));
+        assert!(app.world.game.is_none());
+        assert_eq!(app.notice(), Some("It's asleep."));
+        app.world.ghost.asleep = 0.0;
+        app.input(Input::Key(Key::Character('g')));
+        assert_eq!(app.world.game.as_ref().unwrap().first, Mark::Cross);
+        app.input(Input::Key(Key::Character('1')));
+        assert_eq!(app.world.game.as_ref().unwrap().cells[0], None);
+        for _ in 0..200 {
+            if app.world.game.as_ref().unwrap().grid_ready(app.world.time) {
+                break;
+            }
+            app.world.step(0.05);
+        }
+        app.input(Input::Key(Key::Character('9')));
+        assert_eq!(app.world.game.as_ref().unwrap().cells[8], Some(Mark::Cross));
+        app.input(Input::Key(Key::Character('8')));
+        assert_eq!(app.world.game.as_ref().unwrap().cells[7], None);
+    }
+
+    #[test]
+    fn board_clicks_place_crosses_and_swallow_unavailable_cells_even_over_the_ghost() {
+        use crate::world::Mark;
+
+        let mut app = app();
+        app.world.challenge();
+        let point = app
+            .world
+            .game
+            .as_ref()
+            .unwrap()
+            .cell_center(0)
+            .extend(ROOM_MAX.z);
+        let (column, row) = cell_of(&app, point);
+        let motes = app.world.motes.len();
+        click(&mut app, column, row);
+        assert_eq!(app.world.motes.len(), motes);
+        assert_eq!(app.world.game.as_ref().unwrap().cells[0], None);
+        for _ in 0..200 {
+            if app.world.game.as_ref().unwrap().grid_ready(app.world.time) {
+                break;
+            }
+            app.world.step(0.05);
+        }
+        app.world.ghost.position = point - Vec3::Z * 0.3;
+        app.world.events.clear();
+        let motes = app.world.motes.len();
+        click(&mut app, column, row);
+        assert_eq!(app.world.game.as_ref().unwrap().cells[0], Some(Mark::Cross));
+        click(&mut app, column, row);
+        let other = app
+            .world
+            .game
+            .as_ref()
+            .unwrap()
+            .cell_center(1)
+            .extend(ROOM_MAX.z);
+        let (column, row) = cell_of(&app, other);
+        click(&mut app, column, row);
+        assert_eq!(app.world.game.as_ref().unwrap().cells[1], None);
+        assert_eq!(app.world.motes.len(), motes);
+        assert!(
+            !app.world.events.iter().any(|event| matches!(
+                event.kind,
+                EventKind::Poked { .. } | EventKind::DroppedMote
+            ))
+        );
+        app.world.step(0.6);
+        click(&mut app, column, row);
+        assert_eq!(app.world.game.as_ref().unwrap().cells[1], None);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 mod activity;
 pub mod calendar;
 mod doodle;
+pub mod game;
 mod life;
 mod nature;
 mod needs;
@@ -19,6 +20,7 @@ use glam::{Vec2, Vec3};
 pub use activity::{Activity, Plan};
 pub use calendar::Season;
 pub use doodle::{Doodle, Sketch};
+pub use game::{Game, Mark, Outcome};
 pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
@@ -123,6 +125,7 @@ pub enum EventKind {
     Found,
     Jumped,
     Doodled(&'static str),
+    GameOver(Outcome),
     Celebrated(Occasion),
     Pounced,
     Morning,
@@ -194,6 +197,15 @@ impl EventKind {
             Self::RainbowFaded => "the rainbow faded".to_owned(),
             Self::Found => "the viewer found you hiding".to_owned(),
             Self::Jumped => "jumped out from hiding at the viewer".to_owned(),
+            Self::GameOver(outcome) => match outcome {
+                Outcome::GhostWon { .. } => "won a game of noughts and crosses against the viewer",
+                Outcome::ViewerWon { .. } => "the viewer beat you at noughts and crosses",
+                Outcome::Draw => "a game of noughts and crosses ended in a draw",
+                Outcome::Abandoned => {
+                    "the viewer wandered off in the middle of your game of noughts and crosses"
+                }
+            }
+            .to_owned(),
             Self::Doodled(name) => format!("drew a {name} on the glass"),
             Self::Celebrated(Occasion::NewYear) => "a new year began".to_owned(),
             Self::Celebrated(occasion) => format!("it is {}", occasion.words()),
@@ -330,6 +342,7 @@ pub struct World {
     pub nook: Nook,
     pub motes: Vec<Mote>,
     pub doodles: Vec<Doodle>,
+    pub game: Option<Game>,
     pub events: Vec<Event>,
     pub viewer: Viewer,
     pub weather: Weather,
@@ -401,6 +414,7 @@ impl World {
             },
             motes: Vec::new(),
             doodles: Vec::new(),
+            game: None,
             events: Vec::new(),
             viewer: Viewer::default(),
             weather,
@@ -441,6 +455,14 @@ impl World {
         self.viewer.liveliness *= (-seconds / 0.7).exp();
         self.doodles
             .retain(|doodle| doodle.opacity(self.time) > 0.0);
+
+        if self
+            .game
+            .as_ref()
+            .is_some_and(|game| game.opacity(self.time) <= 0.0)
+        {
+            self.game = None;
+        }
 
         for mote in &mut self.motes {
             mote.drift(self.time, seconds);
@@ -583,6 +605,11 @@ impl World {
                 Activity::Hide => self.viewer_present() && self.ghost.needs.energy > 0.3,
                 Activity::Doodle => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.25,
                 Activity::Pounce => self.pounce_is_open(),
+                Activity::Game => {
+                    self.viewer_present()
+                        && self.ghost.asleep < 0.3
+                        && self.ghost.needs.energy > 0.25
+                }
                 Activity::Float
                 | Activity::Explore
                 | Activity::Play
@@ -638,6 +665,10 @@ impl World {
                                and turn faint until they find you by clicking you. Fits when \
                                the viewer is around and the ghost feels playful."
                 .to_owned(),
+            Activity::Game => "Draw a board in the fog and play noughts and crosses with the \
+                               viewer, who clicks a square to move. Fits when the viewer is \
+                               around and the ghost feels playful or bored."
+                .to_owned(),
             Activity::Doodle => "Breathe on the glass and draw a little picture in the fog for \
                                  the viewer to see. Fits when feeling fond of the viewer, or \
                                  bored and creative."
@@ -681,6 +712,7 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        self.abandon_game();
         self.drop_ball();
         let position = self.ghost.position;
         let length = match activity {
@@ -707,6 +739,7 @@ impl World {
                 Vec3::new(ROOM_MAX.x - 0.6, 1.6, ROOM_MAX.z - 0.6),
             ),
             Activity::Hide => self.hiding_spot(),
+            Activity::Game => self.begin_game(),
             Activity::Doodle => Vec3::new(
                 self.random.range(-1.2, 1.2),
                 self.random.range(1.0, 1.6),
@@ -866,6 +899,7 @@ impl World {
                     plan.done = true;
                     stopped = true;
                     self.drop_ball();
+                    self.abandon_game();
                 }
                 self.ghost.needs.change(0.0, -0.03, 0.0);
                 self.record(EventKind::Scolded);
@@ -1086,12 +1120,17 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
-        let milestone = self.life.note(&kind);
+        let remembered = self.life.milestones.len();
+        self.life.note(&kind);
+        let milestones: Vec<String> = self.life.milestones[remembered..]
+            .iter()
+            .map(|milestone| milestone.text.clone())
+            .collect();
         self.events.push(Event {
             time: self.time,
             kind,
         });
-        if let Some(milestone) = milestone {
+        for milestone in milestones {
             self.record(EventKind::Milestone(milestone));
         }
     }
@@ -1246,12 +1285,16 @@ impl World {
     fn carry_out(&mut self, seconds: f32) {
         let time = self.time;
         let position = self.ghost.position;
+        if self.ghost.asleep >= 0.3 && self.ghost.plan.activity == Activity::Game {
+            self.ghost.plan.done = true;
+        }
         let plan = &self.ghost.plan;
         // Only resting keeps the ghost asleep.
         if plan.done || plan.activity != Activity::Rest {
             self.ghost.asleep = (self.ghost.asleep - seconds / 1.2).max(0.0);
         }
         if plan.done {
+            self.abandon_game();
             self.drop_ball();
             return;
         }
@@ -1259,13 +1302,16 @@ impl World {
         if arrived_now && plan.arrived.is_none() {
             self.ghost.plan.arrived = Some(time);
         }
-        // Resting and hiding have their own waits after arrival; on the way
-        // there they give up like any plan.
-        let waiting = matches!(self.ghost.plan.activity, Activity::Rest | Activity::Hide)
-            && self.ghost.plan.arrived.is_some();
+        // Resting, hiding, and games have their own waits after arrival;
+        // on the way there they give up like any plan.
+        let waiting = matches!(
+            self.ghost.plan.activity,
+            Activity::Rest | Activity::Hide | Activity::Game
+        ) && self.ghost.plan.arrived.is_some();
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.drop_ball();
             self.ghost.plan.done = true;
+            self.abandon_game();
             return;
         }
 
@@ -1399,6 +1445,7 @@ impl World {
                 }
             }
             Activity::Pounce => look = self.pounce(seconds),
+            Activity::Game => look = self.play_game(),
             Activity::Fetch => {
                 if self.ghost.plan.count == 0 {
                     let target = self.ball.position + Vec3::Y * 0.42;
@@ -1617,6 +1664,7 @@ impl World {
         let mut company = -0.0012 * (1.15 - 0.3 * nature.shy);
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
+            Activity::Game if !ghost.plan.done => fun += 0.004,
             Activity::Visit if present => company += 0.01,
             Activity::Window if ghost.plan.arrived.is_some() => {
                 fun += 0.004 + 0.02 * self.weather.rainbow(self.time)
@@ -1655,10 +1703,27 @@ impl World {
         {
             return Mood::Grumpy;
         }
+        if let Some(outcome) = recent(8.0).find_map(|event| match event.kind {
+            EventKind::GameOver(outcome) => Some(outcome),
+            _ => None,
+        }) {
+            match outcome {
+                Outcome::ViewerWon { .. } => {
+                    return if self.good_sport() {
+                        Mood::Cheerful
+                    } else {
+                        Mood::Grumpy
+                    };
+                }
+                Outcome::Draw => return Mood::Curious,
+                _ => {}
+            }
+        }
         if recent(6.0).any(|event| {
             matches!(
                 event.kind,
                 EventKind::AteMote
+                    | EventKind::GameOver(Outcome::GhostWon { .. })
                     | EventKind::NudgedBall
                     | EventKind::Bloomed
                     | EventKind::Fetched

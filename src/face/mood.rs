@@ -3,7 +3,7 @@ use glam::Vec2;
 use super::Face;
 use super::expression::Expression;
 use crate::sdf::smoothstep;
-use crate::world::{EventKind, Mood};
+use crate::world::{EventKind, Mood, Outcome};
 
 /// Seconds a reaction takes to take over the face and to give it back.
 const FADE: f32 = 0.15;
@@ -70,7 +70,9 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Found
         | EventKind::Celebrated(_)
         | EventKind::Milestone(_) => Expression::Sparkle,
-        EventKind::Heard(_) => Expression::Sparkle,
+        EventKind::Heard(_) | EventKind::GameOver(Outcome::GhostWon { .. }) => Expression::Sparkle,
+        EventKind::GameOver(Outcome::ViewerWon { .. }) => Expression::Skeptical,
+        EventKind::GameOver(Outcome::Draw) => Expression::LookAround,
         EventKind::NudgedBall
         | EventKind::Tended
         | EventKind::PickedUpBall

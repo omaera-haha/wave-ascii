@@ -1,7 +1,9 @@
 use glam::Vec3;
 use serde_json::{Value, json};
 
-use crate::world::{Activity, Perch, Plant, Seen, Sky, Thing, World, calendar::moon_words, flat};
+use crate::world::{
+    Activity, Mark, Perch, Plant, Seen, Sky, Thing, World, calendar::moon_words, flat,
+};
 
 /// What the ghost knows of its situation, in words. Both minds read it:
 /// System One models judge words more reliably than numbers, and Claude
@@ -262,7 +264,7 @@ fn ball(world: &World) -> String {
 }
 
 fn glass(world: &World) -> String {
-    let doodles: Vec<String> = world
+    let mut doodles: Vec<String> = world
         .doodles
         .iter()
         .rev()
@@ -277,6 +279,25 @@ fn glass(world: &World) -> String {
             format!("a {} you drew in the fog{fading}", doodle.sketch.name())
         })
         .collect();
+    if let Some(game) = &world.game
+        && game.outcome.is_none()
+    {
+        let turn = if !game.grid_ready(world.time) {
+            "you are drawing the board"
+        } else if game.turn == Mark::Cross {
+            "it is the viewer's move"
+        } else {
+            "it is your move"
+        };
+        let mut words = format!("a game of noughts and crosses in the fog; {turn}");
+        if game.could_win(Mark::Cross) {
+            words.push_str("; the viewer could win with their next move");
+        }
+        if game.could_win(Mark::Nought) {
+            words.push_str("; you could win with your next move");
+        }
+        doodles.push(words);
+    }
     if doodles.is_empty() {
         "clear".to_owned()
     } else {
@@ -330,6 +351,37 @@ mod tests {
     use super::*;
     use crate::world::EventKind;
     use glam::Vec3;
+
+    #[test]
+    fn a_game_describes_turns_and_threats_without_digits() {
+        use crate::world::Game;
+
+        let mut world = World::new(2, 12.0);
+        world.challenge();
+        let game = world.game.as_mut().unwrap();
+        game.grid_started = Some(0.0);
+        game.cells = [
+            Some(Mark::Cross),
+            Some(Mark::Cross),
+            None,
+            Some(Mark::Nought),
+            Some(Mark::Nought),
+            None,
+            None,
+            None,
+            None,
+        ];
+        world.time = Game::GRID_TIME;
+        let words = glass(&world);
+        assert!(words.contains("it is the viewer's move"));
+        assert!(words.contains("the viewer could win with their next move"));
+        assert!(words.contains("you could win with your next move"));
+        assert!(!words.chars().any(|character| character.is_ascii_digit()));
+        world.game.as_mut().unwrap().turn = Mark::Nought;
+        assert!(glass(&world).contains("it is your move"));
+        world.game.as_mut().unwrap().outcome = Some(crate::world::Outcome::Draw);
+        assert!(!glass(&world).contains("move"));
+    }
 
     #[test]
     fn the_observation_describes_the_room_in_words_not_numbers() {

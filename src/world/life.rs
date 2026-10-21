@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind, GREETS_FROM, Nature, Occasion, Vocabulary};
+use super::{Activity, EventKind, GREETS_FROM, Nature, Occasion, Outcome, Vocabulary};
 
 /// Days of the diary kept.
 const DAYS_KEPT: usize = 60;
@@ -70,6 +70,15 @@ pub struct Tally {
     pub jumps: u32,
     /// Pictures it drew on the glass.
     pub doodles: u32,
+    /// Finished games of noughts and crosses, from the ghost's side.
+    #[serde(default)]
+    pub games: u32,
+    #[serde(default)]
+    pub wins: u32,
+    #[serde(default)]
+    pub losses: u32,
+    #[serde(default)]
+    pub draws: u32,
     pub waterings: u32,
     /// Times the plant came into flower.
     pub blooms: u32,
@@ -128,6 +137,15 @@ impl Tally {
             EventKind::Found => self.finds += 1,
             EventKind::Jumped => self.jumps += 1,
             EventKind::Doodled(_) => self.doodles += 1,
+            EventKind::GameOver(outcome) if outcome.finished() => {
+                self.games += 1;
+                match outcome {
+                    Outcome::GhostWon { .. } => self.wins += 1,
+                    Outcome::ViewerWon { .. } => self.losses += 1,
+                    Outcome::Draw => self.draws += 1,
+                    Outcome::Abandoned => unreachable!(),
+                }
+            }
             EventKind::Tended => self.waterings += 1,
             EventKind::Bloomed => self.blooms += 1,
             EventKind::FellAsleep => self.naps += 1,
@@ -194,6 +212,31 @@ impl Tally {
             (0, _) => deeds.push("played hide-and-seek, and you never found me".to_owned()),
             (_, 0) => deeds.push("played hide-and-seek, and you found me".to_owned()),
             _ => deeds.push("played hide-and-seek".to_owned()),
+        }
+        if self.games == 1 {
+            let result = if self.wins > 0 {
+                "and won"
+            } else if self.losses > 0 {
+                "and you won"
+            } else {
+                "and drew"
+            };
+            deeds.push(format!("played noughts and crosses with you {result}"));
+        } else if self.games > 1 {
+            let mut results = Vec::new();
+            if self.wins > 0 {
+                results.push("I won".to_owned());
+            }
+            if self.losses > 0 {
+                results.push("you won".to_owned());
+            }
+            if self.draws > 0 {
+                results.push("we drew".to_owned());
+            }
+            deeds.push(format!(
+                "played games of noughts and crosses with you: {}",
+                listed(&results)
+            ));
         }
         match self.doodles {
             0 => {}
@@ -319,6 +362,7 @@ impl Life {
             EventKind::Found => 0.015,
             EventKind::ViewerArrived => 0.003,
             EventKind::DroppedMote | EventKind::KickedBall => 0.002,
+            EventKind::GameOver(outcome) if outcome.finished() => 0.002,
             EventKind::Poked { count } if *count < 3 => 0.002,
             EventKind::Poked { .. } => -0.012,
             _ => 0.0,
@@ -470,6 +514,30 @@ impl Life {
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
         let total = &self.total;
+        if let EventKind::GameOver(outcome) = kind {
+            let firsts = [
+                (
+                    outcome.finished() && total.games == 1,
+                    "We played our first game of noughts and crosses.",
+                ),
+                (
+                    matches!(outcome, Outcome::ViewerWon { .. }) && total.losses == 1,
+                    "You beat me at noughts and crosses for the first time.",
+                ),
+                (
+                    matches!(outcome, Outcome::GhostWon { .. }) && total.wins == 1,
+                    "I won my first game of noughts and crosses.",
+                ),
+            ];
+            let mut first = None;
+            for (reached, text) in firsts {
+                if reached {
+                    let milestone = self.reach(text.to_owned());
+                    first = first.or(milestone);
+                }
+            }
+            return first;
+        }
         let text = match kind {
             EventKind::AteMote if total.motes == 1 => "Caught my first light mote.".to_owned(),
             EventKind::AteMote => MOTES_MARKED
@@ -613,6 +681,52 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finished_games_count_results_warm_the_bond_and_keep_all_firsts_once() {
+        let mut life = Life::default();
+        let won = EventKind::GameOver(Outcome::GhostWon { line: [0, 1, 2] });
+        let lost = EventKind::GameOver(Outcome::ViewerWon { line: [0, 1, 2] });
+        life.note(&EventKind::GameOver(Outcome::Abandoned));
+        assert_eq!(life.total.games, 0);
+        assert_eq!(life.bond, 0.0);
+        assert!(life.milestones.is_empty());
+        life.note(&won);
+        assert!(life.bond > 0.0);
+        assert_eq!(life.milestones.len(), 2);
+        assert!(
+            life.today
+                .words()
+                .contains("Played noughts and crosses with you and won")
+        );
+        life.note(&lost);
+        life.note(&EventKind::GameOver(Outcome::Draw));
+        assert_eq!(
+            (
+                life.total.games,
+                life.total.wins,
+                life.total.losses,
+                life.total.draws
+            ),
+            (3, 1, 1, 1)
+        );
+        assert_eq!(life.milestones.len(), 3);
+        assert!(life.milestones.iter().any(|entry| entry.text == "You beat me at noughts and crosses for the first time."));
+        assert!(life.milestones.iter().all(|entry| {
+            !entry
+                .text
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        }));
+        assert!(life.today.words().contains("I won, you won, and we drew"));
+        life.note(&won);
+        life.note(&lost);
+        assert_eq!(life.milestones.len(), 3);
+        let loaded: Life = serde_json::from_str(&serde_json::to_string(&life).unwrap()).unwrap();
+        assert_eq!(loaded, life);
+        let old: Tally = serde_json::from_str(r#"{"doodles": 2}"#).unwrap();
+        assert_eq!((old.games, old.wins, old.losses, old.draws), (0, 0, 0, 0));
+    }
 
     #[test]
     fn mornings_count_nights_and_remember_the_first_one_once() {

@@ -68,6 +68,8 @@ the next requests use them at once.
 | `j`             | Journal: memories, moments, diary, conversation            |
 | `l`             | Its life: age, bond with you, what it loves, today so far  |
 | `p`             | Save a postcard of the moment                             |
+| `g`             | Invite it to noughts and crosses on the glass              |
+| `1`–`9`         | Choose a square, from top left to bottom right             |
 | `?`             | Help                                                       |
 | Arrows, WASD    | Turn the view; ↑/↓ scroll the journal one line             |
 | PageUp/PageDown | Scroll the journal by a page                               |
@@ -121,14 +123,24 @@ piped output never saves them.
   into a back corner and turn faint. Look for the glimmer of its eyes and click
   it to find it. If you don't find it after a while, it jumps toward the glass
   with a "Boo!"
+- **Noughts and crosses.** Press `g` to invite an awake ghost to a game in
+  the fog on the glass, with you going first. It may also draw a board and
+  open a game itself while you're around. Once the grid is drawn, play crosses
+  by clicking a free square or pressing `1`–`9` in reading order (top left to
+  bottom right); it floats over to draw its noughts. It thinks ahead, but can
+  be beaten: curiosity sharpens its play, playfulness and tiredness invite
+  mistakes, and a tender ghost with a close bond sometimes lets you win. It
+  remembers your games, wins, losses, and draws. Leave a turn unanswered for
+  forty-five seconds and it says "Maybe later." The board fades over forty
+  seconds. Games in progress aren't kept when the app closes.
 - **Doodles.** It breathes on the glass and draws a heart, star, smile, spiral,
   sun, flower, wave, or snowflake, chosen from its mood, the weather, and how
   close it feels to you. The stroke takes a few seconds; then it backs away to
   admire it. Up to three pictures linger, fading after about two and a half
   minutes.
 - **Asking.** With a Jev key, what you type can ask it to do things: play,
-  fetch, catch your finger, dance, hide, draw, rest, look out of the window,
-  or come closer.
+  fetch, catch your finger, play noughts and crosses, dance, hide, draw, rest,
+  look out of the window, or come closer.
 - **Teaching it words.** Even without keys, the ghost hears whether you greet
   it, praise it ("good", "yay", "잘했어"), say goodbye, or tell it no ("no",
   "stop", "그만"), which stops what it's doing. Other words it has to learn,
