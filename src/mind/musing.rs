@@ -1805,14 +1805,212 @@ fn story_threads(world: &World) -> Vec<[StoryBeat; 2]> {
             ),
         ]);
     }
+    if life.cranes.total > 0 {
+        threads.push([
+            (
+                "I folded a little bird from a square of paper.",
+                "네모난 종이를 접어서 작은 새를 만들었어.",
+            ),
+            (
+                "It found a home overhead, where even paper can fly.",
+                "머리 위에 집을 찾았지. 종이도 날 수 있는 곳이야.",
+            ),
+        ]);
+    }
+    if !life.gallery.is_empty() {
+        threads.push([
+            (
+                "I pinned a picture to my wall. Its name is {pin}.",
+                "벽에 그림을 붙였어. 이름은 {pin}.",
+            ),
+            (
+                "The room had found a way to keep a little moment.",
+                "작은 순간을 간직하는 방법이 방에 생긴 거야.",
+            ),
+        ]);
+    }
+    if life.total.bubble_sessions > 0 {
+        threads.push([
+            (
+                "I blew a breath into a little shining bubble.",
+                "후 하고 불었더니 반짝이는 비눗방울이 생겼어.",
+            ),
+            (
+                "It borrowed all the colors, then gave them back with a pop.",
+                "온갖 색을 빌려 가더니 톡 터지며 돌려줬지.",
+            ),
+        ]);
+    }
+    if life.total.treasures_found > 0 {
+        threads.push([
+            (
+                "You hid a tiny treasure, and I went looking for it.",
+                "네가 작은 보물을 숨겨서 내가 찾아 나섰어.",
+            ),
+            (
+                "When I found the marble, I brought my triumph back to you.",
+                "구슬을 찾아서 의기양양하게 네게 돌아왔지.",
+            ),
+        ]);
+    }
+    if life.total.recoveries > 0 && life.total.care_received > 0 {
+        threads.push([
+            (
+                "Once I had a little cold, and you looked after me.",
+                "감기에 걸렸을 때 네가 나를 돌봐 줬어.",
+            ),
+            (
+                "The sniffles went away. I kept the kindness.",
+                "훌쩍임은 사라졌지만 다정함은 마음에 남았지.",
+            ),
+        ]);
+    }
+    if life.total.tidies > 0 {
+        threads.push([
+            (
+                "Before bed, I gathered the toys from their adventures.",
+                "잠들기 전에 모험을 마친 장난감들을 모았어.",
+            ),
+            (
+                "With every toy tucked away, the room could dream too.",
+                "장난감들이 제자리로 가니까 방도 꿈꿀 준비가 됐지.",
+            ),
+        ]);
+    }
+    if life.total.plans_went_well > 0 {
+        threads.push([
+            (
+                "You told me about a big day you had ahead.",
+                "네가 앞두고 있던 중요한 날 이야기를 해 줬어.",
+            ),
+            (
+                "Then you came back with good news, and my whole room glowed.",
+                "그러다 좋은 소식을 들고 돌아와서 온 방이 환해졌지.",
+            ),
+        ]);
+    }
+    if life.total.photos > 0 {
+        threads.push([
+            (
+                "You caught a little moment of me in a photograph.",
+                "네가 사진 속에 내 작은 순간을 담아 줬어.",
+            ),
+            (
+                "Now a piece of this room can go wherever you go.",
+                "이제 네가 어디로 가든 이 방의 한 조각도 함께해.",
+            ),
+        ]);
+    }
+    if life.total.things_shown > 0 {
+        threads.push([
+            (
+                "I brought a treasure to the glass to show you.",
+                "네게 보여 주려고 보물을 유리 앞으로 가져왔어.",
+            ),
+            (
+                "It felt more precious after we had admired it together.",
+                "함께 바라보고 나니까 더 소중하게 느껴졌지.",
+            ),
+        ]);
+    }
     threads
+}
+
+fn story_openings(world: &World) -> Vec<StoryBeat> {
+    let mut openings = vec![
+        (
+            "Once, {ghost} had a little tale to tell.",
+            "어느 날, {ghost}에게 작은 이야기가 생겼어.",
+        ),
+        (
+            "Come close. I'm {ghost}, and this is my tale.",
+            "가까이 와. 나는 {ghost}, 내 이야기야.",
+        ),
+        (
+            "Did I ever tell you this one? It happened to {ghost}.",
+            "이 이야기 해 줬던가? {ghost}의 이야기야.",
+        ),
+        (
+            "In a tiny glass kingdom lived a ghost called {ghost}.",
+            "작은 유리 왕국에 유령이 살았어. 이름은 {ghost}.",
+        ),
+        (
+            "Settle in. {ghost} has saved a small story for you.",
+            "편히 앉아. {ghost}의 작은 이야기 하나 들려줄게.",
+        ),
+        (
+            "Here's a little piece of the world according to {ghost}.",
+            "{ghost}의 눈에 비친 세상을 조금 들려줄게.",
+        ),
+    ];
+    if world.weather.sky == Sky::Rain {
+        openings.push((
+            "On a rainy day like this, {ghost} remembers a little tale.",
+            "이렇게 비 오는 날이면 {ghost}에게 떠오르는 이야기가 있어.",
+        ));
+    }
+    if world.is_night() {
+        openings.push((
+            "While the world grows dark, {ghost} has a tale for you.",
+            "세상이 어두워지면 {ghost}의 이야기가 시작돼.",
+        ));
+    }
+    openings
+}
+
+fn story_ending(world: &mut World, newborn: bool) -> StoryBeat {
+    let endings = [
+        (
+            "And {viewer} was here to hear it. That's my happy ending.",
+            "{viewer}, 네가 들어 줘서 행복한 끝이야.",
+        ),
+        (
+            "I kept the warmest part for you, {viewer}.",
+            "가장 따뜻한 부분은 너에게 줄게, {viewer}.",
+        ),
+        (
+            "That was a little day worth keeping, {viewer}.",
+            "간직하고 싶은 작은 하루였어, {viewer}.",
+        ),
+        (
+            "The room felt bigger after that. Thanks for listening, {viewer}.",
+            "그 뒤로 방이 더 넓어진 것 같았어. 들어 줘서 고마워, {viewer}.",
+        ),
+        (
+            "The tale can rest here now, beside you, {viewer}.",
+            "이제 이야기도 네 곁에서 쉴 수 있겠다, {viewer}.",
+        ),
+        (
+            "I wonder what tomorrow will add to it, {viewer}.",
+            "내일은 어떤 이야기가 더해질까, {viewer}.",
+        ),
+        (
+            "That's all for now, {viewer}. Stay a little longer?",
+            "오늘 이야기는 여기까지야, {viewer}. 조금만 더 같이 있을래?",
+        ),
+    ];
+    let ending = if world.bedtime() {
+        (
+            "Now rest, {viewer}. The little room is sleepy.",
+            "이제 쉬자, {viewer}. 작은 방도 졸리대.",
+        )
+    } else {
+        let endings = &endings[..if newborn { 2 } else { endings.len() }];
+        let weights: Vec<_> = endings
+            .iter()
+            .map(|ending| f32::from(Some(ending.0) != world.last_story_ending))
+            .collect();
+        endings[world.pick(&weights).unwrap()]
+    };
+    world.last_story_ending = Some(ending.0);
+    ending
 }
 
 /// A little tale whose memories belong to this ghost, picked by its own random source.
 pub fn story(world: &mut World, korean: bool) -> Vec<String> {
     let newborn = world.stage() == Stage::Newborn;
-    let threads = story_threads(world);
-    let finished: Vec<usize> = world
+    let mut threads = story_threads(world);
+    let mut finished: Vec<usize> = world
         .life
         .books
         .owned
@@ -1820,10 +2018,18 @@ pub fn story(world: &mut World, korean: bool) -> Vec<String> {
         .filter(|owned| owned.finished > 0)
         .map(|owned| owned.index)
         .collect();
+    if threads.len() + finished.len() > 1 {
+        threads.retain(|thread| Some(thread[0].0) != world.last_story_thread);
+        finished.retain(|index| {
+            Some(crate::world::books::LIBRARY[*index].pages[0].0) != world.last_story_thread
+        });
+    }
     if !newborn && !finished.is_empty() && world.random_unit() < 1.0 / (threads.len() + 1) as f32 {
         let chosen = world.pick(&vec![1.0; finished.len()]).unwrap();
         let book = crate::world::books::LIBRARY[finished[chosen]];
-        return vec![
+        world.last_story_thread = Some(book.pages[0].0);
+        let ending = story_ending(world, false);
+        let mut lines = vec![
             if korean {
                 format!("《{}》 알아?", book.title(true))
             } else {
@@ -1854,22 +2060,17 @@ pub fn story(world: &mut World, korean: bool) -> Vec<String> {
             }
             .to_owned(),
         ];
+        lines.extend(story_words(world, &[ending], korean));
+        return lines;
     }
     let opening = if newborn {
         (
             "I'm {ghost}. Here is my little light.",
             "나는 {ghost}. 여기 작은 빛이 있어.",
         )
-    } else if world.random_unit() < 0.5 {
-        (
-            "Once, {ghost} had a little tale to tell.",
-            "어느 날, {ghost}에게 작은 이야기가 생겼어.",
-        )
     } else {
-        (
-            "Come close. I'm {ghost}, and this is my tale.",
-            "가까이 와. 나는 {ghost}, 내 이야기야.",
-        )
+        let openings = story_openings(world);
+        openings[world.pick(&vec![1.0; openings.len()]).unwrap()]
     };
     let mut parts = vec![opening];
     if newborn {
@@ -1885,6 +2086,7 @@ pub fn story(world: &mut World, korean: bool) -> Vec<String> {
             )
         });
     } else if let Some(index) = world.pick(&vec![1.0; threads.len()]) {
+        world.last_story_thread = Some(threads[index][0].0);
         parts.extend(threads[index]);
     } else {
         parts.extend([
@@ -1897,36 +2099,55 @@ pub fn story(world: &mut World, korean: bool) -> Vec<String> {
                 "따뜻한 작은 집도 빛날 수 있다는 걸 알았대.",
             ),
         ]);
+        world.last_story_thread = Some(parts[1].0);
+    }
+    if !newborn && world.random_unit() < 0.3 {
+        let middles = [
+            (
+                "And do you know what stayed with me?",
+                "그런데 뭐가 마음에 남았는지 알아?",
+            ),
+            (
+                "Even a small adventure leaves a little glow.",
+                "작은 모험도 빛을 조금 남기나 봐.",
+            ),
+            (
+                "That is the bit I like to remember.",
+                "나는 그 부분이 자꾸 생각나.",
+            ),
+        ];
+        parts.push(middles[world.pick(&[1.0; 3]).unwrap()]);
     }
     if !newborn
         && world.life.friend.is_some()
         && !parts
             .iter()
             .any(|(english, _)| english.contains("{friend}"))
+        && world.random_unit() < 0.25
     {
-        parts.push((
-            "Maybe I'll tell {friend} this tale too.",
-            "{friend} 친구에게도 이 이야기를 들려줄까 봐.",
-        ));
+        let asides = [
+            (
+                "Maybe I'll tell {friend} this tale too.",
+                "{friend} 친구에게도 이 이야기를 들려줄까 봐.",
+            ),
+            (
+                "I wonder what {friend} would think of that.",
+                "{friend} 친구는 이 이야기를 어떻게 생각할까?",
+            ),
+            (
+                "I'll save this tale for when {friend} visits.",
+                "{friend} 친구가 놀러 오면 이 이야기를 해 줘야지.",
+            ),
+        ];
+        parts.push(asides[world.pick(&[1.0; 3]).unwrap()]);
     }
-    parts.push(if world.bedtime() {
-        (
-            "Now rest, {viewer}. The little room is sleepy.",
-            "이제 쉬자, {viewer}. 작은 방도 졸리대.",
-        )
-    } else if world.random_unit() < 0.5 {
-        (
-            "And {viewer} was here to hear it. That's my happy ending.",
-            "{viewer}, 네가 들어 줘서 행복한 끝이야.",
-        )
-    } else {
-        (
-            "I kept the warmest part for you, {viewer}.",
-            "가장 따뜻한 부분은 너에게 줄게, {viewer}.",
-        )
-    });
+    parts.push(story_ending(world, newborn));
+    story_words(world, &parts, korean)
+}
+
+fn story_words(world: &World, parts: &[StoryBeat], korean: bool) -> Vec<String> {
     parts
-        .into_iter()
+        .iter()
         .map(|(english, hangul)| {
             (if korean { hangul } else { english })
                 .replace("{ghost}", &world.ghost.name)
@@ -1959,6 +2180,14 @@ pub fn story(world: &mut World, korean: bool) -> Vec<String> {
                                 constellation.name.as_str()
                             }
                         }),
+                )
+                .replace(
+                    "{pin}",
+                    world
+                        .life
+                        .gallery
+                        .last()
+                        .map_or("", |pin| if korean { &pin.korean } else { &pin.name }),
                 )
         })
         .collect()
@@ -2366,7 +2595,7 @@ mod tests {
             let tale = story(&mut world, korean);
             let book = crate::world::books::LIBRARY[0];
             assert!(tale[0].contains(book.title(korean)));
-            assert!(tale.last().unwrap().contains(if korean {
+            assert!(tale[tale.len() - 2].contains(if korean {
                 book.pages.last().unwrap().1
             } else {
                 book.pages.last().unwrap().0
@@ -2490,6 +2719,33 @@ mod tests {
         assert_eq!(story_threads(&world).len(), 5);
         world.hear("hello");
         assert_eq!(story_threads(&world).len(), 6);
+        world.life.cranes.total = 1;
+        assert_eq!(story_threads(&world).len(), 7);
+        world.life.gallery.push(story_pin("a cloud", "구름"));
+        assert_eq!(story_threads(&world).len(), 8);
+        world.life.total.bubbles_blown = 1;
+        assert_eq!(story_threads(&world).len(), 8);
+        world.life.total.bubble_sessions = 1;
+        assert_eq!(story_threads(&world).len(), 9);
+        world.life.total.hunts = 1;
+        assert_eq!(story_threads(&world).len(), 9);
+        world.life.total.treasures_found = 1;
+        assert_eq!(story_threads(&world).len(), 10);
+        world.life.total.colds = 1;
+        world.life.total.recoveries = 1;
+        assert_eq!(story_threads(&world).len(), 10);
+        world.life.total.care_received = 1;
+        assert_eq!(story_threads(&world).len(), 11);
+        world.life.total.tidies = 1;
+        assert_eq!(story_threads(&world).len(), 12);
+        world.life.total.plans_heard = 1;
+        assert_eq!(story_threads(&world).len(), 12);
+        world.life.total.plans_went_well = 1;
+        assert_eq!(story_threads(&world).len(), 13);
+        world.life.total.photos = 1;
+        assert_eq!(story_threads(&world).len(), 14);
+        world.life.total.things_shown = 1;
+        assert_eq!(story_threads(&world).len(), 15);
         let threads = story_threads(&world);
         let text = threads
             .iter()
@@ -2504,6 +2760,15 @@ mod tests {
             "flower",
             "shooting star",
             "first woke",
+            "paper",
+            "{pin}",
+            "bubble",
+            "treasure",
+            "cold",
+            "toys",
+            "good news",
+            "photograph",
+            "show you",
         ] {
             assert!(text.contains(part), "{part}");
         }
@@ -2530,10 +2795,10 @@ mod tests {
                 };
                 let lines = story(&mut prepare(), korean);
                 assert_eq!(lines, story(&mut prepare(), korean));
-                assert!((3..=5).contains(&lines.len()));
+                assert!((3..=6).contains(&lines.len()));
                 assert!(lines.iter().all(|line| line.chars().count() <= 70));
                 let text = lines.join(" ");
-                for name in ["Pip", "Mina", "Lumi"] {
+                for name in ["Pip", "Mina"] {
                     assert!(text.contains(name), "{text}");
                 }
                 assert!(!text.chars().any(|character| character.is_ascii_digit()));
@@ -2568,7 +2833,7 @@ mod tests {
         for korean in [false, true] {
             let mut world = World::new(3, 12.0);
             let lines = story(&mut world, korean);
-            assert_eq!(lines.len(), 4);
+            assert!((4..=5).contains(&lines.len()));
             assert!(lines[1].contains(if korean {
                 "별이 되고"
             } else {
@@ -3444,5 +3709,303 @@ mod tests {
                 "{message}: {replies:?}"
             );
         }
+    }
+
+    fn a_storytellers_life(seed: u64, hour: f32) -> World {
+        let mut world = World::new(seed, hour);
+        world.ghost.name = "Pip".to_owned();
+        world.life.viewer_name = Some("Mina".to_owned());
+        world.begin_life("2026-06-21");
+        world.life.total.heard = 1;
+        world.life.keepsakes.push(crate::world::Keepsake::Feather);
+        world.life.bird_trust = 0.6;
+        world.life.friend = Some(crate::world::Companion {
+            name: "Lumi".to_owned(),
+            hue: 0.4,
+            visits: 3,
+            closeness: 0.5,
+        });
+        world.life.total.friend_games = 1;
+        world.life.total.towers = 1;
+        world.life.total.flowered = 1;
+        world
+            .life
+            .constellations
+            .push(crate::world::stars::Constellation {
+                name: "the Sleepy Heart".to_owned(),
+                korean: "졸린 하트".to_owned(),
+                stars: vec![0, 1, 2],
+                found: "2026-06-21".to_owned(),
+            });
+        world.life.total.focus_sessions = 1;
+        world.life.total.shooting_stars = 1;
+        world.life.cranes.total = 1;
+        world.life.gallery.push(story_pin("a cloud", "구름"));
+        world.life.total.bubble_sessions = 1;
+        world.life.total.treasures_found = 1;
+        world.life.total.recoveries = 1;
+        world.life.total.care_received = 1;
+        world.life.total.tidies = 1;
+        world.life.total.plans_went_well = 1;
+        world.life.total.photos = 1;
+        world.life.total.things_shown = 1;
+        world
+    }
+
+    #[test]
+    fn rich_lives_tell_fifty_varied_tales_without_a_line_in_more_than_half() {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        for seed in 0..20 {
+            for korean in [false, true] {
+                let mut world = a_storytellers_life(seed, 12.0);
+                assert_eq!(story_threads(&world).len(), 17);
+                let mut openings = BTreeSet::new();
+                let mut endings = BTreeSet::new();
+                let mut counts = BTreeMap::new();
+                for _ in 0..50 {
+                    let lines = story(&mut world, korean);
+                    openings.insert(lines[0].clone());
+                    endings.insert(lines.last().unwrap().clone());
+                    for line in lines.into_iter().collect::<BTreeSet<_>>() {
+                        *counts.entry(line).or_insert(0) += 1;
+                    }
+                }
+                assert!(openings.len() >= 5, "seed {seed}: {openings:?}");
+                assert!(endings.len() >= 5, "seed {seed}: {endings:?}");
+                for (line, count) in counts {
+                    assert!(count <= 25, "seed {seed}: {count} tellings of {line}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn many_seeded_tellings_keep_nonempty_paired_lines_and_the_bedtime_ending() {
+        for seed in 0..80 {
+            for korean in [false, true] {
+                let hour = if seed % 2 == 0 { 23.0 } else { 12.0 };
+                let mut world = a_storytellers_life(seed, hour);
+                world.life.books.owned[0].finished = 1;
+                world.weather.sky = match seed % 3 {
+                    0 => Sky::Rain,
+                    1 => Sky::Snow,
+                    _ => Sky::Clear,
+                };
+                let mut repeated = a_storytellers_life(seed, hour);
+                repeated.life.books.owned[0].finished = 1;
+                repeated.weather.sky = world.weather.sky;
+                for _ in 0..50 {
+                    let lines = story(&mut world, korean);
+                    assert_eq!(lines, story(&mut repeated, korean));
+                    assert!((3..=6).contains(&lines.len()));
+                    for line in &lines {
+                        assert!(!line.trim().is_empty());
+                        assert!(!line.contains(['{', '}']));
+                        assert!(!line.chars().any(|letter| letter.is_ascii_digit()));
+                        assert_eq!(
+                            line.chars().any(|letter| ('가'..='힣').contains(&letter)),
+                            korean,
+                            "{line}"
+                        );
+                    }
+                    if world.bedtime() {
+                        assert_eq!(
+                            lines.last().unwrap(),
+                            if korean {
+                                "이제 쉬자, Mina. 작은 방도 졸리대."
+                            } else {
+                                "Now rest, Mina. The little room is sleepy."
+                            }
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn consecutive_tales_choose_other_threads_and_endings_across_languages() {
+        for seed in 0..40 {
+            let mut world = a_storytellers_life(seed, 12.0);
+            for owned in &mut world.life.books.owned {
+                owned.finished = 1;
+            }
+            for telling in 0..100 {
+                let previous_thread = world.last_story_thread;
+                let previous_ending = world.last_story_ending;
+                story(&mut world, telling % 2 == 0);
+                assert_ne!(world.last_story_thread, previous_thread);
+                assert_ne!(world.last_story_ending, previous_ending);
+            }
+        }
+    }
+
+    #[test]
+    fn a_single_memory_can_repeat_but_a_new_memory_or_finished_book_gets_a_turn() {
+        let mut world = World::new(7, 12.0);
+        world.life.total.photos = 1;
+        story(&mut world, false);
+        let photograph = world.last_story_thread;
+        story(&mut world, true);
+        assert_eq!(world.last_story_thread, photograph);
+        world.life.total.towers = 1;
+        story(&mut world, false);
+        assert_ne!(world.last_story_thread, photograph);
+        story(&mut world, true);
+        assert_eq!(world.last_story_thread, photograph);
+        world.life.total.towers = 0;
+        world.life.books.owned[0].finished = 1;
+        for korean in [false, true, false, true] {
+            let previous = world.last_story_thread;
+            let lines = story(&mut world, korean);
+            assert_ne!(world.last_story_thread, previous);
+            assert_eq!(
+                lines[0].contains(crate::world::books::LIBRARY[0].title(korean)),
+                previous == photograph
+            );
+        }
+    }
+
+    #[test]
+    fn unfinished_experiences_do_not_supply_the_new_story_memories() {
+        let mut world = World::new(7, 12.0);
+        world.life.total.cranes = 1;
+        world.life.total.viewer_pins = 1;
+        world.life.total.bubbles_blown = 1;
+        world.life.total.hunts = 1;
+        world.life.total.colds = 1;
+        world.life.total.care_received = 1;
+        world.life.total.plans_heard = 1;
+        world.life.total.plans_went_badly = 1;
+        world.life.total.portraits = 1;
+        assert!(story_threads(&world).is_empty());
+        world.life.total.recoveries = 1;
+        assert_eq!(story_threads(&world).len(), 1);
+        world.life.total.care_received = 0;
+        assert!(story_threads(&world).is_empty());
+    }
+
+    #[test]
+    fn gallery_tales_name_the_newest_pin_in_the_asked_language() {
+        let mut world = World::new(7, 12.0);
+        for (name, korean) in [("a cloud", "구름"), ("a little moon", "작은 달")] {
+            world.life.gallery.push(story_pin(name, korean));
+        }
+        for korean in [false, true] {
+            let lines = story(&mut world, korean);
+            assert!(lines[1].contains(if korean {
+                "작은 달"
+            } else {
+                "a little moon"
+            }));
+            assert!(
+                !lines
+                    .join(" ")
+                    .contains(if korean { "구름" } else { "a cloud" })
+            );
+        }
+    }
+
+    #[test]
+    fn weather_and_night_openings_only_join_the_pool_when_they_fit() {
+        let mut world = World::new(7, 12.0);
+        let ordinary = story_openings(&world);
+        assert_eq!(ordinary.len(), 6);
+        for sky in [Sky::Clear, Sky::Rain, Sky::Snow, Sky::Rainbow] {
+            for hour in [6.0, 12.0, 21.0] {
+                world.weather.sky = sky;
+                world.hour = hour;
+                let openings = story_openings(&world);
+                assert!((6..=8).contains(&openings.len()));
+                assert_eq!(
+                    openings.iter().any(|beat| beat.0.contains("rainy")),
+                    sky == Sky::Rain
+                );
+                assert_eq!(
+                    openings.iter().any(|beat| beat.0.contains("dark")),
+                    world.is_night()
+                );
+                assert!(ordinary.iter().all(|opening| openings.contains(opening)));
+            }
+        }
+    }
+
+    #[test]
+    fn friend_asides_are_optional_varied_and_about_one_tale_in_four() {
+        use std::collections::BTreeSet;
+
+        let mut world = a_storytellers_life(7, 12.0);
+        world.life.total.friend_games = 0;
+        let mut asides = BTreeSet::new();
+        let mut shared = 0;
+        let mut connected = 0;
+        for _ in 0..1000 {
+            let lines = story(&mut world, false);
+            let friend = lines.iter().find(|line| line.contains("Lumi"));
+            if let Some(line) = friend {
+                shared += 1;
+                asides.insert(line.clone());
+            }
+            if lines.len() > 4 + usize::from(friend.is_some()) {
+                connected += 1;
+            }
+        }
+        assert!((200..=300).contains(&shared), "{shared} friend asides");
+        assert_eq!(asides.len(), 3);
+        assert!(
+            (250..=350).contains(&connected),
+            "{connected} connecting beats"
+        );
+        world.life.friend = None;
+        for _ in 0..50 {
+            assert!(
+                story(&mut world, false)
+                    .iter()
+                    .all(|line| !line.contains("Lumi"))
+            );
+        }
+    }
+
+    #[test]
+    fn newborn_tales_stay_three_simple_lines_even_with_a_rich_life() {
+        for korean in [false, true] {
+            for hour in [12.0, 23.0] {
+                let mut world = a_storytellers_life(7, hour);
+                world.birthday = Some(world.date);
+                world.life.books.owned[0].finished = 1;
+                for _ in 0..30 {
+                    let lines = story(&mut world, korean);
+                    assert_eq!(lines.len(), 3);
+                    assert_eq!(
+                        lines[0],
+                        if korean {
+                            "나는 Pip. 여기 작은 빛이 있어."
+                        } else {
+                            "I'm Pip. Here is my little light."
+                        }
+                    );
+                    assert_eq!(
+                        lines[1],
+                        if korean {
+                            "Lumi 친구도 있어. 같이 반짝여."
+                        } else {
+                            "Lumi is my friend. We glow."
+                        }
+                    );
+                    assert!(lines.iter().all(|line| line.chars().count() <= 65));
+                }
+            }
+        }
+    }
+
+    fn story_pin(name: &str, korean: &str) -> crate::world::gallery::Pin {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "korean": korean,
+            "day": "2026-06-21",
+            "strokes": [[[0.0, 0.0], [0.5, 0.5]]],
+        }))
+        .unwrap()
     }
 }
