@@ -497,6 +497,13 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
         EventKind::FocusEnded {
             completed: true, ..
         } => ("We finished our work together.".to_owned(), None),
+        EventKind::FoldedCrane { count: 100 } => {
+            ("A hundred paper cranes for you.".to_owned(), None)
+        }
+        EventKind::FoldedCrane { count: 1000 } => (
+            "A thousand paper cranes, and a wish for you.".to_owned(),
+            None,
+        ),
         _ => return None,
     };
     Some((caption, daily))

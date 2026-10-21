@@ -50,6 +50,8 @@ pub enum Material {
     Envelope,
     EnvelopeFlap,
     HeartSeal,
+    Origami(crate::world::acquaintance::Color, bool, bool),
+    CraneThread,
 }
 
 impl Material {
@@ -129,6 +131,10 @@ impl Material {
                 2 => Vec3::new(1.0, 0.85, 0.35),
                 _ => Vec3::new(0.6, 1.0, 0.7),
             },
+            Self::Origami(color, crease, _) => color
+                .rgb()
+                .lerp(Vec3::ONE, if crease { 0.35 } else { 0.05 }),
+            Self::CraneThread => Vec3::new(0.85, 0.82, 0.72),
         }
     }
 
@@ -140,6 +146,7 @@ impl Material {
             Self::TreeLight(index) => {
                 0.9 + 0.5 * ((time.rem_euclid(3600.0) as f32) * 2.1 + f32::from(index) * 1.7).sin()
             }
+            Self::Origami(_, _, true) => 0.3,
             _ => 0.0,
         };
         self.albedo(plant) * strength
@@ -178,6 +185,8 @@ pub enum Furniture<'a> {
     Mirror,
     Envelope,
     ViewerLetter(Vec3),
+    Cranes(&'a Garland),
+    FoldingPaper(crate::world::cranes::Paper, Vec3, Quat),
 }
 
 impl Furniture<'_> {
@@ -224,6 +233,8 @@ impl Furniture<'_> {
                     (half * half + decoration.radius().powi(2)).sqrt() + 0.02,
                 )
             }
+            Self::Cranes(_) => (crate::world::cranes::CENTER, 0.72),
+            Self::FoldingPaper(_, position, _) => (*position, 0.12),
         }
     }
 
@@ -422,6 +433,16 @@ impl Furniture<'_> {
                 rounded_cylinder(point - nook.position, Nook::RADIUS, Nook::HEIGHT, 0.06),
                 Material::Cushion,
             ),
+            Self::Cranes(garland) => garland.distance(point),
+            Self::FoldingPaper(paper, position, rotation) => {
+                let point = rotation.inverse() * (point - *position);
+                let bounds = box_distance(point, Vec3::splat(0.1));
+                if bounds > 0.02 {
+                    return (bounds, Material::Origami(paper.color, false, false));
+                }
+                let (distance, crease) = folding_paper_distance(point, paper.progress);
+                (distance, Material::Origami(paper.color, crease, false))
+            }
         }
     }
 
@@ -446,6 +467,17 @@ impl Furniture<'_> {
     pub fn trace(&self, origin: Vec3, direction: Vec3, limit: f32) -> Option<(f32, Material)> {
         let (center, radius) = self.bounds();
         let (enter, exit) = sphere_span(origin, direction, center, radius)?;
+        let (enter, exit) = if let Self::Cranes(_) = self {
+            let (near, far) = box_span(
+                origin,
+                direction,
+                crate::world::cranes::CENTER,
+                Vec3::new(0.39, 0.53, 0.17),
+            )?;
+            (enter.max(near), exit.min(far))
+        } else {
+            (enter, exit)
+        };
         let mut distance = enter.max(0.0);
         let end = exit.min(limit);
         for _ in 0..72 {
@@ -460,6 +492,172 @@ impl Furniture<'_> {
         }
         None
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Garland {
+    threads: Vec<CraneThread>,
+    glowing: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct CraneThread {
+    top: Vec3,
+    end: Vec3,
+    center: Vec3,
+    half: Vec3,
+    cranes: Vec<(Vec3, crate::world::acquaintance::Color)>,
+}
+
+impl Garland {
+    pub fn of(world: &crate::world::World) -> Self {
+        let mut threads = Vec::new();
+        for (index, colors) in world.life.cranes.colors.chunks(10).take(8).enumerate() {
+            let last = crate::world::cranes::slot(index * 10 + colors.len() - 1);
+            let top = Vec3::new(last.x, crate::world::ROOM_MAX.y, last.z);
+            let breeze = world.breeze_at(last).clamp(Vec3::splat(-1.0), Vec3::ONE) * 0.012;
+            let drift = Vec3::new(
+                (world.time * 0.31 + index as f64).sin() as f32 * 0.007,
+                0.0,
+                (world.time * 0.23 + index as f64).cos() as f32 * 0.005,
+            );
+            let sway = Vec3::new(breeze.x, 0.0, breeze.z) + drift;
+            let cranes: Vec<_> = colors
+                .iter()
+                .enumerate()
+                .map(|(level, color)| {
+                    let position = crate::world::cranes::slot(index * 10 + level);
+                    let sway = sway * ((top.y - position.y) / (top.y - last.y));
+                    (position + sway, *color)
+                })
+                .collect();
+            let end = last + sway;
+            let low = top.min(end) - Vec3::new(0.052, 0.04, 0.045);
+            let high = top.max(end) + Vec3::new(0.052, 0.0, 0.045);
+            threads.push(CraneThread {
+                top,
+                end,
+                center: (low + high) * 0.5,
+                half: (high - low) * 0.5,
+                cranes,
+            });
+        }
+        Self {
+            threads,
+            glowing: world.life.cranes.total >= 1000,
+        }
+    }
+
+    fn distance(&self, point: Vec3) -> (f32, Material) {
+        let bounds = box_distance(
+            point - crate::world::cranes::CENTER,
+            Vec3::new(0.39, 0.53, 0.17),
+        );
+        if bounds > 0.02 {
+            return (bounds, Material::CraneThread);
+        }
+        let mut nearest = (f32::MAX, Material::CraneThread);
+        for thread in &self.threads {
+            let bound = box_distance(point - thread.center, thread.half);
+            if bound > 0.01 {
+                nearest.0 = nearest.0.min(bound);
+                continue;
+            }
+            let distance = capsule(point, thread.top, thread.end, 0.002);
+            if distance < nearest.0 {
+                nearest = (distance, Material::CraneThread);
+            }
+            for (position, color) in &thread.cranes {
+                let local = point - *position;
+                let bound = local.length() - 0.052;
+                if bound > nearest.0 {
+                    continue;
+                }
+                let (distance, crease) = crane_distance(local);
+                if distance < nearest.0 {
+                    nearest = (distance, Material::Origami(*color, crease, self.glowing));
+                }
+            }
+        }
+        nearest
+    }
+}
+
+fn box_span(origin: Vec3, direction: Vec3, center: Vec3, half: Vec3) -> Option<(f32, f32)> {
+    let mut enter = 0.0f32;
+    let mut exit = f32::MAX;
+    for axis in 0..3 {
+        let offset = origin[axis] - center[axis];
+        if direction[axis].abs() < 1e-8 {
+            if offset.abs() > half[axis] {
+                return None;
+            }
+        } else {
+            let first = (-half[axis] - offset) / direction[axis];
+            let second = (half[axis] - offset) / direction[axis];
+            enter = enter.max(first.min(second));
+            exit = exit.min(first.max(second));
+        }
+    }
+    (exit >= enter).then_some((enter, exit))
+}
+
+fn crane_distance(point: Vec3) -> (f32, bool) {
+    let bound = box_distance(point, Vec3::new(0.047, 0.035, 0.035));
+    if bound > 0.01 {
+        return (bound, false);
+    }
+    let body = ellipsoid(point, Vec3::new(0.011, 0.012, 0.022));
+    let mut distance = body;
+    for side in [-1.0, 1.0] {
+        let local = Vec3::new(point.x * side, point.y, point.z);
+        // A flattened, tapered wing shares its root with the central crease.
+        let width = (0.029 - (local.x - 0.009).abs() * 0.7).max(0.001);
+        let wing = box_distance(
+            Vec3::new(local.x - 0.023, local.y - (local.x * 0.5), local.z),
+            Vec3::new(0.021, 0.002, width),
+        ) * 0.7;
+        distance = distance.min(wing);
+    }
+    distance = distance.min(capsule(
+        point,
+        Vec3::new(0.0, 0.0, -0.013),
+        Vec3::new(0.0, 0.028, -0.025),
+        0.003,
+    ));
+    distance = distance.min(capsule(
+        point,
+        Vec3::new(0.0, 0.028, -0.025),
+        Vec3::new(0.0, 0.023, -0.034),
+        0.002,
+    ));
+    distance = distance.min(capsule(
+        point,
+        Vec3::new(0.0, 0.0, 0.013),
+        Vec3::new(0.0, 0.02, 0.032),
+        0.0025,
+    ));
+    (distance, point.x.abs() < 0.003)
+}
+
+fn folding_paper_distance(point: Vec3, progress: f32) -> (f32, bool) {
+    let progress = progress.clamp(0.0, 1.0);
+    if progress >= 0.75 {
+        let (crane, crease) = crane_distance(point);
+        let local = Quat::from_rotation_y(std::f32::consts::FRAC_PI_4) * point;
+        let triangle =
+            box_distance(local, Vec3::new(0.062, 0.0025, 0.062)).max((-local.z - local.x) * 0.707);
+        return (
+            triangle + (crane - triangle) * ((progress - 0.75) * 4.0),
+            crease,
+        );
+    }
+    let angle = (progress / 0.35).min(1.0) * std::f32::consts::FRAC_PI_4;
+    let local = Quat::from_rotation_y(angle) * point;
+    let square = box_distance(local, Vec3::new(0.062, 0.0025, 0.062));
+    let fold = ((progress - 0.35) / 0.4).clamp(0.0, 1.0);
+    let folded = square.max((-local.z - local.x) * 0.707 - (1.0 - fold) * 0.09);
+    (folded, (local.x + local.z).abs() < 0.003)
 }
 
 fn envelope(point: Vec3) -> (f32, Material) {
@@ -1444,5 +1642,52 @@ mod tests {
         assert!(rounded_cylinder(Vec3::new(0.0, 0.14, 0.0), 0.42, 0.14, 0.06).abs() < 1e-5);
         assert!(ellipsoid(Vec3::new(0.1, 0.0, 0.0), Vec3::new(0.1, 0.02, 0.05)).abs() < 1e-5);
         assert!(capsule(Vec3::new(0.02, 0.5, 0.0), Vec3::ZERO, Vec3::Y, 0.02).abs() < 1e-5);
+    }
+
+    #[test]
+    fn crane_and_folding_paper_distances_normals_and_bounds_stay_finite() {
+        let mut world = crate::world::World::new(1, 18.0);
+        world.life.cranes.colors = vec![crate::world::acquaintance::Color::Pink; 80];
+        world.life.cranes.total = 1000;
+        let garland = Garland::of(&world);
+        let furniture = Furniture::Cranes(&garland);
+        for progress in [0.0, 0.25, 0.5, 0.75, 0.9, 1.0] {
+            let paper = Furniture::FoldingPaper(
+                crate::world::cranes::Paper {
+                    color: crate::world::acquaintance::Color::Blue,
+                    progress,
+                },
+                Vec3::ZERO,
+                Quat::IDENTITY,
+            );
+            for across in -6..=6 {
+                for height in -5..=5 {
+                    for depth in -6..=6 {
+                        let point = Vec3::new(across as f32, height as f32, depth as f32) * 0.025;
+                        assert!(paper.distance(point).0.is_finite());
+                        assert!(paper.normal(point).is_finite());
+                        if point.length() > paper.bounds().1 {
+                            assert!(paper.distance(point).0 > 0.0);
+                        }
+                        let position = point + crate::world::cranes::CENTER;
+                        assert!(furniture.distance(position).0.is_finite());
+                        assert!(furniture.normal(position).is_finite());
+                    }
+                }
+            }
+        }
+        for direction in [Vec3::X, Vec3::Y, Vec3::Z, Vec3::ONE.normalize()] {
+            let center = crate::world::cranes::slot(20);
+            if let Some((distance, _)) = furniture.trace(center - direction, direction, 3.0) {
+                assert!(distance.is_finite() && distance >= 0.0);
+            }
+            assert!(box_span(center, direction, center, Vec3::splat(0.1)).is_some());
+        }
+        for thread in &garland.threads {
+            for (position, _) in &thread.cranes {
+                assert!(position.is_finite());
+                assert!((*position - thread.center).abs().cmple(thread.half).all());
+            }
+        }
     }
 }

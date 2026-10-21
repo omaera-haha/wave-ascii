@@ -459,6 +459,7 @@ impl Mind {
                 | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
+                | Understanding::Folding
         ) {
             self.next_id += 1;
             self.latest_request = self.next_id;
@@ -947,6 +948,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
+                | Understanding::Folding
         )
 }
 
@@ -2270,6 +2272,21 @@ mod tests {
             Some(&conversation[1].text)
         );
         assert_eq!(world.ghost.plan.activity, Activity::Visit);
+    }
+
+    #[test]
+    fn crane_requests_bypass_jev_and_preserve_the_worlds_bilingual_reply() {
+        for message in ["fold a crane", "종이학 접어줘"] {
+            let mut world = World::new(7, 18.0);
+            assert!(!routes_to_jev(&world.hear(message)));
+            let mut mind = offline();
+            mind.hear(&mut world, message);
+            assert_eq!(world.ghost.plan.activity, Activity::Fold);
+            assert_eq!(
+                mind.journal.conversation.last().unwrap().text,
+                world.ghost.speech.as_ref().unwrap().text
+            );
+        }
     }
 }
 

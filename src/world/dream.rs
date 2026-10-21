@@ -27,10 +27,11 @@ pub enum DreamPicture {
     Pumpkin,
     Spiral,
     Note,
+    Crane,
 }
 
 impl DreamPicture {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::Tower,
         Self::Ball,
         Self::Bird,
@@ -46,6 +47,7 @@ impl DreamPicture {
         Self::Pumpkin,
         Self::Spiral,
         Self::Note,
+        Self::Crane,
     ];
 
     /// Read in word order so the first image in a dream leads its picture.
@@ -90,6 +92,7 @@ impl DreamPicture {
                 (&["nought", "game"][..], Self::Noughts),
                 (&["pumpkin"][..], Self::Pumpkin),
                 (&["picture", "draw", "door"][..], Self::Spiral),
+                (&["crane"][..], Self::Crane),
             ] {
                 if roots.iter().any(|root| word.starts_with(root)) {
                     return picture;
@@ -217,6 +220,19 @@ impl DreamPicture {
                     (0.35, -0.4),
                     (0.5, -0.22),
                 ]),
+            ],
+            Self::Crane => vec![
+                line(&[
+                    (-0.85, 0.3),
+                    (-0.12, -0.12),
+                    (0.0, 0.8),
+                    (0.2, -0.1),
+                    (0.85, 0.3),
+                    (0.18, -0.35),
+                    (-0.12, -0.12),
+                    (-0.85, 0.3),
+                ]),
+                line(&[(0.18, -0.35), (0.52, -0.05), (0.6, 0.46), (0.82, 0.32)]),
             ],
         }
     }

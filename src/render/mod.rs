@@ -226,6 +226,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         0.0
     };
     let held_book = world.held_book();
+    let garland = shapes::Garland::of(world);
     let mut book_pile: Vec<_> = world
         .life
         .written
@@ -261,6 +262,16 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
                 .map_or(0.0, |playing| playing.beat(world.time) * PI),
         ),
     ];
+    if !world.life.cranes.colors.is_empty() {
+        furniture.push(Furniture::Cranes(&garland));
+    }
+    if let Some((paper, position)) = world.held_paper() {
+        furniture.push(Furniture::FoldingPaper(
+            paper,
+            position - scene.view.forward * 0.2 * world.size(),
+            glam::Quat::from_rotation_y(-scene.view.right.z.atan2(scene.view.right.x)),
+        ));
+    }
     if let Some(position) = world.viewer_paper() {
         furniture.push(Furniture::ViewerLetter(position));
     }

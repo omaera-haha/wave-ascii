@@ -80,6 +80,8 @@ pub fn observe(world: &World) -> Value {
             "glass": glass(world),
             "books": world.books_words(),
             "reading": world.reading_words(),
+            "cranes": world.life.cranes.words(),
+            "folding": world.folding_words(),
         },
         "friend": world.friend.as_ref().zip(world.life.friend.as_ref()).map(|(friend, companion)| {
             format!("{}, another ghost and {}, is {}", companion.name, companion.closeness_words(), friend.doing())
@@ -380,6 +382,7 @@ fn thing(world: &World, thing: Thing) -> String {
             }
         }
         Thing::Moth => "a moth fluttering around the lamp".to_owned(),
+        Thing::Cranes => world.life.cranes.words(),
     }
 }
 

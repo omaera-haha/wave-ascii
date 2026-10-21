@@ -277,6 +277,10 @@ pub struct Tally {
     pub feelings: Vec<super::Feeling>,
     pub comforted_feelings: Vec<super::Feeling>,
     pub felt_better: u32,
+    #[serde(default)]
+    pub cranes: u32,
+    #[serde(default)]
+    pub cranes_for_sad_viewer: u32,
 }
 
 impl Tally {
@@ -530,6 +534,9 @@ impl Tally {
                 if !self.friend_played.contains(game) {
                     self.friend_played.push(*game);
                 }
+            }
+            EventKind::FoldedCrane { .. } => {
+                self.cranes = self.cranes.saturating_add(1).min(super::cranes::MAXIMUM)
             }
             _ => {}
         }
@@ -1121,6 +1128,22 @@ impl Tally {
                 format!("saw {} rainbows", count_words(rainbows)),
             )),
         }
+        if self.cranes > 0 {
+            deeds.push((
+                Salience::Small,
+                if self.cranes == 1 {
+                    "folded a paper crane".to_owned()
+                } else {
+                    format!("folded {} paper cranes", count_words(self.cranes))
+                },
+            ));
+        }
+        if self.cranes_for_sad_viewer > 0 {
+            deeds.push((
+                Salience::Notable,
+                "folded a crane for you when you were sad".to_owned(),
+            ));
+        }
         deeds
     }
 
@@ -1291,6 +1314,8 @@ pub struct Life {
     pub received: Vec<super::penpal::ViewerLetter>,
     pub viewer: super::acquaintance::Acquaintance,
     pub feelings: Vec<super::feelings::FeelingNote>,
+    #[serde(default)]
+    pub cranes: super::cranes::Cranes,
 }
 
 impl Life {
@@ -1396,6 +1421,23 @@ impl Life {
         self.skills.migrate(&self.total);
         self.total.note(kind);
         self.today.note(kind);
+        if matches!(kind, EventKind::FoldedCrane { .. })
+            && self
+                .feelings
+                .iter()
+                .any(|note| note.day == self.day && note.feeling == super::Feeling::Sad)
+        {
+            self.today.cranes_for_sad_viewer = self
+                .today
+                .cranes_for_sad_viewer
+                .saturating_add(1)
+                .min(super::cranes::MAXIMUM);
+            self.total.cranes_for_sad_viewer = self
+                .total
+                .cranes_for_sad_viewer
+                .saturating_add(1)
+                .min(super::cranes::MAXIMUM);
+        }
         if let Some(friend) = &mut self.friend {
             match kind {
                 EventKind::FriendArrived(_) => {
@@ -1668,14 +1710,17 @@ impl Life {
     /// because of how often it chose it before: from 0.85 for what it never
     /// does to 1.3 for what it does most. Floating is no habit.
     pub fn habit(&self, activity: Activity) -> f32 {
-        if matches!(activity, Activity::Float | Activity::Comfort) {
+        if matches!(
+            activity,
+            Activity::Float | Activity::Comfort | Activity::Fold
+        ) {
             return 1.0;
         }
-        // Comfort responds to a message rather than forming a routine.
-        let kinds = Activity::ALL.len() as f32 - 2.0;
+        // Comfort follows a message; folding already has its daily allowance.
+        let kinds = Activity::ALL.len() as f32 - 3.0;
         let total: u32 = Activity::ALL
             .into_iter()
-            .filter(|other| !matches!(other, Activity::Float | Activity::Comfort))
+            .filter(|other| !matches!(other, Activity::Float | Activity::Comfort | Activity::Fold))
             .map(|other| self.total.times(other))
             .sum();
         let share = (self.total.times(activity) as f32 + PRIOR) / (total as f32 + PRIOR * kinds);
@@ -1721,6 +1766,14 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.cranes.sanitize(&self.day);
+        for (tally, maximum) in [
+            (&mut self.today, 3),
+            (&mut self.total, super::cranes::MAXIMUM),
+        ] {
+            tally.cranes = tally.cranes.min(maximum);
+            tally.cranes_for_sad_viewer = tally.cranes_for_sad_viewer.min(tally.cranes);
+        }
         self.promise = self.promise.filter(|promise| {
             promise.valid()
                 && self
@@ -2274,6 +2327,15 @@ impl Life {
                     })?
                     .1
                     .to_owned()
+            }
+            EventKind::FoldedCrane { count } if super::cranes::LANDMARKS.contains(count) => {
+                if *count == 1 {
+                    "I folded my first paper crane for you.".to_owned()
+                } else if *count == 1000 {
+                    "I folded a thousand paper cranes and made a wish for you.".to_owned()
+                } else {
+                    format!("I folded {} paper cranes for you.", count_words(*count))
+                }
             }
             _ => return None,
         };

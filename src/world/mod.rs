@@ -6,6 +6,7 @@ pub mod blocks;
 pub mod books;
 pub mod breeze;
 pub mod calendar;
+pub mod cranes;
 pub mod creation;
 mod doodle;
 pub mod dream;
@@ -310,6 +311,9 @@ pub enum EventKind {
     ReadViewerLetter,
     AskedViewer(acquaintance::Topic),
     LearnedAboutViewer(acquaintance::Topic),
+    FoldedCrane {
+        count: u32,
+    },
 }
 
 impl EventKind {
@@ -517,6 +521,9 @@ impl EventKind {
             Self::PlayedWithFriend(game) => {
                 format!("finished {} with your ghost friend", game.words())
             }
+            Self::FoldedCrane { count } => {
+                format!("folded the {} paper crane", anniversary::ordinal(*count))
+            }
         }
     }
 }
@@ -587,6 +594,7 @@ pub enum Understanding {
     },
     Answered(acquaintance::Topic),
     Unanswered(acquaintance::Topic),
+    Folding,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -792,6 +800,8 @@ pub struct World {
     last_message_at: Option<f64>,
     last_question_at: Option<f64>,
     viewer_blush_at: Option<f64>,
+    pub folding: Option<cranes::Folding>,
+    pending_crane: bool,
 }
 
 impl World {
@@ -931,6 +941,8 @@ impl World {
             last_message_at: None,
             last_question_at: None,
             viewer_blush_at: None,
+            folding: None,
+            pending_crane: false,
         };
         world.scatter_blocks();
         world
@@ -1057,6 +1069,7 @@ impl World {
         self.advance_garden(seconds);
         self.advance_wardrobe();
         self.advance_music();
+        self.advance_cranes();
 
         let present = self.viewer_present();
         if present != self.viewer_present {
@@ -1245,6 +1258,7 @@ impl World {
                 | Activity::Play
                 | Activity::Lamp
                 | Activity::Window => true,
+                Activity::Fold => self.fold_is_open(),
             })
             .collect()
     }
@@ -1364,6 +1378,7 @@ impl World {
             Activity::Dance => "Do a happy little twirl in the air. Fits when delighted, after \
                                 something good happened, or to show off for the viewer."
                 .to_owned(),
+            Activity::Fold => "Fold a colored paper crane for the viewer, then hang it on the ceiling garland. A quiet pastime, a few cranes each day.".to_owned(),
         }
     }
 
@@ -1380,6 +1395,13 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Fold && self.focus.is_some() {
+            self.pending_crane = true;
+            return;
+        }
+        if activity == Activity::Fold && (!self.can_fold() || self.ghost.asleep >= 0.3) {
+            return;
+        }
         if activity == Activity::Letter && !self.letter_is_open() {
             return;
         }
@@ -1423,6 +1445,11 @@ impl World {
         self.abandon_game();
         self.abandon_puzzle();
         self.put_keepsake_away();
+        self.stop_folding();
+        if activity == Activity::Fold && !self.can_fold() {
+            self.ghost.plan.done = true;
+            return;
+        }
         self.reading = None;
         self.mirror_visit = None;
         self.viewer_letter = None;
@@ -1520,6 +1547,7 @@ impl World {
             | Activity::Play
             | Activity::Build
             | Activity::Friend => position,
+            Activity::Fold => cranes::SEAT,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         if activity == Activity::Air {
@@ -1553,6 +1581,9 @@ impl World {
         }
         if activity == Activity::Music {
             self.prepare_music();
+        }
+        if activity == Activity::Fold {
+            self.begin_folding();
         }
         if activity == Activity::Rest {
             self.prepare_lullaby();
@@ -1879,6 +1910,9 @@ impl World {
             return heard;
         }
         if let Some(heard) = self.hear_music(text, korean) {
+            return heard;
+        }
+        if let Some(heard) = self.hear_cranes(text, korean) {
             return heard;
         }
         if let Some(heard) = self.hear_puzzle(text, korean) {
@@ -2310,6 +2344,7 @@ impl World {
         ) {
             self.abandon_comfort();
             self.reading = None;
+            self.stop_folding();
         }
         if matches!(
             kind,
@@ -2554,6 +2589,7 @@ impl World {
             self.abandon_puzzle();
             self.abandon_game();
             self.reading = None;
+            self.stop_folding();
             self.put_keepsake_away();
             self.drop_ball();
             self.drop_block();
@@ -2572,6 +2608,7 @@ impl World {
         let waiting = self.telling.is_some()
             || matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
             || (self.ghost.plan.activity == Activity::Visit && self.asking.is_some())
+            || (self.ghost.plan.activity == Activity::Fold && self.ghost.plan.count > 0)
             || (matches!(
                 self.ghost.plan.activity,
                 Activity::Rest
@@ -2583,9 +2620,11 @@ impl World {
                     | Activity::Mirror
                     | Activity::Letter
                     | Activity::Comfort
+                    | Activity::Fold
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
+            self.stop_folding();
             self.reading = None;
             self.drop_ball();
             self.drop_block();
@@ -2884,6 +2923,7 @@ impl World {
                 }
             }
             Activity::Doodle => look = self.carry_out_doodle(),
+            Activity::Fold => look = self.carry_out_fold(seconds),
         }
         self.ghost.look = look;
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
@@ -3001,7 +3041,12 @@ impl World {
         if reaching {
             low.z = ROOM_MIN.z - 0.04;
         }
-        let high = ROOM_MAX - Vec3::new(0.3, 0.35, 0.3);
+        let mut high = ROOM_MAX - Vec3::new(0.3, 0.35, 0.3);
+        if ghost.plan.activity == Activity::Fold && ghost.plan.count > 0 {
+            low.z = ROOM_MIN.z + 0.08;
+            high.x = ROOM_MAX.x - 0.08;
+            high.y = ROOM_MAX.y - 0.06;
+        }
         for axis in 0..3 {
             if ghost.position[axis] < low[axis] {
                 steer[axis] += (low[axis] - ghost.position[axis]) * 8.0;

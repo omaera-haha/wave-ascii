@@ -137,6 +137,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             }
             Sky::Clear => vec!["I like watching the clouds.", "The hills look soft today."],
         },
+        Activity::Fold => vec!["Fold, crease, fold again.", "A little paper wish for you."],
     };
     if activity == Activity::Window {
         for passing in world.passersby().into_iter().flatten() {
@@ -237,6 +238,15 @@ pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<String> {
     let mut lines: Vec<_> = idle_lines(world).into_iter().map(str::to_owned).collect();
+    if world.folding.is_some() {
+        lines.push("Fold, crease, fold again.".to_owned());
+        if world.life.cranes.total < 1000 {
+            lines.push(format!(
+                "Only {} to go.",
+                crate::world::friend::count_words(1000 - world.life.cranes.total)
+            ));
+        }
+    }
     if !world.viewer_present()
         && let Some(promise) = world.life.promise
     {
@@ -559,6 +569,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Read => "A book is a little window too.",
             Activity::Letter => "I kept their words close.",
             Activity::Mirror => "I wonder what the mirror ghost is doing.",
+            Activity::Fold => "Another crane, another little wish for you.",
         });
     }
     if lines.is_empty() {
@@ -614,6 +625,9 @@ pub fn dreams(world: &World) -> Vec<String> {
 fn dream_lines(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if today.cranes > 0 {
+        lines.push("…paper cranes carry little wishes through the sky…");
+    }
     if world.life.today.viewer_letters_read > 0 {
         lines.push("…your letter folded into a little paper heart…");
     }
@@ -848,6 +862,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::OwnSong
             | Understanding::Answered(_)
             | Understanding::Unanswered(_)
+            | Understanding::Folding
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -869,7 +884,10 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
     }
     if matches!(
         heard.understanding,
-        Understanding::Answered(_) | Understanding::Unanswered(_) | Understanding::OwnSong
+        Understanding::Answered(_)
+            | Understanding::Unanswered(_)
+            | Understanding::OwnSong
+            | Understanding::Folding
     ) {
         return world
             .ghost
@@ -1555,6 +1573,21 @@ pub(crate) fn answer(
                 &["새는 내 친구야!", "이제 우리 친구야."],
             ),
         },
+        Question::Cranes => vec![if korean {
+            if world.life.cranes.total == 0 {
+                "아직 한 마리도 없어. 천천히 너를 위해 접을 거야.".to_owned()
+            } else {
+                format!(
+                    "지금까지 종이학 {} 마리를 접었어. 모두 너를 위한 거야.",
+                    crate::world::cranes::korean_count(world.life.cranes.total)
+                )
+            }
+        } else {
+            format!(
+                "I've folded {} paper cranes. Every one is for you.",
+                crate::world::friend::count_words(world.life.cranes.total)
+            )
+        }],
     }
 }
 
@@ -1865,6 +1898,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Music => "오르골 음악을 듣는 중",
         Activity::Letter => "네 편지를 읽는 중",
         Activity::Mirror => "거울 보는 중",
+        Activity::Fold => "종이학 접는 중",
     }
 }
 
@@ -1898,6 +1932,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Music => "오르골 듣기",
         Activity::Letter => "네 편지 읽기",
         Activity::Mirror => "거울 보기",
+        Activity::Fold => "종이학 접기",
     }
 }
 
@@ -3246,6 +3281,26 @@ mod tests {
             dreams(&world)
                 .iter()
                 .any(|line| line == Wish::Rainbow.dream())
+        );
+    }
+
+    #[test]
+    fn crane_replies_thoughts_and_dreams_remember_the_saved_count_in_words() {
+        let mut world = World::new(7, 18.0);
+        world.life.cranes.total = 12;
+        world.begin(Activity::Fold);
+        assert!(answer(&world, Question::Cranes, None, false)[0].contains("twelve paper cranes"));
+        assert!(answer(&world, Question::Cranes, None, true)[0].contains("열두 마리"));
+        assert!(
+            idle(&world)
+                .iter()
+                .any(|line| line.contains("nine hundred eighty eight"))
+        );
+        world.life.today.cranes = 1;
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| line.contains("paper cranes"))
         );
     }
 }

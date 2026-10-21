@@ -389,6 +389,34 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 };
                 (0.05 + 0.18 * (1.0 - needs.fun) + fond) * needs.energy
             }
+            Activity::Fold => {
+                if !world.fold_is_open() {
+                    0.0
+                } else {
+                    let nature = world.life.temperament();
+                    let rain = if world.weather.sky != Sky::Clear {
+                        1.5
+                    } else {
+                        1.0
+                    };
+                    let evening = if (17.0..22.0).contains(&world.hour) {
+                        1.6
+                    } else {
+                        1.0
+                    };
+                    let caring = if world.crane_for_sad_viewer() {
+                        1.7
+                    } else {
+                        1.0
+                    };
+                    0.01 * needs.energy
+                        * (0.7 + nature.tender)
+                        * (1.3 - 0.6 * nature.playful)
+                        * rain
+                        * evening
+                        * caring
+                }
+            }
         })
         .zip(options)
         .map(|(weight, activity)| {
@@ -1141,5 +1169,34 @@ mod tests {
             weigh(&world, &[Activity::Visit, Activity::Company])[0].1,
             0.0
         );
+    }
+
+    #[test]
+    fn cranes_favor_tender_patient_rainy_evenings_and_a_sad_viewer() {
+        let mut world = World::new(7, 12.0);
+        world.begin_life(&world.date.to_string());
+        world.life.nature = Some(crate::world::Nature {
+            tender: 0.5,
+            playful: 0.5,
+            ..Default::default()
+        });
+        world.weather.sky = Sky::Clear;
+        let options = [Activity::Float, Activity::Fold];
+        let usual = chance(&weigh(&world, &options), Activity::Fold);
+        world.life.nature.as_mut().unwrap().tender = 0.9;
+        world.life.nature.as_mut().unwrap().playful = 0.1;
+        assert!(chance(&weigh(&world, &options), Activity::Fold) > usual);
+        world.life.nature.as_mut().unwrap().tender = 0.5;
+        world.life.nature.as_mut().unwrap().playful = 0.5;
+        world.weather.sky = Sky::Rain;
+        assert!(chance(&weigh(&world, &options), Activity::Fold) > usual);
+        world.weather.sky = Sky::Clear;
+        world.hour = 19.0;
+        assert!(chance(&weigh(&world, &options), Activity::Fold) > usual);
+        world.hour = 12.0;
+        world.hear("I'm sad");
+        assert!(chance(&weigh(&world, &options), Activity::Fold) > usual);
+        world.birthday = Some(world.date);
+        assert_eq!(chance(&weigh(&world, &options), Activity::Fold), 0.0);
     }
 }
