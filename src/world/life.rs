@@ -324,6 +324,10 @@ pub struct Tally {
     pub bubbles_blown: u32,
     #[serde(default)]
     pub bubbles_popped: u32,
+    #[serde(default)]
+    pub things_shown: u32,
+    #[serde(default)]
+    pub shown_kinds: Vec<super::show::Kind>,
 }
 
 impl Tally {
@@ -643,6 +647,12 @@ impl Tally {
                 self.bubble_sessions = self.bubble_sessions.saturating_add(1);
                 self.bubbles_blown = self.bubbles_blown.saturating_add(*blown);
                 self.bubbles_popped = self.bubbles_popped.saturating_add(*popped_by_viewer);
+            }
+            EventKind::ShowedThing(kind) => {
+                self.things_shown = self.things_shown.saturating_add(1).min(100_000_000);
+                if !self.shown_kinds.contains(kind) && self.shown_kinds.len() < 15 {
+                    self.shown_kinds.push(*kind);
+                }
             }
             _ => {}
         }
@@ -1343,6 +1353,11 @@ impl Tally {
                 (Salience::Small, "blew bubbles".to_owned())
             });
         }
+        deeds.extend(
+            self.shown_kinds
+                .iter()
+                .map(|kind| (Salience::Small, format!("showed you my {}", kind.name()))),
+        );
         deeds
     }
 
@@ -1525,6 +1540,8 @@ pub struct Life {
     pub rhythm_suggestions: u8,
     #[serde(default)]
     pub cranes: super::cranes::Cranes,
+    #[serde(default)]
+    pub showing: super::show::ShowingLife,
 }
 
 impl Life {
@@ -1734,6 +1751,7 @@ impl Life {
             EventKind::BlewBubbles {
                 popped_by_viewer, ..
             } if *popped_by_viewer > 0 => 0.003,
+            EventKind::ShowedThing(_) => 0.004,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -1928,15 +1946,20 @@ impl Life {
     pub fn habit(&self, activity: Activity) -> f32 {
         if matches!(
             activity,
-            Activity::Float | Activity::Comfort | Activity::Fold
+            Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show
         ) {
             return 1.0;
         }
-        // Comfort follows a message; folding already has its daily allowance.
-        let kinds = Activity::ALL.len() as f32 - 3.0;
+        // Comfort follows a message; folding and showing have their own pacing.
+        let kinds = Activity::ALL.len() as f32 - 4.0;
         let total: u32 = Activity::ALL
             .into_iter()
-            .filter(|other| !matches!(other, Activity::Float | Activity::Comfort | Activity::Fold))
+            .filter(|other| {
+                !matches!(
+                    other,
+                    Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show
+                )
+            })
             .map(|other| self.total.times(other))
             .sum();
         let share = (self.total.times(activity) as f32 + PRIOR) / (total as f32 + PRIOR * kinds);
@@ -1985,6 +2008,7 @@ impl Life {
     pub fn sanitized(mut self) -> Self {
         super::breaks::sanitize(&mut self);
         self.cranes.sanitize(&self.day);
+        self.showing.sanitize(&self.day);
         for (tally, maximum) in [
             (&mut self.today, 3),
             (&mut self.total, super::cranes::MAXIMUM),
@@ -2259,6 +2283,17 @@ impl Life {
             tally.luck_wished = tally.luck_wished.min(100_000_000);
             tally.plans_went_well = tally.plans_went_well.min(100_000_000);
             tally.plans_went_badly = tally.plans_went_badly.min(100_000_000);
+            tally.things_shown = tally.things_shown.min(100_000_000);
+            tally.shown_kinds.truncate(15);
+            let mut shown = Vec::new();
+            tally.shown_kinds.retain(|kind| {
+                if shown.contains(kind) {
+                    false
+                } else {
+                    shown.push(*kind);
+                    true
+                }
+            });
             tally.bubble_sessions = tally.bubble_sessions.min(1_000_000);
             tally.bubbles_blown = tally.bubbles_blown.min(tally.bubble_sessions * 10);
             tally.bubbles_popped = tally.bubbles_popped.min(tally.bubbles_blown);
@@ -2602,6 +2637,9 @@ impl Life {
             EventKind::BlewBubbles {
                 popped_by_viewer, ..
             } if *popped_by_viewer > 0 => "You popped my bubbles for the first time.".to_owned(),
+            EventKind::ShowedThing(_) if total.things_shown == 1 => {
+                "I showed you one of my treasures for the first time.".to_owned()
+            }
             _ => return None,
         };
         self.reach(text)

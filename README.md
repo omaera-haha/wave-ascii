@@ -498,6 +498,23 @@ even across restarts. No extra keys are needed.
   Claude key, Claude answers instead. It also answers "tell me a story"
   offline, weaving its own memories into a short tale in either language.
 
+### Show and tell
+
+Once it has lived a few days and grown fond of you, a quiet visit may turn
+into show and tell, at most once a local day. The ghost fetches a bird's
+keepsake, a paper crane, its favorite picture book, its own song,
+or a book it wrote, holds it up at the glass, and tells you its little story
+in your language. A blooming garden flower stays in its pot: it looks back
+toward it from the glass. Afterwards it puts everything back; interruptions
+return borrowed treasures immediately.
+
+Say “show me something”, “show me your treasures”, “뭐 보여줘”, or
+“보물 보여줘” to ask again, including after today's show. Sleep, work,
+stories, games, and waiting questions take priority. It remembers the last
+few kinds across visits so each day has something different to share.
+Praise like “cute!” or “멋지다” brings a delighted heart. Finished shows
+leave small diary memories, and the first becomes a milestone.
+
 ### A thousand paper cranes
 
 After its first three days, the ghost starts folding colored paper cranes

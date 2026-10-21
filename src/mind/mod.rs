@@ -469,6 +469,7 @@ impl Mind {
                 | Understanding::Unanswered(_)
                 | Understanding::Hint { .. }
                 | Understanding::Folding
+                | Understanding::Showing
         ) {
             self.next_id += 1;
             self.latest_request = self.next_id;
@@ -969,6 +970,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::BreakReply { .. }
                 | Understanding::Folding
                 | Understanding::Bubbles { .. }
+                | Understanding::Showing
         )
 }
 
@@ -2562,6 +2564,29 @@ mod acquaintance_tests {
                     assert_eq!(world.ghost.asleep, 1.0);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn show_requests_bypass_jev_and_keep_the_worlds_reply_without_learning_words() {
+        for (message, reply) in [
+            (
+                "show me something",
+                "I'll bring one of my treasures. Just a moment!",
+            ),
+            ("보물 보여줘", "내 보물 하나 보여줄게. 잠깐만!"),
+        ] {
+            let mut world = World::new(7, 12.0);
+            world.life.keepsakes.push(crate::world::Keepsake::Acorn);
+            let heard = world.hear(message);
+            assert!(!routes_to_jev(&heard));
+            assert_eq!(musing::reply(&world, &heard, None), vec![reply]);
+            world.begin(Activity::Float);
+            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
+            mind.hear(&mut world, message);
+            assert!(world.life.vocabulary.words.is_empty());
+            assert_eq!(world.ghost.plan.activity, Activity::Show);
+            assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
         }
     }
 }

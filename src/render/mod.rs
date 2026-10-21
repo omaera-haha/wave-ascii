@@ -226,7 +226,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     } else {
         0.0
     };
-    let held_book = world.held_book();
+    let shown_token = world.shown_token();
+    let shown_book = shown_token.and_then(|(token, position)| match token {
+        crate::world::show::Token::Book(index) => Some((index, position, 0.0)),
+        _ => None,
+    });
+    let held_book = world.held_book().or(shown_book);
     let garland = shapes::Garland::of(world);
     let mut book_pile: Vec<_> = world
         .life
@@ -253,6 +258,10 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         Furniture::Shelf(
             &world.life.keepsakes,
             world.wearing.and_then(|accessory| accessory.keepsake()),
+            shown_token.and_then(|(token, _)| match token {
+                crate::world::show::Token::Keepsake(_, index) => Some(index),
+                _ => None,
+            }),
         ),
         Furniture::Mirror,
         Furniture::MusicBox(
@@ -274,6 +283,27 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     }
     if !world.life.cranes.colors.is_empty() {
         furniture.push(Furniture::Cranes(&garland));
+    }
+    if let Some((token, position)) = shown_token {
+        let rotation = glam::Quat::from_rotation_y(-scene.view.right.z.atan2(scene.view.right.x));
+        let position = position - scene.view.forward * 0.2 * world.size();
+        match token {
+            crate::world::show::Token::Keepsake(gift, _) => {
+                furniture.push(Furniture::Keepsake(gift, position))
+            }
+            crate::world::show::Token::Crane(color, _) => furniture.push(Furniture::FoldingPaper(
+                crate::world::cranes::Paper {
+                    color,
+                    progress: 1.0,
+                },
+                position,
+                rotation,
+            )),
+            crate::world::show::Token::Song => {
+                furniture.push(Furniture::SongSheet(position, rotation))
+            }
+            crate::world::show::Token::Book(_) => {}
+        }
     }
     if let Some((paper, position)) = world.held_paper() {
         furniture.push(Furniture::FoldingPaper(

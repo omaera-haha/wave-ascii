@@ -1342,7 +1342,8 @@ impl App {
         ))
         .with_comfort(comfort_breath)
         .with_stretch(world.stretch_amount())
-        .with_bubbles(blowing);
+        .with_bubbles(blowing)
+        .with_show(world.show_bob());
         let friend =
             world
                 .friend

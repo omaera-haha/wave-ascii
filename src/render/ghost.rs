@@ -62,6 +62,12 @@ impl Pose {
         }
     }
 
+    pub fn with_show(mut self, pride: f32) -> Self {
+        self.lift += 0.06 * pride;
+        self.swell += 0.025 * pride;
+        self
+    }
+
     pub fn with_bubbles(mut self, breath: f32) -> Self {
         self.swell += 0.05 * breath;
         self.lean += 0.12 * breath;

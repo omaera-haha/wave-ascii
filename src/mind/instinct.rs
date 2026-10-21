@@ -437,6 +437,8 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         }
                 }
             }
+            // Quiet visits offer show and tell on their own timer.
+            Activity::Show => 0.0,
         })
         .zip(options)
         .map(|(weight, activity)| {
