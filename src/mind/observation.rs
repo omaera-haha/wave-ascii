@@ -55,6 +55,9 @@ pub fn observe(world: &World) -> Value {
         "time_of_day": time_of_day(world.hour),
         "season": world.season().name(),
         "occasion": world.occasion_words(),
+        "day_of_life": world.day_of_life().filter(|day| matches!(day, 100 | 1000))
+            .map(|day| format!("Today is its {} day of life.", crate::world::anniversary::ordinal(day))),
+        "anniversaries": world.anniversary_observations(),
         "outside_the_window": outside_the_window(world),
         "sight": sight(world),
         "room": {
@@ -1433,6 +1436,36 @@ mod tests {
                 .any(|character| character.is_ascii_digit())
         );
     }
+    #[test]
+    fn landmark_days_and_anniversaries_reach_both_minds_in_words() {
+        let mut world = World::new(3, 12.0);
+        world.birthday = Some("2026-03-03".parse().unwrap());
+        for (today, previous, words) in [
+            ("2026-06-10", "2026-05-10", "hundredth"),
+            ("2028-11-26", "2028-10-26", "thousandth"),
+        ] {
+            world.date = today.parse().unwrap();
+            world.life.milestones = vec![crate::world::Entry {
+                day: previous.to_owned(),
+                text: "I learned your name: Sam.".to_owned(),
+            }];
+            let observation = observe(&world);
+            assert!(observation["day_of_life"].as_str().unwrap().contains(words));
+            assert_eq!(
+                observation["anniversaries"][0],
+                "Today is one month since it learned the viewer's name: Sam."
+            );
+            assert!(
+                !observation
+                    .to_string()
+                    .chars()
+                    .any(|letter| letter.is_ascii_digit())
+            );
+        }
+        world.birthday = None;
+        assert!(observe(&world)["day_of_life"].is_null());
+    }
+
     #[test]
     fn observations_name_the_wish_its_age_and_wishes_granted_today() {
         use crate::world::{Granted, Wish, Wishing};

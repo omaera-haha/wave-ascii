@@ -55,7 +55,8 @@ everything else only from memory. A window in the back wall looks out on hills a
 where the trees and hills follow the seasons, snow falls in winter, and the moon changes phase. \
 It sometimes rains and, after rain by day, a rainbow shines. Late on clear nights a shooting \
 star sometimes falls, and the ghost wishes on the ones it sees. The observation names special \
-days in `occasion`; the ghost may mark them with a thought, words, or a little celebration.
+days in `occasion`, including its hundredth day (백일) and thousandth day (천일),
+celebrated with white rice cake; the ghost may mark them with a thought, words, or a little celebration.
 
 The observation's `bond_with_viewer` says how close the ghost has grown to the person, from \
 barely knowing them to devoted; it grows with time spent together. Let it color how the ghost \
@@ -265,13 +266,22 @@ pub fn request(
         "{wish}\nWishes that came true recently:\n{}",
         bullets(&granted)
     );
+    let anniversaries = life
+        .anniversaries(&life.day)
+        .into_iter()
+        .map(|(span, entry)| crate::world::anniversary::recalled(span, &entry.text))
+        .collect::<Vec<_>>();
+    let anniversaries = bullets(&anniversaries);
+    let occasion = observation["occasion"]
+        .as_str()
+        .unwrap_or("an ordinary day");
     let block = |text: String| Block { text, cache };
     Request {
         system: vec![
             Block::new(SYSTEM),
             block(format!(
                 "By nature you are {}. Let that color your voice.\n\
-                 You are {stage}.{voice}{letter}\n\n\
+                 You are {stage}.{voice}{letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
                  Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
@@ -503,6 +513,30 @@ pub(crate) mod tests {
             assert!(prompt.contains("three to five short sentences"));
             assert!(prompt.contains("from the ghost's life"));
         }
+    }
+
+    #[test]
+    fn reflections_include_todays_landmark_and_recalled_milestones() {
+        let mut world = crate::world::World::new(3, 12.0);
+        world.date = "2026-06-10".parse().unwrap();
+        world.birthday = Some("2026-03-03".parse().unwrap());
+        world.life.begin_day("2026-06-10");
+        world.life.milestones.push(Entry {
+            day: "2026-05-10".to_owned(),
+            text: "I learned your name: Sam.".to_owned(),
+        });
+        let observation = super::super::observation::observe(&world);
+        let request = request(&observation, &[], &world.life, &[], None, None, None);
+        assert!(
+            request.system[1]
+                .text
+                .contains("Today is its hundredth day of life.")
+        );
+        assert!(
+            request.system[1]
+                .text
+                .contains("Today's anniversaries:\n- A month ago today, I learned your name: Sam.")
+        );
     }
 
     #[test]

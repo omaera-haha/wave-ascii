@@ -82,6 +82,9 @@ pub struct Tally {
     pub pounces: u32,
     pub dances: u32,
     pub celebrations: u32,
+    pub anniversaries: u32,
+    /// Recalled lines kept for the diary, bounded like other deed details.
+    pub anniversary_words: Vec<String>,
     /// The occasions it marked, kept once each for the diary.
     pub occasions: Vec<Occasion>,
     /// Times the viewer found it hiding, and it jumped out unfound.
@@ -319,6 +322,12 @@ impl Tally {
                 self.tallest = self.tallest.max(*height);
             }
             EventKind::Toppled { by_viewer: true } => self.toppled = self.toppled.saturating_add(1),
+            EventKind::Remembered(line) => {
+                self.anniversaries = self.anniversaries.saturating_add(1);
+                if self.anniversary_words.len() < 12 {
+                    self.anniversary_words.push(line.clone());
+                }
+            }
             EventKind::Celebrated(occasion) => {
                 self.celebrations = self.celebrations.saturating_add(1);
                 if !self.occasions.contains(occasion) {
@@ -465,6 +474,22 @@ impl Tally {
             .iter()
             .map(|occasion| (Salience::Momentous, occasion.diary_words().to_owned()))
             .collect();
+        deeds.extend(self.anniversary_words.iter().map(|line| {
+            let mut letters = line.trim_end_matches('.').chars();
+            let line = letters.next().map_or_else(String::new, |first| {
+                first.to_lowercase().collect::<String>() + letters.as_str()
+            });
+            (
+                Salience::Notable,
+                format!("remembered {}", line.replacen(", ", ", when ", 1)),
+            )
+        }));
+        if self.anniversaries > 0 && self.anniversary_words.is_empty() {
+            deeds.push((
+                Salience::Notable,
+                "remembered a special day from my life".to_owned(),
+            ));
+        }
         deeds.extend(super::Quirk::ALL.into_iter().filter_map(|kind| {
             self.quirks
                 .get(&kind)
@@ -992,6 +1017,9 @@ pub struct Life {
     pub diary: Vec<Entry>,
     /// Its firsts and landmarks, kept for good, oldest first.
     pub milestones: Vec<Entry>,
+    /// Last local days of anniversary speech and a life-landmark greeting.
+    pub anniversary_said: Option<String>,
+    pub landmark_greeted: Option<String>,
     /// Seconds since the viewer was last around, while the app ran and
     /// while it was closed.
     pub alone: f64,
@@ -1430,6 +1458,15 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.anniversary_said = self
+            .anniversary_said
+            .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
+        self.landmark_greeted = self
+            .landmark_greeted
+            .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
+        for tally in [&mut self.today, &mut self.total] {
+            tally.anniversary_words.truncate(12);
+        }
         self.mirror.sanitize(&self.day);
         self.total.met_reflection |= self.mirror.sessions > 0 || self.mirror.recognizes_self();
         self.total.recognized_self |= self.mirror.recognizes_self();
@@ -1832,6 +1869,8 @@ impl Life {
                 Occasion::Valentine => "My first Valentine's Day.",
                 Occasion::Birthday => "My first birthday!",
                 Occasion::ViewerBirthday => "Celebrated your birthday together for the first time.",
+                Occasion::HundredDays => "My hundredth day in the glass box.",
+                Occasion::ThousandDays => "My thousandth day in the glass box.",
                 Occasion::Seollal => "Celebrated my first Seollal.",
                 Occasion::Chuseok => "Celebrated my first Chuseok under the harvest moon.",
                 Occasion::HangulDay => "My first Hangul Day, drawing letters in the fog.",
@@ -2959,7 +2998,11 @@ mod tests {
         life.begin_day("2026-11-01");
         assert_eq!(life.today.celebrations, 0);
         assert_eq!(life.total.celebrations, 11);
-        assert!(life.diary[0].text.starts_with("Celebrated Halloween, celebrated the winter"));
+        assert!(
+            life.diary[0]
+                .text
+                .starts_with("Celebrated Halloween, celebrated the winter")
+        );
         assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().celebrations, 0);
     }
 

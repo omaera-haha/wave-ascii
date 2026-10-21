@@ -311,6 +311,7 @@ impl App {
         if let Some(notice) = self.world.share_wish() {
             self.post(notice);
         }
+        self.world.share_anniversary();
         if self.paths.is_some() {
             self.album.observe(&self.world);
         }

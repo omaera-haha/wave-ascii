@@ -118,7 +118,7 @@ pub struct Mind {
     /// whether its musings are dreams.
     mused_at: f64,
     /// Its latest thoughts, newest last.
-    recent_thoughts: VecDeque<&'static str>,
+    recent_thoughts: VecDeque<String>,
     next_musing: f64,
     dreaming: bool,
     /// Messages from the viewer still waiting for a reply.
@@ -611,11 +611,20 @@ impl Mind {
                 .take_while(|event| event.time > since)
                 .any(|event| matches!(event.kind, EventKind::FriendArrived(_)));
         let lines = if let Some(kind) = quirk {
-            kind.thoughts().to_vec()
+            kind.thoughts()
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect()
         } else if friend_noticed {
             musing::friend_notices_outfit(world)
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
         } else if let Some(kind) = passerby {
-            kind.thoughts().to_vec()
+            kind.thoughts()
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect()
         } else if world.time >= self.next_musing {
             self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
             if asleep {
@@ -628,6 +637,9 @@ impl Mind {
             && world.random_unit() < MUSES_ON_SETTING_OUT
         {
             musing::setting_out(world, activity)
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
         } else {
             return;
         };
@@ -651,11 +663,11 @@ impl Mind {
             vec![1.0; lines.len()]
         };
         if let Some(index) = world.pick(&weights) {
-            self.recent_thoughts.push_back(lines[index]);
+            self.recent_thoughts.push_back(lines[index].clone());
             if self.recent_thoughts.len() > RECENT_THOUGHTS {
                 self.recent_thoughts.pop_front();
             }
-            let line = musing::named_friend_line(world, lines[index]);
+            let line = musing::named_friend_line(world, &lines[index]);
             world.think(&line);
             if asleep {
                 world.dream_of(&line);
@@ -1001,13 +1013,21 @@ mod tests {
                 .unwrap()
                 .contains("waits unread")
         );
-        assert!(musing::idle(&world).contains(&"I hope they find my letter."));
+        assert!(
+            musing::idle(&world)
+                .iter()
+                .any(|line| line == "I hope they find my letter.")
+        );
         world.read_letter(0);
         assert_eq!(
             observation::observe(&world)["letter"],
             "no unread letter waiting"
         );
-        assert!(!musing::idle(&world).contains(&"I hope they find my letter."));
+        assert!(
+            !musing::idle(&world)
+                .iter()
+                .any(|line| line == "I hope they find my letter.")
+        );
     }
 
     #[test]

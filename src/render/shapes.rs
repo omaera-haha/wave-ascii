@@ -995,7 +995,52 @@ fn holiday_table_distance(point: Vec3, occasion: Occasion, time: f64) -> (f32, M
     if point.y < 0.1 {
         return nearest;
     }
-    if occasion == Occasion::Seollal {
+    if matches!(occasion, Occasion::HundredDays | Occasion::ThousandDays) {
+        let second = occasion == Occasion::ThousandDays;
+        let center = if second { -0.075 } else { 0.0 };
+        for layer in 0..3 {
+            include(
+                rounded_cylinder(
+                    point - Vec3::new(center, 0.14 + layer as f32 * 0.035, 0.0),
+                    0.12 - layer as f32 * 0.012,
+                    0.035,
+                    0.003,
+                ),
+                Material::RiceCake(2),
+            );
+        }
+        if second {
+            for layer in 0..3 {
+                include(
+                    rounded_cylinder(
+                        point - Vec3::new(0.13, 0.14 + layer as f32 * 0.025, 0.025),
+                        0.064 - layer as f32 * 0.007,
+                        0.025,
+                        0.003,
+                    ),
+                    Material::RiceCake(2),
+                );
+            }
+        }
+        include(
+            capsule(
+                point,
+                Vec3::new(center, 0.23, 0.0),
+                Vec3::new(center, 0.31, 0.0),
+                0.003,
+            ),
+            Material::Wood,
+        );
+        let flag = point - Vec3::new(center + 0.029, 0.29, 0.0);
+        include(
+            box_distance(flag, Vec3::new(0.029, 0.018, 0.002)),
+            if flag.y > 0.0 {
+                Material::Silk
+            } else {
+                Material::RiceCake(2)
+            },
+        );
+    } else if occasion == Occasion::Seollal {
         let bowl = point - Vec3::new(-0.09, 0.2, 0.0);
         let outside = ellipsoid(bowl, Vec3::new(0.085, 0.06, 0.085));
         let inside = ellipsoid(bowl, Vec3::new(0.077, 0.052, 0.077));
@@ -1084,7 +1129,7 @@ fn decoration_distance(point: Vec3, decoration: Decoration, time: f64) -> (f32, 
             cake_distance(point, decoration.candles, time)
         }
         Occasion::Valentine | Occasion::HangulDay => (f32::INFINITY, Material::Frosting),
-        Occasion::Seollal | Occasion::Chuseok => {
+        Occasion::Seollal | Occasion::Chuseok | Occasion::HundredDays | Occasion::ThousandDays => {
             holiday_table_distance(point, decoration.occasion, time)
         }
     }
@@ -1105,9 +1150,12 @@ pub fn decoration_light(decoration: Decoration, time: f64) -> Vec3 {
             Vec3::new(0.8, 0.55, 0.65).lerp(Vec3::new(0.45, 0.8, 1.0), 0.5 + 0.5 * phase.sin())
                 * 0.4
         }
-        Occasion::Valentine | Occasion::HangulDay | Occasion::Seollal | Occasion::Chuseok => {
-            Vec3::ZERO
-        }
+        Occasion::Valentine
+        | Occasion::HangulDay
+        | Occasion::Seollal
+        | Occasion::Chuseok
+        | Occasion::HundredDays
+        | Occasion::ThousandDays => Vec3::ZERO,
     }
 }
 

@@ -320,7 +320,7 @@ spent together, including early endings. Quitting silently ends the timer.
   close it feels to you. The stroke takes a few seconds; then it backs away to
   admire it. Up to three pictures linger, fading after about two and a half
   minutes. It also writes "HI" for a friend arriving, "BOO" at Halloween,
-  the coming year at New Year, "YAY" on its birthday, and your name once it
+  the coming year at New Year, "YAY" on its birthday or life landmarks, and your name once it
   grows close to you, sometimes followed by a heart. It writes Hangul names
   too, composing each syllable from consonant and vowel strokes; names mixing
   scripts or using other scripts get a heart instead. At first it writes as
@@ -554,6 +554,13 @@ comes from its saved life in your local time zone; a February 29 birthday falls
 on February 28 in other years. Birthdays take precedence over other occasions.
 Special days find their way into its thoughts, dreams, and diary, even offline.
 
+The ghost celebrates its hundredth day, 백일, with layered white rice cake
+(백설기), a tiny paper flag, a greeting, and a letter for you. Its thousandth
+day, 천일, brings a second little cake. Birth counts as day one, so these fall
+ninety-nine and nine hundred ninety-nine days after birth. It also remembers
+milestones a week, a calendar month, and each year later, sharing one fond
+memory when you visit. Its life panel shows its day of life in words.
+
 Seollal brings a little wooden table with rice-cake soup and a red lucky pouch.
 An awake ghost comes to the glass for a deep New Year's bow, once each day,
 and wishes you luck. Drop a light mote within twenty seconds afterward and it
@@ -729,7 +736,7 @@ frame size comes from `COLUMNS` and `LINES` (default 80x24), and output is
 plain unless `--color` is given. `--time` runs the world that many seconds
 first, deciding on instinct. `--hour` sets the time of day (default noon),
 `--date YYYY-MM-DD` sets the date (default 2026-06-21), and optional
-`--born YYYY-MM-DD` sets a birth date so you can preview birthdays:
+`--born YYYY-MM-DD` sets a birth date so you can preview birthdays and 백일:
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
@@ -738,6 +745,7 @@ COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2027-03-01 --born 2026-03-01 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-06-10 --born 2026-03-03 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2027-02-07 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-25 --hour 21 < /dev/null | cat
 ```
@@ -746,7 +754,7 @@ The October evening example has a nearly full moon and a visiting ghost friend
 within three simulated minutes.
 
 The same `--time`, `--hour`, `--date`, and `--born` give the same frame.
-Without `--born`, piped ghosts have no birthday. Piped time advances the
+Without `--born`, piped ghosts have no birthday or day-of-life celebrations. Piped time advances the
 simulation while the chosen date and hour stay fixed.
 
 ## Development

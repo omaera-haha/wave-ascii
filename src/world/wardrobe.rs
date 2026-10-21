@@ -80,7 +80,13 @@ impl Accessory {
             Self::Scarf { color } => usize::from(color) < 3 + super::acquaintance::Color::ALL.len(),
             Self::PartyHat => matches!(
                 occasion,
-                Some(Occasion::Birthday | Occasion::NewYear | Occasion::ViewerBirthday)
+                Some(
+                    Occasion::Birthday
+                        | Occasion::NewYear
+                        | Occasion::ViewerBirthday
+                        | Occasion::HundredDays
+                        | Occasion::ThousandDays
+                )
             ),
             Self::WitchHat => occasion == Some(Occasion::Halloween),
             Self::LuckyPouch => occasion == Some(Occasion::Seollal),
@@ -114,9 +120,13 @@ impl World {
 
     fn occasion_accessory(&self) -> Option<Accessory> {
         match self.occasion() {
-            Some(Occasion::Birthday | Occasion::NewYear | Occasion::ViewerBirthday) => {
-                Some(Accessory::PartyHat)
-            }
+            Some(
+                Occasion::Birthday
+                | Occasion::NewYear
+                | Occasion::ViewerBirthday
+                | Occasion::HundredDays
+                | Occasion::ThousandDays,
+            ) => Some(Accessory::PartyHat),
             Some(Occasion::Halloween) => Some(Accessory::WitchHat),
             Some(Occasion::Seollal) => Some(Accessory::LuckyPouch),
             Some(Occasion::WinterHolidays) => Some(Accessory::Holly),
@@ -489,6 +499,24 @@ mod tests {
                 world.birthday = Some(date.with().year(2025).build().unwrap());
                 if let Some(accessory) = world.choose_accessory() {
                     assert_eq!(accessory, Accessory::PartyHat);
+                }
+            }
+            assert!(chosen > 0);
+        }
+    }
+
+    #[test]
+    fn life_landmarks_choose_party_hats_when_the_ghost_wants_to_dress_up() {
+        for elapsed in [99, 999] {
+            let mut chosen = 0;
+            for seed in 0..50 {
+                let mut world = World::new(seed, 12.0);
+                let born = Date::constant(2026, 3, 3);
+                world.birthday = Some(born);
+                world.date = born.checked_add(jiff::Span::new().days(elapsed)).unwrap();
+                if let Some(accessory) = world.choose_accessory() {
+                    assert_eq!(accessory, Accessory::PartyHat);
+                    chosen += 1;
                 }
             }
             assert!(chosen > 0);

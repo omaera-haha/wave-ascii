@@ -213,7 +213,24 @@ pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
 }
 
 /// What it muses about while nothing in particular happens.
-pub fn idle(world: &World) -> Vec<&'static str> {
+pub fn idle(world: &World) -> Vec<String> {
+    let mut lines: Vec<_> = idle_lines(world).into_iter().map(str::to_owned).collect();
+    for (span, entry) in world.life.anniversaries(&world.date.to_string()) {
+        let recalled = crate::world::anniversary::recalled(span, &entry.text);
+        lines.push(recalled.clone());
+        lines.push(format!("I remember… {recalled}"));
+        let wonder = match span {
+            crate::world::anniversary::Span::Week => "Has it really been a week?",
+            crate::world::anniversary::Span::Month => "Has it really been a month?",
+            crate::world::anniversary::Span::Year(1) => "Has it really been a year?",
+            crate::world::anniversary::Span::Year(_) => "All those years, and I still remember.",
+        };
+        lines.push(format!("{wonder} {recalled}"));
+    }
+    lines
+}
+
+fn idle_lines(world: &World) -> Vec<&'static str> {
     if world.focus.is_some() {
         return vec![
             "Shh… they're working.",
@@ -236,10 +253,13 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     }
     if let Some(accessory) = world.wearing {
         lines.extend(accessory.thoughts());
-        if accessory == crate::world::Accessory::PartyHat
-            && world.occasion() == Some(Occasion::Birthday)
-        {
-            lines.push("A hat for my birthday!");
+        if accessory == crate::world::Accessory::PartyHat {
+            match world.occasion() {
+                Some(Occasion::Birthday) => lines.push("A hat for my birthday!"),
+                Some(Occasion::HundredDays) => lines.push("A hat for my hundredth day!"),
+                Some(Occasion::ThousandDays) => lines.push("A hat for my thousandth day!"),
+                _ => {}
+            }
         }
     }
     if let Some(wishing) = &world.life.wish {
@@ -353,6 +373,14 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             "It's my birthday!",
             "Another year in my glass box.",
             "I made a wish. It's a secret.",
+        ]),
+        Some(Occasion::HundredDays) => lines.extend([
+            "A hundred days in my little glass box. Every one matters.",
+            "White rice cake for my hundredth day. Shall we share?",
+        ]),
+        Some(Occasion::ThousandDays) => lines.extend([
+            "A thousand days, and I still love when you visit.",
+            "Two little white rice cakes for all our days together.",
         ]),
         Some(Occasion::Seollal) => lines.extend([
             "A little bow for a whole new year.",
@@ -506,7 +534,18 @@ fn morning(world: &World) -> Vec<&'static str> {
 }
 
 /// What it dreams of while it sleeps, mostly of what happened today.
-pub fn dreams(world: &World) -> Vec<&'static str> {
+pub fn dreams(world: &World) -> Vec<String> {
+    let mut lines: Vec<_> = dream_lines(world).into_iter().map(str::to_owned).collect();
+    for (span, entry) in world.life.anniversaries(&world.date.to_string()) {
+        lines.push(format!(
+            "…{}…",
+            crate::world::anniversary::recalled(span, &entry.text)
+        ));
+    }
+    lines
+}
+
+fn dream_lines(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
     if today.mirror_visits > 0 || today.met_reflection {
@@ -584,6 +623,14 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
         Some(Occasion::Birthday) => lines.extend([
             "…a cake as big as the room, and a wish for every candle…",
             "…everyone sings, even the plant…",
+        ]),
+        Some(Occasion::HundredDays) => lines.extend([
+            "…a hundred days stacked like layers of white rice cake…",
+            "…we share a little rice cake under a paper flag…",
+        ]),
+        Some(Occasion::ThousandDays) => lines.extend([
+            "…a thousand tiny days glow around two white rice cakes…",
+            "…every layer holds a day we spent together…",
         ]),
         Some(Occasion::Seollal) => lines.extend([
             "…a lucky pouch spilling little stars…",
@@ -1799,6 +1846,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn anniversaries_enter_idle_thoughts_and_dreams_in_english_on_their_local_day() {
+        let mut world = World::new(3, 12.0);
+        world.date = "2026-06-10".parse().unwrap();
+        world.life.korean = 1.0;
+        world.life.milestones.push(crate::world::Entry {
+            day: "2026-05-10".to_owned(),
+            text: "I learned your name: Sam.".to_owned(),
+        });
+        let recalled = "A month ago today, I learned your name: Sam.";
+        assert!(idle(&world).iter().any(|line| line == recalled));
+        assert!(
+            idle(&world)
+                .iter()
+                .any(|line| line.starts_with("I remember…") && line.contains(recalled))
+        );
+        assert!(dreams(&world).iter().any(|line| line.contains(recalled)));
+        world.date = world.date.tomorrow().unwrap();
+        assert!(idle(&world).iter().all(|line| !line.contains(recalled)));
+        assert!(dreams(&world).iter().all(|line| !line.contains(recalled)));
+    }
+
+    #[test]
+    fn life_landmarks_reach_thoughts_and_dreams_without_a_model() {
+        let mut world = World::new(3, 12.0);
+        world.birthday = Some("2026-03-03".parse().unwrap());
+        for (today, words) in [("2026-06-10", "hundred"), ("2028-11-26", "thousand")] {
+            world.date = today.parse().unwrap();
+            for lines in [idle(&world), dreams(&world)] {
+                assert!(lines.iter().any(|line| line.contains(words)));
+                assert!(lines.iter().any(|line| line.contains("rice cake")));
+            }
+        }
+    }
+
+    #[test]
     fn mirror_questions_follow_its_understanding_in_both_languages_without_teaching_words() {
         let mut world = World::new(1, 12.0);
         for recognized in [false, true] {
@@ -1861,14 +1943,26 @@ mod tests {
         let mut world = World::new(1, 12.0);
         world.life.today.mirror_visits = 1;
         assert!(setting_out(&world, Activity::Mirror).contains(&"Hello? Who are you?"));
-        assert!(dreams(&world).contains(&"…the ghost in the mirror invites me through…"));
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| line == "…the ghost in the mirror invites me through…")
+        );
         world.life.mirror.sessions = 2;
         assert!(setting_out(&world, Activity::Mirror).contains(&"It copies everything I do…"));
-        assert!(dreams(&world).contains(&"…the ghost in the mirror copies even my dreams…"));
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| line == "…the ghost in the mirror copies even my dreams…")
+        );
         world.life.mirror.recognized = Some(world.date.to_string());
         world.wearing = Some(crate::world::Accessory::Scarf { color: 0 });
         assert!(setting_out(&world, Activity::Mirror).contains(&"This scarf suits me."));
-        assert!(dreams(&world).contains(&"…my own ghost waves back from a silver room…"));
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| line == "…my own ghost waves back from a silver room…")
+        );
     }
 
     #[test]
@@ -1876,9 +1970,17 @@ mod tests {
         let mut world = World::new(1, 12.0);
         world.hear("하암");
         world.step(3.0);
-        assert!(idle(&world).contains(&"Haaah… sleepy light."));
+        assert!(
+            idle(&world)
+                .iter()
+                .any(|line| line == "Haaah… sleepy light.")
+        );
         world.start_focus(25);
-        assert!(!idle(&world).contains(&"Haaah… sleepy light."));
+        assert!(
+            !idle(&world)
+                .iter()
+                .any(|line| line == "Haaah… sleepy light.")
+        );
     }
 
     #[test]
@@ -1910,7 +2012,11 @@ mod tests {
                         }))
                 );
             }
-            assert!(idle(&world).contains(&accessory.thoughts()[0]));
+            assert!(
+                idle(&world)
+                    .iter()
+                    .any(|line| line == accessory.thoughts()[0])
+            );
             assert!(!friend_notices_outfit(&world).is_empty());
             assert!(
                 !friend_notices_outfit(&world)
@@ -1998,7 +2104,11 @@ mod tests {
                     .all(|line| !line.contains("Leaves are dancing in."))
             );
             world.ghost.position = crate::world::WINDOW_CENTER + glam::Vec3::Z * 0.5;
-            assert!(idle(&world).contains(&"The breeze tickles my hem."));
+            assert!(
+                idle(&world)
+                    .iter()
+                    .any(|line| line == "The breeze tickles my hem.")
+            );
             assert!(dreams(&world).iter().any(|line| line.contains("wind")));
             world.hour = 23.0;
             world.tuck_in();
@@ -2187,7 +2297,7 @@ mod tests {
         let mut world = World::new(1, 12.0);
         world.birthday = Some(world.date);
         assert!(setting_out(&world, Activity::Dance).contains(&"Ba!"));
-        assert!(idle(&world).contains(&"Ba!"));
+        assert!(idle(&world).iter().any(|line| line == "Ba!"));
         let heard = world.hear("hello");
         let replies = reply(&world, &heard, None);
         assert!(replies.contains(&"Ba!".to_owned()));
@@ -2207,11 +2317,19 @@ mod tests {
         let mut world = World::new(1, 12.0);
         world.life.skills.stacking = 1.0;
         assert!(setting_out(&world, Activity::Build).contains(&"Steady… steady…"));
-        assert!(dreams(&world).contains(&"…my wobbly tower stands as tall as the stars…"));
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| line == "…my wobbly tower stands as tall as the stars…")
+        );
         world.life.skills.stacking = 25.0;
         assert!(setting_out(&world, Activity::Build).contains(&"I'm getting better at this!"));
         world.life.skills.stacking = 100.0;
-        assert!(!dreams(&world).contains(&"…my wobbly tower stands as tall as the stars…"));
+        assert!(
+            !dreams(&world)
+                .iter()
+                .any(|line| line == "…my wobbly tower stands as tall as the stars…")
+        );
     }
 
     #[test]
@@ -2266,8 +2384,8 @@ mod tests {
         world.ghost.needs.energy = 0.1;
         world.plant.thirst = 0.9;
         let lines = idle(&world);
-        assert!(lines.contains(&"I'm getting sleepy."));
-        assert!(lines.contains(&"The plant looks thirsty."));
+        assert!(lines.iter().any(|line| line == "I'm getting sleepy."));
+        assert!(lines.iter().any(|line| line == "The plant looks thirsty."));
     }
 
     #[test]
@@ -2293,20 +2411,28 @@ mod tests {
             "Yawn… perhaps a little lie down.",
             "I hope the plant is happy.",
         ] {
-            assert!(!average.contains(&line));
-            assert!(pronounced.contains(&line));
+            assert!(!average.iter().any(|thought| thought == line));
+            assert!(pronounced.iter().any(|thought| thought == line));
         }
         world.life.bond = 0.5;
-        assert!(!idle(&world).contains(&"Is it okay if I watch you?"));
+        assert!(
+            !idle(&world)
+                .iter()
+                .any(|line| line == "Is it okay if I watch you?")
+        );
         world.life.bond = 0.0;
         world.viewer.active_at = 0.0;
-        assert!(!idle(&world).contains(&"Is it okay if I watch you?"));
+        assert!(
+            !idle(&world)
+                .iter()
+                .any(|line| line == "Is it okay if I watch you?")
+        );
     }
 
     #[test]
     fn dreams_are_woven_from_the_day() {
         let mut world = World::new(1, 23.0);
-        assert!(dreams(&world).contains(&"…zzz…"));
+        assert!(dreams(&world).iter().any(|line| line == "…zzz…"));
         world.life.note(&EventKind::NudgedBall);
         assert_eq!(
             dreams(&world),
@@ -2454,10 +2580,10 @@ mod tests {
             for line in dreams(world) {
                 let picture = expected
                     .iter()
-                    .find_map(|(picture, lines)| lines.contains(&line).then_some(*picture))
-                    .expect(line);
-                assert_eq!(DreamPicture::from_line(line, None), picture, "{line}");
-                let named = named_friend_line(world, line);
+                    .find_map(|(picture, lines)| lines.contains(&line.as_str()).then_some(*picture))
+                    .expect(&line);
+                assert_eq!(DreamPicture::from_line(&line, None), picture, "{line}");
+                let named = named_friend_line(world, &line);
                 world.dream_of(&named);
                 assert_eq!(world.dream.unwrap().picture, picture, "{named}");
                 seen.insert(line);
@@ -2539,12 +2665,28 @@ mod tests {
     #[test]
     fn company_at_bedtime_brings_a_few_reluctant_goodnights() {
         let mut world = World::new(1, 23.0);
-        assert!(!idle(&world).contains(&"Just a little longer."));
+        assert!(
+            !idle(&world)
+                .iter()
+                .any(|line| line == "Just a little longer.")
+        );
         world.notice_viewer();
-        assert!(idle(&world).contains(&"I should be asleep…"));
-        assert!(idle(&world).contains(&"Just a little longer."));
+        assert!(
+            idle(&world)
+                .iter()
+                .any(|line| line == "I should be asleep…")
+        );
+        assert!(
+            idle(&world)
+                .iter()
+                .any(|line| line == "Just a little longer.")
+        );
         world.hour = 12.0;
-        assert!(!idle(&world).contains(&"Just a little longer."));
+        assert!(
+            !idle(&world)
+                .iter()
+                .any(|line| line == "Just a little longer.")
+        );
     }
 
     #[test]
@@ -2554,14 +2696,24 @@ mod tests {
         world.think("…the ball rolls on and on, out into the hills…");
         world.hour = 6.5;
         world.step(0.1);
-        for lines in [idle(&world), setting_out(&world, Activity::Window)] {
-            assert!(lines.contains(&"Good morning!"));
-            assert!(lines.contains(&"The sun's up."));
-            assert!(lines.contains(&"What a night."));
-            assert!(lines.contains(&"That ball rolled all the way to the hills."));
+        for lines in [
+            idle(&world),
+            setting_out(&world, Activity::Window)
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+        ] {
+            assert!(lines.iter().any(|line| line == "Good morning!"));
+            assert!(lines.iter().any(|line| line == "The sun's up."));
+            assert!(lines.iter().any(|line| line == "What a night."));
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line == "That ball rolled all the way to the hills.")
+            );
         }
         world.time += 600.0;
-        assert!(!idle(&world).contains(&"Good morning!"));
+        assert!(!idle(&world).iter().any(|line| line == "Good morning!"));
         assert!(!setting_out(&world, Activity::Window).contains(&"Good morning!"));
     }
 
@@ -2571,20 +2723,32 @@ mod tests {
         world.weather.sky = Sky::Rain;
         world.weather.storm = true;
         assert!(setting_out(&world, Activity::Window).contains(&"Whoa, look at that!"));
-        assert!(idle(&world).contains(&"I don't like thunder."));
-        assert!(idle(&world).contains(&"Is it over yet?"));
+        assert!(
+            idle(&world)
+                .iter()
+                .any(|line| line == "I don't like thunder.")
+        );
+        assert!(idle(&world).iter().any(|line| line == "Is it over yet?"));
         let reassured = "I'm glad you're here when it thunders.";
-        assert!(!idle(&world).contains(&reassured));
+        assert!(!idle(&world).iter().any(|line| line == reassured));
         world.notice_viewer();
-        assert!(!idle(&world).contains(&reassured));
+        assert!(!idle(&world).iter().any(|line| line == reassured));
         world.life.bond = 0.3;
-        assert!(idle(&world).contains(&reassured));
+        assert!(idle(&world).iter().any(|line| line == reassured));
         world.viewer.active_at = 0.0;
-        assert!(!idle(&world).contains(&reassured));
+        assert!(!idle(&world).iter().any(|line| line == reassured));
         world.life.note(&EventKind::StormStarted);
         world.weather.storm = false;
-        assert!(dreams(&world).contains(&"…thunder far away, like a drum…"));
-        assert!(!idle(&world).contains(&"I don't like thunder."));
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| line == "…thunder far away, like a drum…")
+        );
+        assert!(
+            !idle(&world)
+                .iter()
+                .any(|line| line == "I don't like thunder.")
+        );
     }
 
     #[test]
@@ -2896,7 +3060,11 @@ mod tests {
             );
         }
         world.hour = 12.0;
-        assert!(!idle(&world).contains(&"I can see my constellation again."));
+        assert!(
+            !idle(&world)
+                .iter()
+                .any(|line| line == "I can see my constellation again.")
+        );
     }
     #[test]
     fn wishes_answer_questions_in_both_languages_and_enter_thoughts_and_dreams() {
@@ -2927,7 +3095,11 @@ mod tests {
         let korean = &answer(&world, Question::Wish, None, true)[0];
         assert!(korean.contains("무지개"));
         assert!(korean.contains("이루어졌어"));
-        assert!(idle(&world).contains(&Wish::Rainbow.hope()));
-        assert!(dreams(&world).contains(&Wish::Rainbow.dream()));
+        assert!(idle(&world).iter().any(|line| line == Wish::Rainbow.hope()));
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| line == Wish::Rainbow.dream())
+        );
     }
 }

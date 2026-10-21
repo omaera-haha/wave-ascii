@@ -1,5 +1,6 @@
 pub mod acquaintance;
 mod activity;
+pub mod anniversary;
 pub mod away;
 pub mod blocks;
 pub mod books;
@@ -199,6 +200,7 @@ pub enum EventKind {
     },
     LearnedName(String),
     Celebrated(Occasion),
+    Remembered(String),
     Pounced,
     Built {
         height: u32,
@@ -418,6 +420,7 @@ impl EventKind {
             Self::LearnedName(name) => format!("learned that the viewer's name is {name}"),
             Self::Celebrated(Occasion::NewYear) => "a new year began".to_owned(),
             Self::Celebrated(occasion) => format!("it is {}", occasion.words()),
+            Self::Remembered(line) => format!("remembered: {line}"),
             Self::Praised => "the viewer sounded pleased with you".to_owned(),
             Self::Scolded => "the viewer told you no".to_owned(),
             Self::Petted => "the viewer stroked you gently".to_owned(),
@@ -1482,7 +1485,11 @@ impl World {
             Some(Occasion::NewYear) if self.random.unit() < 0.5 => {
                 Some((i32::from(self.date.year()) + i32::from(self.date.month() == 12)).to_string())
             }
-            Some(Occasion::Birthday) if self.random.unit() < 0.3 => Some("YAY".to_owned()),
+            Some(Occasion::Birthday | Occasion::HundredDays | Occasion::ThousandDays)
+                if self.random.unit() < 0.3 =>
+            {
+                Some("YAY".to_owned())
+            }
             Some(Occasion::ViewerBirthday) if self.random.unit() < 0.3 => {
                 Some(self.spoken("HBD♥", "생일축하").to_owned())
             }
@@ -3076,7 +3083,12 @@ impl World {
         }
         if matches!(
             self.occasion(),
-            Some(Occasion::Birthday | Occasion::ViewerBirthday)
+            Some(
+                Occasion::Birthday
+                    | Occasion::ViewerBirthday
+                    | Occasion::HundredDays
+                    | Occasion::ThousandDays
+            )
         ) {
             return Mood::Cheerful;
         }
@@ -4710,6 +4722,16 @@ mod tests {
                 Some(Date::constant(2026, 3, 1)),
                 true,
             ),
+            (
+                Date::constant(2026, 6, 10),
+                Some(Date::constant(2026, 3, 3)),
+                true,
+            ),
+            (
+                Date::constant(2028, 11, 26),
+                Some(Date::constant(2026, 3, 3)),
+                true,
+            ),
             (Date::constant(2027, 2, 14), None, false),
             (Date::constant(2026, 6, 21), None, false),
         ] {
@@ -5054,6 +5076,16 @@ mod tests {
             (
                 (2027, 3, 1),
                 Some(jiff::civil::Date::constant(2026, 3, 1)),
+                "YAY",
+            ),
+            (
+                (2026, 6, 10),
+                Some(jiff::civil::Date::constant(2026, 3, 3)),
+                "YAY",
+            ),
+            (
+                (2028, 11, 26),
+                Some(jiff::civil::Date::constant(2026, 3, 3)),
                 "YAY",
             ),
         ] {
