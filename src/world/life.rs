@@ -33,6 +33,7 @@ pub struct Tally {
     pub blooms: u32,
     pub naps: u32,
     pub showers: u32,
+    pub snowfalls: u32,
     /// Rainbows it caught sight of.
     pub rainbows: u32,
     /// Messages the viewer typed to it.
@@ -66,6 +67,7 @@ impl Tally {
             EventKind::Bloomed => self.blooms += 1,
             EventKind::FellAsleep => self.naps += 1,
             EventKind::RainStarted => self.showers += 1,
+            EventKind::SnowStarted => self.snowfalls += 1,
             EventKind::Noticed(thing) if thing.starts_with("the rainbow") => self.rainbows += 1,
             EventKind::Heard(_) => self.heard += 1,
             EventKind::Poked { .. } => self.pokes += 1,
@@ -112,6 +114,9 @@ impl Tally {
             0 => {}
             1 => deeds.push("took a nap".to_owned()),
             naps => deeds.push(format!("took {naps} naps")),
+        }
+        if self.snowfalls > 0 {
+            deeds.push("watched the snow fall".to_owned());
         }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
@@ -366,6 +371,11 @@ mod tests {
             day.words(),
             "Took 2 naps and listened to the rain. You didn't come by."
         );
+        day = Tally {
+            snowfalls: 2,
+            ..Tally::default()
+        };
+        assert_eq!(day.words(), "Watched the snow fall. You didn't come by.");
         day = Tally {
             together: 200.0,
             pokes: 8,

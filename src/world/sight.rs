@@ -236,7 +236,7 @@ impl World {
         }
 
         // Motes it sees become known to it, and the first sight of a
-        // rainbow is an event.
+        // rainbow or snowfall is an event.
         let sight = self.sight();
         for seen in &sight.in_view {
             match seen.thing {
@@ -245,6 +245,14 @@ impl World {
                 {
                     self.ghost.known.push(id);
                     self.record(EventKind::Noticed("a light mote".to_owned()));
+                }
+                Thing::Window
+                    if seen.hidden_behind.is_none()
+                        && self.weather.snow(time) > 0.3
+                        && !self.ghost.saw_snow =>
+                {
+                    self.ghost.saw_snow = true;
+                    self.record(EventKind::Noticed("the falling snow".to_owned()));
                 }
                 Thing::Window
                     if seen.hidden_behind.is_none()
@@ -269,7 +277,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::World;
+    use crate::world::{Mood, Sky, World};
 
     fn facing(world: &mut World, direction: Vec3) {
         world.ghost.heading = direction.normalize();
@@ -412,5 +420,64 @@ mod tests {
             world.attend(name, 5.0);
             assert!(world.ghost.attention.is_some(), "{name}");
         }
+    }
+
+    #[test]
+    fn snow_is_noticed_once_per_shower_only_after_the_window_is_seen() {
+        let mut world = World::new(1, 12.0);
+        world.date = jiff::civil::Date::constant(2026, 12, 24);
+        world.time = 100.0;
+        world.weather.sky = Sky::Snow;
+        world.weather.since = 0.0;
+        world.weather.until = 1000.0;
+        world.ghost.plan.done = true;
+        world.ghost.position = Vec3::new(0.0, 1.2, 0.0);
+        world.attend("viewer", 100.0);
+        facing(&mut world, Vec3::Z);
+        world.step(0.1);
+        assert!(!world.ghost.saw_snow);
+        assert!(world.weather.snow_cover > 0.0);
+        world.attend("window", 100.0);
+        facing(&mut world, -Vec3::Z);
+        world.step(0.1);
+        assert!(world.ghost.saw_snow);
+        world.step(0.1);
+        assert_eq!(world.ghost.mood, Mood::Curious);
+        let noticed = EventKind::Noticed("the falling snow".to_owned());
+        assert_eq!(
+            world
+                .events
+                .iter()
+                .filter(|event| event.kind == noticed)
+                .count(),
+            1
+        );
+        world.weather.until = world.time;
+        world.step(0.1);
+        assert!(!world.ghost.saw_snow);
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::SnowStopped)
+        );
+        world.weather.until = world.time;
+        world.step(0.1);
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::SnowStarted)
+        );
+        world.step(20.0);
+        assert!(world.ghost.saw_snow);
+        assert_eq!(
+            world
+                .events
+                .iter()
+                .filter(|event| event.kind == noticed)
+                .count(),
+            2
+        );
     }
 }

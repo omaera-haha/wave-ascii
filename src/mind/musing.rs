@@ -53,6 +53,10 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Window => match world.weather.sky {
             Sky::Rainbow => vec!["Look, a rainbow!", "All the colors at once."],
             Sky::Rain => vec!["Listen to the rain.", "Pitter-patter."],
+            Sky::Snow => vec!["It's snowing!", "Every flake is different, they say."],
+            Sky::Clear if world.weather.snow_cover > 0.5 => {
+                vec!["The hills are all white.", "I wish I could touch the snow."]
+            }
             Sky::Clear if world.is_night() => {
                 vec!["So many stars tonight.", "Where does the moon go by day?"]
             }
@@ -93,6 +97,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     match world.weather.sky {
         Sky::Rain => lines.extend(["The rain sounds cozy.", "Drip, drop."]),
         Sky::Rainbow => lines.push("That rainbow is still there!"),
+        Sky::Snow => lines.extend(["Snow, snow, snow.", "It looks cold out there."]),
         Sky::Clear => {}
     }
     if world.is_night() && !world.lamp.on {
@@ -145,6 +150,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if today.waterings > 0 {
         lines.push("…the plant grows right up through the ceiling…");
+    }
+    if today.snowfalls > 0 {
+        lines.push("…the snow falls inside the glass, soft as light…");
     }
     if today.rainbows > 0 {
         lines.push("…sliding down a rainbow…");

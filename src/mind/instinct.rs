@@ -44,6 +44,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 let outside = &world.weather;
                 0.2 + 0.5 * (1.0 - needs.fun)
                     + 0.6 * outside.rain(world.time)
+                    + 0.6 * outside.snow(world.time)
                     + 2.5 * outside.rainbow(world.time)
             }
             Activity::Fetch => {
