@@ -261,13 +261,15 @@ once it knows it, a short birthday letter waits by the glass too.
 
 ### How you feel
 
-Tell me “I'm tired”, “I'm stressed out”, “I'm lonely”, or “오늘 너무 힘들었어”.
-I'll come close: sit quietly, breathe slowly with you, or draw a heart in the
-fog. If you're bored I may invite you to a little game; “I did it!” gets a
-celebrating twirl. I remember what you shared and may ask “Are you feeling
-better today?” when you return over the next few days. “Yes”, “much better”,
-“괜찮아”, or a no tells me how to care next. While you work I stay in quiet
-company, and if I'm asleep your words wait in my memory.
+Tell the ghost “I'm tired”, “I'm stressed out”, “I'm lonely”, or “오늘 너무
+힘들었어”, and it comes close: it sits quietly with a tired viewer (and may
+offer the lullaby in the evening), breathes slowly with a stressed one, or
+draws a sad one a heart in the fog. If you're bored it may invite you to a
+little game; “I did it!” gets a celebrating twirl. It remembers what you
+shared and may ask “Are you feeling better today?” when you return over the
+next few days; “yes”, “much better”, “괜찮아”, or a no tells it how to care
+next. A letter that says how you feel counts too. While you work it stays in
+quiet company, and a sleeping ghost keeps your words for when it wakes.
 
 ### Focus together
 
