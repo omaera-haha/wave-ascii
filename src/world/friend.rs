@@ -225,8 +225,13 @@ impl Friend {
 
 pub fn visit_chance(phase: f32, company: f32) -> f32 {
     let fullness = (1.0 - (phase * TAU).cos()) * 0.5;
-    0.15 + 0.5 * fullness + 0.25 * (1.0 - company.clamp(0.0, 1.0))
+    0.12 + 0.45 * fullness + 0.2 * (1.0 - company.clamp(0.0, 1.0))
 }
+
+/// On an evening it means to come, the chance the friend comes at each
+/// check, so it arrives at some point in the evening, about three quarters
+/// of an hour in on average.
+const COMES_AT_A_CHECK: f32 = 0.05;
 
 impl World {
     pub(crate) fn friend_is_open(&self) -> bool {
@@ -238,7 +243,7 @@ impl World {
                 .is_some_and(|friend| friend.state != State::Leaving)
     }
 
-    pub(super) fn invite_friend(&mut self) {
+    pub(crate) fn invite_friend(&mut self) {
         if self.life.friend.is_none() {
             self.life.friend = Some(Companion::new(&mut self.random));
         }
@@ -272,6 +277,12 @@ impl World {
                     self.visitors.friend_visited = Some(self.date);
                     return;
                 }
+                // Whether it comes at all tonight: moonlight and loneliness
+                // make it likelier.
+                if self.random.unit() >= visit_chance(self.moon_phase(), self.ghost.needs.company) {
+                    self.visitors.friend_visited = Some(self.date);
+                    return;
+                }
                 self.visitors.next_friend = self.time + f64::from(self.random.range(20.0, 65.0));
             }
             if self.time < self.visitors.next_friend {
@@ -281,7 +292,7 @@ impl World {
             if self.ghost.asleep < 0.3
                 && matches!(self.weather.sky, Sky::Clear | Sky::Rainbow)
                 && !self.weather.storm
-                && self.random.unit() < visit_chance(self.moon_phase(), self.ghost.needs.company)
+                && self.random.unit() < COMES_AT_A_CHECK
             {
                 self.invite_friend();
             }
@@ -597,9 +608,9 @@ mod tests {
 
     #[test]
     fn moonlight_and_loneliness_raise_the_chance_of_a_visit() {
-        assert!((visit_chance(0.0, 1.0) - 0.15).abs() < 1e-5);
-        assert!((visit_chance(0.5, 1.0) - 0.65).abs() < 1e-5);
-        assert!((visit_chance(0.5, 0.0) - 0.9).abs() < 1e-5);
+        assert!((visit_chance(0.0, 1.0) - 0.12).abs() < 1e-5);
+        assert!((visit_chance(0.5, 1.0) - 0.57).abs() < 1e-5);
+        assert!((visit_chance(0.5, 0.0) - 0.77).abs() < 1e-5);
         assert_eq!(visit_chance(0.25, 0.4), visit_chance(0.75, 0.4));
     }
 
@@ -640,18 +651,36 @@ mod tests {
     }
 
     #[test]
-    fn a_seeded_full_moon_evening_brings_the_friend_within_five_minutes() {
-        let mut world = evening();
-        assert!((world.moon_phase() - 0.5).abs() < 0.02);
-        for _ in 0..3000 {
-            world.step(0.1);
-            if world.friend.is_some() {
-                break;
+    fn full_moon_evenings_bring_the_friend_more_often_than_dark_ones_and_at_most_once() {
+        let mut visits = [0, 0];
+        for (slot, date) in [
+            (0, jiff::civil::Date::constant(2026, 10, 25)),
+            (1, jiff::civil::Date::constant(2026, 10, 10)),
+        ] {
+            for seed in 0..80 {
+                let mut world = World::new(seed, 17.5);
+                world.date = date;
+                world.weather.sky = Sky::Clear;
+                world.weather.storm = false;
+                world.weather.until = f64::INFINITY;
+                world.calendar_at = Some(world.date);
+                let mut came = 0;
+                // Checks over a whole evening, from half past five on.
+                for _ in 0..128 {
+                    world.time += 120.0;
+                    world.advance_friend();
+                    if world.friend.take().is_some() {
+                        came += 1;
+                    }
+                }
+                assert!(came <= 1, "{seed}");
+                visits[slot] += came;
             }
         }
-        assert!(world.friend.is_some());
-        assert!(world.time < 300.0);
-        assert_eq!(world.life.total.friend_visits, 1);
+        let [full, dark] = visits;
+        assert!(full > dark + 15, "{full} {dark}");
+        assert!((30..=72).contains(&full), "{full}");
+        assert!(dark <= 32, "{dark}");
     }
 
     #[test]
@@ -1050,7 +1079,13 @@ mod tests {
         restored.date = restored.date.tomorrow().unwrap();
         restored.step(0.0);
         restored.advance_friend();
-        assert!(restored.visitors.next_friend < restored.time + 66.0);
+        // The next evening is a new chance: the friend either means to come
+        // soon or has decided not to.
+        assert_eq!(restored.visitors.friend_evening, Some(restored.date));
+        assert!(
+            restored.visitors.next_friend < restored.time + 66.0
+                || restored.visitors.friend_visited == Some(restored.date)
+        );
     }
 
     #[test]

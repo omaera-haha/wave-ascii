@@ -79,7 +79,11 @@ pub struct Visitors {
     next_moth: f64,
     pub(super) next_friend: f64,
     pub(super) friend_evening: Option<jiff::civil::Date>,
+    /// An evening the friend has come, or won't.
     pub(super) friend_visited: Option<jiff::civil::Date>,
+    /// The day the bird made up its mind about a gift, and whether it
+    /// means to leave one.
+    gift_day: Option<(jiff::civil::Date, bool)>,
 }
 
 impl Visitors {
@@ -92,6 +96,7 @@ impl Visitors {
             next_friend: f64::INFINITY,
             friend_evening: None,
             friend_visited: None,
+            gift_day: None,
         }
     }
 }
@@ -371,10 +376,13 @@ impl World {
                     self.life.bird_trust = startled_trust(self.life.bird_trust);
                 } else if self.life.bird_trust >= 0.4
                     && self.life.sill.is_none()
-                    && self.random.unit() < gift_chance(self.life.bird_trust)
+                    && self.brings_gift_today()
+                    && self.random.unit() < GIFT_ON_A_GIFT_DAY
                 {
                     let gift = Keepsake::choose(self.season(), &mut self.random);
                     self.life.sill = Some(gift);
+                    self.life.gift_day = Some(self.date.to_string());
+                    self.visitors.gift_day = Some((self.date, false));
                     self.ghost.saw_gift = false;
                     self.record(EventKind::GiftLeft(gift));
                 }
@@ -531,11 +539,33 @@ fn sill_chance(trust: f32) -> f32 {
     }
 }
 
+/// The chance a trusting bird means to leave a gift on a given day, about
+/// two days in five when it trusts the ghost fully.
 fn gift_chance(trust: f32) -> f32 {
     if trust < 0.4 {
         0.0
     } else {
-        0.15 + 0.35 * trust.clamp(0.0, 1.0)
+        0.1 + 0.3 * trust.clamp(0.0, 1.0)
+    }
+}
+
+/// On a day it means to, the chance it leaves the gift as it flies off.
+const GIFT_ON_A_GIFT_DAY: f32 = 0.35;
+
+impl World {
+    // Whether the bird means to leave a gift today, decided once a day, and
+    // never twice in one day, even across restarts.
+    fn brings_gift_today(&mut self) -> bool {
+        let date = self.date;
+        match self.visitors.gift_day {
+            Some((day, giving)) if day == date => giving,
+            _ => {
+                let given = self.life.gift_day.as_deref() == Some(date.to_string().as_str());
+                let giving = !given && self.random.unit() < gift_chance(self.life.bird_trust);
+                self.visitors.gift_day = Some((date, giving));
+                giving
+            }
+        }
     }
 }
 

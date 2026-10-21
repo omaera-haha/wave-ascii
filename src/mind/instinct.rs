@@ -1042,12 +1042,8 @@ mod tests {
             day: world.date.to_string(),
             said: None,
         });
-        for _ in 0..3000 {
-            world.step(0.1);
-            if world.friend.is_some() {
-                break;
-            }
-        }
+        world.step(0.1);
+        world.invite_friend();
         let options = [Activity::Float, Activity::Friend];
         let usual = chance(&weigh(&world, &options), Activity::Friend);
         assert!(usual > 0.85);

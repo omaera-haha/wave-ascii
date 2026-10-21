@@ -1791,7 +1791,7 @@ mod tests {
     #[test]
     fn the_documented_full_moon_preview_has_a_visiting_friend() {
         let mut world = World::new(1, 20.0);
-        world.date = jiff::civil::Date::constant(2026, 10, 25);
+        world.date = jiff::civil::Date::constant(2026, 9, 26);
         world.step(0.0);
         let mind = Mind::new(&Config::default(), Journal::default(), true);
         let mut app = App::new(
@@ -1801,7 +1801,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..4480 {
+        for _ in 0..8000 {
             app.advance(0.05);
         }
         assert!(

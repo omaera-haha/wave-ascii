@@ -1043,6 +1043,9 @@ pub struct Life {
     /// A gift still waiting outside, even while the app is closed.
     #[serde(default)]
     pub sill: Option<Keepsake>,
+    /// The local day the bird last left a gift, as YYYY-MM-DD.
+    #[serde(default)]
+    pub gift_day: Option<String>,
     /// Arrivals at each local hour, with older days gradually fading.
     #[serde(default)]
     pub arrivals: [f32; 24],
@@ -1674,6 +1677,9 @@ impl Life {
         if !self.alone.is_finite() || self.alone < 0.0 {
             self.alone = 0.0;
         }
+        self.gift_day = self
+            .gift_day
+            .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
         self.warmed = if self.warmed.is_finite() {
             self.warmed.clamp(0.0, DAILY_WARMTH)
         } else {

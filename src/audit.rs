@@ -79,10 +79,20 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     let mut max_speed = 0.0f32;
     let mut outside = 0u32;
     let mut time = 0.0f64;
+    let mut by_day: Vec<String> = Vec::new();
     while time < total {
         let clock = start
             .checked_add(jiff::SignedDuration::from_secs_f64(time))
             .unwrap();
+        if clock.date() != world.date {
+            by_day.push(format!(
+                "  {}: bond {:.2}, {} milestones, {} books owned",
+                world.date,
+                world.life.bond,
+                world.life.milestones.len(),
+                world.life.books.owned.len(),
+            ));
+        }
         world.date = clock.date();
         let hour = f64::from(clock.hour())
             + f64::from(clock.minute()) / 60.0
@@ -297,20 +307,33 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     for entry in &world.life.milestones {
         println!("  {}: {}", entry.day, entry.text);
     }
+    println!("-- by day");
+    for line in &by_day {
+        println!("{line}");
+    }
     println!("bond {:.2} needs {:?}", world.life.bond, world.ghost.needs);
     let path = std::env::temp_dir().join(format!("wave-ascii-audit-{seed}.log"));
     std::fs::write(&path, log.join("\n")).unwrap();
     println!("timeline: {}", path.display());
 }
 
+/// Days each audit lives: three, or `AUDIT_DAYS` for a longer look.
+fn days() -> f64 {
+    std::env::var("AUDIT_DAYS")
+        .ok()
+        .and_then(|days| days.parse().ok())
+        .filter(|days: &f64| *days > 0.0)
+        .unwrap_or(3.0)
+}
+
 #[test]
 #[ignore]
 fn audit_a_grown_ghost_over_three_days() {
-    run(7, 3.0, None, false);
+    run(7, days(), None, false);
 }
 
 #[test]
 #[ignore]
 fn audit_a_newborn_spoken_to_in_korean_over_three_days() {
-    run(11, 3.0, Some(jiff::civil::date(2026, 10, 20)), true);
+    run(11, days(), Some(jiff::civil::date(2026, 10, 20)), true);
 }

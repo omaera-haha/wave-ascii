@@ -1342,12 +1342,8 @@ mod tests {
             day: world.date.to_string(),
             said: None,
         });
-        for _ in 0..3000 {
-            world.step(0.1);
-            if world.friend.is_some() {
-                break;
-            }
-        }
+        world.step(0.1);
+        world.invite_friend();
         let name = world.life.friend.as_ref().unwrap().name.clone();
         let observation = observe(&world);
         assert!(observation["friend"].as_str().unwrap().contains(&name));
