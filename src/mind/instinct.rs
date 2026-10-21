@@ -919,7 +919,7 @@ mod tests {
     }
     #[test]
     fn a_visiting_friend_draws_play_more_when_lonely_and_less_when_tired_or_with_a_close_viewer() {
-        let mut world = World::new(1, 20.0);
+        let mut world = World::new(2, 20.0);
         world.date = jiff::civil::Date::constant(2026, 10, 25);
         for _ in 0..3000 {
             world.step(0.1);

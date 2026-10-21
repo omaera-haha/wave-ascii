@@ -3,7 +3,8 @@ use std::f64::consts::TAU;
 use glam::{Mat2, Vec2, Vec3};
 
 use crate::face::Face;
-use crate::sdf::{coverage, smooth_min, smoothstep, trapezoid};
+use crate::sdf::{capsule, coverage, smooth_min, smoothstep, star, trapezoid};
+use crate::world::{Accessory, Plant};
 
 pub const HEAD_CENTER: Vec2 = Vec2::new(0.0, 0.2);
 const HEAD_RADIUS: f32 = 0.46;
@@ -18,10 +19,10 @@ const GAP: f32 = 0.1;
 const RING_WIDTH: f32 = 0.065;
 const BODY_TOP: Vec3 = Vec3::ONE;
 const BODY_BOTTOM: Vec3 = Vec3::new(0.8, 0.87, 1.0);
-/// The corners of a box around the ghost and its ring, in its own space,
+/// The corners of a box around the ghost, accessories, and ring in local space,
 /// measured over its most extreme poses: at full speed the hem streams out
 /// far to one side.
-pub const BOUNDS: [Vec2; 2] = [Vec2::new(-1.3, -1.05), Vec2::new(1.3, 0.92)];
+pub const BOUNDS: [Vec2; 2] = [Vec2::new(-1.3, -1.05), Vec2::new(1.3, 1.35)];
 /// Dots in the body sit this far apart, in the ghost's own space.
 const DOT_SPACING: f32 = 0.085;
 
@@ -138,6 +139,7 @@ pub struct Body {
     pub face: Face,
     pub aura: Aura,
     pub opacity: f32,
+    pub accessory: Option<Accessory>,
 }
 
 /// A soft mint-to-lavender glow, distinct from the resident's mood palette.
@@ -168,7 +170,15 @@ impl Glow {
 /// The ghost at `point` of its billboard, in its own units, where a pixel
 /// spans `pixel` units.
 pub fn shade(point: Vec2, pixel: f32, time: f64, body: &Body) -> Glow {
-    let glow = body_shade(point, pixel, time, body);
+    let behind = body_shade(point, pixel, time, body);
+    let accessory = body
+        .accessory
+        .map(|accessory| accessory_shade(body.pose.place(point), pixel, accessory, body.aura))
+        .unwrap_or(Glow::NONE);
+    let glow = Glow {
+        light: accessory.over(behind.light),
+        cover: accessory.cover + behind.cover * (1.0 - accessory.cover),
+    };
     Glow {
         light: glow.light * body.opacity,
         cover: glow.cover * body.opacity,
@@ -241,6 +251,129 @@ fn body_shade(point: Vec2, pixel: f32, time: f64, body: &Body) -> Glow {
     }
 }
 
+// Distances are in the posed body's space, so dangling parts follow its hem.
+fn accessory_shade(point: Vec2, pixel: f32, accessory: Accessory, aura: Aura) -> Glow {
+    let (center, radius) = match accessory {
+        Accessory::Flower(_) | Accessory::Feather | Accessory::Holly => {
+            (Vec2::new(0.37, 0.49), 0.27)
+        }
+        Accessory::PartyHat | Accessory::WitchHat => (Vec2::new(0.0, 0.8), 0.37),
+        Accessory::Scarf { .. } => (Vec2::new(0.0, -0.08), 0.64),
+        Accessory::LuckyPouch => (Vec2::new(0.48, -0.25), 0.29),
+    };
+    if aura.visibility <= 0.0 || point.distance_squared(center) > (radius + pixel).powi(2) {
+        return Glow::NONE;
+    }
+    let local = point - center;
+    let (distance, color) = match accessory {
+        Accessory::Flower(kind) => {
+            let petals = (0..5)
+                .map(|index| {
+                    let petal =
+                        Vec2::from_angle(index as f32 * std::f32::consts::TAU / 5.0) * 0.073;
+                    local.distance(petal) - 0.058
+                })
+                .fold(f32::INFINITY, f32::min);
+            let center = local.length() - 0.042;
+            let color = if center < 0.0 {
+                super::shapes::Material::Center(kind).albedo(&Plant::default())
+            } else {
+                super::shapes::Material::Flower(kind).albedo(&Plant::default())
+            };
+            (petals.min(center), color)
+        }
+        Accessory::PartyHat | Accessory::WitchHat => {
+            let cone = trapezoid(local - Vec2::Y * 0.025, 0.22, 0.012, 0.245);
+            let brim = capsule(local, Vec2::new(-0.28, -0.2), Vec2::new(0.28, -0.2), 0.026);
+            let band = local.y < -0.11 && local.y > -0.17;
+            let color = if accessory == Accessory::PartyHat {
+                if star(local - Vec2::new(0.0, -0.06), 0.055) < 0.0 {
+                    Vec3::new(1.0, 0.95, 0.5)
+                } else {
+                    Vec3::new(1.0, 0.57, 0.72)
+                }
+            } else if band {
+                Vec3::new(1.0, 0.67, 0.3)
+            } else {
+                Vec3::new(0.58, 0.48, 0.85)
+            };
+            let pom = if accessory == Accessory::PartyHat {
+                (local - Vec2::Y * 0.29).length() - 0.045
+            } else {
+                f32::INFINITY
+            };
+            (cone.min(brim).min(pom), color)
+        }
+        Accessory::Scarf { color } => {
+            let collar = capsule(local, Vec2::new(-0.4, 0.03), Vec2::new(0.4, 0.03), 0.073);
+            let first = capsule(local, Vec2::new(0.24, 0.03), Vec2::new(0.34, -0.38), 0.059);
+            let second = capsule(local, Vec2::new(0.07, 0.01), Vec2::new(0.12, -0.3), 0.052);
+            let palette = [
+                Vec3::new(1.0, 0.48, 0.36),
+                Vec3::new(1.0, 0.72, 0.36),
+                Vec3::new(0.95, 0.48, 0.7),
+            ];
+            let knit = 0.9 + 0.1 * (local.y * 140.0 + (local.x * 100.0).sin()).cos();
+            (
+                collar.min(first).min(second),
+                palette[usize::from(color).min(2)] * knit,
+            )
+        }
+        Accessory::Feather => {
+            let turned = Mat2::from_angle(0.35) * local;
+            let vane = capsule(turned, Vec2::new(0.0, -0.035), Vec2::new(0.0, 0.13), 0.065);
+            let shaft = capsule(turned, Vec2::new(0.0, -0.2), Vec2::new(0.0, 0.18), 0.012);
+            let color = if turned.x.abs() < 0.012 {
+                Vec3::new(1.0, 0.94, 0.76)
+            } else {
+                Vec3::new(0.72, 0.86, 1.0)
+            };
+            (vane.min(shaft), color)
+        }
+        Accessory::LuckyPouch => {
+            let bag = (local - Vec2::new(0.02, -0.12)).length() - 0.105;
+            let neck = trapezoid(local - Vec2::new(0.02, -0.035), 0.04, 0.075, 0.045);
+            let cord = capsule(local, Vec2::new(-0.08, 0.22), Vec2::new(0.02, -0.04), 0.012);
+            let knot = star(local - Vec2::new(0.02, -0.04), 0.05);
+            let color = if cord < bag.min(neck) || knot < 0.0 {
+                Vec3::new(1.0, 0.86, 0.4)
+            } else {
+                Vec3::new(1.0, 0.43, 0.55)
+            };
+            (bag.min(neck).min(cord).min(knot), color)
+        }
+        Accessory::Holly => {
+            let first = star(
+                Mat2::from_angle(-0.5) * (local - Vec2::new(-0.06, 0.045)),
+                0.13,
+            );
+            let second = star(
+                Mat2::from_angle(0.6) * (local - Vec2::new(0.06, 0.025)),
+                0.12,
+            );
+            let berries = [
+                Vec2::new(-0.035, -0.025),
+                Vec2::new(0.035, -0.025),
+                Vec2::new(0.0, -0.075),
+            ]
+            .into_iter()
+            .map(|center| local.distance(center) - 0.037)
+            .fold(f32::INFINITY, f32::min);
+            let color = if berries < 0.0 {
+                Vec3::new(1.0, 0.4, 0.48)
+            } else {
+                Vec3::new(0.4, 0.88, 0.57)
+            };
+            (first.min(second).min(berries), color)
+        }
+    };
+    let cover = coverage(distance, pixel * 0.5) * aura.visibility.clamp(0.0, 1.0);
+    Glow {
+        light: color * (0.8 + 0.2 * aura.brightness) * cover,
+        cover,
+    }
+}
+
 /// The angle, from 0 to a full turn, of a cycle `period` seconds long at
 /// `time`. It is reduced in double precision so motion stays smooth however
 /// long the app runs.
@@ -264,6 +397,7 @@ mod tests {
                 face: *face,
                 aura: *aura,
                 opacity: 1.0,
+                accessory: None,
             },
         )
     }
@@ -274,6 +408,102 @@ mod tests {
             visibility: 1.0,
             brightness: 1.0,
             beat: 1.0,
+        }
+    }
+
+    #[test]
+    fn accessories_remain_finite_in_tiny_bodies_extreme_poses_and_full_fade() {
+        use crate::world::Flower;
+        for accessory in [
+            Accessory::Flower(Flower::Daisy),
+            Accessory::Flower(Flower::Tulip),
+            Accessory::Flower(Flower::Sunflower),
+            Accessory::Flower(Flower::Bluebell),
+            Accessory::Flower(Flower::Poppy),
+            Accessory::Scarf { color: 0 },
+            Accessory::Scarf { color: 2 },
+            Accessory::PartyHat,
+            Accessory::WitchHat,
+            Accessory::Feather,
+            Accessory::LuckyPouch,
+            Accessory::Holly,
+        ] {
+            for scale in [0.001, 0.1, 1.0] {
+                for velocity in [-100.0, 0.0, 100.0] {
+                    for visibility in [0.0, 0.3, 1.0] {
+                        let body = Body {
+                            position: Vec3::ZERO,
+                            scale,
+                            pose: Pose::new(1e12, velocity, velocity, 0.0)
+                                .in_breeze(velocity.signum(), 1.0),
+                            face: Face::REST,
+                            aura: Aura {
+                                visibility,
+                                ..aura()
+                            },
+                            opacity: 1.0,
+                            accessory: Some(accessory),
+                        };
+                        for column in -16..=16 {
+                            for row in -16..=16 {
+                                let point = Vec2::new(column as f32, row as f32) * 0.1;
+                                let glow = super::shade(point, 0.02 / scale, 1e12, &body);
+                                assert!(glow.light.is_finite() && glow.cover.is_finite());
+                                assert!((0.0..=1.0).contains(&glow.cover));
+                                let worn = accessory_shade(
+                                    body.pose.place(point),
+                                    0.02 / scale,
+                                    accessory,
+                                    body.aura,
+                                );
+                                assert!(worn.light.is_finite() && worn.cover.is_finite());
+                                if visibility == 0.0 {
+                                    assert_eq!(worn, Glow::NONE);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn accessory_distances_are_bounded_before_the_drawing_math() {
+        for accessory in [
+            Accessory::Flower(crate::world::Flower::Daisy),
+            Accessory::Scarf { color: 0 },
+            Accessory::PartyHat,
+            Accessory::WitchHat,
+            Accessory::Feather,
+            Accessory::LuckyPouch,
+            Accessory::Holly,
+        ] {
+            for direction in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
+                assert_eq!(
+                    accessory_shade(direction * 10.0, 0.02, accessory, aura()),
+                    Glow::NONE
+                );
+            }
+            for velocity in [-10.0, 0.0, 10.0] {
+                let pose =
+                    Pose::new(1.3, velocity, velocity, 0.0).in_breeze(velocity.signum(), 1.0);
+                for column in -40..=40 {
+                    for row in -40..=40 {
+                        let point = Vec2::new(column as f32, row as f32) * 0.04;
+                        if point.x < BOUNDS[0].x
+                            || point.x > BOUNDS[1].x
+                            || point.y < BOUNDS[0].y
+                            || point.y > BOUNDS[1].y
+                        {
+                            assert_eq!(
+                                accessory_shade(pose.place(point), 0.02, accessory, aura()).cover,
+                                0.0
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 

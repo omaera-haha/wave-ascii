@@ -122,6 +122,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::WordGame { solved: false, .. } => Expression::Skeptical,
         EventKind::GameOver(Outcome::ViewerWon { .. }) => Expression::Skeptical,
         EventKind::GameOver(Outcome::Draw) => Expression::LookAround,
+        EventKind::PutOn(_) => Expression::Smile,
         EventKind::NudgedBall
         | EventKind::Tended
         | EventKind::Planted(_)

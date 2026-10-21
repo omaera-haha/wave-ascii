@@ -33,6 +33,7 @@ mod story;
 mod things;
 pub mod visitor;
 mod vocabulary;
+pub mod wardrobe;
 mod weather;
 
 use glam::Vec3;
@@ -67,6 +68,7 @@ pub use things::{
 };
 pub use visitor::{BirdPicture, Keepsake, Perch, Visitors};
 pub use vocabulary::{Tone, Vocabulary};
+pub use wardrobe::Accessory;
 use weather::Change;
 pub use weather::{Sky, Weather};
 
@@ -254,6 +256,8 @@ pub enum EventKind {
         solved: bool,
     },
     Quirk(Quirk),
+    PutOn(Accessory),
+    TookOff(Accessory),
 }
 
 impl EventKind {
@@ -261,6 +265,8 @@ impl EventKind {
     pub fn words(&self) -> String {
         match self {
             Self::Quirk(kind) => kind.words().to_owned(),
+            Self::PutOn(accessory) => format!("put on {}", accessory.words()),
+            Self::TookOff(accessory) => format!("took off {}", accessory.words()),
             Self::OpenedWindow => "opened the window for fresh air".to_owned(),
             Self::ClosedWindow => "closed the window".to_owned(),
             Self::Puddle => "noticed a puddle below the window".to_owned(),
@@ -473,6 +479,7 @@ pub enum Understanding {
     },
     WordGame,
     Yawning,
+    Undressing,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -648,6 +655,8 @@ pub struct World {
     /// An involuntary spell, kept only for this session.
     pub quirk: Option<quirks::Spell>,
     quirk_triggers: quirks::Triggers,
+    pub wearing: Option<Accessory>,
+    wardrobe: wardrobe::Wardrobe,
 }
 
 impl World {
@@ -762,6 +771,8 @@ impl World {
             puzzle: None,
             quirk: None,
             quirk_triggers: quirks::Triggers::default(),
+            wearing: None,
+            wardrobe: wardrobe::Wardrobe::default(),
         };
         world.scatter_blocks();
         world
@@ -779,6 +790,8 @@ impl World {
             self.mark_growth();
         }
         self.celebrate();
+        self.check_wardrobe();
+        self.dress_when_idle();
         let mut remaining = seconds.max(0.0);
         while remaining > 0.0 {
             let slice = remaining.min(0.1);
@@ -869,6 +882,7 @@ impl World {
 
         self.advance_blocks(seconds);
         self.advance_garden(seconds);
+        self.advance_wardrobe();
 
         let present = self.viewer_present();
         if present != self.viewer_present {
@@ -1555,6 +1569,12 @@ impl World {
                 korean,
             };
         }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_wardrobe(text, korean)
+        {
+            return heard;
+        }
         if let Some(heard) = self.hear_puzzle(text, korean) {
             return heard;
         }
@@ -1955,6 +1975,15 @@ impl World {
         let quirk_trigger = kind == EventKind::AteMote || quirks::delighted(&kind);
         if kind == EventKind::Thunder {
             self.cure_hiccups(false);
+        }
+        if kind == EventKind::FellAsleep {
+            self.undress_for_bed();
+        }
+        if matches!(
+            kind,
+            EventKind::Morning | EventKind::Flowered(_) | EventKind::SnowStarted
+        ) {
+            self.reconsider_wardrobe();
         }
         if matches!(
             kind,

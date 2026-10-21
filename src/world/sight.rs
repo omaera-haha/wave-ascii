@@ -672,6 +672,8 @@ mod tests {
         world.step(0.1);
         assert!(!world.ghost.saw_snow);
         assert!(world.weather.snow_cover > 0.0);
+        // The first scarf has its own milestone; isolate the snow reaction.
+        world.events.clear();
         world.attend("window", 100.0);
         facing(&mut world, -Vec3::Z);
         world.step(0.1);

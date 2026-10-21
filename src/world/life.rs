@@ -191,6 +191,7 @@ pub struct Tally {
     pub words_guessed: u32,
     #[serde(default)]
     pub quirks: BTreeMap<super::Quirk, u32>,
+    pub outfits: u32,
 }
 
 impl Tally {
@@ -205,6 +206,7 @@ impl Tally {
                 let count = self.quirks.entry(*quirk).or_default();
                 *count = count.saturating_add(1);
             }
+            EventKind::PutOn(_) => self.outfits = self.outfits.saturating_add(1),
             EventKind::SawPasserby(passerby) => {
                 self.passersby = self.passersby.saturating_add(1);
                 if !self.passerby_kinds.contains(passerby) {
@@ -373,6 +375,9 @@ impl Tally {
                 .filter(|count| **count > 0)
                 .map(|count| kind.diary(*count))
         }));
+        if self.outfits > 0 {
+            deeds.push("wore a little accessory".to_owned());
+        }
         if self.focus_sessions > 0 {
             deeds.push(format!(
                 "kept you company through {} focus {}",
@@ -743,6 +748,12 @@ pub struct Life {
     /// The evening of its last search, including an unsuccessful one.
     #[serde(default)]
     pub constellation_night: Option<String>,
+    #[serde(default, deserialize_with = "super::wardrobe::deserialize_accessory")]
+    pub wearing: Option<super::Accessory>,
+    #[serde(default)]
+    pub wardrobe_day: Option<String>,
+    #[serde(default)]
+    pub wardrobe_occasion: Option<Occasion>,
 }
 
 impl Life {
@@ -767,8 +778,33 @@ impl Life {
     pub fn keep(&mut self, gift: Keepsake) {
         self.keepsakes.push(gift);
         if self.keepsakes.len() > 8 {
-            self.keepsakes.drain(..self.keepsakes.len() - 8);
+            let protect_feather = self.wearing == Some(super::Accessory::Feather)
+                && self
+                    .keepsakes
+                    .iter()
+                    .filter(|gift| **gift == Keepsake::Feather)
+                    .count()
+                    == 1;
+            let index = self
+                .keepsakes
+                .iter()
+                .position(|gift| !protect_feather || *gift != Keepsake::Feather)
+                .unwrap_or(0);
+            self.keepsakes.remove(index);
         }
+    }
+
+    /// The shelf borrows one feather for the ghost without losing the gift.
+    pub fn shelved_keepsakes(&self) -> impl Iterator<Item = &Keepsake> {
+        let mut worn = self.wearing.and_then(super::Accessory::keepsake);
+        self.keepsakes.iter().filter(move |gift| {
+            if Some(**gift) == worn {
+                worn = None;
+                false
+            } else {
+                true
+            }
+        })
     }
 
     /// How the bird feels about the ghost, in its own words.
@@ -794,7 +830,7 @@ impl Life {
             "", "one", "two", "three", "four", "five", "six", "seven", "eight",
         ];
         let mut kinds: Vec<(Keepsake, usize)> = Vec::new();
-        for gift in &self.keepsakes {
+        for gift in self.shelved_keepsakes() {
             match kinds.iter_mut().find(|(kind, _)| kind == gift) {
                 Some((_, count)) => *count += 1,
                 None => kinds.push((*gift, 1)),
@@ -1132,6 +1168,15 @@ impl Life {
         if self.keepsakes.len() > 8 {
             self.keepsakes.drain(..self.keepsakes.len() - 8);
         }
+        self.wardrobe_day = self
+            .wardrobe_day
+            .filter(|day| day.parse::<jiff::civil::Date>().is_ok() && day == &self.day);
+        self.wearing = self.wearing.filter(|accessory| {
+            accessory.valid(self.wardrobe_occasion)
+                && self.wardrobe_day.is_some()
+                && (accessory.keepsake().is_none() || self.keepsakes.contains(&Keepsake::Feather))
+        });
+
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
@@ -1139,6 +1184,7 @@ impl Life {
                 *count = (*count).min(100_000_000);
                 *count > 0
             });
+            tally.outfits = tally.outfits.min(100_000_000);
             tally.passersby = tally.passersby.min(100_000_000);
             let mut kinds = Vec::new();
             for kind in &tally.passerby_kinds {
@@ -1347,6 +1393,9 @@ impl Life {
             }
             EventKind::ShootingStar if total.shooting_stars == 1 => {
                 "Saw my first shooting star, and made a wish.".to_owned()
+            }
+            EventKind::PutOn(_) if total.outfits == 1 => {
+                "I wore my first little accessory.".to_owned()
             }
             EventKind::FoundConstellation(name) if total.constellations == 1 => {
                 format!("I found my first constellation: {name}.")

@@ -240,6 +240,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         {
             Emote::Sparkle
         }
+        EventKind::PutOn(accessory) if accessory.hat() => Emote::Sparkle,
         EventKind::OpenedWindow => Emote::Note,
         EventKind::Puddle => Emote::Alarm,
         EventKind::ShootingStar

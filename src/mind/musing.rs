@@ -339,6 +339,21 @@ pub fn named_friend_line(world: &World, line: &str) -> String {
     }
 }
 
+/// The visitor recognizes the little thing its friend chose to wear.
+pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
+    use crate::world::Accessory;
+    match world.wearing {
+        Some(Accessory::Flower(_)) => vec!["My ghost friend noticed my garden flower."],
+        Some(Accessory::Scarf { .. }) => vec!["My ghost friend thinks my scarf looks cozy."],
+        Some(Accessory::PartyHat) => vec!["My ghost friend likes my party hat!"],
+        Some(Accessory::WitchHat) => vec!["My ghost friend giggled at my witch hat."],
+        Some(Accessory::Feather) => vec!["My ghost friend noticed the bird's feather in my hair."],
+        Some(Accessory::LuckyPouch) => vec!["My ghost friend wished my little pouch good luck."],
+        Some(Accessory::Holly) => vec!["My ghost friend admired my holly berries."],
+        None => Vec::new(),
+    }
+}
+
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<&'static str> {
     if world.focus.is_some() {
@@ -354,6 +369,14 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let mut lines = Vec::new();
     if let Some(spell) = world.active_quirk() {
         lines.extend_from_slice(spell.kind.thoughts());
+    }
+    if let Some(accessory) = world.wearing {
+        lines.extend(accessory.thoughts());
+        if accessory == crate::world::Accessory::PartyHat
+            && world.occasion() == Some(Occasion::Birthday)
+        {
+            lines.push("A hat for my birthday!");
+        }
     }
     if world.enjoying_air() {
         lines.extend(["The air smells like rain.", "The breeze tickles my hem."]);
@@ -777,7 +800,10 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
     let mut lines = reply_in_words(world, heard, guessed);
     if !matches!(
         heard.understanding,
-        Understanding::Asked { .. } | Understanding::Focusing { .. } | Understanding::Airing { .. }
+        Understanding::Asked { .. }
+            | Understanding::Focusing { .. }
+            | Understanding::Airing { .. }
+            | Understanding::Undressing
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -793,6 +819,9 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             .map(|&(english, hangul)| if korean { hangul } else { english }.to_owned())
             .collect()
     };
+    if heard.understanding == Understanding::Undressing {
+        return lines(&[("All right, I took it off.", "응, 벗었어.")]);
+    }
     if let Understanding::Airing { open, accepted } = heard.understanding {
         if world.ghost.asleep >= 0.3 {
             return Vec::new();
@@ -996,6 +1025,14 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
     let needs = ghost.needs;
     let bond = world.life.bond;
     match question {
+        Question::Wearing => match world.wearing {
+            Some(accessory) if korean => vec![format!("{}! 마음에 들어.", accessory.korean())],
+            Some(accessory) => vec![format!("I’m wearing {}!", accessory.words())],
+            None => lines(
+                &["Just my usual glow today."],
+                &["오늘은 아무것도 안 걸쳤어."],
+            ),
+        },
         Question::Story => Vec::new(),
         Question::Away => {
             let remembered = returned(world, korean);
@@ -1276,7 +1313,7 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
         ),
         Question::Shelf if korean => {
             let mut kinds: Vec<(&str, usize)> = Vec::new();
-            for gift in &world.life.keepsakes {
+            for gift in world.life.shelved_keepsakes() {
                 match kinds.iter_mut().find(|(name, _)| *name == gift.korean()) {
                     Some((_, count)) => *count += 1,
                     None => kinds.push((gift.korean(), 1)),
@@ -1699,6 +1736,60 @@ mod tests {
         assert!(idle(&world).contains(&"Haaah… sleepy light."));
         world.start_focus(25);
         assert!(!idle(&world).contains(&"Haaah… sleepy light."));
+    }
+
+    #[test]
+    fn accessories_have_bilingual_answers_quiet_thoughts_and_a_friends_notice() {
+        use crate::world::{Accessory, Flower, Nature};
+        for accessory in [
+            Accessory::Flower(Flower::Daisy),
+            Accessory::Scarf { color: 0 },
+            Accessory::PartyHat,
+            Accessory::WitchHat,
+            Accessory::Feather,
+            Accessory::LuckyPouch,
+            Accessory::Holly,
+        ] {
+            let mut world = World::new(1, 12.0);
+            world.life.nature = Some(Nature::default());
+            world.wearing = Some(accessory);
+            for text in ["what are you wearing?", "뭐 입었어?", "그거 뭐야?"] {
+                let heard = world.hear(text);
+                let answers = reply(&world, &heard, None);
+                assert!(!answers.is_empty());
+                assert!(
+                    answers
+                        .iter()
+                        .any(|answer| answer.contains(&if heard.korean {
+                            accessory.korean()
+                        } else {
+                            accessory.words()
+                        }))
+                );
+            }
+            assert!(idle(&world).contains(&accessory.thoughts()[0]));
+            assert!(!friend_notices_outfit(&world).is_empty());
+            assert!(
+                !friend_notices_outfit(&world)
+                    .join(" ")
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+        let mut world = World::new(1, 12.0);
+        for text in ["take off your hat", "모자 벗어"] {
+            world.wearing = Some(Accessory::WitchHat);
+            let heard = world.hear(text);
+            assert!(reply(&world, &heard, None).iter().any(|line| line.contains(
+                if heard.korean {
+                    "벗었어"
+                } else {
+                    "took it off"
+                }
+            )));
+        }
+        let heard = world.hear("what are you wearing?");
+        assert!(!reply(&world, &heard, None).is_empty());
     }
 
     #[test]

@@ -1166,6 +1166,7 @@ mod tests {
                             beat: 1.0,
                         },
                         opacity: 1.0,
+                        accessory: None,
                     };
                     for column in -15..=15 {
                         for row in -15..=15 {

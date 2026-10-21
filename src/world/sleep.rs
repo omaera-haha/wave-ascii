@@ -37,6 +37,7 @@ impl World {
         if !self.bedtime() {
             return;
         }
+        self.undress_for_bed();
         self.telling = None;
         self.abandon_game();
         self.drop_ball();
