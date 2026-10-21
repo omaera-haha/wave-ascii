@@ -145,6 +145,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     } else {
                         0.0
                     }
+                    + if world.constellation_pending() {
+                        0.35
+                    } else {
+                        0.0
+                    }
                     + if world.chuseok_night() { 2.0 } else { 0.0 };
                 weight * if shelter { 0.2 } else { 1.0 }
                     + if world.life.sill.is_some()

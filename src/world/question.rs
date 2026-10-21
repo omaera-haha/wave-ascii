@@ -31,12 +31,27 @@ pub enum Question {
     /// How it gets on with the bird at the window.
     Bird,
     Friend,
+    Constellations,
 }
 
 // Questions in English, as runs of words to find in the message, compared
 // lowercased and without apostrophes. More particular questions come first,
 // so "are you tired" is not taken for "are you okay".
 const ENGLISH: &[(Question, &[&[&str]])] = &[
+    (
+        Question::Constellations,
+        &[
+            &["do", "you", "know", "any", "constellations"],
+            &["do", "you", "know", "constellations"],
+            &["what", "constellations"],
+            &["have", "you", "found", "any", "constellations"],
+            &["what", "are", "those", "stars"],
+            &["what", "are", "the", "stars"],
+            &["do", "you", "know", "the", "stars"],
+            &["do", "you", "know", "any", "stars"],
+            &["what", "stars", "do", "you", "know"],
+        ],
+    ),
     (
         Question::Friend,
         &[
@@ -199,6 +214,18 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
     (
+        Question::Constellations,
+        &[
+            "별자리알아",
+            "별자리알고",
+            "별자리찾았",
+            "무슨별자리",
+            "별들이뭐",
+            "아는별자리",
+        ],
+        false,
+    ),
+    (
         Question::Friend,
         &[
             "친구는누구",
@@ -338,6 +365,8 @@ mod tests {
             ("did you miss me?", Question::Lonely),
             ("What's on your shelf?", Question::Shelf),
             ("do you like the bird?", Question::Bird),
+            ("do you know any constellations?", Question::Constellations),
+            ("what are those stars?", Question::Constellations),
         ] {
             assert_eq!(ask(text), Some(question), "{text}");
         }
@@ -365,6 +394,7 @@ mod tests {
             ("심심해?", Question::Bored),
             ("보고 싶었어?", Question::Lonely),
             ("선반에 뭐 있어?", Question::Shelf),
+            ("별자리 알아?", Question::Constellations),
             ("저 새 좋아해?", Question::Bird),
         ] {
             assert_eq!(ask(text), Some(question), "{text}");

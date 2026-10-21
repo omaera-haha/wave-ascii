@@ -4,12 +4,13 @@ use glam::{Vec2, Vec3};
 
 use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::meteor::Streak;
+use crate::world::stars::{self, Constellation, hash};
 use crate::world::{BirdPicture, Keepsake, Season};
 
 pub const WINDOW_LOW: Vec2 = Vec2::new(-0.75, 1.0);
 pub const WINDOW_HIGH: Vec2 = Vec2::new(0.75, 2.0);
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Outside {
     pub hour: f32,
     pub rain: f32,
@@ -27,6 +28,36 @@ pub struct Outside {
     pub sill: Option<Keepsake>,
     /// A shooting star crossing the sky.
     pub meteor: Option<Streak>,
+    pub constellations: Vec<StarSegment>,
+    pub constellation_base: f32,
+    pub constellation_glow: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StarSegment {
+    start: Vec2,
+    end: Vec2,
+    minimum: Vec2,
+    maximum: Vec2,
+}
+
+impl StarSegment {
+    pub fn from_constellations(constellations: &[Constellation]) -> Vec<Self> {
+        constellations
+            .iter()
+            .flat_map(|constellation| constellation.stars.windows(2))
+            .filter_map(|pair| {
+                let start = stars::field().get(usize::from(pair[0]))?.position;
+                let end = stars::field().get(usize::from(pair[1]))?.position;
+                Some(Self {
+                    start,
+                    end,
+                    minimum: start.min(end),
+                    maximum: start.max(end),
+                })
+            })
+            .collect()
+    }
 }
 
 impl Outside {
@@ -48,6 +79,9 @@ impl Outside {
             bird: None,
             sill: None,
             meteor: None,
+            constellations: Vec::new(),
+            constellation_base: 0.018,
+            constellation_glow: 0.0,
         }
     }
 }
@@ -128,15 +162,15 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     let mut color = sky.horizon.lerp(sky.zenith, coordinates.y);
     let night = (1.0 - sky.day) * (1.0 - sky.twilight * 0.85) * (1.0 - cloud).powi(2);
 
-    let stars = coordinates * Vec2::new(22.0, 16.0);
+    let stars = coordinates * stars::GRID;
     let cell = stars.floor();
     let seed = hash(cell);
-    let center = Vec2::new(hash(cell + Vec2::X), hash(cell + Vec2::Y)) * 0.6 + 0.2;
-    let distance = ((stars - cell - center) / Vec2::new(22.0, 16.0)).length();
+    let center = stars::center(cell);
+    let distance = ((stars - cell - center) / stars::GRID).length();
     let twinkle = 0.65 + 0.35 * (phase(outside.time, 0.7, TAU) + seed * TAU).sin();
     color += Vec3::new(0.78, 0.86, 1.0)
         * coverage(distance - 0.0025, footprint * 0.5)
-        * smoothstep(0.78, 0.9, seed)
+        * stars::brightness(seed)
         * twinkle
         * night;
 
@@ -154,6 +188,24 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
 
     let moon_point = (coordinates - Vec2::new(0.79, 0.8)) * proportions;
     let moon_distance = moon_point.length();
+    if night > 0.0 && moon_distance > 0.06 && !outside.constellations.is_empty() {
+        let margin = Vec2::splat(0.0007 + footprint);
+        let mut lines: f32 = 0.0;
+        for segment in &outside.constellations {
+            if coordinates.cmpge(segment.minimum - margin).all()
+                && coordinates.cmple(segment.maximum + margin).all()
+            {
+                lines = lines.max(coverage(
+                    capsule(coordinates, segment.start, segment.end, 0.0007),
+                    footprint * 0.5,
+                ));
+            }
+        }
+        color += Vec3::new(0.7, 0.8, 1.0)
+            * lines
+            * (outside.constellation_base + outside.constellation_glow)
+            * night;
+    }
     let angle = outside.moon_phase * TAU;
     let across = if outside.moon_phase < 0.5 {
         moon_point.x
@@ -625,13 +677,6 @@ fn phase(time: f64, speed: f64, period: f32) -> f32 {
     (time * speed).rem_euclid(f64::from(period)) as f32
 }
 
-fn hash(cell: Vec2) -> f32 {
-    let cell = Vec2::new(cell.x.rem_euclid(64.0), cell.y.rem_euclid(64.0));
-    (cell.dot(Vec2::new(127.1, 311.7)).sin() * 43_758.547)
-        .fract()
-        .abs()
-}
-
 fn noise(point: Vec2) -> f32 {
     let cell = point.floor();
     let fraction = point - cell;
@@ -649,6 +694,44 @@ mod tests {
 
     fn point(across: f32, up: f32) -> Vec2 {
         WINDOW_LOW + (WINDOW_HIGH - WINDOW_LOW) * Vec2::new(across, up)
+    }
+
+    #[test]
+    fn window_samples_with_constellations_stay_finite_at_every_hour() {
+        let known = [Constellation {
+            stars: (0..7).collect(),
+            ..Constellation::default()
+        }];
+        let segments = StarSegment::from_constellations(&known);
+        for hour in 0..24 {
+            for weather in [0.0, 0.5, 1.0] {
+                let outside = Outside {
+                    constellations: segments.clone(),
+                    constellation_glow: 0.085,
+                    rain: weather,
+                    snow: weather,
+                    ..Outside::clear(hour as f32, 30.0)
+                };
+                for footprint in [0.0, 0.001, 0.02] {
+                    for row in 0..=16 {
+                        for column in 0..=22 {
+                            let hit = window(
+                                point(column as f32 / 22.0, row as f32 / 16.0),
+                                footprint,
+                                &outside,
+                            )
+                            .unwrap();
+                            assert!(hit.sky.is_finite() && hit.frame.is_finite());
+                        }
+                    }
+                    for star in stars::field() {
+                        assert!(
+                            landscape(star.position, footprint.max(1e-5), &outside).is_finite()
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -837,7 +920,7 @@ mod tests {
         let clear = Outside::clear(12.0, 0.0);
         let rainbow = Outside {
             rainbow: 1.0,
-            ..clear
+            ..clear.clone()
         };
         let on_arc = point(0.25, 0.04 + (0.75_f32.powi(2) - 0.25_f32.powi(2)).sqrt());
         let far_away = point(0.25, 0.35);
@@ -851,7 +934,10 @@ mod tests {
     fn noon_is_brighter_than_midnight_and_rain_makes_the_sky_greyer() {
         let pane = point(0.3, 0.85);
         let clear = Outside::clear(12.0, 0.0);
-        let rainy = Outside { rain: 1.0, ..clear };
+        let rainy = Outside {
+            rain: 1.0,
+            ..clear.clone()
+        };
         let noon = window(pane, 0.001, &clear).unwrap().sky;
         let midnight = window(pane, 0.001, &Outside::clear(0.0, 0.0)).unwrap().sky;
         let rain = window(pane, 0.001, &rainy).unwrap().sky;

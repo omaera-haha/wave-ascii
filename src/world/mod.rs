@@ -20,6 +20,7 @@ mod recognizer;
 mod routine;
 mod sight;
 mod sleep;
+pub mod stars;
 mod things;
 pub mod visitor;
 mod vocabulary;
@@ -214,12 +215,14 @@ pub enum EventKind {
     Sprouted(Flower),
     Flowered(Flower),
     Drooped,
+    FoundConstellation(String),
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::FoundConstellation(name) => format!("found a constellation: {name}"),
             Self::Began(activity) => format!("started {}", activity.doing()),
             Self::Poked { count: 1 } => "the viewer poked you".to_owned(),
             Self::Poked { count } => format!("the viewer poked you {count} times in a row"),
@@ -539,6 +542,7 @@ pub struct World {
     pub seedlings: Vec<Seedling>,
     pub petals: Vec<Petal>,
     tending: Option<garden::Tending>,
+    found_constellation_at: Option<f64>,
 }
 
 impl World {
@@ -631,6 +635,7 @@ impl World {
             seedlings: Vec::new(),
             petals: Vec::new(),
             tending: None,
+            found_constellation_at: None,
         };
         world.scatter_blocks();
         world
@@ -981,6 +986,7 @@ impl World {
             Activity::Float => self.random.range(5.0, 11.0),
             Activity::Visit => self.random.range(8.0, 15.0),
             Activity::Wait => self.random.range(60.0, 120.0),
+            Activity::Window if self.starry_night() => self.random.range(28.0, 38.0),
             Activity::Window => self.random.range(10.0, 18.0),
             Activity::Fetch => 6.0,
             Activity::Dance => growth::dance_length(
@@ -2005,6 +2011,7 @@ impl World {
             Activity::Window => {
                 look = self.watch_window();
                 self.wish_on_moon();
+                self.find_constellation();
             }
             Activity::Visit => {
                 if self.viewer.pointer.is_some() && self.sebae.is_none() {

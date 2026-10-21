@@ -171,6 +171,8 @@ pub struct Tally {
     pub sprouted_kinds: Vec<super::Flower>,
     #[serde(default)]
     pub flowered_kinds: Vec<super::Flower>,
+    #[serde(default)]
+    pub constellations: u32,
 }
 
 impl Tally {
@@ -181,6 +183,9 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::FoundConstellation(_) => {
+                self.constellations = self.constellations.saturating_add(1);
+            }
             EventKind::Began(activity) => {
                 let count = self
                     .activities
@@ -379,6 +384,13 @@ impl Tally {
         }
         if self.moon_wishes > 0 {
             deeds.push("made a wish on the Chuseok moon".to_owned());
+        }
+        if self.constellations > 0 {
+            deeds.push(if self.constellations == 1 {
+                "found a picture in the stars".to_owned()
+            } else {
+                "found new constellations in the stars".to_owned()
+            });
         }
         match self.dances {
             0 => {}
@@ -623,6 +635,11 @@ pub struct Life {
     pub korean: f32,
     #[serde(default)]
     pub pictures: Vec<LearnedPicture>,
+    #[serde(default)]
+    pub constellations: Vec<super::stars::Constellation>,
+    /// The evening of its last search, including an unsuccessful one.
+    #[serde(default)]
+    pub constellation_night: Option<String>,
 }
 
 impl Life {
@@ -957,6 +974,14 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.constellations
+            .retain(super::stars::Constellation::valid);
+        if self.constellations.len() > 12 {
+            self.constellations.drain(..self.constellations.len() - 12);
+        }
+        self.constellation_night = self
+            .constellation_night
+            .filter(|night| night.parse::<jiff::civil::Date>().is_ok());
         self.skills = self.skills.sanitized(&self.total);
         self.nature = self.nature.map(Nature::sanitized);
         self.pictures.retain(LearnedPicture::valid);
@@ -1159,6 +1184,9 @@ impl Life {
             }
             EventKind::ShootingStar if total.shooting_stars == 1 => {
                 "Saw my first shooting star, and made a wish.".to_owned()
+            }
+            EventKind::FoundConstellation(name) if total.constellations == 1 => {
+                format!("I found my first constellation: {name}.")
             }
             EventKind::StormStarted if total.storms == 1 => {
                 "Sat out my first thunderstorm.".to_owned()

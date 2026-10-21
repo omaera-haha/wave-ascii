@@ -949,6 +949,16 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         header.extend(labeled("Friend", words));
     }
     let garden = labeled("Garden", app.world.garden_words());
+    if !life.constellations.is_empty() {
+        header.extend(labeled(
+            "Its sky",
+            life.constellations
+                .iter()
+                .map(|constellation| constellation.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+    }
     let total = &life.total;
     let mut bird = labeled("Bird", life.bird_words().to_owned());
     bird.extend(labeled("", life.keepsake_words()));

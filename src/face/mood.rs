@@ -92,6 +92,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Found
         | EventKind::ExpectedArrival
         | EventKind::MoonWish
+        | EventKind::FoundConstellation(_)
         | EventKind::Celebrated(_)
         | EventKind::Milestone(_) => Expression::Sparkle,
         EventKind::Heard(_) | EventKind::GameOver(Outcome::GhostWon { .. }) => Expression::Sparkle,
