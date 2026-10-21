@@ -52,6 +52,7 @@ pub fn observe(world: &World) -> Value {
             "goal": ghost.goal.as_deref().unwrap_or("none yet"),
             "loves": world.life.favorite().map_or("nothing in particular yet", Activity::doing),
             "quirk": world.quirk_words(),
+            "health": world.life.cold_words(),
         },
         "time_of_day": time_of_day(world.hour),
         "season": world.season().name(),

@@ -40,6 +40,12 @@ pub fn glance(save: &Save, now: DateTime, away: i64) -> String {
         });
     let (mark, english, korean_words) = if !(6.5..22.0).contains(&hour) {
         ("☾", "is asleep", "쿨쿨 자는 중")
+    } else if life
+        .cold
+        .as_ref()
+        .is_some_and(|cold| cold.active_after(now, away))
+    {
+        ("~", "has a little cold", "감기 기운이 있어")
     } else if birthday {
         ("✦", "is having a birthday", "오늘 생일이야")
     } else if away >= MISSES_AFTER {
@@ -154,5 +160,29 @@ mod tests {
         assert!(!glance(&save, at(13), 60).contains(['\n', '\u{1b}']));
         save.name = "   ".to_owned();
         assert!(glance(&save, at(13), 60).contains("Boo"));
+    }
+    #[test]
+    fn the_saved_cold_shows_below_bedtime_and_only_until_it_has_run_its_course() {
+        let mut save = save(&World::new(1, 12.0));
+        save.life.cold = Some(crate::world::cold::Cold {
+            day: "2026-10-21".to_owned(),
+            hour: 9.0,
+            severity: 0.5,
+            care: Vec::new(),
+            remaining: 20.0 * 3600.0,
+        });
+        assert_eq!(glance(&save, at(13), 60), "~ Pip has a little cold");
+        assert_eq!(glance(&save, at(23), 60), "☾ Pip is asleep");
+        assert_eq!(glance(&save, at(13), 80_000), "~ Pip is floating about");
+        save.life.cold.as_mut().unwrap().hour = 13.0 + 20.0 / 3600.0;
+        assert_eq!(
+            glance(&save, at(13).with().second(30).build().unwrap(), 0),
+            "~ Pip has a little cold"
+        );
+        save.life.cold.as_mut().unwrap().hour = 9.0;
+        save.life.korean = 1.0;
+        assert_eq!(glance(&save, at(13), 60), "~ Pip, 감기 기운이 있어");
+        save.life.cold.as_mut().unwrap().hour = 25.0;
+        assert!(!glance(&save, at(13), 60).contains("감기"));
     }
 }

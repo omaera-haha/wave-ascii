@@ -471,6 +471,7 @@ impl Mind {
                 | Understanding::Folding
                 | Understanding::Showing
                 | Understanding::Tidying
+                | Understanding::Cared
         ) {
             self.next_id += 1;
             self.latest_request = self.next_id;
@@ -984,6 +985,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Tidying
                 | Understanding::Bubbles { .. }
                 | Understanding::Showing
+                | Understanding::Cared
         )
 }
 
@@ -2321,6 +2323,35 @@ mod tests {
                 mind.journal.conversation.last().unwrap().text,
                 world.ghost.speech.as_ref().unwrap().text
             );
+        }
+    }
+    #[test]
+    fn caring_for_a_cold_stays_in_code_and_the_minds_remember_the_care() {
+        for (message, reply) in [
+            ("get well", "Thank you… that helps."),
+            ("빨리 나아", "고마워… 좀 나아."),
+        ] {
+            let mut world = World::new(2, 12.0);
+            world.life.cold = Some(crate::world::cold::Cold {
+                day: world.date.to_string(),
+                hour: 12.0,
+                severity: 0.5,
+                care: Vec::new(),
+                remaining: 80_000.0,
+            });
+            assert!(!routes_to_jev(&world.hear(message)));
+            world.life.cold.as_mut().unwrap().care.clear();
+            let mut mind = offline();
+            mind.hear(&mut world, message);
+            assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
+            assert_eq!(mind.journal.conversation.last().unwrap().text, reply);
+            assert!(
+                observation::observe(&world)["ghost"]["health"]
+                    .as_str()
+                    .unwrap()
+                    .contains("said kind words")
+            );
+            assert!(world.life.vocabulary.known().is_empty());
         }
     }
 }

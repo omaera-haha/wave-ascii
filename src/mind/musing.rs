@@ -298,6 +298,13 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if world.life.cold.is_some() {
+        lines.extend([
+            "Sniff.",
+            "A little rest, a little warmth.",
+            "I’ll be better soon.",
+        ]);
+    }
     if world.recent_negative_feeling(3600.0).is_some() {
         lines.extend([
             "I hope they're feeling better.",
@@ -660,6 +667,12 @@ pub fn dreams(world: &World) -> Vec<String> {
 fn dream_lines(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if world.life.cold.is_some() {
+        lines.extend([
+            "…warm tea and a soft blanket…",
+            "…a little lamp keeps the night warm…",
+        ]);
+    }
     if today.bubble_sessions > 0 {
         lines.push("…soap bubbles as big as moons… pop! …your fingers catch the stars…");
     }
@@ -893,6 +906,7 @@ fn dream_lines(world: &World) -> Vec<&'static str> {
 /// understood or wonders about, so the viewer can see it learning.
 pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
     if matches!(heard.understanding, Understanding::BreakReply { .. })
+        || heard.understanding == Understanding::Cared
         || world.late_night_just_said()
     {
         return Vec::new();

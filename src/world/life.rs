@@ -397,6 +397,12 @@ pub struct Tally {
     pub shown_kinds: Vec<super::show::Kind>,
     #[serde(default)]
     pub tidies: u32,
+    #[serde(default)]
+    pub colds: u32,
+    #[serde(default)]
+    pub care_received: u32,
+    #[serde(default)]
+    pub recoveries: u32,
 }
 
 impl Tally {
@@ -752,6 +758,13 @@ impl Tally {
                 }
             }
             EventKind::Tidied { .. } => self.tidies = self.tidies.saturating_add(1).min(1_000_000),
+            EventKind::CaughtCold => self.colds = self.colds.saturating_add(1).min(100_000_000),
+            EventKind::CaredForMe(_) => {
+                self.care_received = self.care_received.saturating_add(1).min(100_000_000)
+            }
+            EventKind::Recovered { .. } => {
+                self.recoveries = self.recoveries.saturating_add(1).min(100_000_000)
+            }
             _ => {}
         }
     }
@@ -1869,6 +1882,27 @@ impl Tally {
                 "자기 전에 방을 정리했어".to_owned(),
             ));
         }
+        if self.colds > 0 {
+            deeds.push((
+                Salience::Notable,
+                "caught a little cold".to_owned(),
+                "감기에 살짝 걸렸어".to_owned(),
+            ));
+        }
+        if self.care_received > 0 {
+            deeds.push((
+                Salience::Special,
+                "you looked after me while I was sick".to_owned(),
+                "아플 때 네가 돌봐 줬어".to_owned(),
+            ));
+        }
+        if self.recoveries > 0 {
+            deeds.push((
+                Salience::Notable,
+                "got over my cold".to_owned(),
+                "감기가 다 나았어".to_owned(),
+            ));
+        }
         deeds
     }
 
@@ -2092,6 +2126,12 @@ pub struct Life {
     pub showing: super::show::ShowingLife,
     #[serde(default)]
     pub tidied_day: Option<String>,
+    #[serde(default, deserialize_with = "super::cold::deserialize")]
+    pub cold: Option<super::cold::Cold>,
+    #[serde(default)]
+    pub last_cold: Option<String>,
+    #[serde(default)]
+    pub cold_recovered: bool,
 }
 
 impl Life {
@@ -2347,6 +2387,8 @@ impl Life {
                 ..
             } => 0.005,
             EventKind::ShowedThing(_) => 0.004,
+            EventKind::CaredForMe(_) => 0.003,
+            EventKind::Recovered { cared: true } => 0.006,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -2619,6 +2661,7 @@ impl Life {
         {
             self.weekly_letter = None;
         }
+        super::cold::sanitize(&mut self);
         for entry in self
             .diary
             .iter_mut()
@@ -3452,6 +3495,14 @@ impl Life {
             EventKind::Tidied { .. } if total.tidies == 1 => (
                 "I tidied my room before bed for the first time.".to_owned(),
                 "처음으로 자기 전에 방을 정리했어.".to_owned(),
+            ),
+            EventKind::CaughtCold => (
+                "I caught my first little cold.".to_owned(),
+                "처음으로 감기에 살짝 걸렸어.".to_owned(),
+            ),
+            EventKind::Recovered { cared: true } => (
+                "You looked after me when I had a cold.".to_owned(),
+                "감기에 걸렸을 때 네가 돌봐 줬어.".to_owned(),
             ),
             _ => return None,
         };

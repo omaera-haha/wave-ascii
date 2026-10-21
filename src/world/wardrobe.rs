@@ -114,7 +114,8 @@ pub(super) struct Wardrobe {
 
 impl World {
     pub fn cold_for_scarf(&self) -> bool {
-        self.weather.sky == Sky::Snow
+        self.life.cold.is_some()
+            || self.weather.sky == Sky::Snow
             || (self.season() == Season::Winter && !(7.0..18.0).contains(&self.hour))
     }
 
