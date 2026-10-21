@@ -2,6 +2,7 @@ mod activity;
 pub mod calendar;
 mod doodle;
 mod life;
+mod nature;
 mod needs;
 pub mod occasion;
 mod random;
@@ -15,6 +16,7 @@ pub use activity::{Activity, Plan};
 pub use calendar::Season;
 pub use doodle::{Doodle, Sketch};
 pub use life::{Entry, Life};
+pub use nature::Nature;
 pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
 pub use random::Random;
@@ -244,6 +246,7 @@ impl World {
         let start = Vec3::new(0.2, 1.1, 0.0);
         let mut random = Random::new(seed);
         let weather = Weather::new(&mut random);
+        let nature = Nature::roll(&mut random);
         Self {
             time: 0.0,
             hour,
@@ -287,7 +290,10 @@ impl World {
             events: Vec::new(),
             viewer: Viewer::default(),
             weather,
-            life: Life::default(),
+            life: Life {
+                nature: Some(nature),
+                ..Life::default()
+            },
             last_celebrated: None,
             calendar_at: None,
             new_year_at: None,
@@ -648,6 +654,9 @@ impl World {
 
     /// A new ghost comes into being on `day`, a local date as YYYY-MM-DD.
     pub fn begin_life(&mut self, day: &str) {
+        if self.life.nature.is_none() {
+            self.life.nature = Some(Nature::roll(&mut self.random));
+        }
         if let Some(milestone) = self.life.begin(day) {
             self.record(EventKind::Milestone(milestone));
         }
@@ -737,7 +746,7 @@ impl World {
             self.ghost.plan.activity,
             Activity::Float | Activity::Explore | Activity::Window
         );
-        if self.life.bond >= GREETS_FROM
+        if self.life.bond >= self.life.greeting_bond()
             && self.ghost.asleep < 0.3
             && (idle || self.ghost.plan.done)
         {
@@ -1217,14 +1226,16 @@ impl World {
     fn update_needs(&mut self, seconds: f32) {
         let present = self.viewer_present();
         let night = if self.is_night() { 1.4 } else { 1.0 };
+        let nature = self.life.nature.unwrap_or_default();
+        let tiring = 0.85 + 0.3 * nature.sleepy;
         let ghost = &mut self.ghost;
         if ghost.asleep > 0.5 {
-            ghost.needs.change(0.012 * seconds, 0.0, 0.0);
+            ghost.needs.change(0.012 * seconds / tiring, 0.0, 0.0);
             return;
         }
         let effort = (ghost.velocity.length() / 1.3).min(1.0);
-        let mut fun = -0.0016;
-        let mut company = -0.0012;
+        let mut fun = -0.0016 * (0.8 + 0.4 * nature.playful);
+        let mut company = -0.0012 * (1.15 - 0.3 * nature.shy);
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
             Activity::Visit if present => company += 0.01,
@@ -1237,7 +1248,7 @@ impl World {
             company += 0.004;
         }
         ghost.needs.change(
-            -(0.0012 + 0.0025 * effort) * night * seconds,
+            -(0.0012 + 0.0025 * effort) * night * tiring * seconds,
             fun * seconds,
             company * seconds,
         );
@@ -1313,6 +1324,68 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seeded_natures_are_repeatable_and_a_begun_life_keeps_its_nature() {
+        let mut world = World::new(7, 12.0);
+        let nature = world.life.nature;
+        assert!(nature.is_some());
+        assert_eq!(nature, World::new(7, 21.0).life.nature);
+        assert_ne!(nature, World::new(8, 12.0).life.nature);
+        world.begin_life("2026-10-21");
+        assert_eq!(world.life.nature, nature);
+        let mut missing = world.clone();
+        missing.life.nature = None;
+        let mut same = missing.clone();
+        missing.begin_life("2026-10-21");
+        same.begin_life("2026-10-21");
+        assert!(missing.life.nature.is_some());
+        assert_eq!(missing.life.nature, same.life.nature);
+        let nature = missing.life.nature;
+        missing.begin_life("2026-10-22");
+        assert_eq!(missing.life.nature, nature);
+    }
+
+    #[test]
+    fn nature_tints_the_pace_of_needs_and_sleep() {
+        let mut average = World::new(1, 12.0);
+        average.life.nature = Some(Nature::default());
+        let mut pronounced = average.clone();
+        pronounced.life.nature = Some(Nature {
+            playful: 1.0,
+            shy: 1.0,
+            sleepy: 1.0,
+            ..Nature::default()
+        });
+        average.update_needs(10.0);
+        pronounced.update_needs(10.0);
+        assert!(pronounced.ghost.needs.fun < average.ghost.needs.fun);
+        assert!(pronounced.ghost.needs.energy < average.ghost.needs.energy);
+        assert!(pronounced.ghost.needs.company > average.ghost.needs.company);
+        for world in [&mut average, &mut pronounced] {
+            world.ghost.asleep = 1.0;
+            world.ghost.needs.energy = 0.5;
+            world.update_needs(10.0);
+        }
+        assert!(pronounced.ghost.needs.energy < average.ghost.needs.energy);
+    }
+
+    #[test]
+    fn a_shy_ghost_takes_longer_to_greet_but_still_greets_a_close_friend() {
+        for (shyness, greets) in [(0.0, true), (1.0, false)] {
+            let mut world = World::new(1, 12.0);
+            world.life.nature = Some(Nature {
+                shy: shyness,
+                ..Nature::default()
+            });
+            world.life.bond = GREETS_FROM;
+            world.greet();
+            assert_eq!(world.ghost.plan.activity == Activity::Visit, greets);
+            world.life.bond = 0.9;
+            world.greet();
+            assert_eq!(world.ghost.plan.activity, Activity::Visit);
+        }
+    }
 
     fn before_thunder(seed: u64) -> World {
         let mut world = World::new(seed, 12.0);

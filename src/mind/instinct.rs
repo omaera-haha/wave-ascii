@@ -1,6 +1,6 @@
 use crate::world::{Activity, EventKind, GREETS_FROM, Occasion, World, flat};
 
-/// How much the ghost's needs, surroundings, and habits pull it toward each
+/// How much the ghost's needs, surroundings, nature, and habits pull it toward each
 /// of the activities open to it, as chances that add up to 1. This is the mind it
 /// has without any model, and the weight it gives its own needs when a model
 /// does choose.
@@ -131,7 +131,15 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             }
         })
         .zip(options)
-        .map(|(weight, activity)| weight * world.life.habit(*activity))
+        .map(|(weight, activity)| {
+            weight
+                * world.life.habit(*activity)
+                * world
+                    .life
+                    .nature
+                    .unwrap_or_default()
+                    .leaning(*activity, world.life.bond)
+        })
         .collect();
     let total: f32 = weights.iter().sum::<f32>().max(f32::MIN_POSITIVE);
     options
@@ -174,6 +182,20 @@ mod tests {
         let weights = weigh(&world, &world.options());
         let total: f32 = weights.iter().map(|(_, chance)| chance).sum();
         assert!((total - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_playful_nature_gives_play_a_larger_chance_in_the_same_world() {
+        let mut world = World::new(1, 12.0);
+        let options = world.options();
+        world.life.nature = Some(crate::world::Nature {
+            playful: 0.0,
+            ..Default::default()
+        });
+        let quiet = weigh(&world, &options);
+        world.life.nature.as_mut().unwrap().playful = 1.0;
+        let playful = weigh(&world, &options);
+        assert!(chance(&playful, Activity::Play) > chance(&quiet, Activity::Play));
     }
 
     #[test]

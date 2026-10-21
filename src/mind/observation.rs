@@ -19,6 +19,7 @@ pub fn observe(world: &World) -> Value {
     json!({
         "ghost": {
             "name": ghost.name,
+            "nature": world.life.nature.unwrap_or_default().words(),
             "energy": ghost.needs.energy_words(),
             "fun": ghost.needs.fun_words(),
             "company": ghost.needs.company_words(),
@@ -305,6 +306,10 @@ mod tests {
         let observation = observe(&world);
         assert_eq!(observation["time_of_day"], "night");
         assert_eq!(observation["season"], "summer");
+        assert_eq!(
+            observation["ghost"]["nature"],
+            world.life.nature.unwrap().words()
+        );
         assert_eq!(observation["room"]["light"], "lamplight in the dark");
         assert!(
             observation["room"]["light_motes"]

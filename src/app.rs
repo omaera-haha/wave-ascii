@@ -14,7 +14,7 @@ use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
 use crate::terminal::{Input, Key, Mouse, MouseAction};
 use crate::ui;
-use crate::world::{Ball, Mood, Needs, ROOM_MAX, ROOM_MIN, World};
+use crate::world::{Ball, Mood, Nature, Needs, ROOM_MAX, ROOM_MIN, World};
 
 // Radians per arrow key press, and per cell dragged.
 const TURN: f32 = 0.12;
@@ -687,6 +687,10 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
     world.lamp.on = save.lamp_on;
     world.ghost.goal = save.goal.clone();
     world.life = save.life.clone().sanitized();
+    world
+        .life
+        .nature
+        .get_or_insert_with(|| Nature::from_birth(save.born));
     let away = (now - save.last_seen).max(0) as f32;
     world.life.miss(away);
     world.plant.thirst = (world.plant.thirst + away / crate::world::Plant::THIRST_TIME).min(1.0);
@@ -986,6 +990,18 @@ mod tests {
             save.life.note(&EventKind::AteMote);
         }
         restore(&mut world, &save, 1000 + 86_400 * 3);
+        assert_eq!(world.life.nature, Some(Nature::from_birth(save.born)));
+        let mut another = World::new(2, 12.0);
+        restore(&mut another, &save, 1000 + 86_400 * 3);
+        assert_eq!(another.life.nature, world.life.nature);
+        save.life.nature = Some(Nature {
+            playful: 0.9,
+            shy: 0.7,
+            ..Nature::default()
+        });
+        let saved: Save = serde_json::from_str(&serde_json::to_string(&save).unwrap()).unwrap();
+        restore(&mut another, &saved, 1000);
+        assert_eq!(another.life.nature, save.life.nature);
         assert_eq!(world.ghost.name, "Pip");
         assert_eq!(world.plant.thirst, 1.0);
         assert!(world.ghost.needs.company < save.needs.company);
@@ -1025,6 +1041,11 @@ mod tests {
             life: crate::world::Life {
                 bond: -2.0,
                 closest: f32::INFINITY,
+                nature: Some(Nature {
+                    playful: 99.0,
+                    curious: -2.0,
+                    ..Nature::default()
+                }),
                 ..Default::default()
             },
         };
@@ -1037,6 +1058,8 @@ mod tests {
         assert_eq!(world.plant.position, layout);
         assert_eq!((world.plant.growth, world.plant.thirst), (1.0, 0.0));
         assert!((0.0..=1.0).contains(&world.life.bond));
+        assert_eq!(world.life.nature.unwrap().playful, 1.0);
+        assert_eq!(world.life.nature.unwrap().curious, 0.0);
     }
 
     #[test]

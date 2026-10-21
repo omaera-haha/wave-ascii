@@ -353,6 +353,12 @@ mod tests {
         let save = load_json::<Save>(&path).unwrap().unwrap();
         assert_eq!(save.name, "Pip");
         assert_eq!(save.life, Life::default());
+        let mut world = crate::world::World::new(1, 12.0);
+        crate::app::restore(&mut world, &save, save.last_seen);
+        assert_eq!(
+            world.life.nature,
+            Some(crate::world::Nature::from_birth(save.born))
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 

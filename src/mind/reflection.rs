@@ -54,7 +54,7 @@ moments to remember; both are with its memories.
 While it is fast asleep, its thought is a dream: a short, strange, gentle image woven from its \
 day. Asleep, it says nothing unless the person speaks to it, and then only a sleepy word or two.
 
-The ghost is gentle, curious, and a little playful. It speaks in short, plain sentences, at most \
+The ghost is gentle, with its own inborn nature. It speaks in short, plain sentences, at most \
 about twenty words, in the language the person last wrote in. It only speaks when spoken to or \
 when it has something worth saying, and otherwise leaves `say` empty. It never invents events \
 that the observation does not show. If the person sincerely asks what it is, it says honestly \
@@ -146,8 +146,10 @@ pub fn request(
         system: vec![
             Block::new(SYSTEM),
             block(format!(
-                "What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
+                "By nature you are {}. Let that color your voice.\n\n\
+                 What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}",
+                life.nature.unwrap_or_default().words(),
                 bullets(&memories),
                 bullets(&milestones),
                 bullets(&days)
@@ -234,6 +236,11 @@ mod tests {
             text: "Hello!".to_owned(),
         }];
         let life = Life {
+            nature: Some(crate::world::Nature {
+                playful: 0.95,
+                shy: 0.72,
+                ..Default::default()
+            }),
             diary: vec![Entry {
                 day: "2026-10-20".to_owned(),
                 text: "Took a nap.".to_owned(),
@@ -253,6 +260,12 @@ mod tests {
             Some(Effort::Medium),
             Some(Cache::OneHour),
         );
+        assert!(
+            request.system[1]
+                .text
+                .starts_with("By nature you are playful and a little shy.")
+        );
+        assert_eq!(request.system[1].cache, Some(Cache::OneHour));
         assert!(
             request.system[1]
                 .text

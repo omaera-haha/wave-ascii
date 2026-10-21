@@ -77,6 +77,23 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if let Some(nature) = world.life.nature {
+        if nature.shy >= 0.7 && present && world.life.bond < 0.3 {
+            lines.push("Is it okay if I watch you?");
+        }
+        if nature.curious >= 0.7 {
+            lines.push("What's behind the window, I wonder?");
+        }
+        if nature.playful >= 0.7 {
+            lines.push("Someone throw the ball!");
+        }
+        if nature.sleepy >= 0.7 {
+            lines.push("Yawn… perhaps a little lie down.");
+        }
+        if nature.tender >= 0.7 {
+            lines.push("I hope the plant is happy.");
+        }
+    }
     match world.occasion() {
         Some(Occasion::Halloween) => lines.extend([
             "Boo! Did I scare you?",
@@ -271,6 +288,39 @@ mod tests {
         let lines = idle(&world);
         assert!(lines.contains(&"I'm getting sleepy."));
         assert!(lines.contains(&"The plant looks thirsty."));
+    }
+
+    #[test]
+    fn idle_thoughts_follow_only_pronounced_traits_and_shyness_needs_a_stranger() {
+        use crate::world::Nature;
+
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.life.nature = Some(Nature::default());
+        let average = idle(&world);
+        world.life.nature = Some(Nature {
+            playful: 1.0,
+            curious: 1.0,
+            shy: 1.0,
+            sleepy: 1.0,
+            tender: 1.0,
+        });
+        let pronounced = idle(&world);
+        for line in [
+            "Is it okay if I watch you?",
+            "What's behind the window, I wonder?",
+            "Someone throw the ball!",
+            "Yawn… perhaps a little lie down.",
+            "I hope the plant is happy.",
+        ] {
+            assert!(!average.contains(&line));
+            assert!(pronounced.contains(&line));
+        }
+        world.life.bond = 0.5;
+        assert!(!idle(&world).contains(&"Is it okay if I watch you?"));
+        world.life.bond = 0.0;
+        world.viewer.active_at = 0.0;
+        assert!(!idle(&world).contains(&"Is it okay if I watch you?"));
     }
 
     #[test]

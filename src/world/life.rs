@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind, Occasion};
+use super::{Activity, EventKind, GREETS_FROM, Nature, Occasion};
 
 /// Days of the diary kept.
 const DAYS_KEPT: usize = 60;
@@ -223,6 +223,9 @@ pub struct Entry {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Life {
+    /// The nature it was born with, absent in saves from before natures.
+    #[serde(default)]
+    pub nature: Option<Nature>,
     /// How close it feels to the viewer, from a stranger at 0 to devoted
     /// at 1.
     pub bond: f32,
@@ -277,7 +280,14 @@ impl Life {
         let (bond, together) = (self.bond, self.total.together);
         self.total.together += f64::from(seconds);
         self.today.together += f64::from(seconds);
-        self.warm(GROWING * (1.0 - self.bond).powi(2) * seconds);
+        let nature = self.nature.unwrap_or_default();
+        let shyness = if self.bond < 0.3 {
+            0.4 * (nature.shy - 0.5)
+        } else {
+            0.0
+        };
+        let warmth = (1.0 + 0.4 * (nature.tender - 0.5) - shyness).clamp(0.75, 1.35);
+        self.warm(GROWING * (1.0 - self.bond).powi(2) * seconds * warmth);
         let milestone = HOURS_MARKED
             .into_iter()
             .find(|(hours, _)| (together..self.total.together).contains(&(hours * 3600.0)))
@@ -294,8 +304,16 @@ impl Life {
         let past_first = |alone: f64| (alone / 86_400.0 - 1.0).max(0.0);
         let days = past_first(self.alone) - past_first(before);
         if days > 0.0 {
-            self.warm(-FADING * days as f32);
+            let holding = 1.15 - 0.3 * self.nature.unwrap_or_default().shy;
+            self.warm(-FADING * days as f32 * holding);
         }
+    }
+
+    /// How close it needs to feel before coming to greet the viewer.
+    pub fn greeting_bond(&self) -> f32 {
+        let nature = self.nature.unwrap_or_default();
+        GREETS_FROM
+            * (1.0 + 0.4 * (nature.shy - 0.5) - 0.2 * (nature.tender - 0.5)).clamp(0.75, 1.35)
     }
 
     /// Starts counting `day`, a local date as YYYY-MM-DD. When it is a new
@@ -367,6 +385,7 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.nature = self.nature.map(Nature::sanitized);
         let unit = |value: f32| {
             if value.is_finite() {
                 value.clamp(0.0, 1.0)
@@ -655,6 +674,78 @@ mod tests {
         life.pass(3600.0, false);
         assert_eq!(life.bond, before);
         assert_eq!(life.total.together, 12.0 * 3600.0);
+    }
+
+    #[test]
+    fn shy_ghosts_warm_more_slowly_at_first_and_tender_ones_more_quickly() {
+        let mut average = Life::default();
+        let mut shy = Life {
+            nature: Some(Nature {
+                shy: 1.0,
+                ..Nature::default()
+            }),
+            ..Life::default()
+        };
+        let mut tender = Life {
+            nature: Some(Nature {
+                tender: 1.0,
+                ..Nature::default()
+            }),
+            ..Life::default()
+        };
+        for _ in 0..1800 {
+            for life in [&mut average, &mut shy, &mut tender] {
+                life.pass(1.0, true);
+            }
+        }
+        assert!(shy.bond < average.bond && average.bond < tender.bond);
+        assert!(shy.greeting_bond() > average.greeting_bond());
+        assert!(tender.greeting_bond() < average.greeting_bond());
+        for life in [&mut average, &mut shy] {
+            life.bond = 0.5;
+            life.closest = 0.5;
+        }
+        average.pass(1.0, true);
+        shy.pass(1.0, true);
+        assert_eq!(average.bond, shy.bond);
+        average.miss(3.0 * 86_400.0);
+        shy.miss(3.0 * 86_400.0);
+        assert!(shy.bond > average.bond);
+    }
+
+    #[test]
+    fn loaded_nature_values_are_kept_in_range_and_missing_traits_are_average() {
+        let life = Life {
+            nature: Some(Nature {
+                playful: -2.0,
+                curious: 3.0,
+                shy: f32::NAN,
+                sleepy: f32::INFINITY,
+                tender: 0.8,
+            }),
+            ..Life::default()
+        }
+        .sanitized();
+        assert_eq!(
+            life.nature,
+            Some(Nature {
+                playful: 0.0,
+                curious: 1.0,
+                shy: 0.5,
+                sleepy: 0.5,
+                tender: 0.8,
+            })
+        );
+        let missing: Life = serde_json::from_str(r#"{"bond": 0.2}"#).unwrap();
+        assert_eq!(missing.nature, None);
+        let partial: Life = serde_json::from_str(r#"{"nature": {"playful": 0.8}}"#).unwrap();
+        assert_eq!(
+            partial.nature,
+            Some(Nature {
+                playful: 0.8,
+                ..Nature::default()
+            })
+        );
     }
 
     #[test]
