@@ -8,6 +8,7 @@ pub mod occasion;
 mod pounce;
 mod random;
 mod sight;
+mod sleep;
 mod things;
 mod weather;
 
@@ -101,6 +102,7 @@ pub enum EventKind {
     Doodled(&'static str),
     Celebrated(Occasion),
     Pounced,
+    Morning,
 }
 
 impl EventKind {
@@ -122,6 +124,7 @@ impl EventKind {
             Self::SwitchedLamp { on: false } => "switched the lamp off".to_owned(),
             Self::FellAsleep => "fell asleep".to_owned(),
             Self::WokeUp => "woke up".to_owned(),
+            Self::Morning => "woke up to a new morning".to_owned(),
             Self::Heard(text) => format!("the viewer said: {text}"),
             Self::Said(text) => format!("you said: {text}"),
             Self::ViewerArrived => "the viewer came to the glass".to_owned(),
@@ -248,6 +251,10 @@ pub struct World {
     pointer_interrupted_at: Option<f64>,
     /// Which way the ghost means to push the ball next.
     push: Vec3,
+    /// Until when an interrupted night's sleep leaves it drowsy.
+    drowsy_until: f64,
+    /// When it last woke naturally from an overnight rest.
+    morning_at: Option<f64>,
 }
 
 impl World {
@@ -312,6 +319,8 @@ impl World {
             viewer_present: false,
             pointer_interrupted_at: None,
             push: Vec3::X,
+            drowsy_until: 0.0,
+            morning_at: None,
         }
     }
 
@@ -451,7 +460,7 @@ impl World {
             .into_iter()
             .filter(|activity| match activity {
                 Activity::Chase => self.nearest_mote().is_some(),
-                Activity::Rest => self.ghost.needs.energy < 0.85,
+                Activity::Rest => self.ghost.needs.energy < 0.85 || self.bedtime(),
                 Activity::Tend => self.plant.thirst > 0.25,
                 Activity::Visit => self.viewer_present() || self.ghost.needs.company < 0.6,
                 // The viewer threw the ball, or is there to bring it to.
@@ -496,6 +505,11 @@ impl World {
             Activity::Chase => "Chase a drifting light mote and eat it, which restores energy. \
                                 Fits when tired, hungry for fun, or a mote is close."
                 .to_owned(),
+            Activity::Rest if self.bedtime() => {
+                "Go to the cushion and sleep through the night until morning. Fits at bedtime, \
+                 especially when the viewer is away."
+                    .to_owned()
+            }
             Activity::Rest => "Go to the cushion and sleep until rested. Fits when energy is low \
                                or it is late at night."
                 .to_owned(),
@@ -600,6 +614,7 @@ impl World {
             Activity::Float | Activity::Chase | Activity::Play => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
+        plan.overnight = activity == Activity::Rest && self.bedtime();
         if activity == Activity::Chase {
             plan.mote = self.nearest_mote().map(|mote| mote.id);
         }
@@ -778,6 +793,9 @@ impl World {
         }
         if self.ghost.asleep > 0.3 {
             self.ghost.asleep = 0.0;
+            if self.bedtime() {
+                self.drowsy_until = self.time + 120.0;
+            }
             self.record(EventKind::WokeUp);
         }
         if self.ghost.plan.activity == Activity::Rest {
@@ -976,10 +994,19 @@ impl World {
                     if before < 0.9 && self.ghost.asleep >= 0.9 {
                         self.record(EventKind::FellAsleep);
                     }
-                    if self.ghost.needs.energy >= 0.98 {
+                    let overnight = self.ghost.plan.overnight;
+                    let rested = if overnight {
+                        !self.bedtime()
+                    } else {
+                        self.ghost.needs.energy >= 0.98
+                    };
+                    if rested {
                         self.ghost.plan.done = true;
                         self.ghost.asleep = 0.0;
                         self.record(EventKind::WokeUp);
+                        if overnight {
+                            self.greet_morning();
+                        }
                     }
                 }
             }
@@ -1311,6 +1338,9 @@ impl World {
         }
         if self.weather.rainbow(self.time) > 0.3 && ghost.saw_rainbow {
             return Mood::Excited;
+        }
+        if self.drowsy() {
+            return Mood::Sleepy;
         }
         if ghost.asleep <= 0.3 && recent(8.0).any(|event| event.kind == EventKind::Thunder) {
             return if self.viewer_present() {
@@ -1665,7 +1695,7 @@ mod tests {
 
     #[test]
     fn resting_puts_the_ghost_to_sleep_until_rested() {
-        let mut world = World::new(4, 23.0);
+        let mut world = World::new(4, 14.0);
         world.ghost.needs.energy = 0.3;
         world.begin(Activity::Rest);
         run(&mut world, 20.0);

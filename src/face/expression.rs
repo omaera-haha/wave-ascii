@@ -40,6 +40,8 @@ pub enum Expression {
     Sparkle,
     /// The eyes turn into a terminal prompt, `>_`, whose cursor blinks.
     Prompt,
+    /// The eyes squeeze shut, then open wide with a little upward lift.
+    Stretch,
 }
 
 impl Expression {
@@ -55,6 +57,7 @@ impl Expression {
             Self::Smile => 2.25,
             Self::Surprise => 1.5,
             Self::Doze => 3.4,
+            Self::Stretch => 3.6,
             Self::Suspicious => 2.65,
             Self::Glare => 2.05,
             Self::Worry => 2.5,
@@ -76,6 +79,7 @@ impl Expression {
             Self::Smile => smile(time),
             Self::Surprise => surprise(time),
             Self::Doze => doze(time),
+            Self::Stretch => stretch(time),
             Self::Suspicious => suspicious(time),
             Self::Glare => glare(time),
             Self::Worry => worry(time),
@@ -185,6 +189,16 @@ fn doze(time: f32) -> Face {
     }
 }
 
+fn stretch(time: f32) -> Face {
+    Face {
+        shut: [swell(time, 0.55, 1.2, 1.9); 2],
+        lid: [0.18 * swell(time, 0.4, 1.0, 1.9); 2],
+        widen: ease_through(&[(1.2, 0.0), (1.9, 0.65), (2.7, 0.4), (3.6, 0.0)], time),
+        gaze: Vec2::new(0.0, 0.35 * swell(time, 1.2, 2.7, 3.6)),
+        ..Face::REST
+    }
+}
+
 fn suspicious(time: f32) -> Face {
     let across = ease_through(
         &[
@@ -270,7 +284,7 @@ fn swell(time: f32, full: f32, fade: f32, end: f32) -> f32 {
 mod tests {
     use super::*;
 
-    const ALL: [Expression; 14] = [
+    const ALL: [Expression; 15] = [
         Expression::Blink,
         Expression::DoubleBlink,
         Expression::Wink,
@@ -287,6 +301,7 @@ mod tests {
         Expression::Skeptical,
         Expression::Sparkle,
         Expression::Prompt,
+        Expression::Stretch,
     ];
 
     #[test]

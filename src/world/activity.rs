@@ -109,6 +109,8 @@ pub struct Plan {
     /// Seconds it means to keep at an open-ended activity.
     pub length: f32,
     pub done: bool,
+    /// A rest that lasts until morning, even when energy is full.
+    pub overnight: bool,
 }
 
 impl Plan {
@@ -124,6 +126,7 @@ impl Plan {
             count: 0,
             length,
             done: false,
+            overnight: false,
         }
     }
 

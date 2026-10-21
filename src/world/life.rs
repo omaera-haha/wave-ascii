@@ -64,6 +64,8 @@ pub struct Tally {
     /// Times the plant came into flower.
     pub blooms: u32,
     pub naps: u32,
+    /// Overnight rests that ended naturally in the morning.
+    pub nights: u32,
     pub showers: u32,
     pub storms: u32,
     pub snowfalls: u32,
@@ -110,6 +112,7 @@ impl Tally {
             EventKind::Tended => self.waterings += 1,
             EventKind::Bloomed => self.blooms += 1,
             EventKind::FellAsleep => self.naps += 1,
+            EventKind::Morning => self.nights += 1,
             EventKind::RainStarted => self.showers += 1,
             EventKind::StormStarted => self.storms += 1,
             EventKind::SnowStarted => self.snowfalls += 1,
@@ -179,6 +182,9 @@ impl Tally {
             0 => {}
             1 => deeds.push("took a nap".to_owned()),
             naps => deeds.push(format!("took {naps} naps")),
+        }
+        if self.nights > 0 {
+            deeds.push("slept through the night".to_owned());
         }
         if self.snowfalls > 0 {
             deeds.push("watched the snow fall".to_owned());
@@ -443,6 +449,9 @@ impl Life {
             EventKind::Bloomed if total.blooms == 1 => {
                 "My plant flowered for the first time.".to_owned()
             }
+            EventKind::Morning if total.nights == 1 => {
+                "Slept through my first night in the glass box.".to_owned()
+            }
             EventKind::Noticed(thing)
                 if thing.starts_with("the rainbow") && total.rainbows == 1 =>
             {
@@ -534,6 +543,26 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mornings_count_nights_and_remember_the_first_one_once() {
+        let mut life = Life::default();
+        let first = "Slept through my first night in the glass box.";
+        assert_eq!(life.note(&EventKind::Morning).as_deref(), Some(first));
+        assert_eq!(life.today.nights, 1);
+        assert_eq!(life.total.nights, 1);
+        assert!(life.today.words().contains("Slept through the night"));
+        assert_eq!(life.note(&EventKind::Morning), None);
+        assert_eq!(life.total.nights, 2);
+        assert_eq!(life.milestones.len(), 1);
+    }
+
+    #[test]
+    fn old_tallies_load_without_any_nights() {
+        let tally: Tally = serde_json::from_str(r#"{"naps": 2}"#).unwrap();
+        assert_eq!(tally.naps, 2);
+        assert_eq!(tally.nights, 0);
+    }
 
     #[test]
     fn a_day_is_written_in_words_from_what_happened() {
