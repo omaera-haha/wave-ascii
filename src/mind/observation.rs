@@ -187,6 +187,15 @@ fn outside_the_window(world: &World) -> String {
     if world.shooting_star().is_some() {
         outside.push_str(", a shooting star streaking across it right now");
     }
+    if world.starry_night() && !world.life.constellations.is_empty() {
+        let names: Vec<&str> = world
+            .life
+            .constellations
+            .iter()
+            .map(|constellation| constellation.name.as_str())
+            .collect();
+        outside.push_str(&format!(", familiar constellations: {}", names.join(", ")));
+    }
     if world.visitors.bird.is_some() {
         outside.push_str(match world.life.bird_trust {
             trust if trust < 0.2 => ", the bird is wary of you",
@@ -488,6 +497,28 @@ mod tests {
             !words.chars().any(|character| character.is_ascii_digit()),
             "{words}"
         );
+    }
+
+    #[test]
+    fn familiar_constellations_are_named_only_in_a_clear_dark_sky() {
+        let mut world = World::new(1, 21.0);
+        world
+            .life
+            .constellations
+            .push(crate::world::stars::Constellation {
+                name: "the Shy Spiral".to_owned(),
+                ..Default::default()
+            });
+        world.weather.sky = Sky::Clear;
+        world.weather.storm = false;
+        let outside = outside_the_window(&world);
+        assert!(outside.contains("the Shy Spiral"));
+        assert!(!outside.chars().any(|character| character.is_ascii_digit()));
+        world.hour = 12.0;
+        assert!(!outside_the_window(&world).contains("the Shy Spiral"));
+        world.hour = 21.0;
+        world.weather.sky = Sky::Rain;
+        assert!(!outside_the_window(&world).contains("the Shy Spiral"));
     }
 
     #[test]

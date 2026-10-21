@@ -998,6 +998,11 @@ impl App {
                     meteor: world
                         .shooting_star()
                         .map(|meteor| meteor.streak(world.time)),
+                    constellations: crate::render::window::StarSegment::from_constellations(
+                        &world.life.constellations,
+                    ),
+                    constellation_base: 0.018,
+                    constellation_glow: world.constellation_glow() * 0.085,
                 },
                 view,
                 face,

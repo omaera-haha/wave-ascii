@@ -26,14 +26,22 @@ struct Template {
 /// The $P point-cloud matcher (Vatavu, Anthony, Wobbrock, 2012):
 /// https://depts.washington.edu/acelab/proj/dollar/pdollar.pdf
 pub(super) fn recognize(strokes: &[Vec<Vec2>], learned: &[LearnedPicture]) -> Option<Recognition> {
+    best_match(strokes, learned, THRESHOLD).map(|(recognition, _)| recognition)
+}
+
+pub(super) fn best_match(
+    strokes: &[Vec<Vec2>],
+    learned: &[LearnedPicture],
+    threshold: f32,
+) -> Option<(Recognition, f32)> {
     let cloud: Vec<Vec2> = normalized(strokes).into_iter().flatten().collect();
     if cloud.len() != POINTS {
         return None;
     }
-    let mut best = THRESHOLD;
+    let mut best = threshold;
     let mut result = None;
     for template in templates() {
-        let distance = cloud_match(&cloud, &template.cloud);
+        let distance = cloud_match_below(&cloud, &template.cloud, best);
         if distance < best {
             best = distance;
             result = Some(template.recognition.clone());
@@ -48,7 +56,7 @@ pub(super) fn recognize(strokes: &[Vec<Vec2>], learned: &[LearnedPicture]) -> Op
             normalized(&picture.strokes).into_iter().flatten().collect()
         };
         if template.len() == POINTS {
-            let distance = cloud_match(&cloud, &template);
+            let distance = cloud_match_below(&cloud, &template, best.max(0.03));
             // Saving rounds coordinates, which can break a near-exact tie
             // with a built-in. In that case the viewer's correction wins.
             if distance < best || distance < 0.03 && best < 0.03 {
@@ -62,7 +70,7 @@ pub(super) fn recognize(strokes: &[Vec<Vec2>], learned: &[LearnedPicture]) -> Op
             }
         }
     }
-    result
+    result.map(|recognition| (recognition, best))
 }
 
 /// Resamples drawn length only, retaining the pen lifts for later copies.
@@ -130,27 +138,45 @@ pub(super) fn normalized(strokes: &[Vec<Vec2>]) -> Vec<Vec<Vec2>> {
     sampled
 }
 
+#[cfg(test)]
 fn cloud_match(first: &[Vec2], second: &[Vec2]) -> f32 {
-    (0..POINTS)
-        .step_by((POINTS as f32).sqrt().floor() as usize)
-        .map(|start| cloud_distance(first, second, start).min(cloud_distance(second, first, start)))
-        .fold(f32::INFINITY, f32::min)
+    cloud_match_below(first, second, f32::INFINITY)
 }
 
-fn cloud_distance(first: &[Vec2], second: &[Vec2], start: usize) -> f32 {
+fn cloud_match_below(first: &[Vec2], second: &[Vec2], limit: f32) -> f32 {
+    let mut best = limit;
+    for start in (0..POINTS).step_by(5) {
+        best = best.min(cloud_distance(first, second, start, best));
+        best = best.min(cloud_distance(second, first, start, best));
+    }
+    best
+}
+
+fn cloud_distance(first: &[Vec2], second: &[Vec2], start: usize, limit: f32) -> f32 {
     let mut matched = [false; POINTS];
     let mut sum = 0.0;
     for offset in 0..POINTS {
         let point = first[(start + offset) % POINTS];
-        let (index, distance) = second
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !matched[*index])
-            .map(|(index, &other)| (index, point.distance_squared(other)))
-            .min_by(|first, second| first.1.total_cmp(&second.1))
-            .unwrap();
+        let mut index = 0;
+        let mut distance = f32::INFINITY;
+        for (candidate, other) in second.iter().enumerate() {
+            if !matched[candidate] {
+                let across = point.x - other.x;
+                let up = point.y - other.y;
+                let separation = across * across + up * up;
+                if separation < distance {
+                    index = candidate;
+                    distance = separation;
+                }
+            }
+        }
         matched[index] = true;
         sum += (1.0 - offset as f32 / POINTS as f32) * distance.sqrt();
+        // Every remaining contribution is positive. A losing start cannot
+        // become the best match, which keeps bounded star searches cheap.
+        if sum >= limit {
+            return limit;
+        }
     }
     sum
 }
@@ -277,6 +303,54 @@ fn plain_shapes() -> Vec<Shape> {
 mod tests {
     use super::*;
     use crate::world::Random;
+
+    #[test]
+    fn distance_cutoffs_preserve_the_original_cloud_match() {
+        let original_distance = |first: &[Vec2], second: &[Vec2], start: usize| {
+            let mut matched = [false; POINTS];
+            let mut sum = 0.0;
+            for offset in 0..POINTS {
+                let point = first[(start + offset) % POINTS];
+                let (index, distance) = second
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !matched[*index])
+                    .map(|(index, &other)| (index, point.distance_squared(other)))
+                    .min_by(|first, second| first.1.total_cmp(&second.1))
+                    .unwrap();
+                matched[index] = true;
+                sum += (1.0 - offset as f32 / POINTS as f32) * distance.sqrt();
+            }
+            sum
+        };
+        let mut random = Random::new(19);
+        for template in templates() {
+            let changed: Vec<Vec2> = template
+                .cloud
+                .iter()
+                .map(|&point| {
+                    point + Vec2::new(random.range(-0.04, 0.04), random.range(-0.04, 0.04))
+                })
+                .collect();
+            let distance = (0..POINTS)
+                .step_by(5)
+                .map(|start| {
+                    original_distance(&changed, &template.cloud, start).min(original_distance(
+                        &template.cloud,
+                        &changed,
+                        start,
+                    ))
+                })
+                .fold(f32::INFINITY, f32::min);
+            for limit in [0.1, 0.5, 1.35, f32::INFINITY] {
+                assert!(
+                    (cloud_match_below(&changed, &template.cloud, limit) - distance.min(limit))
+                        .abs()
+                        < 1e-6
+                );
+            }
+        }
+    }
 
     #[test]
     fn every_template_survives_scale_translation_reversed_strokes_and_small_jitter() {

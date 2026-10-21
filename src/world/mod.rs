@@ -24,6 +24,7 @@ mod room;
 mod routine;
 mod sight;
 mod sleep;
+pub mod stars;
 mod story;
 mod things;
 pub mod visitor;
@@ -228,6 +229,7 @@ pub enum EventKind {
         completed: bool,
     },
     ToldStory,
+    FoundConstellation(String),
 }
 
 impl EventKind {
@@ -235,6 +237,7 @@ impl EventKind {
     pub fn words(&self) -> String {
         match self {
             Self::ToldStory => "told the viewer a story".to_owned(),
+            Self::FoundConstellation(name) => format!("found a constellation: {name}"),
             Self::Began(activity) => format!("started {}", activity.doing()),
             Self::Poked { count: 1 } => "the viewer poked you".to_owned(),
             Self::Poked { count } => format!("the viewer poked you {count} times in a row"),
@@ -579,6 +582,7 @@ pub struct World {
     pub telling: Option<Telling>,
     /// The story of its time alone, kept only for this session.
     pub away: Option<away::Away>,
+    found_constellation_at: Option<f64>,
 }
 
 impl World {
@@ -676,6 +680,7 @@ impl World {
             break_until: 0.0,
             telling: None,
             away: None,
+            found_constellation_at: None,
         };
         world.scatter_blocks();
         world
@@ -1046,6 +1051,7 @@ impl World {
             Activity::Float => self.random.range(5.0, 11.0),
             Activity::Visit => self.random.range(8.0, 15.0),
             Activity::Wait => self.random.range(60.0, 120.0),
+            Activity::Window if self.starry_night() => self.random.range(28.0, 38.0),
             Activity::Window => self.random.range(10.0, 18.0),
             Activity::Fetch => 6.0,
             Activity::Dance => growth::dance_length(
@@ -2113,6 +2119,7 @@ impl World {
             Activity::Window => {
                 look = self.watch_window();
                 self.wish_on_moon();
+                self.find_constellation();
             }
             Activity::Visit => {
                 if self.viewer.pointer.is_some() && self.sebae.is_none() {

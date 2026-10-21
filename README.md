@@ -24,6 +24,8 @@ in the fog yourself and it comes to look, names what it recognizes, and
 learns the pictures you teach it. Stroke it and it melts. At night it goes
 to bed and sleeps until morning. On some moonlit evenings a smaller ghost,
 its friend, drifts in through the window to play.
+On clear nights it finds and names pictures in the stars, keeping their faint
+outlines in its sky.
 
 Each ghost is born a small wisp with a nature of its own, and grows up over
 its first month, getting better at what it practices. Over days it grows
@@ -154,6 +156,11 @@ spent together, including early endings. Quitting silently ends the timer.
 - **Stories.** Ask "tell me a story" or "이야기 들려줘" and it tells a little tale
   from its life, a sentence at a time; at bedtime it says goodnight and
   floats to its cushion to sleep. Poking it or saying no stops the tale.
+- **Constellations.** After watching a clear, dark sky for twenty seconds, it
+  may find a picture among the stars, using familiar shapes and pictures you
+  taught it. It searches once a night, remembers its newest twelve finds, and
+  lights their faint lines while gazing. Ask "do you know any constellations?"
+  or "별자리 알아?" to hear their names; `l` lists its sky.
 - **Stroking.** Press on the ghost and drag gently back and forth across it.
   It slows down, closes its eyes in happy arcs, leans into your hand, and
   puffs little hearts. Strokes soothe even a grumpy ghost, keep it company,

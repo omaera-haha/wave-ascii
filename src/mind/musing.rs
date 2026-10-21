@@ -305,13 +305,17 @@ fn babble<Line: From<&'static str>>(world: &World, lines: &mut Vec<Line>, korean
     }
 }
 
-/// Gives the friend its remembered name in the thoughts picked from the pools.
+/// Gives remembered friends and star pictures their names in the thought pools.
 pub fn named_friend_line(world: &World, line: &str) -> String {
-    match &world.life.friend {
+    let line = match &world.life.friend {
         Some(friend) => line
             .replace("My ghost friend", &friend.name)
             .replace("my ghost friend", &friend.name),
         None => line.to_owned(),
+    };
+    match world.life.constellations.last() {
+        Some(constellation) => line.replace("my constellation", &constellation.name),
+        None => line,
     }
 }
 
@@ -328,6 +332,12 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if ghost.plan.activity == Activity::Window
+        && world.starry_night()
+        && !world.life.constellations.is_empty()
+    {
+        lines.push("I can see my constellation again.");
+    }
     if world.friend.is_some() {
         lines.extend([
             "My ghost friend is fun!",
@@ -562,6 +572,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     let mut lines = Vec::new();
     if today.focus_minutes > 0 || today.focus_sessions > 0 || world.focus.is_some() {
         lines.push("…we work side by side, and the little room holds its breath…");
+    }
+    if !world.life.constellations.is_empty() {
+        lines.push("…my constellation winks at me…");
     }
     for skill in Skill::ALL {
         if world.life.skills.practice(skill) > 0.0 && world.life.skills.level(skill) < 0.65 {
@@ -933,6 +946,33 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
                 lines(&["It was quiet here."], &["여기서 조용히 지냈어."])
             } else {
                 remembered
+            }
+        }
+        Question::Constellations => {
+            if world.life.constellations.is_empty() {
+                lines(
+                    &["I haven't found a picture in the stars yet. I'll keep looking."],
+                    &["아직 별에서 그림을 못 찾았어. 계속 찾아볼래."],
+                )
+            } else {
+                let names = world
+                    .life
+                    .constellations
+                    .iter()
+                    .map(|constellation| {
+                        if korean {
+                            constellation.korean.as_str()
+                        } else {
+                            constellation.name.as_str()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if korean {
+                    vec![format!("내가 찾은 별자리야: {names}!")]
+                } else {
+                    vec![format!("I found {names} in the stars!")]
+                }
             }
         }
         Question::Friend => match &world.life.friend {
@@ -2375,5 +2415,50 @@ mod tests {
                 .iter()
                 .any(|line| named_friend_line(&world, line).contains("Lumi"))
         );
+    }
+
+    #[test]
+    fn questions_window_thoughts_and_dreams_recall_named_constellations() {
+        let mut world = World::new(1, 21.0);
+        let heard = world.hear("do you know any constellations?");
+        assert!(reply(&world, &heard, None)[0].contains("haven't found"));
+        world
+            .life
+            .constellations
+            .push(crate::world::stars::Constellation {
+                name: "the Little Heart".to_owned(),
+                korean: "작은 하트".to_owned(),
+                ..Default::default()
+            });
+        for (text, expected) in [
+            ("do you know any constellations?", "the Little Heart"),
+            ("별자리 알아?", "작은 하트"),
+        ] {
+            let heard = world.hear(text);
+            assert!(
+                reply(&world, &heard, None)
+                    .iter()
+                    .all(|line| line.contains(expected))
+            );
+            assert!(matches!(
+                heard.understanding,
+                Understanding::Asked {
+                    question: Question::Constellations,
+                    ..
+                }
+            ));
+        }
+        world.weather.sky = Sky::Clear;
+        world.weather.storm = false;
+        world.begin(Activity::Window);
+        for lines in [idle(&world), dreams(&world)] {
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| named_friend_line(&world, line).contains("the Little Heart"))
+            );
+        }
+        world.hour = 12.0;
+        assert!(!idle(&world).contains(&"I can see my constellation again."));
     }
 }

@@ -34,6 +34,7 @@ pub enum Question {
     /// A story from its life.
     Story,
     Away,
+    Constellations,
 }
 
 impl Question {
@@ -62,6 +63,20 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
             &["what", "did", "you", "do", "while", "i", "was", "gone"],
             &["what", "were", "you", "doing"],
             &["what", "did", "you", "do", "without", "me"],
+        ],
+    ),
+    (
+        Question::Constellations,
+        &[
+            &["do", "you", "know", "any", "constellations"],
+            &["do", "you", "know", "constellations"],
+            &["what", "constellations"],
+            &["have", "you", "found", "any", "constellations"],
+            &["what", "are", "those", "stars"],
+            &["what", "are", "the", "stars"],
+            &["do", "you", "know", "the", "stars"],
+            &["do", "you", "know", "any", "stars"],
+            &["what", "stars", "do", "you", "know"],
         ],
     ),
     (
@@ -240,6 +255,18 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
     (
         Question::Away,
         &["뭐하고있었", "없는동안뭐", "안온동안뭐"],
+        false,
+    ),
+    (
+        Question::Constellations,
+        &[
+            "별자리알아",
+            "별자리알고",
+            "별자리찾았",
+            "무슨별자리",
+            "별들이뭐",
+            "아는별자리",
+        ],
         false,
     ),
     (
@@ -428,6 +455,8 @@ mod tests {
             ("did you miss me?", Question::Lonely),
             ("What's on your shelf?", Question::Shelf),
             ("do you like the bird?", Question::Bird),
+            ("do you know any constellations?", Question::Constellations),
+            ("what are those stars?", Question::Constellations),
         ] {
             assert_eq!(ask(text), Some(question), "{text}");
         }
@@ -456,6 +485,7 @@ mod tests {
             ("심심해?", Question::Bored),
             ("보고 싶었어?", Question::Lonely),
             ("선반에 뭐 있어?", Question::Shelf),
+            ("별자리 알아?", Question::Constellations),
             ("저 새 좋아해?", Question::Bird),
         ] {
             assert_eq!(ask(text), Some(question), "{text}");
