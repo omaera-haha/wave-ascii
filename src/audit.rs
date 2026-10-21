@@ -75,6 +75,7 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     let mut log: Vec<String> = Vec::new();
     let mut focus_day = None;
     let mut feeling_day = None;
+    let mut rhythm_break = None;
     let mut thought_count = 0u32;
     let mut speech_count = 0u32;
     let mut max_speed = 0.0f32;
@@ -91,7 +92,8 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             + f64::from(clock.minute()) / 60.0
             + f64::from(clock.second()) / 3600.0;
         world.hour = hour as f32;
-        let here = present(hour);
+        let here = present(hour)
+            && !rhythm_break.is_some_and(|(leaves, returns)| (leaves..returns).contains(&time));
         if here != was_present {
             world.look_away(!here);
             log.push(format!(
@@ -161,6 +163,12 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             log.push(format!("{clock} viewer says {message:?}"));
         }
         world.step(step);
+        // Try one suggested break in the whole audit; ordinary visits keep
+        // exercising long sittings on the other days.
+        if rhythm_break.is_none() && world.life.total.breaks_suggested > 0 {
+            rhythm_break = Some((time + 30.0, time + 930.0));
+            log.push(format!("{clock} viewer plans a short break"));
+        }
         if let Some(finished_day) = finished_day {
             by_day.push(format!(
                 "  {}: bond {:.2}, {} milestones, {} books owned; {}",

@@ -4,6 +4,7 @@ pub mod anniversary;
 pub mod away;
 pub mod blocks;
 pub mod books;
+pub mod breaks;
 pub mod breeze;
 pub mod calendar;
 pub mod creation;
@@ -310,6 +311,12 @@ pub enum EventKind {
     ReadViewerLetter,
     AskedViewer(acquaintance::Topic),
     LearnedAboutViewer(acquaintance::Topic),
+    SuggestedBreak {
+        long: bool,
+    },
+    NoticedLateNight,
+    SaidGoodnightTogether,
+    TookBreak,
 }
 
 impl EventKind {
@@ -517,6 +524,15 @@ impl EventKind {
             Self::PlayedWithFriend(game) => {
                 format!("finished {} with your ghost friend", game.words())
             }
+            Self::SuggestedBreak { long: true } => {
+                "suggested a longer break after working together".to_owned()
+            }
+            Self::SuggestedBreak { long: false } => {
+                "suggested stretching after a long sitting together".to_owned()
+            }
+            Self::NoticedLateNight => "you stayed up very late".to_owned(),
+            Self::SaidGoodnightTogether => "we said goodnight together late at night".to_owned(),
+            Self::TookBreak => "you took a break when I asked".to_owned(),
         }
     }
 }
@@ -587,6 +603,9 @@ pub enum Understanding {
     },
     Answered(acquaintance::Topic),
     Unanswered(acquaintance::Topic),
+    BreakReply {
+        agreed: bool,
+    },
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -792,6 +811,7 @@ pub struct World {
     last_message_at: Option<f64>,
     last_question_at: Option<f64>,
     viewer_blush_at: Option<f64>,
+    pub rhythm: breaks::Rhythm,
 }
 
 impl World {
@@ -931,6 +951,7 @@ impl World {
             last_message_at: None,
             last_question_at: None,
             viewer_blush_at: None,
+            rhythm: breaks::Rhythm::default(),
         };
         world.scatter_blocks();
         world
@@ -962,6 +983,7 @@ impl World {
         self.greet_favorite_season();
         self.follow_up_feeling();
         self.ask_viewer();
+        self.advance_rhythm();
     }
 
     fn advance(&mut self, seconds: f32) {
@@ -1680,6 +1702,7 @@ impl World {
             self.ghost.velocity.y += 0.7;
             self.ghost.plan.done = true;
             self.record(EventKind::Found);
+            self.notice_late_night(self.speaks_korean());
             return;
         }
         let count = match self.events.iter().rev().find_map(|event| match event.kind {
@@ -1694,6 +1717,7 @@ impl World {
         self.ghost.needs.change(0.0, fun, 0.05);
         self.ghost.velocity += Vec3::new(self.random.range(-0.4, 0.4), 0.5, -0.3);
         self.record(EventKind::Poked { count });
+        self.notice_late_night(self.speaks_korean());
     }
 
     /// The viewer dropped a mote into the room at `position`. The ghost saw
@@ -1797,6 +1821,17 @@ impl World {
     /// it was doing, and whether the viewer sounds pleased with what it did
     /// about their last words, teach it what words mean.
     pub fn hear(&mut self, text: &str) -> Heard {
+        self.begin_day();
+        let heard = self.hear_message(text);
+        if heard.tone == Some(Tone::Farewell) {
+            self.goodnight_together();
+        } else {
+            self.notice_late_night(heard.korean || self.speaks_korean());
+        }
+        heard
+    }
+
+    fn hear_message(&mut self, text: &str) -> Heard {
         let korean = text.chars().any(|character| {
             matches!(
                 character,
@@ -1813,6 +1848,9 @@ impl World {
         // Only the very next message answers a wellbeing question, even if
         // another direct handler consumes that message first.
         let feeling_follow_up = self.feeling_follow_up.take();
+        if let Some(heard) = self.hear_break_reply(text, korean) {
+            return heard;
+        }
         if let Some(heard) = self.answer_viewer(text, korean) {
             return heard;
         }
@@ -2192,6 +2230,9 @@ impl World {
     pub fn notice_viewer(&mut self) {
         let returned = self.viewer.looked_away_at.take().is_some();
         self.viewer.active_at = self.time.max(f64::MIN_POSITIVE);
+        if self.rhythm.presence_started.is_none() && self.rhythm.departed.is_none() {
+            self.rhythm.presence_started = Some(self.time);
+        }
         if returned {
             self.deliver_replies(true, 0.0);
         }
@@ -2279,6 +2320,7 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        self.note_rhythm(&kind);
         if kind == EventKind::ViewerLeft {
             self.promise_departed = true;
         }

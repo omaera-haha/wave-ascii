@@ -186,6 +186,11 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::Noticed(thing) if thing.starts_with("a gift on the sill") => {
             Expression::Surprise
         }
+        EventKind::SuggestedBreak { long: false } => Expression::Stretch,
+        EventKind::SuggestedBreak { long: true }
+        | EventKind::TookBreak
+        | EventKind::SaidGoodnightTogether => Expression::Smile,
+        EventKind::NoticedLateNight => Expression::Doze,
         _ => return None,
     })
 }

@@ -111,11 +111,13 @@ impl World {
         if self.focus.is_some() {
             self.end_focus();
         }
+        self.start_rhythm_focus();
         self.focus = Some(Focus {
             started: self.time,
             length: minutes.clamp(5, 120) * 60,
             ended_early: false,
         });
+        self.rhythm.presence_started.get_or_insert(self.time);
         self.music = None;
         if self.queued_tune.take().is_some() && self.ghost.plan.activity == Activity::Rest {
             self.ghost.plan.target = self.nook.bed(self.size());
@@ -142,6 +144,7 @@ impl World {
             minutes,
             completed: !focus.ended_early,
         });
+        self.finish_rhythm_focus(!focus.ended_early);
         // Starting and ending company aren't arrivals or departures.
         self.viewer_present = self.viewer_present();
         if !self.viewer_present {

@@ -237,6 +237,7 @@ pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<String> {
     let mut lines: Vec<_> = idle_lines(world).into_iter().map(str::to_owned).collect();
+    lines.extend(world.rhythm_thoughts());
     if !world.viewer_present()
         && let Some(promise) = world.life.promise
     {
@@ -834,6 +835,11 @@ fn dream_lines(world: &World) -> Vec<&'static str> {
 /// few words about what it made of their message. It names the word it
 /// understood or wonders about, so the viewer can see it learning.
 pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
+    if matches!(heard.understanding, Understanding::BreakReply { .. })
+        || world.late_night_just_said()
+    {
+        return Vec::new();
+    }
     let mut lines = reply_in_words(world, heard, guessed);
     if !matches!(
         heard.understanding,

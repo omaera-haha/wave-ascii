@@ -105,6 +105,17 @@ impl Pose {
         self
     }
 
+    pub fn with_stretch(mut self, amount: f32) -> Self {
+        let amount = if amount.is_finite() {
+            amount.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.lift += 0.025 * amount;
+        self.stretch += 0.065 * amount;
+        self
+    }
+
     /// Moves a point of the billboard into the body's frame, where it stands
     /// upright with its head at `HEAD_CENTER`.
     fn place(&self, point: Vec2) -> Vec2 {
@@ -638,5 +649,25 @@ mod tests {
         let faint = shade(middle, 0.02, 3.0, &pose, &Face::REST, &hidden);
         assert!(faint.cover < full.cover * 0.2);
         assert!(faint.light.length() < full.light.length() * 0.2);
+    }
+
+    #[test]
+    fn stretching_keeps_pose_math_finite_and_bounded_for_damaged_inputs() {
+        for amount in [
+            f32::NAN,
+            f32::NEG_INFINITY,
+            -1.0,
+            0.0,
+            0.5,
+            1.0,
+            f32::INFINITY,
+        ] {
+            let pose = Pose::new(3.0, 0.0, 0.0, 0.0).with_stretch(amount);
+            for point in [Vec2::ZERO, Vec2::ONE, -Vec2::ONE] {
+                let local = pose.place(point);
+                assert!(local.is_finite() && pose.silhouette(local).is_finite());
+                assert!(local.length() < 3.0);
+            }
+        }
     }
 }

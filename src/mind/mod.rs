@@ -428,6 +428,14 @@ impl Mind {
             text: text.to_owned(),
         });
         trim(&mut self.journal.conversation, REMARKS_KEPT);
+        if matches!(heard.understanding, Understanding::BreakReply { .. })
+            || world.late_night_just_said()
+        {
+            self.next_id += 1;
+            self.latest_request = self.next_id;
+            self.remember_speech(world);
+            return;
+        }
         if world.ghost.asleep >= 0.3 && matches!(heard.understanding, Understanding::Airing { .. })
         {
             self.next_id += 1;
@@ -947,6 +955,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
+                | Understanding::BreakReply { .. }
         )
 }
 
@@ -2403,6 +2412,32 @@ mod acquaintance_tests {
             assert!(lines.contains("고양이"));
             assert!(lines.contains("kimchi"));
             assert!(!lines.contains("{animal}") && !lines.contains("{food}"));
+        }
+    }
+
+    #[test]
+    fn break_replies_keep_the_worlds_response_and_never_route_to_jev_or_learn_words() {
+        for (message, agreed) in [
+            ("okay", true),
+            ("좋아", true),
+            ("not now", false),
+            ("나중에", false),
+        ] {
+            let mut world = World::new(7, 12.0);
+            for _ in 0..4 {
+                world.start_focus(5);
+                world.time += 300.0;
+                world.notice_viewer();
+                world.end_focus();
+            }
+            world.time += 6.0;
+            world.step(0.1);
+            let vocabulary = world.life.vocabulary.clone();
+            let heard = world.hear(message);
+            assert_eq!(heard.understanding, Understanding::BreakReply { agreed });
+            assert!(!routes_to_jev(&heard));
+            assert!(musing::reply(&world, &heard, None).is_empty());
+            assert_eq!(world.life.vocabulary, vocabulary);
         }
     }
 }

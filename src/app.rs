@@ -1175,6 +1175,9 @@ impl App {
         if let Some(expression) = world.mirror_expression() {
             reactions.push(expression);
         }
+        if let Some(expression) = world.rhythm_expression() {
+            reactions.push(expression);
+        }
         let mut face = face::mood::face(
             world.time,
             &Cues {
@@ -1235,7 +1238,8 @@ impl App {
             world.letter_expression(),
             Some((_, Expression::Glance { .. }))
         ))
-        .with_comfort(comfort_breath);
+        .with_comfort(comfort_breath)
+        .with_stretch(world.stretch_amount());
         let friend =
             world
                 .friend
