@@ -587,8 +587,9 @@ impl JournalPanel {
         let mut lines = Vec::new();
         let mut append = |prefix: &str, text: &str, color: Rgb| {
             let indentation = width(prefix);
-            let wrapped = if indentation >= inner {
-                // On narrow screens the prefix must wrap too, leaving room for text.
+            // On narrow screens, where the indentation would leave no room
+            // for even one wide character, the prefix wraps with the text.
+            let wrapped = if indentation + 2 > inner {
                 wrap(&format!("{prefix}{text}"), inner)
             } else {
                 wrap(text, inner - indentation)
@@ -755,6 +756,27 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         )
+    }
+
+    #[test]
+    fn a_narrow_journal_still_shows_every_line_of_wide_text() {
+        let mut app = app();
+        app.mind.journal.conversation.push(Remark {
+            at: 0,
+            speaker: crate::store::Speaker::Viewer,
+            text: "안녕하세요 반가워요".into(),
+        });
+        let journal = JournalPanel::new(&app, 14, 30);
+        let said: Vec<&String> = journal
+            .lines
+            .iter()
+            .map(|(line, _)| line)
+            .skip_while(|line| !line.contains("you"))
+            .take_while(|line| !line.is_empty())
+            .collect();
+        assert!(said.len() > 1, "{said:?}");
+        assert!(said.iter().all(|line| !line.trim().is_empty()), "{said:?}");
+        assert!(said.iter().all(|line| width(line) <= 8), "{said:?}");
     }
 
     #[test]

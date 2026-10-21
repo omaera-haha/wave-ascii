@@ -60,6 +60,8 @@ pub struct Seen {
     pub distance: f32,
     pub across: f32,
     pub up: f32,
+    /// The angle between where the ghost faces and the thing, in radians.
+    pub off_center: f32,
     pub hidden_behind: Option<Thing>,
 }
 
@@ -121,8 +123,10 @@ impl World {
                 }
                 continue;
             }
+            let off_center = direction.angle_between(heading);
             let flat = (direction - Vec3::Y * direction.y).normalize_or(heading);
             in_view.push(Seen {
+                off_center,
                 thing,
                 distance,
                 across: flat.dot(right).clamp(-1.0, 1.0).asin(),
@@ -130,12 +134,13 @@ impl World {
                 hidden_behind: self.blocker(eye, position, thing),
             });
         }
-        let off_center = |seen: &Seen| seen.across.hypot(seen.up);
-        in_view.sort_by(|first, second| off_center(first).total_cmp(&off_center(second)));
+        // Side and height angles distort when the ghost looks steeply up or
+        // down, so the true angle from its heading decides what is central.
+        in_view.sort_by(|first, second| first.off_center.total_cmp(&second.off_center));
         let looking_at = in_view
             .iter()
             .find(|seen| seen.hidden_behind.is_none())
-            .filter(|seen| off_center(seen) < FOCUS)
+            .filter(|seen| seen.off_center < FOCUS)
             .map(|seen| seen.thing);
         Sight {
             looking_at,
@@ -285,6 +290,21 @@ mod tests {
         let sight = world.sight();
         assert_eq!(sight.looking_at, Some(Thing::Viewer));
         assert!(sight.out_of_view.contains(&Thing::Window));
+    }
+
+    #[test]
+    fn looking_steeply_up_does_not_put_the_edge_of_view_in_focus() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.position = Vec3::new(0.0, 0.45, -0.9);
+        facing(&mut world, Vec3::new(0.0, 0.866, 0.5));
+        let sight = world.sight();
+        let window = sight
+            .in_view
+            .iter()
+            .find(|seen| seen.thing == Thing::Window)
+            .unwrap();
+        assert!(window.off_center > 0.9, "{window:?}");
+        assert_ne!(sight.looking_at, Some(Thing::Window));
     }
 
     #[test]
