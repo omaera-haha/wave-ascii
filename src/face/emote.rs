@@ -129,6 +129,16 @@ pub fn puffs(world: &World) -> Vec<Puff> {
                 }
                 continue;
             }
+            if matches!(event.kind, EventKind::Toppled { by_viewer: true }) {
+                add(
+                    event.time + 0.6,
+                    if ghost.mood == Mood::Grumpy {
+                        Emote::Anger
+                    } else {
+                        Emote::Note
+                    },
+                );
+            }
             // What the ghost made of a message says more than having
             // heard it.
             let answered = matches!(event.kind, EventKind::Heard(_))
@@ -183,11 +193,12 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::Thunder
         | EventKind::Poked { count: 1 } => Emote::Alarm,
         EventKind::Poked { count } if *count >= 3 => Emote::Anger,
-        EventKind::Jumped => Emote::Alarm,
+        EventKind::Jumped | EventKind::Toppled { .. } => Emote::Alarm,
         EventKind::AteMote
         | EventKind::Bloomed
         | EventKind::Fetched
         | EventKind::Pounced
+        | EventKind::Built { .. }
         | EventKind::Found
         | EventKind::Celebrated(_)
         | EventKind::Morning

@@ -43,6 +43,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     * 0.15;
                 0.2 + 1.2 * (1.0 - needs.fun) * needs.energy + close
             }
+            Activity::Build => {
+                (0.15
+                    + 0.6 * (1.0 - needs.fun)
+                    + 0.3 * world.life.nature.unwrap_or_default().curious
+                    + if present { 0.2 } else { 0.0 })
+                    * needs.energy
+            }
             Activity::Tend => 1.6 * world.plant.thirst.powi(2),
             Activity::Lamp if bedtime => {
                 if world.lamp.on && !present {

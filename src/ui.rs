@@ -547,6 +547,7 @@ fn help_panel(screen: &mut Canvas) {
         "t, Enter   talk to it          click ghost   poke or find it",
         "k          keys and models     click ball    flick it",
         "j          journal and diary   click room    drop a light mote",
+        "                               click blocks  nudge or topple",
         "l          its life and bond   p             save a postcard",
         "arrows     turn the view       drag          turn the view",
         "+ -        zoom                wheel         zoom",
@@ -915,12 +916,14 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             total.nights,
         ),
         ("birds watched", total.birds, "moths seen", total.moths),
+        ("towers built", total.towers, "tallest tower", total.tallest),
     ] {
         counts.push((
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),
             TEXT,
         ));
     }
+    counts.push((format!("  towers you toppled{:>5}", total.toppled), TEXT));
     let latest = match life.milestones.last() {
         Some(milestone) => vec![
             (String::new(), TEXT),

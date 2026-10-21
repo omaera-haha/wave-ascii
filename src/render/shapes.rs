@@ -1,12 +1,13 @@
 use glam::{Vec2, Vec3};
 
 use crate::sdf::{star, trapezoid};
-use crate::world::{Decoration, Lamp, Nook, Occasion, Plant};
+use crate::world::{Block, Decoration, Lamp, Nook, Occasion, Plant};
 
 /// What a surface is made of, which sets its color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Material {
     Ball,
+    Block(u8),
     Brass,
     Lampshade,
     Bulb,
@@ -29,6 +30,13 @@ impl Material {
     pub fn albedo(self, plant: &Plant) -> Vec3 {
         match self {
             Self::Ball => Vec3::new(1.0, 0.45, 0.35),
+            Self::Block(index) => match index % 5 {
+                0 => Vec3::new(1.0, 0.4, 0.4),
+                1 => Vec3::new(1.0, 0.86, 0.3),
+                2 => Vec3::new(0.4, 0.65, 1.0),
+                3 => Vec3::new(0.4, 0.9, 0.5),
+                _ => Vec3::new(0.8, 0.45, 1.0),
+            },
             Self::Brass => Vec3::new(0.8, 0.66, 0.42),
             Self::Lampshade => Vec3::new(0.95, 0.86, 0.66),
             Self::Bulb => Vec3::new(1.0, 0.92, 0.75),
@@ -72,12 +80,14 @@ pub enum Furniture {
     Lamp(Lamp),
     Plant(Plant),
     Nook(Nook),
+    Block(Block),
     Decoration(Decoration, f64),
 }
 
 impl Furniture {
     pub fn bounds(&self) -> (Vec3, f32) {
         match self {
+            Self::Block(block) => (block.position, crate::world::blocks::RADIUS),
             Self::Lamp(lamp) => (lamp.position + Vec3::Y * 0.72, 0.78),
             Self::Plant(plant) => {
                 let height = plant.height();
@@ -98,6 +108,14 @@ impl Furniture {
     /// nearest it.
     pub fn distance(&self, point: Vec3) -> (f32, Material) {
         match self {
+            Self::Block(block) => {
+                let point = block.orientation.conjugate() * (point - block.position);
+                let corner = point.abs() - Vec3::splat(crate::world::blocks::EDGE * 0.5 - 0.012);
+                (
+                    corner.max(Vec3::ZERO).length() + corner.max_element().min(0.0) - 0.012,
+                    Material::Block(block.color),
+                )
+            }
             Self::Decoration(decoration, time) => {
                 decoration_distance(point - Decoration::POSITION, *decoration, *time)
             }

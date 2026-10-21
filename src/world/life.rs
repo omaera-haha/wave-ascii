@@ -98,6 +98,13 @@ pub struct Tally {
     /// Visits it saw at the window and the lamp.
     pub birds: u32,
     pub moths: u32,
+    /// Towers built, highest tower, and towers the viewer knocked down.
+    #[serde(default)]
+    pub towers: u32,
+    #[serde(default)]
+    pub tallest: u32,
+    #[serde(default)]
+    pub toppled: u32,
 }
 
 impl Tally {
@@ -119,6 +126,11 @@ impl Tally {
             EventKind::Fetched => self.fetches += 1,
             EventKind::Pounced => self.pounces += 1,
             EventKind::Danced => self.dances += 1,
+            EventKind::Built { height } => {
+                self.towers += 1;
+                self.tallest = self.tallest.max(*height);
+            }
+            EventKind::Toppled { by_viewer: true } => self.toppled += 1,
             EventKind::Celebrated(occasion) => {
                 self.celebrations += 1;
                 if !self.occasions.contains(occasion) {
@@ -183,6 +195,21 @@ impl Tally {
             0 => {}
             1 => deeds.push("pounced on your finger".to_owned()),
             pounces => deeds.push(format!("pounced on your finger {pounces} times")),
+        }
+        let tower = match self.towers {
+            0 => None,
+            1 => Some("built a tower of blocks".to_owned()),
+            towers => Some(format!("built {towers} towers of blocks")),
+        };
+        if let Some(mut tower) = tower {
+            match self.toppled {
+                0 => {}
+                1 => tower.push_str(", and you knocked one down"),
+                toppled => tower.push_str(&format!(", and you knocked {toppled} down")),
+            }
+            deeds.push(tower);
+        } else if self.toppled > 0 {
+            deeds.push("watched you knock my tower down".to_owned());
         }
         match self.dances {
             0 => {}
@@ -311,11 +338,24 @@ impl Life {
         self.today.note(kind);
         let bond = self.bond;
         let milestone = self.first(kind);
+        let milestone = if matches!(kind, EventKind::Built { height } if *height >= 5) {
+            let tallest = self.reach("I built a tower five blocks high.".to_owned());
+            milestone.or(tallest)
+        } else {
+            milestone
+        };
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
             EventKind::Praised | EventKind::LearnedWord { .. } => 0.005,
             EventKind::Fetched => 0.01,
             EventKind::Pounced => 0.003,
+            EventKind::Toppled { by_viewer: true } => {
+                if self.nature.unwrap_or_default().playful >= 0.5 || self.bond >= 0.55 {
+                    0.003
+                } else {
+                    -0.003
+                }
+            }
             EventKind::Found => 0.015,
             EventKind::ViewerArrived => 0.003,
             EventKind::DroppedMote | EventKind::KickedBall => 0.002,
@@ -456,6 +496,7 @@ impl Life {
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
+            tally.tallest = tally.tallest.min(5);
             if !tally.together.is_finite() || tally.together < 0.0 {
                 tally.together = 0.0;
             }
@@ -485,6 +526,9 @@ impl Life {
             }
             EventKind::Pounced if total.pounces == 1 => {
                 "Caught your finger on the glass for the first time.".to_owned()
+            }
+            EventKind::Built { .. } if total.towers == 1 => {
+                "I built my first tower of blocks.".to_owned()
             }
             EventKind::Danced if total.dances == 1 => "Danced my first twirl.".to_owned(),
             EventKind::Found if total.finds == 1 => "You found me hiding.".to_owned(),
@@ -1173,5 +1217,47 @@ mod tests {
         assert_eq!(life.total.celebrations, 6);
         assert_eq!(life.diary[0].text, words);
         assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().celebrations, 0);
+    }
+
+    #[test]
+    fn towers_count_height_and_viewer_demolitions_and_keep_both_first_and_tallest_milestones() {
+        let mut life = Life::default();
+        assert_eq!(
+            life.note(&EventKind::Built { height: 5 }).as_deref(),
+            Some("I built my first tower of blocks.")
+        );
+        assert!(
+            life.milestones
+                .iter()
+                .any(|entry| entry.text == "I built a tower five blocks high.")
+        );
+        life.note(&EventKind::Built { height: 3 });
+        life.note(&EventKind::Toppled { by_viewer: false });
+        life.note(&EventKind::Toppled { by_viewer: true });
+        assert_eq!(life.total.towers, 2);
+        assert_eq!(life.total.tallest, 5);
+        assert_eq!(life.today, life.total);
+        assert_eq!(life.total.toppled, 1);
+        assert_eq!(life.milestones.len(), 2);
+        assert!(
+            life.today
+                .words()
+                .contains("Built 2 towers of blocks, and you knocked one down")
+        );
+        assert!(life.milestones.iter().all(|entry| {
+            !entry
+                .text
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        }));
+        let saved = serde_json::to_string(&life).unwrap();
+        assert_eq!(serde_json::from_str::<Life>(&saved).unwrap(), life);
+        let older: Life = serde_json::from_str(r#"{"total":{"motes":2},"today":{}}"#).unwrap();
+        assert_eq!(
+            (older.total.towers, older.total.tallest, older.total.toppled),
+            (0, 0, 0)
+        );
+        life.total.tallest = u32::MAX;
+        assert_eq!(life.sanitized().total.tallest, 5);
     }
 }

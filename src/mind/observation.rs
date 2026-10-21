@@ -195,6 +195,11 @@ fn thing(world: &World, thing: Thing) -> String {
         Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
         Thing::Ball => "the ball".to_owned(),
         Thing::Cushion => "the cushion".to_owned(),
+        Thing::Blocks if world.tower.is_some() => format!(
+            "the toy blocks, stacked in a tower {} blocks high",
+            crate::world::blocks::height_words(world.tower_height())
+        ),
+        Thing::Blocks => "the toy blocks, scattered on the floor".to_owned(),
         Thing::Decoration => world
             .decoration()
             .map_or("a decoration", |decoration| decoration.words())
@@ -748,5 +753,40 @@ mod tests {
                 .chars()
                 .any(|character| character.is_ascii_digit())
         );
+    }
+
+    #[test]
+    fn seen_blocks_describe_the_tower_height_in_words_and_topplings_name_who_did_it() {
+        let mut world = World::new(1, 12.0);
+        assert_eq!(
+            thing(&world, Thing::Blocks),
+            "the toy blocks, scattered on the floor"
+        );
+        world.tower = Some(Vec3::ZERO);
+        for block in world.blocks.iter_mut().take(3) {
+            block.stacked = true;
+        }
+        world.ghost.heading =
+            (world.position_of(Thing::Blocks).unwrap() - world.ghost.position - Vec3::Y * 0.1)
+                .normalize();
+        let observation = observe(&world).to_string();
+        assert!(observation.contains("the toy blocks, stacked in a tower three blocks high"));
+        assert!(
+            !observation
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        for event in [
+            crate::world::EventKind::Built { height: 5 },
+            crate::world::EventKind::Toppled { by_viewer: true },
+            crate::world::EventKind::Toppled { by_viewer: false },
+        ] {
+            assert!(
+                !event
+                    .words()
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
     }
 }

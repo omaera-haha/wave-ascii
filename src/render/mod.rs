@@ -170,6 +170,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     if let Some(decoration) = world.decoration() {
         furniture.push(Furniture::Decoration(decoration, world.time));
     }
+    furniture.extend(world.blocks.iter().copied().map(Furniture::Block));
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
     Frame::sample(grid, |point| {

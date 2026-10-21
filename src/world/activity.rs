@@ -22,10 +22,11 @@ pub enum Activity {
     Hide,
     Doodle,
     Pounce,
+    Build,
 }
 
 impl Activity {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Float,
         Self::Explore,
         Self::Chase,
@@ -40,6 +41,7 @@ impl Activity {
         Self::Hide,
         Self::Doodle,
         Self::Pounce,
+        Self::Build,
     ];
 
     pub fn name(self) -> &'static str {
@@ -58,6 +60,7 @@ impl Activity {
             Self::Hide => "hide",
             Self::Doodle => "doodle",
             Self::Pounce => "pounce",
+            Self::Build => "build",
         }
     }
 
@@ -84,6 +87,7 @@ impl Activity {
             Self::Hide => "hiding from the viewer",
             Self::Doodle => "drawing on the glass",
             Self::Pounce => "chasing the viewer's finger on the glass",
+            Self::Build => "stacking the toy blocks into a tower",
         }
     }
 }

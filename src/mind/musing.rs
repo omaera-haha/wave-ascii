@@ -48,6 +48,11 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         }
         Activity::Visit if present => vec!["Someone's at the glass.", "Who's there?"],
         Activity::Visit => vec!["Is anyone out there?", "Maybe someone will come by."],
+        Activity::Build => vec![
+            "One block at a time.",
+            "I could make a tower!",
+            "Watch me build.",
+        ],
         Activity::Fetch => vec!["I'll get it!", "Wait for me, ball!"],
         Activity::Pounce => vec![
             "What's that? I'll get it!",
@@ -167,6 +172,9 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     if world.viewer.pointer_is_lively() && needs.energy > 0.25 {
         lines.push("Your finger keeps getting away!");
     }
+    if world.tower.is_some() {
+        lines.extend(["My tower is still standing!", "Careful… it wobbles."]);
+    }
     if world.plant.thirst > 0.7 {
         lines.push("The plant looks thirsty.");
     }
@@ -202,6 +210,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Explore => "I know every corner of this room.",
             Activity::Lamp => "I like the lamp's warm light.",
             Activity::Float => "Floating is nice.",
+            Activity::Build => "How high could I stack those blocks?",
             Activity::Fetch => "Throw the ball again! Please?",
             Activity::Pounce => "Move your finger again!",
             Activity::Dance => "I've been working on a new twirl.",
@@ -278,6 +287,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if today.nudges > 0 || today.fetches > 0 {
         lines.push("…the ball rolls on and on, out into the hills…");
+    }
+    if today.towers > 0 {
+        lines.push("…a tower of blocks all the way to the moon…");
     }
     if today.doodles > 0 {
         lines.push("…drawing pictures in the clouds…");
