@@ -163,6 +163,8 @@ pub struct App {
     pub mode: Mode,
     /// Lines above the journal's bottom; zero follows its newest lines.
     pub journal_scroll: usize,
+    /// Lines scrolled past at the top of the life panel.
+    pub life_scroll: usize,
     pub talk: Line,
     /// The settings panel's rows while it is open.
     pub settings: Settings,
@@ -233,6 +235,7 @@ impl App {
             paused: false,
             mode: Mode::Watching,
             journal_scroll: 0,
+            life_scroll: 0,
             talk: Line::default(),
             settings: Settings::from(&config),
             config,
@@ -523,6 +526,27 @@ impl App {
                 }
                 Response::Continue
             }
+            Mode::Life
+                if matches!(
+                    key,
+                    Key::Up | Key::Down | Key::PageUp | Key::PageDown | Key::Home | Key::End
+                ) =>
+            {
+                let (columns, rows) = self.screen_size;
+                let (total, page) = ui::life_extent(self, columns, rows);
+                let limit = total.saturating_sub(page);
+                let scroll = self.life_scroll.min(limit);
+                self.life_scroll = match key {
+                    Key::Up => scroll.saturating_sub(1),
+                    Key::Down => scroll + 1,
+                    Key::PageUp => scroll.saturating_sub(page),
+                    Key::PageDown => scroll + page,
+                    Key::Home => 0,
+                    _ => limit,
+                }
+                .min(limit);
+                Response::Continue
+            }
             Mode::Help | Mode::Life => {
                 if matches!(key, Key::Character('q')) {
                     return Response::Quit;
@@ -634,7 +658,10 @@ impl App {
                 self.journal_scroll = 0;
                 self.mode = Mode::Journal;
             }
-            Key::Character('l') => self.mode = Mode::Life,
+            Key::Character('l') => {
+                self.life_scroll = 0;
+                self.mode = Mode::Life;
+            }
             Key::Character('b') => {
                 self.album.index = 0;
                 self.mode = Mode::Album;
@@ -1518,6 +1545,33 @@ mod tests {
             app.input(Input::Key(Key::Control('s')));
             assert_eq!(app.world.life.received[0].korean, expected);
         }
+    }
+
+    #[test]
+    fn the_life_panel_scrolls_when_taller_than_the_screen_and_other_keys_close_it() {
+        let mut app = app();
+        app.screen_size = (90, 12);
+        app.input(Input::Key(Key::Character('l')));
+        assert_eq!(app.mode, Mode::Life);
+        let (total, page) = ui::life_extent(&app, 90, 12);
+        assert!(total > page, "{total} {page}");
+        app.input(Input::Key(Key::Down));
+        assert_eq!(app.life_scroll, 1);
+        app.input(Input::Key(Key::Up));
+        app.input(Input::Key(Key::Up));
+        assert_eq!(app.life_scroll, 0);
+        app.input(Input::Key(Key::End));
+        assert_eq!(app.life_scroll, total - page);
+        app.input(Input::Key(Key::PageDown));
+        assert_eq!(app.life_scroll, total - page);
+        app.input(Input::Key(Key::Home));
+        assert_eq!(app.life_scroll, 0);
+        assert_eq!(app.mode, Mode::Life);
+        app.input(Input::Key(Key::Escape));
+        assert_eq!(app.mode, Mode::Watching);
+        app.input(Input::Key(Key::Character('l')));
+        assert_eq!(app.life_scroll, 0);
+        assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
     }
 
     #[test]
@@ -2970,7 +3024,7 @@ mod tests {
     }
 
     #[test]
-    fn the_life_panel_opens_with_l_and_closes_on_any_key_or_quits_with_q() {
+    fn the_life_panel_opens_with_l_and_closes_on_other_keys_or_quits_with_q() {
         let mut app = app();
         app.input(Input::Key(Key::Character('l')));
         assert_eq!(app.mode, Mode::Life);
@@ -2978,7 +3032,10 @@ mod tests {
         for (columns, rows) in [(100, 32), (20, 6), (1, 1)] {
             app.frame(columns, rows);
         }
+        // Arrows scroll it; anything else closes it.
         app.input(Input::Key(Key::Down));
+        assert_eq!(app.mode, Mode::Life);
+        app.input(Input::Key(Key::Character('x')));
         assert_eq!(app.mode, Mode::Watching);
         app.input(Input::Key(Key::Character('l')));
         assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);

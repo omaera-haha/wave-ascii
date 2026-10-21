@@ -1057,8 +1057,33 @@ impl JournalPanel {
 // loves doing, what it has done in all its days, its latest milestone, and
 // today so far.
 fn life_panel(app: &App, screen: &mut Canvas) {
-    let lines = life_lines(app, screen.columns(), screen.rows());
-    panel(screen, "Life", &lines);
+    let lines = life_lines(app, screen.columns(), usize::MAX);
+    let page = life_page(screen.rows());
+    if lines.len() <= page {
+        panel(screen, "Life", &lines);
+        return;
+    }
+    // Taller than the screen: a window onto it, scrolled with the arrows.
+    let scroll = app.life_scroll.min(lines.len() - page);
+    let title = format!(
+        "Life · {}–{} of {} · ↑↓",
+        scroll + 1,
+        scroll + page,
+        lines.len()
+    );
+    panel(screen, &title, &lines[scroll..scroll + page]);
+}
+
+// Lines of the life panel a screen of `rows` shows at once, inside its
+// border with a line to spare above and below.
+fn life_page(rows: usize) -> usize {
+    rows.saturating_sub(4).max(1)
+}
+
+/// How many lines the life panel holds on a screen of `columns`, and how
+/// many fit at once on one of `rows`, for scrolling it.
+pub fn life_extent(app: &App, columns: usize, rows: usize) -> (usize, usize) {
+    (life_lines(app, columns, usize::MAX).len(), life_page(rows))
 }
 
 pub fn album_panel(app: &App, screen: &mut Canvas) {

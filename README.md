@@ -156,7 +156,7 @@ the next requests use them at once.
 | `t`, Enter      | Talk to the ghost (Enter sends, Esc cancels)               |
 | `k`             | Settings: keys, models, effort, cache                      |
 | `j`             | Journal: memories, moments, diary, conversation            |
-| `l`             | Its life: age, growth, skills, bond, today so far           |
+| `l`             | Its life: age, growth, skills, bond, today so far; ↑↓ scroll |
 | `p`             | Save a postcard of the moment                             |
 | `b`             | Open the album of moments the ghost kept                  |
 | `e`             | Read letters, or write when none; Left/Right browse        |
