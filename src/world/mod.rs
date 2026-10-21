@@ -113,6 +113,10 @@ const PRESENT_FOR: f64 = 90.0;
 /// a few quiet minutes or a glance at another window end no visit, and
 /// coming back from them is no new arrival to greet.
 pub const GONE_AFTER: f64 = 300.0;
+/// Seconds a brand-new ghost takes to gather itself out of light.
+const BIRTH_SECONDS: f64 = 4.0;
+/// Motes that swirl close as it forms.
+const BIRTH_MOTES: usize = 5;
 /// Seconds the ghost waits before inviting the viewer to another game on
 /// the glass after one they let pass without a move. Each invitation let
 /// pass in a row doubles the wait, up to `IGNORED_PAUSE_MOST`.
@@ -937,6 +941,8 @@ pub struct World {
     last_question_at: Option<f64>,
     viewer_blush_at: Option<f64>,
     pub jostle: jostle::Jostle,
+    /// When a brand-new life began, while it is still taking shape.
+    born_at: Option<f64>,
     agenda_answer: Option<(agenda::Errand, String, f64)>,
     agenda_visit_asked: bool,
     agenda_visit_question: bool,
@@ -1093,6 +1099,7 @@ impl World {
             last_question_at: None,
             viewer_blush_at: None,
             jostle: jostle::Jostle::default(),
+            born_at: None,
             agenda_answer: None,
             agenda_visit_asked: false,
             agenda_visit_question: false,
@@ -1302,6 +1309,15 @@ impl World {
             && self.ghost.plan.arrived.is_some();
         let fade = if hiding { 0.85 } else { 0.0 };
         self.ghost.fade += (fade - self.ghost.fade) * (1.0 - (-seconds / 0.4).exp());
+        if let Some(born) = self.born_at {
+            let progress = ((self.time - born) / BIRTH_SECONDS) as f32;
+            if progress >= 1.0 {
+                self.born_at = None;
+            } else {
+                let forming = progress * progress * (3.0 - 2.0 * progress);
+                self.ghost.fade = self.ghost.fade.max(1.0 - forming);
+            }
+        }
         self.move_ghost(seconds);
         self.advance_bubbles(seconds);
         self.move_friend(seconds);
@@ -2097,6 +2113,29 @@ impl World {
         }
         if let Some(milestone) = self.life.begin(day) {
             self.record(EventKind::Milestone(milestone));
+            // A new life gathers itself out of light: it fades in while a
+            // few motes swirl close, the first things it will see.
+            self.born_at = Some(self.time);
+            self.ghost.fade = 1.0;
+            // Placed by rule rather than chance, so a birth leaves the
+            // world's random source where it was.
+            for index in 0..BIRTH_MOTES {
+                let turn = index as f32 / BIRTH_MOTES as f32;
+                let angle = turn * std::f32::consts::TAU;
+                let spot = self.ghost.position
+                    + Vec3::new(
+                        0.6 * angle.cos(),
+                        0.25 * (angle * 2.0).sin(),
+                        0.45 * angle.sin(),
+                    );
+                self.next_mote += 1;
+                self.motes.push(Mote {
+                    id: self.next_mote,
+                    position: spot.clamp(ROOM_MIN + Vec3::splat(0.3), ROOM_MAX - Vec3::splat(0.3)),
+                    born: self.time,
+                    seed: turn,
+                });
+            }
         }
     }
 
@@ -3745,6 +3784,29 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_life_gathers_itself_out_of_light_once() {
+        let mut world = World::new(3, 12.0);
+        let motes = world.motes.len();
+        world.begin_life("2026-06-21");
+        assert_eq!(world.ghost.fade, 1.0);
+        assert_eq!(world.motes.len(), motes + BIRTH_MOTES);
+        world.step(2.0);
+        assert!(
+            (0.1..0.9).contains(&world.ghost.fade),
+            "{}",
+            world.ghost.fade
+        );
+        world.step(BIRTH_SECONDS as f32);
+        assert!(world.ghost.fade < 0.01);
+        // Coming back to a life already begun is no birth.
+        let mut again = World::new(3, 12.0);
+        again.life = world.life.clone();
+        again.begin_life("2026-06-22");
+        assert_eq!(again.ghost.fade, 0.0);
+        assert_eq!(again.born_at, None);
+    }
 
     #[test]
     fn every_activity_finishes_on_its_own_for_a_newborn_too() {

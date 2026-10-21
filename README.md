@@ -120,7 +120,8 @@ You can explicitly ask for `play a lullaby` or `자장가 들려줘` during work
 it plays without drawing the ghost away from its quiet company. Lessons
 heard while sleeping wait until it wakes.
 
-Each ghost is born a small wisp with a nature of its own, and grows up over
+Each ghost is born a small wisp with a nature of its own (the first time you
+open the app it gathers itself out of light while a few motes swirl close), and grows up over
 its first month, getting better at what it practices. Over days it grows
 close to you, learns your words, your name, and the name you give it, learns
 when you usually come and waits for you, befriends the bird, which brings it
