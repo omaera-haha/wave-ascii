@@ -37,6 +37,7 @@ impl World {
         if !self.bedtime() {
             return;
         }
+        self.abandon_game();
         self.drop_ball();
         let bed = self.nook.bed();
         let mut plan = Plan::new(Activity::Rest, self.time, bed, 0.0);

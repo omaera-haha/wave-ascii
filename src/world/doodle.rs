@@ -42,77 +42,21 @@ impl Sketch {
         }
     }
 
-    /// The length of the whole stroke.
-    pub fn length(self) -> f32 {
-        self.path().length
-    }
-
     /// The pen's position after drawing `progress` of the strokes. Lifting
     /// the pen between strokes takes no time.
     pub fn point_at(self, progress: f32) -> Vec2 {
-        let path = self.path();
-        if progress >= 1.0 {
-            return path.last();
-        }
-        let mut remaining = self.length() * progress.clamp(0.0, 1.0);
-        for segment in &path.segments {
-            if remaining < segment.length {
-                return segment.start + segment.along * (remaining / segment.length);
-            }
-            remaining -= segment.length;
-        }
-        path.last()
+        self.path().point_at(progress)
     }
 
     /// Distance to the part of the stroke drawn so far, or infinity before
     /// any of it has been drawn.
     pub fn distance(self, point: Vec2, progress: f32) -> f32 {
-        if progress <= 0.0 {
-            return f32::INFINITY;
-        }
-        let mut remaining = self.length() * progress.min(1.0);
-        let mut nearest = f32::INFINITY;
-        for segment in &self.path().segments {
-            let drawn = (remaining / segment.length).min(1.0);
-            let fraction =
-                ((point - segment.start).dot(segment.along) / segment.squared).clamp(0.0, drawn);
-            nearest = nearest.min(point.distance_squared(segment.start + segment.along * fraction));
-            remaining -= segment.length;
-            if remaining <= 0.0 {
-                break;
-            }
-        }
-        nearest.sqrt()
+        self.path().distance(point, progress)
     }
 
     fn path(self) -> &'static Path {
         static PATHS: OnceLock<[Path; Sketch::ALL.len()]> = OnceLock::new();
-        let paths = PATHS.get_or_init(|| {
-            Sketch::ALL.map(|sketch| {
-                let strokes = sketch.strokes();
-                // The drawn segments in drawing order, leaving out the pen's
-                // jumps between strokes, measured once.
-                let segments: Vec<Segment> = strokes
-                    .iter()
-                    .flat_map(|stroke| stroke.windows(2))
-                    .map(|pair| {
-                        let along = pair[1] - pair[0];
-                        Segment {
-                            start: pair[0],
-                            along,
-                            length: along.length(),
-                            squared: along.length_squared(),
-                        }
-                    })
-                    .filter(|segment| segment.length > 0.0)
-                    .collect();
-                Path {
-                    length: segments.iter().map(|segment| segment.length).sum(),
-                    strokes,
-                    segments,
-                }
-            })
-        });
+        let paths = PATHS.get_or_init(|| Sketch::ALL.map(|sketch| Path::new(sketch.strokes())));
         &paths[self as usize]
     }
 
@@ -228,7 +172,7 @@ impl Sketch {
     }
 }
 
-struct Path {
+pub(super) struct Path {
     strokes: Vec<Vec<Vec2>>,
     segments: Vec<Segment>,
     length: f32,
@@ -242,6 +186,62 @@ struct Segment {
 }
 
 impl Path {
+    pub(super) fn new(strokes: Vec<Vec<Vec2>>) -> Self {
+        // Measure only drawn segments, leaving out jumps between strokes.
+        let segments: Vec<Segment> = strokes
+            .iter()
+            .flat_map(|stroke| stroke.windows(2))
+            .map(|pair| {
+                let along = pair[1] - pair[0];
+                Segment {
+                    start: pair[0],
+                    along,
+                    length: along.length(),
+                    squared: along.length_squared(),
+                }
+            })
+            .filter(|segment| segment.length > 0.0)
+            .collect();
+        Self {
+            length: segments.iter().map(|segment| segment.length).sum(),
+            strokes,
+            segments,
+        }
+    }
+
+    pub(super) fn point_at(&self, progress: f32) -> Vec2 {
+        if progress >= 1.0 {
+            return self.last();
+        }
+        let mut remaining = self.length * progress.clamp(0.0, 1.0);
+        for segment in &self.segments {
+            if remaining < segment.length {
+                return segment.start + segment.along * (remaining / segment.length);
+            }
+            remaining -= segment.length;
+        }
+        self.last()
+    }
+
+    pub(super) fn distance(&self, point: Vec2, progress: f32) -> f32 {
+        if progress <= 0.0 {
+            return f32::INFINITY;
+        }
+        let mut remaining = self.length * progress.min(1.0);
+        let mut nearest = f32::INFINITY;
+        for segment in &self.segments {
+            let drawn = (remaining / segment.length).min(1.0);
+            let fraction =
+                ((point - segment.start).dot(segment.along) / segment.squared).clamp(0.0, drawn);
+            nearest = nearest.min(point.distance_squared(segment.start + segment.along * fraction));
+            remaining -= segment.length;
+            if remaining <= 0.0 {
+                break;
+            }
+        }
+        nearest.sqrt()
+    }
+
     fn last(&self) -> Vec2 {
         *self
             .strokes
@@ -292,7 +292,7 @@ mod tests {
                 .flat_map(|stroke| stroke.windows(2))
                 .map(|pair| pair[0].distance(pair[1]))
                 .sum();
-            assert!((sketch.length() - length).abs() < 1e-5);
+            assert!((path.length - length).abs() < 1e-5);
             assert!(path.strokes.iter().all(|stroke| stroke.len() >= 2));
             for &point in path.strokes.iter().flatten() {
                 assert!(point.abs().cmple(Vec2::ONE).all(), "{sketch:?}: {point}");

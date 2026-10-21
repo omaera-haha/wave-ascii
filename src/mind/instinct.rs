@@ -1,4 +1,4 @@
-use crate::world::{Activity, EventKind, GREETS_FROM, Mood, Occasion, World, flat};
+use crate::world::{Activity, EventKind, GREETS_FROM, Mood, Occasion, Outcome, World, flat};
 
 /// How much the ghost's needs, surroundings, nature, and habits pull it toward each
 /// of the activities open to it, as chances that add up to 1. This is the mind it
@@ -143,6 +143,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         matches!(
                             event.kind,
                             EventKind::Bloomed
+                                | EventKind::GameOver(Outcome::GhostWon { .. })
                                 | EventKind::Fetched
                                 | EventKind::AteMote
                                 | EventKind::Milestone(_)
@@ -180,6 +181,21 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         }
                 } else {
                     0.0
+                }
+            }
+            Activity::Game => {
+                if !world.viewer_present() {
+                    0.0
+                } else {
+                    let recent = world
+                        .game
+                        .as_ref()
+                        .and_then(|game| game.ended)
+                        .is_some_and(|ended| world.time - ended < 20.0);
+                    let playful = world.life.nature.unwrap_or_default().playful;
+                    (0.15 + 0.5 * (1.0 - needs.fun) + 0.4 * playful + 0.3 * world.life.bond)
+                        * needs.energy
+                        * if recent { 0.3 } else { 1.0 }
                 }
             }
             Activity::Doodle => {
@@ -235,6 +251,28 @@ mod tests {
             .iter()
             .find(|(candidate, _)| *candidate == activity)
             .map_or(0.0, |(_, chance)| *chance)
+    }
+
+    #[test]
+    fn games_need_company_favor_play_and_pause_before_asking_again() {
+        let mut world = World::new(2, 12.0);
+        let options = [Activity::Float, Activity::Game];
+        assert_eq!(chance(&weigh(&world, &options), Activity::Game), 0.0);
+        world.notice_viewer();
+        let usual = chance(&weigh(&world, &options), Activity::Game);
+        world.ghost.needs.fun = 0.0;
+        assert!(chance(&weigh(&world, &options), Activity::Game) > usual);
+        world.ghost.needs.fun = 0.7;
+        world.life.bond = 0.8;
+        assert!(chance(&weigh(&world, &options), Activity::Game) > usual);
+        world.life.bond = 0.0;
+        world.life.nature.as_mut().unwrap().playful = 1.0;
+        assert!(chance(&weigh(&world, &options), Activity::Game) > usual);
+        world.begin(Activity::Game);
+        world.begin(Activity::Float);
+        let recent = chance(&weigh(&world, &options), Activity::Game);
+        world.time += 20.1;
+        assert!(chance(&weigh(&world, &options), Activity::Game) > recent);
     }
 
     #[test]
@@ -485,7 +523,12 @@ mod tests {
 
     #[test]
     fn good_things_raise_dance_for_a_little_while() {
-        for kind in [EventKind::Bloomed, EventKind::Fetched, EventKind::AteMote] {
+        for kind in [
+            EventKind::Bloomed,
+            EventKind::Fetched,
+            EventKind::AteMote,
+            EventKind::GameOver(Outcome::GhostWon { line: [0, 1, 2] }),
+        ] {
             let mut world = World::new(1, 12.0);
             let options = world.options();
             let before = weigh(&world, &options);

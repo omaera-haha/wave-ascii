@@ -548,6 +548,7 @@ fn help_panel(screen: &mut Canvas) {
         "k          keys and models     click ball    flick it",
         "j          journal and diary   click room    drop a light mote",
         "l          its life and bond   p             save a postcard",
+        "g          noughts and crosses 1-9, click    choose a square",
         "arrows     turn the view       drag          turn the view",
         "+ -, wheel zoom                drag ghost    stroke it",
         "m  c       style, color        space         pause",
@@ -927,6 +928,13 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             TEXT,
         ));
     }
+    counts.push((
+        format!(
+            "  noughts and crosses: {} games, {} won, {} lost, {} drawn",
+            total.games, total.wins, total.losses, total.draws
+        ),
+        TEXT,
+    ));
     let latest = match life.milestones.last() {
         Some(milestone) => vec![
             (String::new(), TEXT),

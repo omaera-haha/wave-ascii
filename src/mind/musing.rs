@@ -59,6 +59,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             vec!["I'll draw you something.", "This one's for you."]
         }
         Activity::Doodle => vec!["Let me draw something.", "Hm, what shall I draw?"],
+        Activity::Game => vec!["Shall we play?", "I'll draw the board. You be crosses."],
         Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
         Activity::Window if world.morning() => morning(world),
         Activity::Window
@@ -209,6 +210,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Pounce => "Move your finger again!",
             Activity::Dance => "I've been working on a new twirl.",
             Activity::Hide => "Nobody hides like a ghost.",
+            Activity::Game => "Another game on the glass?",
             Activity::Doodle => "I should draw on the glass again.",
         });
     }
@@ -281,6 +283,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if today.nudges > 0 || today.fetches > 0 {
         lines.push("…the ball rolls on and on, out into the hills…");
+    }
+    if today.games > 0 {
+        lines.push("…noughts and crosses drifting over the glass…");
     }
     if today.doodles > 0 {
         lines.push("…drawing pictures in the clouds…");
