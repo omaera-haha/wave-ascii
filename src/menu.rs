@@ -109,14 +109,9 @@ impl Menu {
             Key::End | Key::Character(b'G') => last,
             Key::PageUp => self.selected.saturating_sub(self.page),
             Key::PageDown => (self.selected + self.page).min(last),
-            Key::Enter => {
-                self.open = false;
-                return Action::Chosen(self.selected);
-            }
+            Key::Enter => return self.choose(self.selected),
             Key::Character(digit @ b'1'..=b'9') if usize::from(digit - b'1') < count => {
-                self.open = false;
-                self.selected = usize::from(digit - b'1');
-                return Action::Chosen(self.selected);
+                return self.choose(usize::from(digit - b'1'));
             }
             Key::Escape => {
                 self.open = false;
@@ -126,6 +121,23 @@ impl Menu {
             _ => return Action::Ignored,
         };
         Action::Highlighted(self.selected)
+    }
+
+    /// Picks the entry at `index` and closes the menu.
+    pub fn choose(&mut self, index: usize) -> Action {
+        self.open = false;
+        self.selected = index;
+        Action::Chosen(index)
+    }
+
+    /// The entry on screen row `row` of the panel as of the last draw, if
+    /// one is there.
+    pub fn entry_at(&self, row: usize) -> Option<usize> {
+        let line = row.checked_sub(1).filter(|line| *line < self.page)?;
+        match self.lines.get(self.scroll + line)? {
+            Line::Entry(index) => Some(*index),
+            Line::Gap | Line::Heading(_) => None,
+        }
     }
 
     /// Columns the panel takes from a screen `columns` wide: enough for the

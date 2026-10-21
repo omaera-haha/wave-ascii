@@ -25,8 +25,8 @@ use app::{App, Response};
 use canvas::Style;
 use color::ColorMode;
 use menu::{Entry, Menu};
-use scene::{Scene, View};
-use terminal::{Size, Terminal};
+use scene::{Scene, View, Viewer};
+use terminal::{Input, Size, Terminal};
 
 const HELP: &str = "\
 Usage: wave-ascii [OPTIONS] [SCENE | FILE]...
@@ -57,6 +57,9 @@ Keys:
 In the scene menu, arrows, Home, End, and Page Up and Down move through the
 list while the highlighted scene plays beside it. Enter shows it, and Esc goes
 back to the scene the menu opened on.
+
+Mouse: the wheel works like the up and down arrows, and a click picks a scene
+in the menu. The ghost watches the pointer and reacts to clicks.
 
 Piped output produces one frame, sized by COLUMNS and LINES.";
 
@@ -213,7 +216,7 @@ fn run() -> io::Result<()> {
         first,
         style,
         color,
-        mut time,
+        time,
         frames_per_second,
     }) = parse_options()?
     else {
@@ -228,6 +231,7 @@ fn run() -> io::Result<()> {
             style.grid(size.columns, size.rows),
             time,
             View::default(),
+            &Viewer::default(),
         );
         io::stdout()
             .lock()
@@ -254,6 +258,7 @@ fn run() -> io::Result<()> {
         first.unwrap_or(0),
         style,
         color.unwrap_or_else(ColorMode::detect),
+        time,
     );
     // Without a scene to start on, start by showing what there is.
     if first.is_none() {
@@ -269,8 +274,12 @@ fn run() -> io::Result<()> {
 
     loop {
         let mut restyled = false;
-        for key in terminal.keys()? {
-            match app.press(key) {
+        for input in terminal.inputs()? {
+            let response = match input {
+                Input::Key(key) => app.press(key),
+                Input::Mouse(mouse) => app.mouse(mouse),
+            };
+            match response {
                 Response::Quit => return Ok(()),
                 Response::Restyle => restyled = true,
                 Response::Continue => {}
@@ -291,16 +300,21 @@ fn run() -> io::Result<()> {
 
         let now = Instant::now();
         if !app.paused {
-            time += (now - last_frame).as_secs_f32();
+            app.time += (now - last_frame).as_secs_f32();
         }
         last_frame = now;
 
         // Leave a column for wrapping and a row for the status line.
         let (columns, rows) = (size.columns.saturating_sub(1), size.rows.saturating_sub(1));
-        let (style, color, view) = (app.style, app.color, app.view);
+        app.resize(columns, rows);
+        let (style, color, time, view, viewer) =
+            (app.style, app.color, app.time, app.view, app.viewer);
         let scene = &scenes[app.scene];
         let draw = |columns, rows| {
-            style.canvas(&scene.render(style.grid(columns, rows), time, view), color)
+            style.canvas(
+                &scene.render(style.grid(columns, rows), time, view, &viewer),
+                color,
+            )
         };
         let canvas = if app.menu.is_open() {
             app.menu.draw(columns, rows, draw)

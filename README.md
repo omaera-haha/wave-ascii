@@ -9,8 +9,8 @@ It has 34 built-in scenes in four groups:
   (`2d`); a shaded 3D cube (`3d`); a ray-marched sunset `ocean`; a rainbow
   torus `knot`; three `lava` lamps on a shelf; the northern lights over a
   lake (`aurora`); and a floating `ghost`, after the one on Ghostty's home
-  page, whose eyes look around, blink, and melt into a `>_` prompt inside a
-  ring of flowing light.
+  page, inside a ring of flowing light, which watches the mouse pointer and
+  makes faces of its own (see [Ghost](#ghost)).
 - **Drawings** from SVG: the `wave` logo, a `koi` pond, Mount `fuji`, a
   `synthwave` sunset, a monarch `butterfly`, a low-poly `fox`, a scarlet
   `macaw`, a `mandala`, and pixel-art `invaders`.
@@ -63,6 +63,10 @@ draw than a frame allows run as fast as they can.
 | `r`                | Reset the view                                |
 | `q`, Esc, Ctrl+C   | Quit                                          |
 
+The mouse works too. The wheel acts like Up and Down, and a click on a scene
+in the menu shows it. Terminals hand mouse input to the app while it runs, so
+select text by holding Shift (Option in iTerm2) as you drag.
+
 ### Scene menu
 
 The scene menu lists every scene in a panel at the left, grouped under
@@ -85,6 +89,23 @@ Left and Right still turn the preview, and `m`, `c`, and Space work as usual.
 
 The view adapts to terminal resizing and assumes characters are approximately
 twice as tall as they are wide.
+
+### Ghost
+
+The ghost's face follows what you do, picking expressions at random so it
+never repeats on a loop:
+
+- **Left alone**, it glances around, smiles, sparkles with wonder, eyes
+  something with suspicion or doubt, worries, winks, nods off for a moment,
+  or turns its eyes into a `>_` prompt with a blinking cursor.
+- **While the pointer moves** over the scene, its eyes follow it, now and then
+  sparkling, narrowing, or smiling. It looks away once the pointer rests.
+- **With the pointer on it**, it only watches the pointer and blinks.
+- **After 40 seconds without input**, it falls asleep, and any key or mouse
+  movement wakes it with a start.
+
+It also reacts to events: it winks when its scene is shown, and a click on it
+is a poke that surprises it, then makes it giggle, then annoys it.
 
 ## Styles
 

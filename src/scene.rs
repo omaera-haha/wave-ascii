@@ -86,6 +86,40 @@ impl Default for View {
     }
 }
 
+/// What the person watching is doing, for scenes that respond to it. Times
+/// are on the scene clock and points are in scene space.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Viewer {
+    /// The mouse pointer, while it is over the scene.
+    pub pointer: Option<Pointer>,
+    /// The latest press of the left button on the scene.
+    pub click: Option<Click>,
+    /// When the viewer last pressed a key or used the mouse.
+    pub active_at: f32,
+    /// How long the viewer had left the app alone before `active_at`.
+    pub quiet: f32,
+    /// When the scene was shown.
+    pub shown_at: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pointer {
+    pub position: Vec2,
+    /// When the pointer last moved.
+    pub moved_at: f32,
+    /// When it started moving after being still or away.
+    pub since: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Click {
+    pub position: Vec2,
+    pub time: f32,
+    /// How many clicks came in a row, each soon after the one before,
+    /// ending with this one.
+    pub count: u32,
+}
+
 impl View {
     fn orbit(self) -> Quat {
         Quat::from_rotation_x(self.pitch) * Quat::from_rotation_y(self.yaw)
@@ -226,7 +260,7 @@ impl Scene {
         }
     }
 
-    pub fn render(&self, grid: Grid, time: f32, view: View) -> Frame {
+    pub fn render(&self, grid: Grid, time: f32, view: View, viewer: &Viewer) -> Frame {
         match self {
             Self::Shapes => {
                 let turn = Mat2::from_angle(view.yaw);
@@ -279,7 +313,7 @@ impl Scene {
             Self::Ocean => ocean::render(grid, time, view.yaw, view.pitch, view.zoom),
             Self::Lava => lava::render(grid, time, view.yaw, view.zoom),
             Self::Aurora => aurora::render(grid, time, view.yaw, view.pitch, view.zoom),
-            Self::Ghost => ghost::render(grid, time, view.yaw, view.zoom),
+            Self::Ghost => ghost::render(grid, time, view.yaw, view.zoom, viewer),
             Self::Knot(mesh) => {
                 let rotation = view.orbit()
                     * Quat::from_rotation_y(time * 0.5)
@@ -367,8 +401,9 @@ mod tests {
     #[test]
     fn every_builtin_scene_produces_visible_animation() {
         for scene in Scene::builtins() {
-            let first = scene.render(Grid::cells(80, 24), 0.0, View::default());
-            let later = scene.render(Grid::cells(80, 24), 1.0, View::default());
+            let viewer = Viewer::default();
+            let first = scene.render(Grid::cells(80, 24), 0.0, View::default(), &viewer);
+            let later = scene.render(Grid::cells(80, 24), 1.0, View::default(), &viewer);
             assert!(
                 Style::Ascii
                     .canvas(&first, ColorMode::Plain)
