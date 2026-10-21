@@ -212,6 +212,12 @@ pub struct Tally {
     pub wishes_faded: u32,
     #[serde(default)]
     pub wish_words: Vec<String>,
+    #[serde(default)]
+    pub mirror_visits: u32,
+    #[serde(default)]
+    pub met_reflection: bool,
+    #[serde(default)]
+    pub recognized_self: bool,
 }
 
 impl Tally {
@@ -222,6 +228,9 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::VisitedMirror => self.mirror_visits = self.mirror_visits.saturating_add(1),
+            EventKind::MetReflection => self.met_reflection = true,
+            EventKind::RecognizedSelf => self.recognized_self = true,
             EventKind::Quirk(quirk) => {
                 let count = self.quirks.entry(*quirk).or_default();
                 *count = count.saturating_add(1);
@@ -730,6 +739,15 @@ impl Tally {
         if self.tunes_learned > 0 {
             deeds.push("learned a tune from you".to_owned());
         }
+        if self.mirror_visits > 0 {
+            deeds.push("looked in the mirror".to_owned());
+        }
+        if self.met_reflection {
+            deeds.push("met the ghost in the mirror".to_owned());
+        }
+        if self.recognized_self {
+            deeds.push("learned the ghost in the mirror is me".to_owned());
+        }
         if self.lullaby_sleeps > 0 {
             deeds.push("fell asleep to a lullaby".to_owned());
         }
@@ -868,6 +886,8 @@ pub struct Life {
     pub wish: Option<super::Wishing>,
     #[serde(default)]
     pub granted: Vec<super::Granted>,
+    #[serde(default)]
+    pub mirror: super::mirror::MirrorLife,
 }
 
 impl Life {
@@ -1240,6 +1260,9 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.mirror.sanitize(&self.day);
+        self.total.met_reflection |= self.mirror.sessions > 0 || self.mirror.recognizes_self();
+        self.total.recognized_self |= self.mirror.recognizes_self();
         self.books.sanitize();
         self.tunes = self
             .tunes
@@ -1350,6 +1373,7 @@ impl Life {
             tally.books_received = tally.books_received.min(12);
             tally.tunes_played = tally.tunes_played.min(100_000_000);
             tally.tunes_learned = tally.tunes_learned.min(100_000_000);
+            tally.mirror_visits = tally.mirror_visits.min(100_000_000);
             tally.lullaby_sleeps = tally.lullaby_sleeps.min(100_000_000);
             tally.names = tally.names.min(100_000_000);
             tally.wishes_made = tally.wishes_made.min(100_000_000);
@@ -1435,6 +1459,12 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if matches!(kind, EventKind::MetReflection) {
+            return self.reach("I met a ghost in the mirror.".to_owned());
+        }
+        if matches!(kind, EventKind::RecognizedSelf) {
+            return self.reach("I know the ghost in the mirror is me.".to_owned());
+        }
         if matches!(kind, EventKind::LearnedTune(_)) {
             return self.reach("You taught me my first tune.".to_owned());
         }

@@ -1086,6 +1086,9 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         }
         header.extend(labeled("Friend", words));
     }
+    if life.mirror.sessions > 0 || life.total.met_reflection {
+        header.extend(labeled("Mirror", life.mirror.words().to_owned()));
+    }
     header.extend(labeled("Books", life.books.words()));
     if !life.tunes.is_empty() {
         header.extend(labeled("Tunes", app.world.learned_tune_words()));

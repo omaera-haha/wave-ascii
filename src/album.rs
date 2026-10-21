@@ -433,6 +433,7 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
             "Snow falling beyond my window.".to_owned(),
             Some("snow".to_owned()),
         ),
+        EventKind::RecognizedSelf => ("The ghost in the mirror is me!".to_owned(), None),
         EventKind::ShootingStar => ("I wished on a shooting star.".to_owned(), None),
         EventKind::FinishedBook(title) => (format!("I finished reading {title}."), None),
         EventKind::LearnedTune(tune) => (format!("You taught me a tune: {tune}."), None),
@@ -755,6 +756,7 @@ mod tests {
         for kind in [
             EventKind::ShootingStar,
             EventKind::WishGranted(crate::world::Wish::Rainbow),
+            EventKind::RecognizedSelf,
             EventKind::FoundConstellation("Sleepy Heart".to_owned()),
             EventKind::Built { height: 5 },
             EventKind::GameOver(Outcome::GhostWon { line: [0, 1, 2] }),

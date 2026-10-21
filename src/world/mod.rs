@@ -15,6 +15,7 @@ pub mod growth;
 mod letters;
 mod life;
 pub mod meteor;
+pub mod mirror;
 pub mod music;
 mod nature;
 mod needs;
@@ -275,12 +276,18 @@ pub enum EventKind {
     MadeWish(Wish),
     WishFaded(Wish),
     WishGranted(Wish),
+    MetReflection,
+    RecognizedSelf,
+    VisitedMirror,
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::MetReflection => "met the ghost in the mirror".to_owned(),
+            Self::RecognizedSelf => "learned the ghost in the mirror is me".to_owned(),
+            Self::VisitedMirror => "looked in the mirror".to_owned(),
             Self::Quirk(kind) => kind.words().to_owned(),
             Self::PutOn(accessory) => format!("put on {}", accessory.words()),
             Self::TookOff(accessory) => format!("took off {}", accessory.words()),
@@ -697,6 +704,7 @@ pub struct World {
     queued_tune: Option<music::Tune>,
     pending_tune: Option<music::Tune>,
     pending_wish: Option<Wish>,
+    mirror_visit: Option<mirror::Visit>,
 }
 
 impl World {
@@ -821,6 +829,7 @@ impl World {
             queued_tune: None,
             pending_tune: None,
             pending_wish: None,
+            mirror_visit: None,
         };
         world.scatter_blocks();
         world
@@ -1055,6 +1064,7 @@ impl World {
                         && self.ghost.needs.energy >= 0.22
                         && self.ghost.needs.fun >= 0.08
                 }
+                Activity::Mirror => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.2,
                 Activity::Read => {
                     !self.life.books.owned.is_empty()
                         && self.ghost.asleep < 0.3
@@ -1139,6 +1149,7 @@ impl World {
     /// choosing among the options.
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
+            Activity::Mirror => "Visit the mirror on the right wall, study the ghost that copies you, or make faces once you recognize yourself. Quiet enough during work.".to_owned(),
             Activity::Read => "Read a few pages of a picture book on the cushion or under the lamp. Quiet company during work, or a page before bed.".to_owned(),
             Activity::Music => "Wind the little music box and sway or dance to a tune. Fits when bored or in the evening; keep it quiet during work.".to_owned(),
             Activity::Air => format!("Float to the window and {}. Close it against wet weather, cold nights and blustery wind.", if self.window_open { "push the sash shut" } else { "lift the sash for fresh air" }),
@@ -1250,7 +1261,7 @@ impl World {
         if activity == Activity::Music && (self.focus.is_some() || self.ghost.asleep >= 0.3) {
             return;
         }
-        if activity == Activity::Air && self.ghost.asleep >= 0.3 {
+        if matches!(activity, Activity::Air | Activity::Mirror) && self.ghost.asleep >= 0.3 {
             return;
         }
         if activity == Activity::Puzzle && (self.focus.is_some() || self.ghost.asleep >= 0.3) {
@@ -1271,6 +1282,7 @@ impl World {
         self.abandon_puzzle();
         self.put_keepsake_away();
         self.reading = None;
+        self.mirror_visit = None;
         self.drop_ball();
         self.drop_block();
         self.building = None;
@@ -1280,6 +1292,7 @@ impl World {
         self.queued_tune = None;
         let position = self.ghost.position;
         let length = match activity {
+            Activity::Mirror => self.random.range(15.0, 30.0),
             Activity::Company => {
                 self.focus
                     .as_ref()
@@ -1305,6 +1318,7 @@ impl World {
             _ => 0.0,
         };
         let target = match activity {
+            Activity::Mirror => mirror::VISIT,
             Activity::Read => {
                 if self.bedtime() || self.random.unit() < 0.5 {
                     self.nook.position + Vec3::Y * (0.6 * self.size())
@@ -1372,6 +1386,9 @@ impl World {
             self.begin_wait();
         }
         self.ghost.plan = plan;
+        if activity == Activity::Mirror {
+            self.begin_mirror();
+        }
         if activity == Activity::Read {
             self.begin_reading(self.bedtime());
         }
@@ -2343,6 +2360,7 @@ impl World {
                     | Activity::Puzzle
                     | Activity::Read
                     | Activity::Music
+                    | Activity::Mirror
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -2357,6 +2375,7 @@ impl World {
 
         let mut look = None;
         match self.ghost.plan.activity {
+            Activity::Mirror => look = self.carry_out_mirror(),
             Activity::Read => look = self.carry_out_read(),
             Activity::Music => look = self.carry_out_music(),
             Activity::Air => look = self.carry_out_air(),
@@ -2725,6 +2744,7 @@ impl World {
             Activity::Wait | Activity::Company => 0.3,
             Activity::Rest => 0.5,
             Activity::Explore => 0.7,
+            Activity::Mirror => 0.45,
             Activity::Dance | Activity::Friend => 1.5,
             Activity::Pounce => 1.6,
             _ => 0.8,
@@ -3838,7 +3858,10 @@ mod tests {
         assert!(welcome(&mut world));
         world.invitation_ignored();
         world.time += IGNORED_PAUSE;
-        assert!(!welcome(&mut world), "the second in a row waits twice as long");
+        assert!(
+            !welcome(&mut world),
+            "the second in a row waits twice as long"
+        );
         world.time += IGNORED_PAUSE;
         assert!(welcome(&mut world));
         for _ in 0..12 {

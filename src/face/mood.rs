@@ -81,6 +81,8 @@ pub fn face(time: f64, cues: &Cues) -> Face {
 /// The expression the face answers an event with, if any.
 pub fn reaction(event: &EventKind) -> Option<Expression> {
     Some(match event {
+        EventKind::MetReflection => Expression::Surprise,
+        EventKind::RecognizedSelf => Expression::Sparkle,
         EventKind::Heard(text) if crate::world::quirks::yawn_message(text) => return None,
         EventKind::Quirk(Quirk::Hiccups) => Expression::Hiccup,
         EventKind::Quirk(Quirk::Sneeze) => Expression::Sneeze,

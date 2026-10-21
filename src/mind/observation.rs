@@ -68,6 +68,7 @@ pub fn observe(world: &World) -> Value {
             "tending": world.tend_description(),
             "ball": ball(world),
             "music_box": world.music_words(),
+            "mirror": thing(world, Thing::Mirror),
             "learned_tunes": world.learned_tune_words(),
             "light_motes": motes(world),
             "glass": glass(world),
@@ -345,6 +346,13 @@ fn thing(world: &World, thing: Thing) -> String {
             format!("a little bird outside the window, {place}")
         }
         Thing::MusicBox => world.music_words(),
+        Thing::Mirror => {
+            if world.life.mirror.recognizes_self() {
+                "the mirror on the right wall, where you see yourself".to_owned()
+            } else {
+                "the mirror on the right wall, where another ghost seems to live".to_owned()
+            }
+        }
         Thing::Moth => "a moth fluttering around the lamp".to_owned(),
     }
 }
@@ -512,6 +520,33 @@ fn viewer(world: &World) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_mirror_is_visible_and_its_description_changes_after_recognition() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.position = crate::world::mirror::VISIT;
+        world.ghost.heading = Vec3::X;
+        assert_eq!(
+            world.position_of(Thing::Mirror),
+            Some(crate::world::mirror::CENTER)
+        );
+        assert!(
+            world
+                .sight()
+                .in_view
+                .iter()
+                .any(|seen| seen.thing == Thing::Mirror && seen.hidden_behind.is_none())
+        );
+        assert!(thing(&world, Thing::Mirror).contains("another ghost seems to live"));
+        world.life.mirror.recognized = Some(world.date.to_string());
+        assert!(thing(&world, Thing::Mirror).contains("you see yourself"));
+        assert!(
+            observe(&world)["room"]["mirror"]
+                .as_str()
+                .unwrap()
+                .contains("you see yourself")
+        );
+    }
+
     #[test]
     fn book_observations_name_owned_and_finished_titles_and_progress_in_words() {
         let mut world = crate::world::World::new(5, 12.0);

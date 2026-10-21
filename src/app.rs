@@ -964,6 +964,9 @@ impl App {
         {
             reactions.push((spell.pulse_started(world.time), expression));
         }
+        if let Some(expression) = world.mirror_expression() {
+            reactions.push(expression);
+        }
         let mut face = face::mood::face(
             world.time,
             &Cues {
@@ -1504,7 +1507,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..11760 {
+        for _ in 0..4480 {
             app.advance(0.05);
         }
         assert!(
