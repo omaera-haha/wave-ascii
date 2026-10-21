@@ -152,6 +152,7 @@ fn thing(world: &World, thing: Thing) -> String {
             if world.lamp.on { "on" } else { "off" }
         ),
         Thing::Plant => format!("the plant, {}", plant(&world.plant)),
+        Thing::Ball if world.ball.held => "the ball, held by you".to_owned(),
         Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
         Thing::Ball => "the ball".to_owned(),
         Thing::Cushion => "the cushion".to_owned(),
@@ -194,6 +195,9 @@ fn facing(heading: Vec3) -> &'static str {
 }
 
 fn ball(world: &World) -> String {
+    if world.ball.held {
+        return "in your arms".to_owned();
+    }
     let distance = flat(world.ball.position - world.ghost.position).length();
     let motion = if world.ball.velocity.length() > 0.2 {
         "rolling"
@@ -321,6 +325,22 @@ mod tests {
             thirst: 0.9,
         };
         assert_eq!(plant(&thirsty), "flowering, very thirsty and drooping");
+    }
+
+    #[test]
+    fn a_held_ball_is_described_in_words_in_the_ghosts_arms() {
+        let mut world = World::new(1, 12.0);
+        world.begin(Activity::Fetch);
+        world.ball.held = true;
+        world.ball.velocity = Vec3::X;
+        let observation = observe(&world);
+        assert_eq!(observation["room"]["ball"], "in your arms");
+        assert_eq!(thing(&world, Thing::Ball), "the ball, held by you");
+        let text = observation.to_string();
+        assert!(
+            !text.chars().any(|character| character.is_ascii_digit()),
+            "{text}"
+        );
     }
 
     #[test]

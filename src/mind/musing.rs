@@ -48,6 +48,8 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         }
         Activity::Visit if present => vec!["Someone's at the glass.", "Who's there?"],
         Activity::Visit => vec!["Is anyone out there?", "Maybe someone will come by."],
+        Activity::Fetch => vec!["I'll get it!", "Wait for me, ball!"],
+        Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
         Activity::Window => match world.weather.sky {
             Sky::Rainbow => vec!["Look, a rainbow!", "All the colors at once."],
             Sky::Rain => vec!["Listen to the rain.", "Pitter-patter."],
@@ -110,6 +112,8 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Explore => "I know every corner of this room.",
             Activity::Lamp => "I like the lamp's warm light.",
             Activity::Float => "Floating is nice.",
+            Activity::Fetch => "Throw the ball again! Please?",
+            Activity::Dance => "I've been working on a new twirl.",
         });
     }
     if lines.is_empty() {
@@ -133,8 +137,11 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
             "…chasing a mote that keeps getting bigger…",
         ]);
     }
-    if today.nudges > 0 {
+    if today.nudges > 0 || today.fetches > 0 {
         lines.push("…the ball rolls on and on, out into the hills…");
+    }
+    if today.dances > 0 {
+        lines.push("…dancing with the light motes, round and round…");
     }
     if today.waterings > 0 {
         lines.push("…the plant grows right up through the ceiling…");

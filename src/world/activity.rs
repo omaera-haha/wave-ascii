@@ -15,10 +15,12 @@ pub enum Activity {
     Lamp,
     Visit,
     Window,
+    Fetch,
+    Dance,
 }
 
 impl Activity {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::Float,
         Self::Explore,
         Self::Chase,
@@ -28,6 +30,8 @@ impl Activity {
         Self::Lamp,
         Self::Visit,
         Self::Window,
+        Self::Fetch,
+        Self::Dance,
     ];
 
     pub fn name(self) -> &'static str {
@@ -41,6 +45,8 @@ impl Activity {
             Self::Lamp => "lamp",
             Self::Visit => "visit",
             Self::Window => "window",
+            Self::Fetch => "fetch",
+            Self::Dance => "dance",
         }
     }
 
@@ -62,6 +68,8 @@ impl Activity {
             Self::Lamp => "seeing to the lamp",
             Self::Visit => "visiting the viewer at the glass",
             Self::Window => "gazing out of the window",
+            Self::Fetch => "fetching the ball for the viewer",
+            Self::Dance => "dancing a little twirl",
         }
     }
 }
@@ -73,6 +81,8 @@ pub struct Plan {
     pub started: f64,
     /// Where it is heading.
     pub target: Vec3,
+    /// The center of an activity's path.
+    pub anchor: Vec3,
     /// When it reached the place where the activity happens.
     pub arrived: Option<f64>,
     /// The mote it is chasing.
@@ -91,6 +101,7 @@ impl Plan {
             activity,
             started,
             target,
+            anchor: target,
             arrived: None,
             mote: None,
             count: 0,

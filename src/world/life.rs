@@ -25,6 +25,9 @@ pub struct Tally {
     pub motes: u32,
     /// Times it pushed the ball.
     pub nudges: u32,
+    /// Times it brought the ball back to the viewer.
+    pub fetches: u32,
+    pub dances: u32,
     pub waterings: u32,
     /// Times the plant came into flower.
     pub blooms: u32,
@@ -57,6 +60,8 @@ impl Tally {
             }
             EventKind::AteMote => self.motes += 1,
             EventKind::NudgedBall => self.nudges += 1,
+            EventKind::Fetched => self.fetches += 1,
+            EventKind::Danced => self.dances += 1,
             EventKind::Tended => self.waterings += 1,
             EventKind::Bloomed => self.blooms += 1,
             EventKind::FellAsleep => self.naps += 1,
@@ -86,6 +91,16 @@ impl Tally {
             0 => {}
             1 => deeds.push("nudged the ball".to_owned()),
             nudges => deeds.push(format!("pushed the ball around {nudges} times")),
+        }
+        match self.fetches {
+            0 => {}
+            1 => deeds.push("fetched the ball for you".to_owned()),
+            fetches => deeds.push(format!("fetched the ball for you {fetches} times")),
+        }
+        match self.dances {
+            0 => {}
+            1 => deeds.push("danced a twirl".to_owned()),
+            dances => deeds.push(format!("danced {dances} twirls")),
         }
         match (self.waterings, self.blooms) {
             (0, 0) => {}
@@ -165,6 +180,7 @@ impl Life {
         self.today.note(kind);
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
+            EventKind::Fetched => 0.01,
             EventKind::ViewerArrived => 0.003,
             EventKind::DroppedMote | EventKind::KickedBall => 0.002,
             EventKind::Poked { count } if *count < 3 => 0.002,
@@ -329,6 +345,17 @@ mod tests {
             day.words(),
             "Ate 4 light motes, nudged the ball, watered the plant until it flowered, and saw a \
              rainbow. You were here for about an hour, and we talked."
+        );
+        day = Tally {
+            fetches: 3,
+            dances: 1,
+            together: 1500.0,
+            ..Tally::default()
+        };
+        assert_eq!(
+            day.words(),
+            "Fetched the ball for you 3 times and danced a twirl. You were here for about half \
+             an hour."
         );
         day = Tally {
             naps: 2,

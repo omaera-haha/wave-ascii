@@ -1,4 +1,4 @@
-use crate::world::{Activity, World, flat};
+use crate::world::{Activity, EventKind, World, flat};
 
 /// How much the ghost's needs, surroundings, and habits pull it toward each
 /// of the activities open to it, as chances that add up to 1. This is the mind it
@@ -46,6 +46,46 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + 0.6 * outside.rain(world.time)
                     + 2.5 * outside.rainbow(world.time)
             }
+            Activity::Fetch => {
+                let thrown = world
+                    .events
+                    .iter()
+                    .rev()
+                    .find(|event| event.kind == EventKind::KickedBall)
+                    .map_or(0.0, |event| {
+                        (1.0 - (world.time - event.time) as f32 / 20.0).clamp(0.0, 1.0)
+                    });
+                let present = if world.viewer_present() { 0.5 } else { 0.0 };
+                (0.1 + 1.5 * thrown + 0.7 * (1.0 - needs.fun) + present) * needs.energy
+            }
+            Activity::Dance => {
+                let delighted = world
+                    .events
+                    .iter()
+                    .rev()
+                    .take_while(|event| world.time - event.time < 20.0)
+                    .any(|event| {
+                        matches!(
+                            event.kind,
+                            EventKind::Bloomed | EventKind::Fetched | EventKind::AteMote
+                        )
+                    });
+                let rainbow = if world.ghost.saw_rainbow {
+                    1.2 * world.weather.rainbow(world.time)
+                } else {
+                    0.0
+                };
+                let company = if world.viewer_present() && needs.company > 0.7 {
+                    0.4
+                } else {
+                    0.0
+                };
+                (0.1 + rainbow
+                    + if delighted { 0.7 } else { 0.0 }
+                    + company
+                    + if needs.fun > 0.7 { 0.3 } else { 0.0 })
+                    * needs.energy
+            }
         })
         .zip(options)
         .map(|(weight, activity)| weight * world.life.habit(*activity))
@@ -75,7 +115,7 @@ pub fn blend(model: &[(Activity, f32)], own: &[(Activity, f32)]) -> Vec<(Activit
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::EventKind;
+    use crate::world::{Event, Sky};
     use glam::Vec3;
 
     fn chance(weights: &[(Activity, f32)], activity: Activity) -> f32 {
@@ -136,6 +176,60 @@ mod tests {
         world.life.bond = 0.9;
         let friend = weigh(&world, &world.options());
         assert!(chance(&friend, Activity::Visit) > chance(&stranger, Activity::Visit));
+    }
+
+    #[test]
+    fn a_just_flicked_ball_draws_the_ghost_to_fetch_and_the_pull_fades() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.kick_ball(Vec3::X);
+        let options = world.options();
+        let thrown = weigh(&world, &options);
+        let top = thrown
+            .iter()
+            .max_by(|first, second| first.1.total_cmp(&second.1))
+            .unwrap();
+        assert_eq!(top.0, Activity::Fetch);
+        world.time += 20.0;
+        let later = weigh(&world, &options);
+        assert!(chance(&later, Activity::Fetch) < chance(&thrown, Activity::Fetch));
+    }
+
+    #[test]
+    fn a_rainbow_raises_dance_only_after_the_ghost_has_seen_it() {
+        let mut world = World::new(1, 12.0);
+        world.time = 20.0;
+        let options = world.options();
+        let clear = weigh(&world, &options);
+        world.weather.sky = Sky::Rainbow;
+        world.weather.until = 100.0;
+        let unseen = weigh(&world, &options);
+        world.ghost.saw_rainbow = true;
+        let seen = weigh(&world, &options);
+        assert!(chance(&unseen, Activity::Dance) <= chance(&clear, Activity::Dance));
+        assert!(chance(&seen, Activity::Dance) > chance(&clear, Activity::Dance));
+        assert!(chance(&seen, Activity::Dance) > chance(&unseen, Activity::Dance));
+    }
+
+    #[test]
+    fn good_things_raise_dance_for_a_little_while() {
+        for kind in [EventKind::Bloomed, EventKind::Fetched, EventKind::AteMote] {
+            let mut world = World::new(1, 12.0);
+            let options = world.options();
+            let before = weigh(&world, &options);
+            world.events.push(Event {
+                time: world.time,
+                kind,
+            });
+            let delighted = weigh(&world, &options);
+            assert!(chance(&delighted, Activity::Dance) > chance(&before, Activity::Dance));
+            world.time += 21.0;
+            let later = weigh(&world, &options);
+            assert_eq!(
+                chance(&later, Activity::Dance),
+                chance(&before, Activity::Dance)
+            );
+        }
     }
 
     #[test]

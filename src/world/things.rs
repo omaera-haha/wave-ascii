@@ -24,11 +24,12 @@ impl Lamp {
     }
 }
 
-/// A ball that rolls on the floor when nudged.
+/// A ball that rolls on the floor when nudged, or rides in the ghost's arms.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ball {
     pub position: Vec3,
     pub velocity: Vec3,
+    pub held: bool,
 }
 
 impl Ball {
@@ -38,6 +39,7 @@ impl Ball {
         Self {
             position: Vec3::new(x, Self::RADIUS, z),
             velocity: Vec3::ZERO,
+            held: false,
         }
     }
 
@@ -45,6 +47,9 @@ impl Ball {
     /// off the walls and off `obstacles`, given as floor circles of center and
     /// radius. Returns the speed of the hardest bounce, or 0.
     pub fn roll(&mut self, seconds: f32, obstacles: &[(Vec3, f32)]) -> f32 {
+        if self.held {
+            return 0.0;
+        }
         let mut bounce: f32 = 0.0;
         self.velocity.y = 0.0;
         self.position += self.velocity * seconds;
@@ -204,6 +209,17 @@ mod tests {
             assert!(flat(ball.position - post.0).length() >= 0.3 + Ball::RADIUS - 1e-4);
         }
         assert!(ball.velocity.x <= 0.0);
+    }
+
+    #[test]
+    fn a_held_ball_does_not_roll_or_fall() {
+        let mut ball = Ball::at(0.0, 0.0);
+        ball.held = true;
+        ball.position.y = 0.8;
+        ball.velocity = Vec3::new(0.5, 0.1, -0.3);
+        let before = ball;
+        assert_eq!(ball.roll(0.1, &[]), 0.0);
+        assert_eq!(ball, before);
     }
 
     #[test]
