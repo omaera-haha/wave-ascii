@@ -2156,7 +2156,10 @@ impl World {
         let heard = self.hear_message(text);
         if heard.tone == Some(Tone::Farewell) {
             self.goodnight_together();
-        } else if heard.understanding != Understanding::Tidying {
+        } else if !matches!(
+            heard.understanding,
+            Understanding::Tidying | Understanding::Showing
+        ) {
             self.notice_late_night(heard.korean || self.speaks_korean());
         }
         heard

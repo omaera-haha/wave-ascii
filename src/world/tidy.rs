@@ -28,7 +28,7 @@ pub(super) struct Tidying {
     ball: bool,
 }
 
-fn requested(text: &str) -> bool {
+pub(super) fn requested(text: &str) -> bool {
     let lower = text.trim().to_lowercase();
     if lower.contains('?') || lower.contains('？') {
         return false;
@@ -125,13 +125,19 @@ impl World {
                 ))
     }
 
-    pub fn tidy_is_open(&self) -> bool {
-        // Midnight must not offer a second round of the same night's chores.
-        let evening = if self.hour < super::sleep::MORNING_HOUR {
+    // The evening a night's chores belong to: the small hours count for the
+    // evening before.
+    fn tidy_evening(&self) -> jiff::civil::Date {
+        if self.hour < super::sleep::MORNING_HOUR {
             self.date.yesterday().unwrap_or(self.date)
         } else {
             self.date
-        };
+        }
+    }
+
+    pub fn tidy_is_open(&self) -> bool {
+        // Midnight must not offer a second round of the same night's chores.
+        let evening = self.tidy_evening();
         (self.bedtime() || self.hour >= EVENING_HOUR)
             && self
                 .life
@@ -350,7 +356,7 @@ impl World {
                     self.ghost.plan.done = true;
                     if tidying.blocks > 0 || tidying.ball {
                         if !tidying.requested {
-                            self.life.tidied_day = Some(self.date.to_string());
+                            self.life.tidied_day = Some(self.tidy_evening().to_string());
                         }
                         self.record(EventKind::Tidied {
                             blocks: tidying.blocks,
@@ -709,6 +715,16 @@ mod tests {
         assert!(world.tower_height() > 0);
         assert!(world.tidy_height(0) + world.tidy_height(1) < 5);
         assert!(!world.blocks.iter().any(|block| block.held));
+    }
+
+    #[test]
+    fn a_tidy_finished_after_midnight_belongs_to_the_evening_before() {
+        let mut world = messy(23.9);
+        world.begin(Activity::Tidy);
+        world.hour = 0.5;
+        world.date = world.date.tomorrow().unwrap();
+        finish(&mut world);
+        assert_eq!(world.life.tidied_day.as_deref(), Some("2026-06-21"));
     }
 
     #[test]

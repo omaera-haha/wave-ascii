@@ -764,6 +764,8 @@ impl World {
             || super::puzzle::requested(text)
             || super::cranes::requested(text)
             || super::bubbles::requested(text)
+            || super::tidy::requested(text)
+            || super::show::requested(text)
             || super::quirks::yawn_message(text)
             || super::vocabulary::introduced_name(text).is_some()
             || super::vocabulary::given_name(text).is_some()
@@ -947,6 +949,10 @@ mod tests {
         assert!(world.telling.is_some());
         assert!(world.awaiting_plan_answer());
         world.telling = None;
+        for request in ["tidy up", "show me something", "bubbles!"] {
+            assert!(world.answer_plan(request, false).is_none(), "{request}");
+            assert!(world.awaiting_plan_answer());
+        }
         let heard = world.hear("It didn't go well");
         assert_eq!(
             heard.understanding,

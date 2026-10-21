@@ -308,7 +308,6 @@ impl World {
     fn show_is_quiet(&self) -> bool {
         self.ghost.asleep < 0.3
             && self.viewer_present()
-            && !self.viewer.typing
             && self.quiet_for_question()
             && self.asking.is_none()
             && !self.awaiting_plan_answer()
@@ -340,8 +339,10 @@ impl World {
     }
 
     pub fn show_is_open(&self) -> bool {
+        // Typing holds back its own offer, not a request just sent.
         self.ghost.plan.activity == Activity::Visit
             && !self.ghost.plan.done
+            && !self.viewer.typing
             && self.show_is_quiet()
             && !self.life.wish.as_ref().is_some_and(|wishing| {
                 wishing.wish.with_viewer()
@@ -836,6 +837,11 @@ mod tests {
             let line = &world.ghost.speech.as_ref().unwrap().text;
             assert_eq!(line.contains("새가"), heard.korean);
         }
+        // A request typed across frames was still being typed a moment ago.
+        let mut world = grown();
+        world.viewer.typing = true;
+        world.hear("show me something");
+        assert_eq!(world.ghost.plan.activity, Activity::Show);
         for text in [
             "don't show me something",
             "I will show you something",
@@ -850,11 +856,16 @@ mod tests {
 
     #[test]
     fn requests_leave_sleep_work_stories_and_hunts_undisturbed() {
-        for condition in 0..4 {
+        for condition in 0..5 {
             let mut world = grown();
             match condition {
                 0 => {
                     world.hour = 23.0;
+                    world.tuck_in();
+                }
+                // The small hours' sleepy nudge mustn't wake it either.
+                4 => {
+                    world.hour = 1.0;
                     world.tuck_in();
                 }
                 1 => world.start_focus(25),
