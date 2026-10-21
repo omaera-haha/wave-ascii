@@ -283,6 +283,7 @@ mod tests {
         assert!(!world.ghost.plan.done);
         assert_eq!(world.ghost.mood, Mood::Content);
         assert!(!world.options().contains(&Activity::Wait));
+        world.plant.thirst = 0.7;
         for activity in Activity::ALL
             .into_iter()
             .filter(|activity| seeks_attention(*activity))

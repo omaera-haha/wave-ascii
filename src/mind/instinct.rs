@@ -542,6 +542,7 @@ mod tests {
     #[test]
     fn focus_favors_company_and_a_finished_session_favors_play_for_five_minutes() {
         let mut world = World::new(1, 12.0);
+        world.plant.thirst = 0.7;
         world.start_focus(25);
         let options = world.options();
         let focused = weigh(&world, &options);

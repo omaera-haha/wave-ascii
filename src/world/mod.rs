@@ -1211,7 +1211,7 @@ impl World {
                 Activity::Look => self.look_is_open(),
                 Activity::Chase => self.nearest_mote().is_some(),
                 Activity::Rest => self.ghost.needs.energy < 0.85 || self.bedtime(),
-                Activity::Tend => self.garden_thirst() > 0.25 || self.seed_ready(),
+                Activity::Tend => self.garden_thirst() > garden::TENDS_FROM || self.seed_ready(),
                 Activity::Visit => self.viewer_present() || self.ghost.needs.company < 0.6,
                 Activity::Wait => self.wait_is_open(),
                 // The viewer threw the ball, or is there to bring it to.

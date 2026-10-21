@@ -7,6 +7,11 @@ const HOUR: f32 = 3600.0;
 const DAY: f32 = 24.0 * HOUR;
 const REST: f32 = DAY * 0.5;
 /// The pots sit below the window, clear of the lamp and the decoration.
+/// How dry a plant must be before the ghost sets out to water the garden.
+pub const TENDS_FROM: f32 = 0.6;
+/// How dry a plant must be to be watered on a round already under way.
+const ROUND_THIRST: f32 = 0.2;
+
 pub const SPOTS: [Vec3; 3] = [
     Vec3::new(0.35, 0.0, -1.14),
     Vec3::new(-0.20, 0.0, -1.14),
@@ -305,7 +310,7 @@ impl Plant {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Tending {
     Water(Option<usize>),
     Seed,
@@ -376,6 +381,14 @@ impl World {
         chosen
     }
 
+    /// The thirstiest plant still worth watering on a round already under
+    /// way, if any.
+    fn thirsty_for_round(&self) -> Option<Option<usize>> {
+        let plant = self.thirstiest();
+        let thirst = plant.map_or(self.plant.thirst, |index| self.seedlings[index].thirst);
+        (thirst > ROUND_THIRST).then_some(plant)
+    }
+
     pub(super) fn tend_target(&self) -> Vec3 {
         self.water_target(self.thirstiest())
     }
@@ -423,7 +436,14 @@ impl World {
                     }
                     self.ghost.needs.change(0.0, 0.08, 0.0);
                     self.record(EventKind::Tended);
-                    if self.seed_ready() && self.random.unit() < 0.65 {
+                    // One round waters every plant that has begun to dry,
+                    // rather than a trip for each as it crosses the line.
+                    if let Some(next) = self.thirsty_for_round() {
+                        self.tending = Some(Tending::Water(next));
+                        self.ghost.plan.target = self.water_target(next);
+                        self.ghost.plan.arrived = None;
+                        self.ghost.plan.started = self.time;
+                    } else if self.seed_ready() && self.random.unit() < 0.65 {
                         self.tending = Some(Tending::Seed);
                         self.ghost.plan.target = self.plant.top() + Vec3::new(0.0, 0.25, 0.3);
                         self.ghost.plan.arrived = None;
@@ -771,20 +791,44 @@ mod tests {
     }
 
     #[test]
-    fn tending_selects_and_waters_the_thirstiest_pot() {
+    fn tending_starts_at_the_thirstiest_pot_and_waters_the_drying_ones_on_its_round() {
         let mut world = World::new(9, 12.0);
         world.plant.thirst = 0.3;
-        world.seedlings = vec![Seedling::new(Flower::Daisy), Seedling::new(Flower::Tulip)];
+        world.seedlings = vec![
+            Seedling::new(Flower::Daisy),
+            Seedling::new(Flower::Tulip),
+            Seedling::new(Flower::Poppy),
+        ];
         world.seedlings[0].thirst = 0.5;
         world.seedlings[1].thirst = 0.95;
+        world.seedlings[2].thirst = 0.1;
         assert_eq!(world.thirstiest(), Some(1));
         assert!(world.options().contains(&Activity::Tend));
         assert!(world.describe(Activity::Tend).contains("tulip"));
         world.begin(Activity::Tend);
+        assert_eq!(world.tending, Some(Tending::Water(Some(1))));
         finish_tend(&mut world);
         assert!(world.seedlings[1].thirst < 0.1);
-        assert!(world.seedlings[0].thirst > 0.5);
-        assert!(world.plant.thirst > 0.3);
+        assert!(world.seedlings[0].thirst < 0.1);
+        assert!(world.plant.thirst < 0.1);
+        assert!(world.seedlings[2].thirst >= 0.1);
+        let watered = world
+            .events
+            .iter()
+            .filter(|event| event.kind == EventKind::Tended)
+            .count();
+        assert_eq!(watered, 3);
+    }
+
+    #[test]
+    fn a_garden_only_a_little_dry_waits_for_its_round() {
+        let mut world = World::new(9, 12.0);
+        world.plant.thirst = TENDS_FROM - 0.05;
+        world.seedlings = vec![Seedling::new(Flower::Daisy)];
+        world.seedlings[0].thirst = 0.3;
+        assert!(!world.options().contains(&Activity::Tend));
+        world.seedlings[0].thirst = TENDS_FROM + 0.05;
+        assert!(world.options().contains(&Activity::Tend));
     }
 
     #[test]
