@@ -242,6 +242,39 @@ fn trace(
         color +=
             LAMP_LIGHT * sprite(eye, direction, world.lamp.bulb(), limit + 0.3, spread, 0.12) * 0.3;
     }
+    glass_color(scene, direction, spread, color)
+}
+
+// The fog and its strokes lie on the glass whichever side the camera sees.
+fn glass_color(scene: &Scene, direction: Vec3, spread: f32, mut color: Vec3) -> Vec3 {
+    let distance = (ROOM_MAX.z - scene.view.eye.z) / direction.z;
+    if !distance.is_finite() || distance <= 0.0 {
+        return color;
+    }
+    let hit = scene.view.eye + direction * distance;
+    if !(ROOM_MIN.x..=ROOM_MAX.x).contains(&hit.x) || !(ROOM_MIN.y..=ROOM_MAX.y).contains(&hit.y) {
+        return color;
+    }
+    let point = Vec2::new(hit.x, hit.y);
+    let footprint = distance * spread / direction.z.abs().max(0.01);
+    let frost = Vec3::new(0.8, 0.92, 1.0);
+    for doodle in &scene.world.doodles {
+        let offset = point - doodle.center;
+        let radius = doodle.size * 1.3;
+        let mist_edge = footprint.max(doodle.size * 0.25);
+        if offset.length() > radius + mist_edge {
+            continue;
+        }
+        let opacity = doodle.opacity(scene.world.time);
+        let mist = coverage(offset.length() - radius, mist_edge);
+        color = color.lerp(frost, mist * 0.12 * opacity);
+        let stroke = doodle
+            .sketch
+            .distance(offset / doodle.size, doodle.drawn(scene.world.time))
+            * doodle.size;
+        let stroke = coverage(stroke - 0.0125, footprint * 0.5);
+        color = color.lerp(frost, stroke * 0.85 * opacity);
+    }
     color
 }
 
@@ -390,7 +423,9 @@ impl Lights {
         }
         points.push(Light {
             position: world.ghost.position,
-            color: scene.aura.color * (0.2 + 0.25 * scene.aura.brightness),
+            color: scene.aura.color
+                * (0.2 + 0.25 * scene.aura.brightness)
+                * scene.aura.visibility.clamp(0.0, 1.0),
             falloff: 5.0,
         });
         for mote in &world.motes {
@@ -537,5 +572,51 @@ mod tests {
         assert!(daylight(2.0).max_element() < daylight(12.0).max_element() * 0.3);
         let dusk = daylight(19.2);
         assert!(dusk.x > dusk.z);
+    }
+
+    #[test]
+    fn fading_ghosts_and_doodles_render_finite_values_from_either_side_of_the_glass() {
+        use crate::world::{Doodle, Sketch};
+
+        let grid = Grid::cells(40, 16);
+        let mut world = World::new(1, 12.0);
+        for sketch in Sketch::ALL {
+            world.doodles = vec![Doodle {
+                sketch,
+                center: Vec2::new(0.0, 1.2),
+                size: 0.3,
+                started: 0.0,
+            }];
+            for time in [0.0, 2.0, 6.0, Doodle::LIFETIME - 10.0, Doodle::LIFETIME] {
+                world.time = time;
+                for yaw in [0.0, PI * 0.5, PI, PI * 1.5] {
+                    let scene = Scene {
+                        world: &world,
+                        outside: window::Outside::clear(world.hour, time),
+                        view: Camera {
+                            yaw,
+                            ..Camera::default()
+                        }
+                        .view(grid),
+                        face: Face::REST,
+                        aura: Aura {
+                            color: Vec3::ONE,
+                            visibility: 0.15,
+                            brightness: 0.7,
+                            beat: 1.0,
+                        },
+                        pose: Pose::new(time, 0.0, 0.0, 0.0),
+                    };
+                    let frame = render(&scene, grid, 1);
+                    for row in 0..frame.height() {
+                        for column in 0..frame.width() {
+                            let shade = frame.shade(column, row);
+                            assert!(shade.brightness.is_finite());
+                            assert!(shade.color.is_finite());
+                        }
+                    }
+                }
+            }
+        }
     }
 }

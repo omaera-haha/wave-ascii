@@ -551,6 +551,7 @@ impl App {
         let energy = ghost.needs.energy;
         let aura = Aura {
             color: self.aura,
+            visibility: 1.0 - ghost.fade,
             brightness: 0.25 + 0.75 * energy,
             beat: beat(ghost.mood) * (0.6 + 0.4 * energy),
         };

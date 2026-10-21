@@ -11,6 +11,8 @@ pub fn observe(world: &World) -> Value {
     let plan = &ghost.plan;
     let doing = if plan.done {
         format!("just finished {}", plan.activity.doing())
+    } else if plan.activity == Activity::Hide && plan.arrived.is_some() {
+        format!("{} and waiting to be found", plan.activity.doing())
     } else {
         plan.activity.doing().to_owned()
     };
@@ -36,6 +38,7 @@ pub fn observe(world: &World) -> Value {
             "plant": plant(&world.plant),
             "ball": ball(world),
             "light_motes": motes(world),
+            "glass": glass(world),
         },
         "viewer": viewer(world),
         "bond_with_viewer": world.life.bond_words(),
@@ -221,6 +224,29 @@ fn ball(world: &World) -> String {
     format!("{motion}, {}", distance_words(distance))
 }
 
+fn glass(world: &World) -> String {
+    let doodles: Vec<String> = world
+        .doodles
+        .iter()
+        .rev()
+        .filter(|doodle| doodle.opacity(world.time) > 0.0)
+        .take(2)
+        .map(|doodle| {
+            let fading = if doodle.opacity(world.time) < 0.5 {
+                ", fading"
+            } else {
+                ""
+            };
+            format!("a {} you drew in the fog{fading}", doodle.sketch.name())
+        })
+        .collect();
+    if doodles.is_empty() {
+        "clear".to_owned()
+    } else {
+        doodles.join("; ")
+    }
+}
+
 // The motes the ghost knows of; others it hasn't seen yet.
 fn motes(world: &World) -> String {
     let known = world
@@ -397,5 +423,55 @@ mod tests {
         world.hour = 22.0;
         world.weather.sky = Sky::Rain;
         assert!(!outside_the_window(&world).contains("moon"));
+    }
+
+    #[test]
+    fn the_glass_reports_the_newest_pictures_and_their_fading_in_words() {
+        use crate::world::{Doodle, Sketch};
+        use glam::Vec2;
+
+        let mut world = World::new(1, 12.0);
+        assert_eq!(observe(&world)["room"]["glass"], "clear");
+        for (index, sketch) in [Sketch::Smile, Sketch::Star, Sketch::Heart]
+            .into_iter()
+            .enumerate()
+        {
+            world.doodles.push(Doodle {
+                sketch,
+                center: Vec2::ZERO,
+                size: 0.3,
+                started: index as f64,
+            });
+        }
+        world.time = Doodle::LIFETIME - 10.0;
+        let observation = observe(&world);
+        assert_eq!(
+            observation["room"]["glass"],
+            "a heart you drew in the fog, fading; a star you drew in the fog, fading"
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.time += 20.0;
+        assert_eq!(observe(&world)["room"]["glass"], "clear");
+    }
+
+    #[test]
+    fn a_hidden_ghost_reports_that_it_is_waiting_to_be_found() {
+        let mut world = World::new(1, 12.0);
+        world.begin(Activity::Hide);
+        world.step(15.0);
+        assert_eq!(
+            observe(&world)["ghost"]["doing"],
+            "hiding from the viewer and waiting to be found"
+        );
+        world.poke();
+        assert_eq!(
+            observe(&world)["ghost"]["doing"],
+            "just finished hiding from the viewer"
+        );
     }
 }

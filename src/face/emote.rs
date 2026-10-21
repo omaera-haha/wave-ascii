@@ -68,6 +68,10 @@ pub struct Puff {
 /// stateless; at most the newest three symbols survive a busy moment.
 pub fn puffs(world: &World) -> Vec<Puff> {
     let ghost = &world.ghost;
+    // A hiding ghost gives nothing away.
+    if ghost.fade > 0.3 {
+        return Vec::new();
+    }
     let mut starts = Vec::new();
     let mut add = |start: f64, emote| {
         if (0.0..LIFETIME).contains(&(world.time - start)) {
@@ -153,8 +157,15 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::WokeUp
         | EventKind::Poked { count: 1 } => Emote::Alarm,
         EventKind::Poked { count } if *count >= 3 => Emote::Anger,
-        EventKind::AteMote | EventKind::Bloomed | EventKind::RainbowAppeared => Emote::Sparkle,
-        EventKind::Tended | EventKind::NudgedBall => Emote::Note,
+        EventKind::Jumped => Emote::Alarm,
+        EventKind::AteMote
+        | EventKind::Bloomed
+        | EventKind::RainbowAppeared
+        | EventKind::Fetched
+        | EventKind::Found => Emote::Sparkle,
+        EventKind::Tended | EventKind::NudgedBall | EventKind::Danced => Emote::Note,
+        EventKind::Doodled(_) if bond >= 0.3 => Emote::Heart,
+        EventKind::Doodled(_) => Emote::Note,
         EventKind::Heard(_) | EventKind::ViewerArrived if bond >= 0.3 => Emote::Heart,
         EventKind::Heard(_) | EventKind::ViewerArrived => Emote::Alarm,
         _ => return None,
@@ -280,6 +291,14 @@ mod tests {
             previous_height = puff.offset.y;
         }
         world.time = 1.0 + LIFETIME;
+        assert!(puffs(&world).is_empty());
+    }
+
+    #[test]
+    fn a_hiding_ghost_puffs_nothing() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.asleep = 1.0;
+        world.ghost.fade = 0.85;
         assert!(puffs(&world).is_empty());
     }
 

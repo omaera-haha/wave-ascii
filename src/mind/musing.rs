@@ -49,6 +49,11 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Visit if present => vec!["Someone's at the glass.", "Who's there?"],
         Activity::Visit => vec!["Is anyone out there?", "Maybe someone will come by."],
         Activity::Fetch => vec!["I'll get it!", "Wait for me, ball!"],
+        Activity::Hide => vec!["Ready or not…", "Bet you can't find me."],
+        Activity::Doodle if world.life.bond >= 0.3 => {
+            vec!["I'll draw you something.", "This one's for you."]
+        }
+        Activity::Doodle => vec!["Let me draw something.", "Hm, what shall I draw?"],
         Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
         Activity::Window => match world.weather.sky {
             Sky::Rainbow => vec!["Look, a rainbow!", "All the colors at once."],
@@ -119,6 +124,8 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Float => "Floating is nice.",
             Activity::Fetch => "Throw the ball again! Please?",
             Activity::Dance => "I've been working on a new twirl.",
+            Activity::Hide => "Nobody hides like a ghost.",
+            Activity::Doodle => "I should draw on the glass again.",
         });
     }
     if lines.is_empty() {
@@ -144,6 +151,12 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if today.nudges > 0 || today.fetches > 0 {
         lines.push("…the ball rolls on and on, out into the hills…");
+    }
+    if today.doodles > 0 {
+        lines.push("…drawing pictures in the clouds…");
+    }
+    if today.finds > 0 {
+        lines.push("…hiding somewhere nobody will ever look…");
     }
     if today.dances > 0 {
         lines.push("…dancing with the light motes, round and round…");

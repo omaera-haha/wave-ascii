@@ -28,6 +28,11 @@ pub struct Tally {
     /// Times it brought the ball back to the viewer.
     pub fetches: u32,
     pub dances: u32,
+    /// Times the viewer found it hiding, and it jumped out unfound.
+    pub finds: u32,
+    pub jumps: u32,
+    /// Pictures it drew on the glass.
+    pub doodles: u32,
     pub waterings: u32,
     /// Times the plant came into flower.
     pub blooms: u32,
@@ -63,6 +68,9 @@ impl Tally {
             EventKind::NudgedBall => self.nudges += 1,
             EventKind::Fetched => self.fetches += 1,
             EventKind::Danced => self.dances += 1,
+            EventKind::Found => self.finds += 1,
+            EventKind::Jumped => self.jumps += 1,
+            EventKind::Doodled(_) => self.doodles += 1,
             EventKind::Tended => self.waterings += 1,
             EventKind::Bloomed => self.blooms += 1,
             EventKind::FellAsleep => self.naps += 1,
@@ -103,6 +111,17 @@ impl Tally {
             0 => {}
             1 => deeds.push("danced a twirl".to_owned()),
             dances => deeds.push(format!("danced {dances} twirls")),
+        }
+        match (self.finds, self.jumps) {
+            (0, 0) => {}
+            (0, _) => deeds.push("played hide-and-seek, and you never found me".to_owned()),
+            (_, 0) => deeds.push("played hide-and-seek, and you found me".to_owned()),
+            _ => deeds.push("played hide-and-seek".to_owned()),
+        }
+        match self.doodles {
+            0 => {}
+            1 => deeds.push("drew a picture on the glass".to_owned()),
+            doodles => deeds.push(format!("drew {doodles} pictures on the glass")),
         }
         match (self.waterings, self.blooms) {
             (0, 0) => {}
@@ -186,6 +205,7 @@ impl Life {
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
             EventKind::Fetched => 0.01,
+            EventKind::Found => 0.015,
             EventKind::ViewerArrived => 0.003,
             EventKind::DroppedMote | EventKind::KickedBall => 0.002,
             EventKind::Poked { count } if *count < 3 => 0.002,
@@ -370,6 +390,16 @@ mod tests {
         assert_eq!(
             day.words(),
             "Took 2 naps and listened to the rain. You didn't come by."
+        );
+        day = Tally {
+            finds: 1,
+            doodles: 2,
+            ..Tally::default()
+        };
+        assert_eq!(
+            day.words(),
+            "Played hide-and-seek, and you found me and drew 2 pictures on the glass. You \
+             didn't come by."
         );
         day = Tally {
             snowfalls: 2,

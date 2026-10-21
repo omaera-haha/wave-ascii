@@ -1,6 +1,8 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
+use super::Sketch;
+
 /// Something the ghost can set out to do. The world carries it out; minds
 /// only choose which.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -17,10 +19,12 @@ pub enum Activity {
     Window,
     Fetch,
     Dance,
+    Hide,
+    Doodle,
 }
 
 impl Activity {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 13] = [
         Self::Float,
         Self::Explore,
         Self::Chase,
@@ -32,6 +36,8 @@ impl Activity {
         Self::Window,
         Self::Fetch,
         Self::Dance,
+        Self::Hide,
+        Self::Doodle,
     ];
 
     pub fn name(self) -> &'static str {
@@ -47,6 +53,8 @@ impl Activity {
             Self::Window => "window",
             Self::Fetch => "fetch",
             Self::Dance => "dance",
+            Self::Hide => "hide",
+            Self::Doodle => "doodle",
         }
     }
 
@@ -70,6 +78,8 @@ impl Activity {
             Self::Window => "gazing out of the window",
             Self::Fetch => "fetching the ball for the viewer",
             Self::Dance => "dancing a little twirl",
+            Self::Hide => "hiding from the viewer",
+            Self::Doodle => "drawing on the glass",
         }
     }
 }
@@ -87,6 +97,8 @@ pub struct Plan {
     pub arrived: Option<f64>,
     /// The mote it is chasing.
     pub mote: Option<u32>,
+    /// The picture it means to draw on the glass.
+    pub sketch: Option<Sketch>,
     /// How many times it has done the activity's action, such as nudging
     /// the ball or picking a new spot to explore.
     pub count: u32,
@@ -104,6 +116,7 @@ impl Plan {
             anchor: target,
             arrived: None,
             mote: None,
+            sketch: None,
             count: 0,
             length,
             done: false,

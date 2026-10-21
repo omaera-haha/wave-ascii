@@ -62,14 +62,18 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::Poked { count: 1 } => Expression::Surprise,
         EventKind::Poked { count: 2 } => Expression::Smile,
         EventKind::Poked { .. } => Expression::Glare,
-        EventKind::AteMote | EventKind::Bloomed | EventKind::DroppedMote | EventKind::Fetched => {
-            Expression::Sparkle
-        }
+        EventKind::AteMote
+        | EventKind::Bloomed
+        | EventKind::DroppedMote
+        | EventKind::Fetched
+        | EventKind::Found => Expression::Sparkle,
         EventKind::Heard(_) => Expression::Sparkle,
-        EventKind::NudgedBall | EventKind::Tended | EventKind::PickedUpBall | EventKind::Danced => {
-            Expression::Smile
-        }
-        EventKind::WokeUp | EventKind::KickedBall => Expression::Surprise,
+        EventKind::NudgedBall
+        | EventKind::Tended
+        | EventKind::PickedUpBall
+        | EventKind::Danced
+        | EventKind::Doodled(_) => Expression::Smile,
+        EventKind::WokeUp | EventKind::KickedBall | EventKind::Jumped => Expression::Surprise,
         EventKind::ViewerArrived => Expression::Wink,
         EventKind::Noticed(thing)
             if thing.starts_with("the rainbow") || thing == "the falling snow" =>
@@ -372,5 +376,15 @@ mod tests {
             Some(Expression::Glare)
         );
         assert_eq!(reaction(&EventKind::FellAsleep), None);
+    }
+
+    #[test]
+    fn hiding_and_drawing_events_have_their_own_reactions() {
+        assert_eq!(reaction(&EventKind::Found), Some(Expression::Sparkle));
+        assert_eq!(reaction(&EventKind::Jumped), Some(Expression::Surprise));
+        assert_eq!(
+            reaction(&EventKind::Doodled("heart")),
+            Some(Expression::Smile)
+        );
     }
 }

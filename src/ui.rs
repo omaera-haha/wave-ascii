@@ -842,6 +842,7 @@ fn life_panel(app: &App, screen: &mut Canvas) {
             total.nudges,
         ),
         ("fetches", total.fetches, "dances", total.dances),
+        ("found hiding", total.finds, "doodles", total.doodles),
         ("plant watered", total.waterings, "flowers", total.blooms),
         ("naps", total.naps, "rainbows seen", total.rainbows),
         ("messages from you", total.heard, "pokes", total.pokes),

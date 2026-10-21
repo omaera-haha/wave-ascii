@@ -11,8 +11,9 @@ it. You see it as an abstract shape made of dots, and its glow shows how it
 is. It floats about, chases and eats the light motes it has spotted, plays with
 the ball, brings it back after a throw, waters the plant, switches the lamp,
 gazes out of the window, naps when tired, and comes to the glass to look at you.
-When delighted, it may dance a little twirl in the air. Over days it grows
-close to you, forms habits, and keeps a diary.
+When delighted, it may dance a little twirl in the air. It plays hide-and-seek
+and draws little pictures in the fog on the glass. Over days it grows close to
+you, forms habits, and keeps a diary.
 
 Two models give it a mind:
 
@@ -26,9 +27,9 @@ Two models give it a mind:
   as your name.
 
 Without API keys the ghost lives on instinct: its needs alone decide what it
-does, and it can't talk. It still thinks to itself now and then, in a few
-words of its own that fit the moment ("The plant looks thirsty."), and
-dreams of its day while it sleeps.
+does, and it can't talk, though it shouts "Boo!" when it jumps out of hiding.
+It still thinks to itself now and then, in a few words of its own that fit the
+moment ("The plant looks thirsty."), and dreams of its day while it sleeps.
 
 ## Run
 
@@ -82,6 +83,17 @@ While the journal or help panel is open, the terminal
 handles the mouse so you can select and copy text directly. Many terminals
 send wheel movements as arrow keys here, which scroll the journal. Elsewhere,
 hold Shift (Option in iTerm2) to select text while the app has the mouse.
+
+When it plays hide-and-seek, it slips behind furniture or into a back corner
+and turns faint. Look for the glimmer of its eyes and click it to find it.
+If you don't find it after a while, it jumps toward the glass with a "Boo!"
+You can ask it to hide or play hide-and-seek when you're around.
+
+It can also breathe on the glass and draw a heart, star, smile, spiral, sun,
+flower, or wave, chosen from its mood, the weather, and how it feels about
+your company. The stroke takes a few seconds; then it backs away to admire
+it. Up to three pictures linger on the glass, fading away after about two
+and a half minutes. Ask it to draw or doodle to suggest one.
 
 The journal wraps all retained memories and conversation, the latest ten events,
 and any model errors. It opens at the newest lines; arrows on its borders and

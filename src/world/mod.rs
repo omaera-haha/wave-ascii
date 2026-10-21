@@ -1,5 +1,6 @@
 mod activity;
 pub mod calendar;
+mod doodle;
 mod life;
 mod needs;
 mod random;
@@ -7,10 +8,11 @@ mod sight;
 mod things;
 mod weather;
 
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 pub use activity::{Activity, Plan};
 pub use calendar::Season;
+pub use doodle::{Doodle, Sketch};
 pub use life::{Entry, Life};
 pub use needs::{Mood, Needs};
 pub use random::Random;
@@ -21,6 +23,8 @@ pub use weather::{Sky, Weather};
 
 /// At most this many motes drift in the room at once.
 const MAX_MOTES: usize = 6;
+/// At most this many pictures remain on the glass at once.
+const MAX_DOODLES: usize = 3;
 /// How close the ghost has to come to a place to have arrived.
 const ARRIVED: f32 = 0.2;
 /// Seconds a plan may run before the ghost gives up on it.
@@ -83,6 +87,9 @@ pub enum EventKind {
     SnowStopped,
     RainbowAppeared,
     RainbowFaded,
+    Found,
+    Jumped,
+    Doodled(&'static str),
 }
 
 impl EventKind {
@@ -126,6 +133,9 @@ impl EventKind {
             Self::SnowStopped => "the snow stopped".to_owned(),
             Self::RainbowAppeared => "the rain stopped and a rainbow came out".to_owned(),
             Self::RainbowFaded => "the rainbow faded".to_owned(),
+            Self::Found => "the viewer found you hiding".to_owned(),
+            Self::Jumped => "jumped out from hiding at the viewer".to_owned(),
+            Self::Doodled(name) => format!("drew a {name} on the glass"),
         }
     }
 }
@@ -148,6 +158,8 @@ pub struct Ghost {
     pub plan: Plan,
     /// From awake at 0 to sound asleep at 1.
     pub asleep: f32,
+    /// From fully visible at 0 to gone at 1.
+    pub fade: f32,
     /// What it is looking at, in the room.
     pub look: Option<Vec3>,
     pub mood: Mood,
@@ -196,6 +208,7 @@ pub struct World {
     pub plant: Plant,
     pub nook: Nook,
     pub motes: Vec<Mote>,
+    pub doodles: Vec<Doodle>,
     pub events: Vec<Event>,
     pub viewer: Viewer,
     pub weather: Weather,
@@ -225,6 +238,7 @@ impl World {
                 needs: Needs::default(),
                 plan: Plan::new(Activity::Float, 0.0, start, 6.0),
                 asleep: 0.0,
+                fade: 0.0,
                 look: None,
                 mood: Mood::Content,
                 suggested_mood: None,
@@ -251,6 +265,7 @@ impl World {
                 position: Vec3::new(-1.3, 0.0, 0.55),
             },
             motes: Vec::new(),
+            doodles: Vec::new(),
             events: Vec::new(),
             viewer: Viewer::default(),
             weather,
@@ -276,6 +291,8 @@ impl World {
 
     fn advance(&mut self, seconds: f32) {
         self.time += f64::from(seconds);
+        self.doodles
+            .retain(|doodle| doodle.opacity(self.time) > 0.0);
 
         for mote in &mut self.motes {
             mote.drift(self.time, seconds);
@@ -336,6 +353,11 @@ impl World {
         self.life.pass(seconds, present);
 
         self.carry_out(seconds);
+        let hiding = !self.ghost.plan.done
+            && self.ghost.plan.activity == Activity::Hide
+            && self.ghost.plan.arrived.is_some();
+        let fade = if hiding { 0.85 } else { 0.0 };
+        self.ghost.fade += (fade - self.ghost.fade) * (1.0 - (-seconds / 0.4).exp());
         self.move_ghost(seconds);
         if self.ball.held {
             self.ball.position = (self.ghost.position - Vec3::Y * 0.42).clamp(
@@ -399,6 +421,8 @@ impl World {
                             })
                 }
                 Activity::Dance => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.35,
+                Activity::Hide => self.viewer_present() && self.ghost.needs.energy > 0.3,
+                Activity::Doodle => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.25,
                 Activity::Float
                 | Activity::Explore
                 | Activity::Play
@@ -441,6 +465,14 @@ impl World {
             }
             Activity::Visit => "Go up to the glass to be near the viewer and look at them. Fits \
                                 when the viewer is around, or when lonely."
+                .to_owned(),
+            Activity::Hide => "Play hide-and-seek with the viewer: hide somewhere in the room \
+                               and turn faint until they find you by clicking you. Fits when \
+                               the viewer is around and the ghost feels playful."
+                .to_owned(),
+            Activity::Doodle => "Breathe on the glass and draw a little picture in the fog for \
+                                 the viewer to see. Fits when feeling fond of the viewer, or \
+                                 bored and creative."
                 .to_owned(),
             Activity::Window => {
                 let outside = match self.weather.sky {
@@ -485,6 +517,7 @@ impl World {
             Activity::Window => self.random.range(10.0, 18.0),
             Activity::Fetch => 6.0,
             Activity::Dance => self.random.range(5.0, 7.0),
+            Activity::Hide => self.random.range(25.0, 45.0),
             _ => 0.0,
         };
         let target = match activity {
@@ -499,6 +532,12 @@ impl World {
                 ROOM_MIN + Vec3::new(0.6, 0.9, 0.6),
                 Vec3::new(ROOM_MAX.x - 0.6, 1.6, ROOM_MAX.z - 0.6),
             ),
+            Activity::Hide => self.hiding_spot(),
+            Activity::Doodle => Vec3::new(
+                self.random.range(-1.2, 1.2),
+                self.random.range(1.0, 1.6),
+                ROOM_MAX.z - 0.35,
+            ),
             Activity::Float | Activity::Chase | Activity::Play => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
@@ -508,12 +547,26 @@ impl World {
         if activity == Activity::Play {
             self.push = self.push_direction();
         }
+        if activity == Activity::Doodle {
+            plan.sketch = Some(self.choose_sketch());
+        }
         self.ghost.plan = plan;
         self.record(EventKind::Began(activity));
     }
 
     /// The viewer poked the ghost.
     pub fn poke(&mut self) {
+        if self.ghost.plan.activity == Activity::Hide
+            && !self.ghost.plan.done
+            && self.ghost.fade > 0.3
+        {
+            self.ghost.needs.change(0.0, 0.2, 0.15);
+            self.ghost.fade = 0.0;
+            self.ghost.velocity.y += 0.7;
+            self.ghost.plan.done = true;
+            self.record(EventKind::Found);
+            return;
+        }
         let count = match self.events.iter().rev().find_map(|event| match event.kind {
             EventKind::Poked { count } => Some((event.time, count)),
             _ => None,
@@ -683,6 +736,43 @@ impl World {
         )
     }
 
+    fn hiding_spot(&mut self) -> Vec3 {
+        let spots = [
+            self.plant.position - Vec3::Z * (Plant::POT_RADIUS + 0.35),
+            self.lamp.position - Vec3::Z * (Lamp::BASE_RADIUS + 0.35),
+            self.nook.position - Vec3::Z * (Nook::RADIUS + 0.35),
+            Vec3::new(ROOM_MIN.x + 0.3, 0.0, ROOM_MIN.z + 0.3),
+            Vec3::new(ROOM_MAX.x - 0.3, 0.0, ROOM_MIN.z + 0.3),
+        ];
+        let index = self.random.range(0.0, spots.len() as f32) as usize;
+        (spots[index] + Vec3::Y * 0.55).clamp(
+            ROOM_MIN + Vec3::new(0.3, 0.45, 0.3),
+            ROOM_MAX - Vec3::new(0.3, 0.35, 0.3),
+        )
+    }
+
+    fn choose_sketch(&mut self) -> Sketch {
+        let mut sketches = Vec::new();
+        if self.viewer_present() && self.life.bond >= GREETS_FROM {
+            sketches.push(Sketch::Heart);
+        }
+        match self.weather.sky {
+            Sky::Rain => sketches.push(Sketch::Wave),
+            Sky::Snow => sketches.push(Sketch::Snowflake),
+            Sky::Rainbow => sketches.push(Sketch::Sun),
+            Sky::Clear => {}
+        }
+        match self.ghost.mood {
+            Mood::Cheerful | Mood::Excited => sketches.extend([Sketch::Star, Sketch::Flower]),
+            Mood::Bored => sketches.push(Sketch::Spiral),
+            _ => {}
+        }
+        if sketches.is_empty() {
+            sketches.push(Sketch::Smile);
+        }
+        sketches[self.random.range(0.0, sketches.len() as f32) as usize]
+    }
+
     // Just inside the glass, where the viewer's pointer is or in the middle.
     fn glass_spot(&self) -> Vec3 {
         let point = self
@@ -724,11 +814,11 @@ impl World {
         if arrived_now && plan.arrived.is_none() {
             self.ghost.plan.arrived = Some(time);
         }
-        // Once on the cushion, a rest lasts until the ghost is rested or
-        // woken; on the way there it gives up like any plan.
-        let resting =
-            self.ghost.plan.activity == Activity::Rest && self.ghost.plan.arrived.is_some();
-        if self.ghost.plan.elapsed(time) > GIVE_UP && !resting {
+        // Resting and hiding have their own waits after arrival; on the way
+        // there they give up like any plan.
+        let waiting = matches!(self.ghost.plan.activity, Activity::Rest | Activity::Hide)
+            && self.ghost.plan.arrived.is_some();
+        if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.drop_ball();
             self.ghost.plan.done = true;
             return;
@@ -907,6 +997,50 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
+            Activity::Hide => {
+                look = Some(self.glass_spot() + Vec3::Z);
+                if self.ghost.plan.stayed(time) > self.ghost.plan.length {
+                    self.ghost.plan.target = self.glass_spot();
+                    self.ghost.velocity =
+                        (self.ghost.plan.target - position).normalize_or_zero() * 1.6;
+                    self.say("Boo!");
+                    self.record(EventKind::Jumped);
+                    self.ghost.plan.done = true;
+                }
+            }
+            Activity::Doodle => {
+                if let Some(started) = self.ghost.plan.arrived {
+                    if self.ghost.plan.count == 0 {
+                        if self.doodles.len() >= MAX_DOODLES {
+                            self.doodles.remove(0);
+                        }
+                        self.doodles.push(Doodle {
+                            sketch: self.ghost.plan.sketch.unwrap_or(Sketch::Smile),
+                            center: Vec2::new(position.x, position.y),
+                            size: 0.3,
+                            started,
+                        });
+                        self.ghost.plan.count = 1;
+                    }
+                    if let Some(doodle) = self.doodles.last().copied() {
+                        let progress = doodle.drawn(time);
+                        let pen = doodle.center + doodle.sketch.point_at(progress) * doodle.size;
+                        look = Some(Vec3::new(pen.x, pen.y, ROOM_MAX.z));
+                        self.ghost.plan.target = if progress < 1.0 {
+                            Vec3::new(pen.x, pen.y, ROOM_MAX.z - 0.3)
+                        } else {
+                            Vec3::new(doodle.center.x, doodle.center.y, ROOM_MAX.z - 0.7)
+                        };
+                        if time - started > Doodle::DRAW_TIME + 2.0 {
+                            self.record(EventKind::Doodled(doodle.sketch.name()));
+                            self.ghost.needs.change(0.0, 0.1, 0.0);
+                            self.ghost.plan.done = true;
+                        }
+                    }
+                } else {
+                    look = Some(self.ghost.plan.target + Vec3::Z * 0.35);
+                }
+            }
         }
         self.ghost.look = look;
     }
@@ -969,7 +1103,13 @@ impl World {
         ];
         for (center, radius, top) in obstacles {
             let offset = flat(ghost.position - center);
-            let reach = radius + 0.3;
+            // Hiding tucks the ghost closer behind furniture than its
+            // usual steering allows, especially beside the back wall.
+            let reach = if ghost.plan.activity == Activity::Hide {
+                (radius + 0.3).min(flat(target - center).length())
+            } else {
+                radius + 0.3
+            };
             let distance = offset.length();
             if ghost.position.y < top && distance < reach && distance > 1e-4 {
                 let push = offset / distance * (reach - distance) * 6.0;
@@ -1044,6 +1184,7 @@ impl World {
                     | EventKind::NudgedBall
                     | EventKind::Bloomed
                     | EventKind::Fetched
+                    | EventKind::Found
             )
         }) {
             return Mood::Excited;
@@ -1086,15 +1227,23 @@ mod tests {
 
     #[test]
     fn the_ghost_stays_in_the_room_whatever_it_does() {
-        let mut world = World::new(5, 12.0);
         for activity in Activity::ALL {
+            let mut world = World::new(5, 12.0);
+            world.drop_mote(Vec3::new(1.0, 1.0, 0.0));
+            world.notice_viewer();
+            world.ghost.needs.energy = 0.5;
             world.begin(activity);
-            for _ in 0..400 {
+            for _ in 0..1400 {
                 world.step(0.05);
-                assert!(inside(world.ghost.position), "{activity:?}");
-                assert!(inside(world.ball.position), "{activity:?}");
+                assert!(
+                    inside(world.ghost.position),
+                    "{activity:?}: {:?}",
+                    world.ghost.position
+                );
+                assert!(inside(world.ball.position));
             }
         }
+        let mut world = World::new(5, 12.0);
         for round in 0..200 {
             if world.needs_decision() {
                 let options = world.options();
@@ -1525,6 +1674,188 @@ mod tests {
         assert!(!options.contains(&Activity::Tend));
         world.drop_mote(Vec3::ONE);
         assert!(world.options().contains(&Activity::Chase));
+    }
+
+    #[test]
+    fn hiding_needs_a_viewer_and_energy_and_drawing_needs_an_awake_ghost() {
+        let mut world = World::new(6, 12.0);
+        assert!(!world.options().contains(&Activity::Hide));
+        assert!(world.options().contains(&Activity::Doodle));
+        world.notice_viewer();
+        assert!(world.options().contains(&Activity::Hide));
+        world.ghost.needs.energy = 0.3;
+        assert!(!world.options().contains(&Activity::Hide));
+        assert!(world.options().contains(&Activity::Doodle));
+        world.ghost.needs.energy = 0.25;
+        assert!(!world.options().contains(&Activity::Doodle));
+        world.ghost.needs.energy = 0.8;
+        world.ghost.asleep = 0.9;
+        assert!(!world.options().contains(&Activity::Doodle));
+    }
+
+    #[test]
+    fn the_ghost_reaches_its_hiding_spot_and_a_poke_finds_it() {
+        let mut spots = Vec::new();
+        for seed in 0..40 {
+            let mut world = World::new(seed, 12.0);
+            world.notice_viewer();
+            world.begin(Activity::Hide);
+            let spot = world.ghost.plan.target;
+            if !spots.contains(&spot) {
+                spots.push(spot);
+            }
+            assert!((25.0..45.0).contains(&world.ghost.plan.length));
+            run(&mut world, 15.0);
+            assert!(
+                world.ghost.plan.arrived.is_some(),
+                "seed {seed}: {:?}, target {spot}",
+                world.ghost.position
+            );
+            assert!(world.ghost.fade > 0.5, "seed {seed}");
+            assert!(!world.needs_decision());
+            let before = world.ghost.needs;
+            world.poke();
+            assert_eq!(world.events.last().unwrap().kind, EventKind::Found);
+            assert!(
+                !world
+                    .events
+                    .iter()
+                    .any(|event| matches!(event.kind, EventKind::Poked { .. }))
+            );
+            assert!(world.needs_decision());
+            assert!(world.ghost.velocity.y > 0.5);
+            assert_eq!(world.ghost.needs.fun, (before.fun + 0.2).min(1.0));
+            assert_eq!(world.ghost.needs.company, (before.company + 0.15).min(1.0));
+            world.step(0.05);
+            assert!(world.ghost.fade < 0.3);
+            assert_eq!(world.ghost.mood, Mood::Excited);
+        }
+        assert_eq!(spots.len(), 5);
+    }
+
+    #[test]
+    fn an_unfound_ghost_jumps_toward_the_glass_and_shouts_boo() {
+        let mut world = World::new(9, 12.0);
+        world.notice_viewer();
+        world.begin(Activity::Hide);
+        for _ in 0..1400 {
+            world.step(0.05);
+            if world.needs_decision() {
+                break;
+            }
+        }
+        assert!(world.needs_decision());
+        assert_eq!(world.events.last().unwrap().kind, EventKind::Jumped);
+        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Boo!");
+        assert!(world.ghost.velocity.z > 0.0);
+        assert!(world.ghost.plan.target.z > ROOM_MAX.z - 0.6);
+        run(&mut world, 2.0);
+        assert!(world.ghost.fade < 0.01);
+    }
+
+    #[test]
+    fn an_unreachable_hiding_spot_is_given_up_without_jumping() {
+        let mut world = World::new(4, 12.0);
+        world.begin(Activity::Hide);
+        world.ghost.plan.target = Vec3::new(0.0, -5.0, 0.0);
+        run(&mut world, 65.0);
+        assert!(world.needs_decision());
+        assert_eq!(world.ghost.fade, 0.0);
+        assert!(
+            !world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::Jumped)
+        );
+    }
+
+    #[test]
+    fn interrupting_a_hiding_plan_brings_the_ghost_back_into_view() {
+        let mut world = World::new(4, 12.0);
+        world.begin(Activity::Hide);
+        run(&mut world, 15.0);
+        assert!(world.ghost.fade > 0.5);
+        world.begin(Activity::Explore);
+        run(&mut world, 2.0);
+        assert!(world.ghost.fade < 0.01);
+    }
+
+    #[test]
+    fn doodling_reaches_the_glass_draws_a_picture_and_finishes() {
+        for seed in 0..10 {
+            let mut world = World::new(seed, 12.0);
+            world.begin(Activity::Doodle);
+            let sketch = world.ghost.plan.sketch.unwrap();
+            assert!((-1.2..=1.2).contains(&world.ghost.plan.target.x));
+            assert!((1.0..=1.6).contains(&world.ghost.plan.target.y));
+            assert_eq!(world.ghost.plan.target.z, ROOM_MAX.z - 0.35);
+            for _ in 0..600 {
+                world.step(0.05);
+                if world.needs_decision() {
+                    break;
+                }
+            }
+            assert!(world.needs_decision());
+            assert_eq!(world.doodles.len(), 1);
+            let doodle = world.doodles[0];
+            assert_eq!(doodle.sketch, sketch);
+            assert_eq!(doodle.drawn(world.time), 1.0);
+            assert!(
+                world
+                    .events
+                    .iter()
+                    .any(|event| event.kind == EventKind::Doodled(sketch.name()))
+            );
+            assert!(world.ghost.position.z > ROOM_MAX.z - 0.9);
+            assert!(world.ghost.plan.target.z < ROOM_MAX.z - 0.5);
+        }
+    }
+
+    #[test]
+    fn only_the_newest_three_doodles_are_kept_and_they_expire() {
+        let mut world = World::new(4, 12.0);
+        for _ in 0..4 {
+            world.begin(Activity::Doodle);
+            world.ghost.position = world.ghost.plan.target;
+            run(&mut world, 7.0);
+        }
+        assert_eq!(world.doodles.len(), 3);
+        assert!(world.doodles[0].started > 7.0);
+        assert!(
+            world
+                .doodles
+                .windows(2)
+                .all(|pair| pair[0].started < pair[1].started)
+        );
+        run(&mut world, Doodle::LIFETIME as f32);
+        assert!(world.doodles.is_empty());
+    }
+
+    #[test]
+    fn pictures_are_chosen_from_the_ghosts_mood_weather_and_bond() {
+        let mut world = World::new(4, 12.0);
+        assert_eq!(world.choose_sketch(), Sketch::Smile);
+        world.ghost.mood = Mood::Bored;
+        assert_eq!(world.choose_sketch(), Sketch::Spiral);
+        world.ghost.mood = Mood::Content;
+        world.weather.sky = Sky::Rain;
+        assert_eq!(world.choose_sketch(), Sketch::Wave);
+        world.weather.sky = Sky::Rainbow;
+        assert_eq!(world.choose_sketch(), Sketch::Sun);
+        world.weather.sky = Sky::Snow;
+        assert_eq!(world.choose_sketch(), Sketch::Snowflake);
+        world.weather.sky = Sky::Clear;
+        world.notice_viewer();
+        assert_eq!(world.choose_sketch(), Sketch::Smile);
+        world.life.bond = GREETS_FROM;
+        assert_eq!(world.choose_sketch(), Sketch::Heart);
+        world.ghost.mood = Mood::Cheerful;
+        for _ in 0..20 {
+            assert!(matches!(
+                world.choose_sketch(),
+                Sketch::Heart | Sketch::Star | Sketch::Flower
+            ));
+        }
     }
 
     #[test]

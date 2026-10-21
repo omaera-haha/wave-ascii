@@ -102,6 +102,8 @@ fn request(activity: Activity) -> &'static str {
         }
         Activity::Fetch => "Asks it to fetch, catch, or bring back the ball.",
         Activity::Dance => "Asks it to dance, spin, twirl, or do a trick.",
+        Activity::Hide => "Asks it to hide, or to play hide-and-seek.",
+        Activity::Doodle => "Asks it to draw, doodle, or write something on the glass.",
     }
 }
 
@@ -189,6 +191,24 @@ mod tests {
             let position = body.find(&format!("\"{}\"", activity.name())).unwrap();
             assert!(position > previous, "{body}");
             previous = position;
+        }
+    }
+
+    #[test]
+    fn requests_can_ask_for_hiding_and_drawing_on_the_glass() {
+        let body =
+            serde_json::to_string(&request_questions(&[Activity::Hide, Activity::Doodle])).unwrap();
+        assert!(body.contains("Asks it to hide, or to play hide-and-seek."));
+        assert!(body.contains("Asks it to draw, doodle, or write something on the glass."));
+        assert!(body.find("\"hide\"").unwrap() < body.find("\"doodle\"").unwrap());
+        for activity in [Activity::Hide, Activity::Doodle] {
+            let answer = answers(json!({
+                "model": "jev-1.13.0",
+                "answers": {"request": {"type": "choice", "choice": activity.name(),
+                    "confidence": 0.9, "probabilities": {activity.name(): 1.0}}},
+                "usage": {"input_tokens": 80, "output_tokens": 2}
+            }));
+            assert_eq!(read_request(&answer), Some(activity));
         }
     }
 }
