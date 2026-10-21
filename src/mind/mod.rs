@@ -42,7 +42,7 @@ const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
 const DREAMS_EVERY: (f32, f32) = (45.0, 90.0);
 /// Seconds until a thought it had feels fresh again. Until then it comes
 /// back only rarely, and less the more recently it was had.
-const THOUGHT_FRESHENS: f64 = 7200.0;
+const THOUGHT_FRESHENS: f64 = 4.0 * 3600.0;
 /// How fresh the freshest musing that fits must be for the ghost to bother
 /// thinking it; with only lately-had thoughts to hand, it stays quiet.
 const QUIET_BELOW: f32 = 0.2;
@@ -643,7 +643,7 @@ impl Mind {
                 .rev()
                 .take_while(|event| event.time > since)
                 .any(|event| matches!(event.kind, EventKind::FriendArrived(_)));
-        // Reactions to what just happened always come to mind; idle
+        // Quirks and a friend's notice always come to mind; passersby, idle
         // musings, dreams, and setting out only when something fresh fits.
         let owned = |lines: &[&str]| -> Vec<String> {
             lines.iter().map(|line| (*line).to_owned()).collect()
@@ -653,7 +653,8 @@ impl Mind {
         } else if friend_noticed {
             (owned(&musing::friend_notices_outfit(world)), false)
         } else if let Some(kind) = passerby {
-            (owned(&kind.thoughts()), false)
+            // The same squirrel again needn't be remarked on every time.
+            (owned(&kind.thoughts()), true)
         } else if world.time >= self.next_musing {
             self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
             let lines = if asleep {
