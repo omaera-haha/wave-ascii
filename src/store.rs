@@ -51,6 +51,11 @@ impl Paths {
         self.save.with_file_name("postcards")
     }
 
+    /// The ghost's album beside its saved life.
+    pub fn album(&self) -> PathBuf {
+        self.save.with_file_name("album")
+    }
+
     /// Both files in one directory, for tests.
     #[cfg(test)]
     pub fn in_directory(directory: &Path) -> Self {

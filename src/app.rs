@@ -2,6 +2,7 @@ use std::io;
 
 use glam::{Vec2, Vec3};
 
+use crate::album::Album;
 use crate::canvas::{Canvas, Style};
 use crate::color::ColorMode;
 use crate::face::{self, expression::Expression, mood::Cues};
@@ -53,6 +54,8 @@ pub enum Mode {
     Journal,
     /// The ghost's life at a glance: its bond, habits, and days.
     Life,
+    /// Leafing through the pictures the ghost kept.
+    Album,
 }
 
 /// The most characters a line holds; more is cut off as it is typed or
@@ -199,6 +202,7 @@ pub struct App {
     focused: bool,
     pub drawing_mode: bool,
     drawing_right: bool,
+    pub album: Album,
 }
 
 impl App {
@@ -236,6 +240,7 @@ impl App {
             focused: true,
             drawing_mode: false,
             drawing_right: false,
+            album: Album::default(),
         }
     }
 
@@ -243,6 +248,9 @@ impl App {
     /// ghost rather than a picture of one.
     pub fn live(mut self, paths: Option<Paths>, born: i64) -> Self {
         self.paths = paths;
+        if let Some(paths) = &self.paths {
+            self.album = Album::load(paths, mind::now());
+        }
         self.born = born;
         self.world.birthday = jiff::Timestamp::from_second(born)
             .ok()
@@ -255,6 +263,10 @@ impl App {
 
     /// Moves the world and the mind forward by `seconds`.
     pub fn advance(&mut self, seconds: f32) {
+        if self.paths.is_some() {
+            self.album.observe(&self.world);
+            self.album.elapse(seconds);
+        }
         if self.paused {
             return;
         }
@@ -264,6 +276,9 @@ impl App {
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
         self.mind.think(&mut self.world);
+        if self.paths.is_some() {
+            self.album.observe(&self.world);
+        }
         if self
             .hint_claude_at
             .is_some_and(|time| self.world.time >= time)
@@ -402,7 +417,10 @@ impl App {
 
     /// Reading panels leave mouse selection and the wheel to the terminal.
     pub fn wants_mouse(&self) -> bool {
-        !matches!(self.mode, Mode::Journal | Mode::Help | Mode::Life)
+        !matches!(
+            self.mode,
+            Mode::Journal | Mode::Help | Mode::Life | Mode::Album
+        )
     }
 
     fn press_key(&mut self, key: Key) -> Response {
@@ -451,6 +469,20 @@ impl App {
                 Response::Continue
             }
             Mode::Journal => self.scroll_journal(key),
+            Mode::Album => {
+                let oldest = self.album.pages.len().saturating_sub(1);
+                self.album.index = self.album.index.min(oldest);
+                match key {
+                    Key::Character('q') => return Response::Quit,
+                    Key::Escape | Key::Character('b') => self.mode = Mode::Watching,
+                    Key::Left => self.album.index = self.album.index.saturating_sub(1),
+                    Key::Right => self.album.index = (self.album.index + 1).min(oldest),
+                    Key::Home => self.album.index = 0,
+                    Key::End => self.album.index = oldest,
+                    _ => {}
+                }
+                Response::Continue
+            }
             Mode::Watching => self.command(key),
         }
     }
@@ -471,6 +503,10 @@ impl App {
                 self.mode = Mode::Journal;
             }
             Key::Character('l') => self.mode = Mode::Life,
+            Key::Character('b') => {
+                self.album.index = 0;
+                self.mode = Mode::Album;
+            }
             Key::Character('p') => self.save_postcard(),
             Key::Character('o') => self.world.toggle_focus(),
             Key::Character('g') => {
@@ -856,6 +892,14 @@ impl App {
     /// lines of words, and any open panel over it.
     pub fn frame(&mut self, columns: usize, rows: usize) -> Canvas {
         self.screen_size = (columns, rows);
+        if self.paths.is_some() {
+            self.album.observe(&self.world);
+        }
+        if self.mode == Mode::Album {
+            let mut screen = Canvas::blank(columns, rows);
+            ui::album_panel(self, &mut screen);
+            return screen;
+        }
         let scene_rows = rows.saturating_sub(2).max(1);
         self.area = (columns, scene_rows);
         let grid = self.style.grid(columns, scene_rows);
@@ -1029,6 +1073,16 @@ impl App {
             } else {
                 None
             };
+            if !self.paused
+                && let Err(error) = self.album.capture(
+                    self.paths.as_ref().unwrap(),
+                    &self.world,
+                    colored.as_ref().unwrap_or(&canvas),
+                    mind::now(),
+                )
+            {
+                self.post(format!("Couldn't keep an album moment: {error}"));
+            }
             self.postcard = Some(Postcard::new(canvas, colored, &self.world, &self.doing()));
         }
         ui::draw(self, &mut screen, scene_rows);
@@ -1489,6 +1543,148 @@ mod tests {
                 .starts_with("Couldn't save a postcard: ")
         );
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn album_app(label: &str) -> (App, Paths, std::path::PathBuf) {
+        let directory = std::env::temp_dir().join(format!(
+            "wave-ascii-app-album-{label}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        let paths = Paths::in_directory(&directory);
+        let mut app = app();
+        app.paths = Some(paths.clone());
+        app.world.events.clear();
+        app.world.events.push(crate::world::Event {
+            time: app.world.time,
+            kind: EventKind::Milestone("A moment to keep.".to_owned()),
+        });
+        (app, paths, directory)
+    }
+
+    #[test]
+    fn album_captures_wait_for_an_unpaused_watching_frame() {
+        for (label, mode, paused) in [
+            ("help", Mode::Help, false),
+            ("journal", Mode::Journal, false),
+            ("life", Mode::Life, false),
+            ("book", Mode::Album, false),
+            ("settings", Mode::Settings, false),
+            ("talking", Mode::Talking, false),
+            ("paused", Mode::Watching, true),
+        ] {
+            let (mut app, paths, directory) = album_app(label);
+            app.frame(24, 10);
+            assert!(app.album.pages.is_empty());
+            app.world.time += 2.0;
+            app.mode = mode;
+            app.paused = paused;
+            app.advance(0.0);
+            app.frame(24, 10);
+            assert!(app.album.pages.is_empty(), "{label}");
+            assert!(!paths.album().exists());
+            app.paused = false;
+            app.mode = Mode::Watching;
+            app.frame(24, 10);
+            assert_eq!(app.album.pages.len(), 1, "{label}");
+            assert_eq!(app.album.pages[0].caption, "A moment to keep.");
+            assert_eq!(Album::load(&paths, mind::now()).pages, app.album.pages);
+            std::fs::remove_dir_all(directory).unwrap();
+        }
+    }
+
+    #[test]
+    fn album_captures_expire_while_paused_or_reading_and_need_a_saved_life() {
+        for (label, mode, paused) in [
+            ("expires-paused", Mode::Watching, true),
+            ("expires-panel", Mode::Album, false),
+        ] {
+            let (mut app, paths, directory) = album_app(label);
+            app.mode = mode;
+            app.paused = paused;
+            app.advance(61.0);
+            app.mode = Mode::Watching;
+            app.paused = false;
+            app.world.time += 2.0;
+            app.frame(24, 10);
+            assert!(app.album.pages.is_empty());
+            assert!(!paths.album().exists());
+            let _ = std::fs::remove_dir_all(directory);
+        }
+        let mut app = app();
+        app.world.events.push(crate::world::Event {
+            time: app.world.time,
+            kind: EventKind::Milestone("A moment without a save.".to_owned()),
+        });
+        app.advance(3.0);
+        app.frame(24, 10);
+        assert!(app.album.pages.is_empty());
+    }
+
+    #[test]
+    fn album_keys_flip_jump_close_and_quit_and_a_still_turns_the_view() {
+        let mut app = app();
+        for captured in (0..4).rev() {
+            app.album.pages.push(crate::album::Page::new(
+                &Canvas::blank(2, 2),
+                &app.world,
+                captured,
+                "Kept.".to_owned(),
+            ));
+        }
+        app.input(Input::Key(Key::Character('b')));
+        assert_eq!(app.mode, Mode::Album);
+        assert!(!app.wants_mouse());
+        for (columns, rows) in [(0, 0), (1, 1), (12, 4), (100, 32)] {
+            app.frame(columns, rows);
+        }
+        let yaw = app.camera.yaw;
+        for (key, expected) in [
+            (Key::Left, 0),
+            (Key::Right, 1),
+            (Key::Right, 2),
+            (Key::Home, 0),
+            (Key::End, 3),
+            (Key::Right, 3),
+            (Key::Left, 2),
+        ] {
+            assert_eq!(app.input(Input::Key(key)), Response::Continue);
+            assert_eq!(app.album.index, expected);
+        }
+        app.input(Input::Key(Key::Character('a')));
+        assert_eq!(app.mode, Mode::Album);
+        assert_eq!(app.camera.yaw, yaw);
+        assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+        for key in [Key::Escape, Key::Character('b')] {
+            app.input(Input::Key(key));
+            assert_eq!(app.mode, Mode::Watching);
+            assert!(app.wants_mouse());
+            app.input(Input::Key(Key::Character('b')));
+            assert_eq!(app.album.index, 0);
+        }
+        app.input(Input::Key(Key::Escape));
+        app.input(Input::Key(Key::Character('a')));
+        assert!(app.camera.yaw < yaw);
+    }
+
+    #[test]
+    fn an_empty_album_opens_closes_and_handles_all_navigation_keys() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('b')));
+        assert_eq!(app.mode, Mode::Album);
+        for key in [Key::Left, Key::Right, Key::Home, Key::End] {
+            assert_eq!(app.input(Input::Key(key)), Response::Continue);
+            assert_eq!(app.album.index, 0);
+        }
+        for (columns, rows) in [(0, 0), (1, 1), (12, 4), (100, 32)] {
+            app.frame(columns, rows);
+        }
+        assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+        assert_eq!(app.input(Input::Key(Key::Escape)), Response::Continue);
+        assert_eq!(app.mode, Mode::Watching);
+        app.input(Input::Key(Key::Character('b')));
+        app.input(Input::Key(Key::Character('b')));
+        assert_eq!(app.mode, Mode::Watching);
     }
 
     #[test]
