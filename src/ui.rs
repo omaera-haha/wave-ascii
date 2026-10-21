@@ -758,9 +758,9 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "Ask for a word game; type a letter to guess in talk mode.",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "Click the music box to wind a tune; teach it do re mi.",
-        "Letters: ←/→ browse · w write · v sent · Esc close",
-        "Writing: Enter newline · Ctrl+S send · Esc keep draft",
-        "Album: ←/→, Home/End · Esc, b close",
+        "Letters: ←/→ browse · w write, Ctrl+S sends · v sent",
+        "Album: ←/→, Home/End · life panel: ↑/↓ scroll",
+        "Tell it how you feel, or when you'll be back.",
     ];
     let room = rows.saturating_sub(3);
     let mut lines = keys.to_vec();
