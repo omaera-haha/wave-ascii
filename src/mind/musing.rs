@@ -112,6 +112,9 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     if world.morning() {
         lines.extend(morning(world));
     }
+    if world.petting() >= 0.35 {
+        lines.extend(["Mmm… right there.", "That's nice…", "Don't stop."]);
+    }
     if world.bedtime() && present {
         lines.extend(["I should be asleep…", "Just a little longer."]);
     }
@@ -290,6 +293,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if today.pounces > 0 {
         lines.push("…a finger of light on the glass, always just out of reach…");
+    }
+    if today.pets > 0 {
+        lines.push("…a warm hand, stroking softly, and the glass is gone…");
     }
     if !today.words.is_empty() {
         lines.push("…your words drift by like light motes, and I catch one…");

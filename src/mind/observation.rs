@@ -304,6 +304,9 @@ fn motes(world: &World) -> String {
 }
 
 fn viewer(world: &World) -> String {
+    if world.petting() >= 0.35 {
+        return "stroking you gently through the glass".to_owned();
+    }
     let words = if world.viewer.typing {
         "typing a message to the ghost"
     } else if world.viewer.pointer.is_some() {

@@ -66,6 +66,12 @@ const HEEDED_FOR: f64 = 30.0;
 /// Seconds after the viewer spoke that what they do may show what they
 /// meant.
 const SHOWN_FOR: f64 = 12.0;
+/// How much petting one unit of a stroke across the ghost adds, and the
+/// seconds it takes to fade to about a third once the strokes stop.
+const STROKING: f32 = 2.0;
+const PETTING_FADES: f32 = 1.2;
+/// How much petting it takes to feel it: to calm down and count a stroke.
+const PETTED: f32 = 0.35;
 
 /// Something that happened, which the ghost's face reacts to and its minds
 /// hear about.
@@ -130,6 +136,8 @@ pub enum EventKind {
     Praised,
     /// The viewer told the ghost no.
     Scolded,
+    /// The viewer stroked the ghost.
+    Petted,
     /// The viewer said a word the ghost doesn't know yet.
     Puzzled(String),
     /// The ghost worked out what one of the viewer's words means.
@@ -199,6 +207,7 @@ impl EventKind {
             Self::Celebrated(occasion) => format!("it is {}", occasion.words()),
             Self::Praised => "the viewer sounded pleased with you".to_owned(),
             Self::Scolded => "the viewer told you no".to_owned(),
+            Self::Petted => "the viewer stroked you gently".to_owned(),
             Self::Puzzled(word) => format!("didn't know the viewer's word “{word}”"),
             Self::LearnedWord { word, activity } => {
                 format!("worked out that “{word}” means {}", activity.doing())
@@ -352,6 +361,10 @@ pub struct World {
     drowsy_until: f64,
     /// When it last woke naturally from an overnight rest.
     morning_at: Option<f64>,
+    /// From untouched at 0 to being stroked steadily at 1.
+    petting: f32,
+    /// Whether this spell of petting has been counted.
+    petted: bool,
 }
 
 impl World {
@@ -421,6 +434,8 @@ impl World {
             push: Vec3::X,
             drowsy_until: 0.0,
             morning_at: None,
+            petting: 0.0,
+            petted: false,
         }
     }
 
@@ -439,6 +454,10 @@ impl World {
     fn advance(&mut self, seconds: f32) {
         self.time += f64::from(seconds);
         self.viewer.liveliness *= (-seconds / 0.7).exp();
+        self.petting *= (-seconds / PETTING_FADES).exp();
+        if self.petting < 0.05 {
+            self.petted = false;
+        }
         self.doodles
             .retain(|doodle| doodle.opacity(self.time) > 0.0);
 
@@ -785,6 +804,29 @@ impl World {
         }
         self.record(EventKind::KickedBall);
         self.shown(Activity::Fetch);
+    }
+
+    /// The viewer stroked the ghost, moving `travel` across it in scene
+    /// units. Strokes soothe it without waking it; one that finds it hiding
+    /// counts as finding it.
+    pub fn pet(&mut self, travel: f32) {
+        if self.ghost.plan.activity == Activity::Hide
+            && !self.ghost.plan.done
+            && self.ghost.fade > 0.3
+        {
+            self.poke();
+            return;
+        }
+        self.petting = (self.petting + travel.max(0.0) * STROKING).min(1.0);
+        if self.petting >= PETTED && !self.petted {
+            self.petted = true;
+            self.record(EventKind::Petted);
+        }
+    }
+
+    /// How much the ghost is being petted, from 0 to 1.
+    pub fn petting(&self) -> f32 {
+        self.petting
     }
 
     /// A new ghost comes into being on `day`, a local date as YYYY-MM-DD.
@@ -1534,7 +1576,9 @@ impl World {
             Activity::Dance => 1.5,
             Activity::Pounce => 1.6,
             _ => 0.8,
-        } * (0.6 + 0.4 * ghost.needs.energy);
+        } * (0.6 + 0.4 * ghost.needs.energy)
+            // It slows down to enjoy being stroked.
+            * (1.0 - 0.75 * self.petting);
 
         let offset = target - ghost.position;
         let distance = offset.length();
@@ -1609,7 +1653,9 @@ impl World {
         let tiring = 0.85 + 0.3 * nature.sleepy;
         let ghost = &mut self.ghost;
         if ghost.asleep > 0.5 {
-            ghost.needs.change(0.012 * seconds / tiring, 0.0, 0.0);
+            ghost
+                .needs
+                .change(0.012 * seconds / tiring, 0.0, 0.03 * self.petting * seconds);
             return;
         }
         let effort = (ghost.velocity.length() / 1.3).min(1.0);
@@ -1626,6 +1672,9 @@ impl World {
         if present {
             company += 0.004;
         }
+        // Being stroked is company, and a little fun while awake.
+        company += 0.03 * self.petting;
+        fun += 0.01 * self.petting;
         ghost.needs.change(
             -(0.0012 + 0.0025 * effort) * night * tiring * seconds,
             fun * seconds,
@@ -1639,6 +1688,10 @@ impl World {
         let ghost = &self.ghost;
         if ghost.asleep > 0.5 || ghost.needs.energy < 0.2 {
             return Mood::Sleepy;
+        }
+        // Strokes soothe even a grumpy ghost.
+        if self.petting >= PETTED {
+            return Mood::Cheerful;
         }
         if let Some((mood, until)) = ghost.suggested_mood
             && self.time < until
@@ -2078,6 +2131,73 @@ mod tests {
         ));
         world.step(0.05);
         assert_eq!(world.ghost.mood, Mood::Grumpy);
+    }
+
+    #[test]
+    fn strokes_soothe_and_please_the_ghost_and_count_once_per_spell() {
+        let mut world = World::new(3, 12.0);
+        world.ghost.needs.company = 0.3;
+        for _ in 0..3 {
+            world.poke();
+        }
+        assert_eq!(world.feeling(), Mood::Grumpy);
+        world.pet(0.1);
+        assert!(world.petting() < PETTED);
+        world.pet(0.1);
+        world.pet(0.1);
+        assert_eq!(world.feeling(), Mood::Cheerful);
+        let company = world.ghost.needs.company;
+        run(&mut world, 1.0);
+        world.pet(0.1);
+        assert!(world.ghost.needs.company > company);
+        let pets = |world: &World| {
+            world
+                .events
+                .iter()
+                .filter(|event| event.kind == EventKind::Petted)
+                .count()
+        };
+        assert_eq!(pets(&world), 1);
+        assert_eq!(world.life.total.pets, 1);
+        assert!(world.events.iter().any(|event| {
+            event.kind == EventKind::Milestone("You stroked me for the first time.".to_owned())
+        }));
+
+        // The petting fades once the strokes stop, and a new spell counts
+        // again.
+        run(&mut world, 6.0);
+        assert!(world.petting() < 0.05);
+        world.pet(0.4);
+        assert_eq!(pets(&world), 2);
+    }
+
+    #[test]
+    fn strokes_leave_a_sleeper_asleep_and_find_a_hidden_ghost() {
+        let mut world = World::new(3, 12.0);
+        world.ghost.needs.energy = 0.2;
+        world.begin(Activity::Rest);
+        run(&mut world, 30.0);
+        assert!(world.ghost.asleep > 0.9);
+        world.pet(0.5);
+        run(&mut world, 0.5);
+        assert!(world.ghost.asleep > 0.9);
+        assert_eq!(world.ghost.plan.activity, Activity::Rest);
+        assert!(!world.ghost.plan.done);
+
+        let mut world = World::new(3, 12.0);
+        world.notice_viewer();
+        world.begin(Activity::Hide);
+        world.ghost.plan.arrived = Some(world.time);
+        world.ghost.fade = 0.85;
+        world.pet(0.2);
+        assert!(world.ghost.plan.done);
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::Found)
+        );
+        assert_eq!(world.petting(), 0.0);
     }
 
     #[test]

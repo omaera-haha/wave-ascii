@@ -180,6 +180,12 @@ pub struct App {
     /// Where the left button went down, and whether it has dragged since.
     press: Option<(usize, usize)>,
     dragged: bool,
+    /// While a press that began on the ghost strokes it instead of turning
+    /// the view: the last point of the stroke, in scene space.
+    stroke: Option<Vec2>,
+    /// Which way the latest stroke went across the screen, from -1 to 1,
+    /// so the ghost leans into the hand.
+    stroke_side: f32,
     /// The aura's color, eased toward the color of the ghost's mood.
     aura: Vec3,
     last_save: f64,
@@ -216,6 +222,8 @@ impl App {
             pointer: None,
             press: None,
             dragged: false,
+            stroke: None,
+            stroke_side: 0.0,
             aura,
             last_save: 0.0,
             hinted_claude: false,
@@ -482,9 +490,10 @@ impl App {
         self.post(message);
     }
 
-    /// Applies a mouse event. Dragging turns the view and the wheel zooms.
-    /// A click on the ghost pokes it, on the ball flicks it, and anywhere
-    /// else in the room drops in a light mote.
+    /// Applies a mouse event. Dragging turns the view, except that a drag
+    /// begun on the ghost strokes it, and the wheel zooms. A click on the
+    /// ghost pokes it, on the ball flicks it, and anywhere else in the room
+    /// drops in a light mote.
     pub fn mouse(&mut self, mouse: Mouse) -> Response {
         if !self.wants_mouse() {
             return Response::Continue;
@@ -498,9 +507,29 @@ impl App {
             MouseAction::Press => {
                 self.press = Some((mouse.column, mouse.row));
                 self.dragged = false;
+                self.stroke = point.filter(|point| {
+                    self.view
+                        .is_some_and(|view| view.touches_ghost(*point, self.world.ghost.position))
+                });
             }
             MouseAction::Drag => {
-                if let Some((column, row)) = self.press {
+                if let (Some(last), Some(point), Some(view)) = (self.stroke, point, self.view) {
+                    if point != last {
+                        self.dragged = true;
+                        self.stroke = Some(point);
+                        if view.touches_ghost(point, self.world.ghost.position) {
+                            self.world.pet(point.distance(last));
+                            let across = point.x - last.x;
+                            self.stroke_side = if across.abs() > 1e-4 {
+                                across.signum()
+                            } else {
+                                0.0
+                            };
+                        }
+                    }
+                } else if self.stroke.is_none()
+                    && let Some((column, row)) = self.press
+                {
                     let across = mouse.column as f32 - column as f32;
                     let down = mouse.row as f32 - row as f32;
                     if across != 0.0 || down != 0.0 {
@@ -512,6 +541,7 @@ impl App {
                 }
             }
             MouseAction::Release => {
+                self.stroke = None;
                 if self.press.take().is_some()
                     && !self.dragged
                     && let Some(point) = point
@@ -615,6 +645,7 @@ impl App {
             &Cues {
                 mood: ghost.mood,
                 asleep: ghost.asleep,
+                petting: world.petting(),
                 gaze,
                 reactions,
             },
@@ -628,7 +659,7 @@ impl App {
         };
         let pose = Pose::new(
             world.time,
-            ghost.velocity.dot(view.right) / GHOST_SCALE,
+            ghost.velocity.dot(view.right) / GHOST_SCALE + self.stroke_side * world.petting() * 1.2,
             ghost.velocity.y / GHOST_SCALE,
             ghost.asleep,
         );
@@ -1118,6 +1149,44 @@ mod tests {
         }
         assert!(app.camera.yaw < yaw);
         assert_eq!(app.world.events.len(), events);
+    }
+
+    #[test]
+    fn dragging_across_the_ghost_strokes_it_instead_of_turning_the_view() {
+        let mut app = app();
+        let (yaw, pitch) = (app.camera.yaw, app.camera.pitch);
+        let (column, row) = cell_of(&app, app.world.ghost.position);
+        for (column, action) in [
+            (column, MouseAction::Press),
+            (column + 1, MouseAction::Drag),
+            (column + 2, MouseAction::Drag),
+            (column + 1, MouseAction::Drag),
+            (column, MouseAction::Drag),
+            (column + 1, MouseAction::Drag),
+            (column + 2, MouseAction::Drag),
+            (column + 2, MouseAction::Release),
+        ] {
+            app.input(Input::Mouse(Mouse {
+                column,
+                row,
+                action,
+            }));
+        }
+        assert_eq!((app.camera.yaw, app.camera.pitch), (yaw, pitch));
+        assert!(app.world.petting() > 0.35, "{}", app.world.petting());
+        assert!(
+            app.world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::Petted)
+        );
+        assert!(
+            !app.world
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::Poked { .. }))
+        );
+        assert!(!app.world.viewer.pointer_is_lively());
     }
 
     #[test]

@@ -14,12 +14,21 @@ const ASLEEP: Face = Face {
     ..Face::REST
 };
 
+/// Eyes closed in happy arcs, tipped up into the stroke.
+const BLISS: Face = Face {
+    smile: 1.0,
+    gaze: Vec2::new(0.0, 0.3),
+    ..Face::REST
+};
+
 /// What the face answers to at one moment.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Cues {
     pub mood: Mood,
     /// From awake at 0 to asleep at 1.
     pub asleep: f32,
+    /// From untouched at 0 to being stroked steadily at 1.
+    pub petting: f32,
     /// Where to look, from -1 to 1 across and up on screen, and how firmly,
     /// from 0 (its own glances) to 1 (eyes held there).
     pub gaze: Option<(Vec2, f32)>,
@@ -39,6 +48,11 @@ pub fn face(time: f64, cues: &Cues) -> Face {
         face.gaze = face.gaze * (1.0 - firmness) + gaze.clamp_length_max(1.0) * firmness;
     }
     face = face.lerp(ASLEEP, cues.asleep);
+    // Being stroked melts an awake face into bliss.
+    face = face.lerp(
+        BLISS,
+        smoothstep(0.1, 0.5, cues.petting) * (1.0 - cues.asleep),
+    );
     // A blink doesn't suit eyes that have become other shapes.
     let blink =
         BLINKS.at(time).shut[0] * (1.0 - cues.asleep) * (1.0 - face.prompt) * (1.0 - face.smile);
@@ -83,7 +97,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         }
         EventKind::Morning => Expression::Stretch,
         EventKind::ViewerArrived => Expression::Wink,
-        EventKind::Praised => Expression::Smile,
+        EventKind::Praised | EventKind::Petted => Expression::Smile,
         EventKind::Scolded => Expression::Worry,
         EventKind::Puzzled(_) => Expression::Skeptical,
         EventKind::LearnedWord { .. } => Expression::Sparkle,

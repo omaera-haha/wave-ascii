@@ -81,6 +81,8 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 
     let source = if ghost.asleep > 0.5 {
         Some((Emote::Sleep, SLEEP_BEAT, 1.0))
+    } else if world.petting() >= 0.35 {
+        Some((Emote::Heart, 1.1, 0.85))
     } else {
         match ghost.mood {
             Mood::Grumpy => Some((Emote::Anger, 1.3, 1.0)),

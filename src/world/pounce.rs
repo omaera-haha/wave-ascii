@@ -23,7 +23,10 @@ impl World {
         if let Some(position) = pointer
             && self.viewer.pointer != pointer
         {
-            if let Some(previous) = self.viewer.pointer {
+            // A finger stroking the ghost isn't darting about.
+            if let Some(previous) = self.viewer.pointer
+                && self.petting() < 0.05
+            {
                 self.viewer.liveliness += position.truncate().distance(previous.truncate());
             }
             self.viewer.moved_at = self.time;

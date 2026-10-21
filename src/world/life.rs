@@ -90,6 +90,8 @@ pub struct Tally {
     /// The first few words it worked out, kept for the diary.
     pub words: Vec<String>,
     pub pokes: u32,
+    /// Times the viewer stroked it.
+    pub pets: u32,
     /// Seconds the viewer was around, kept in double precision so years of
     /// frames still add up.
     pub together: f64,
@@ -147,6 +149,7 @@ impl Tally {
                 }
             }
             EventKind::Poked { .. } => self.pokes += 1,
+            EventKind::Petted => self.pets += 1,
             _ => {}
         }
     }
@@ -257,6 +260,12 @@ impl Tally {
                 duration_words(self.together)
             ));
         }
+        match self.pets {
+            0 => {}
+            1 => text.push_str(" You stroked me once."),
+            pets if pets < 5 => text.push_str(" You stroked me a few times."),
+            _ => text.push_str(" You stroked me so often."),
+        }
         if self.pokes >= 6 {
             text.push_str(" You poked me a lot.");
         }
@@ -315,6 +324,7 @@ impl Life {
             EventKind::Heard(_) => 0.015,
             EventKind::Praised | EventKind::LearnedWord { .. } => 0.005,
             EventKind::Fetched => 0.01,
+            EventKind::Petted => 0.004,
             EventKind::Pounced => 0.003,
             EventKind::Found => 0.015,
             EventKind::ViewerArrived => 0.003,
@@ -522,6 +532,7 @@ impl Life {
                 Occasion::Birthday => "My first birthday!",
             }
             .to_owned(),
+            EventKind::Petted if total.pets == 1 => "You stroked me for the first time.".to_owned(),
             EventKind::Heard(_) if total.heard == 1 => {
                 "You talked to me for the first time.".to_owned()
             }

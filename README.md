@@ -82,8 +82,9 @@ the next requests use them at once.
 
 With the mouse, click the ghost to poke it (poke it a few times and it gets
 grumpy), click the ball to flick it, and click anywhere else in the room to
-drop in a light mote. Drag to turn the view and scroll to zoom. The ghost's
-eyes follow the pointer.
+drop in a light mote. Press on the ghost and drag back and forth across it to
+stroke it. Drag anywhere else to turn the view, and scroll to zoom. The
+ghost's eyes follow the pointer.
 
 The journal wraps all retained memories, its moments to remember, the diary,
 the conversation, the latest ten events, and any model errors. It opens at
@@ -109,6 +110,11 @@ piped output never saves them.
 
 ### Playing with it
 
+- **Stroking.** Press on the ghost and drag gently back and forth across it.
+  It slows down, closes its eyes in happy arcs, leans into your hand, and
+  puffs little hearts. Strokes soothe even a grumpy ghost, keep it company,
+  and warm its bond with you. A sleeping ghost stays asleep, and a hiding one
+  is found.
 - **Fetch.** A flick of the ball can start a game: an awake ghost with energy
   to spare goes after it, carries it back to the glass, lets it drop in front
   of you, and waits a few seconds for another throw. It lets go of the ball if

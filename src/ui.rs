@@ -549,7 +549,7 @@ fn help_panel(screen: &mut Canvas) {
         "j          journal and diary   click room    drop a light mote",
         "l          its life and bond   p             save a postcard",
         "arrows     turn the view       drag          turn the view",
-        "+ -        zoom                wheel         zoom",
+        "+ -, wheel zoom                drag ghost    stroke it",
         "m  c       style, color        space         pause",
         "r          reset the view      q, Esc        quit",
         "",
@@ -915,6 +915,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             total.nights,
         ),
         ("birds watched", total.birds, "moths seen", total.moths),
+        (
+            "strokes from you",
+            total.pets,
+            "words learned",
+            total.learned,
+        ),
     ] {
         counts.push((
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),
