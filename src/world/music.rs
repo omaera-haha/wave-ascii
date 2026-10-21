@@ -344,6 +344,17 @@ impl World {
         })
     }
 
+    /// A lullaby lulls a drowsing ghost deeper, and one that tips over into
+    /// sleep has fallen asleep to it.
+    fn deepen_sleep(&mut self) {
+        let before = self.ghost.asleep;
+        self.ghost.asleep = (before + 0.15).min(1.0);
+        if before < 0.9 && self.ghost.asleep >= 0.9 {
+            self.record(EventKind::FellAsleep);
+            self.record(EventKind::LullabySleep);
+        }
+    }
+
     /// A viewer's winding is immediate. Sleepers hear only the lullaby;
     /// focus permits it only when the viewer explicitly asks for a lullaby.
     pub fn wind_music_box(&mut self) {
@@ -352,7 +363,7 @@ impl World {
         }
         let lullaby = self.ghost.asleep >= 0.3 || self.bedtime();
         if self.ghost.asleep >= 0.3 {
-            self.ghost.asleep = (self.ghost.asleep + 0.15).min(1.0);
+            self.deepen_sleep();
         } else {
             self.begin(Activity::Music);
         }
@@ -367,7 +378,7 @@ impl World {
 
     fn ask_lullaby(&mut self) {
         if self.ghost.asleep >= 0.3 {
-            self.ghost.asleep = (self.ghost.asleep + 0.15).min(1.0);
+            self.deepen_sleep();
         } else if self.focus.is_none() {
             self.begin(Activity::Music);
         }
@@ -901,6 +912,26 @@ mod tests {
         world.step(8.0);
         assert_eq!(world.ghost.asleep, 1.0);
         assert_eq!(world.life.total.lullaby_sleeps, 1);
+    }
+
+    #[test]
+    fn a_lullaby_that_tips_a_drowsing_ghost_into_sleep_marks_it_asleep() {
+        let mut world = World::new(7, 23.0);
+        world.tuck_in();
+        world.ghost.asleep = 0.8;
+        let before = world.life.total.lullaby_sleeps;
+        world.wind_music_box();
+        assert!(world.ghost.asleep >= 0.9);
+        assert_eq!(world.life.total.lullaby_sleeps, before + 1);
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::FellAsleep)
+        );
+        // Deepening a sleep that already took hold counts nothing new.
+        world.wind_music_box();
+        assert_eq!(world.life.total.lullaby_sleeps, before + 1);
     }
 
     #[test]

@@ -431,8 +431,18 @@ impl World {
         let mut life = self.life.clone();
         life.wearing = self.wearing;
         if let Some(gift) = self.ghost.keepsake {
+            let kept = EventKind::Kept(gift);
+            let granted = life
+                .wish
+                .as_ref()
+                .filter(|wishing| wishing.wish.granted_by(&kept))
+                .map(|wishing| wishing.wish.clone());
             life.keep(gift);
-            life.note(&EventKind::Kept(gift));
+            life.note(&kept);
+            if let Some(wish) = granted {
+                life.grant(wish.clone(), &self.date.to_string());
+                life.note(&EventKind::WishGranted(wish));
+            }
         }
         life
     }
@@ -1083,12 +1093,22 @@ mod tests {
                 }
                 "ball" => world.kick_ball(Vec3::X),
                 _ => {
+                    world.life.wish = Some(crate::world::Wishing {
+                        wish: crate::world::Wish::BirdGift,
+                        day: world.date.to_string(),
+                        said: None,
+                    });
                     let first = world.saved_life();
                     let second = world.saved_life();
                     assert_eq!(first, second);
                     assert_eq!(first.keepsakes, [Keepsake::Acorn]);
                     assert_eq!(first.total.gifts, 1);
                     assert_eq!(world.life.total.gifts, 0);
+                    // A gift settled by saving still grants the wish it fulfils.
+                    assert_eq!(first.wish, None);
+                    assert_eq!(first.granted.len(), 1);
+                    assert_eq!(first.total.wishes_granted, 1);
+                    assert!(world.life.wish.is_some());
                     continue;
                 }
             }

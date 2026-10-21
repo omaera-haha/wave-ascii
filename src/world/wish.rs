@@ -232,7 +232,7 @@ impl Wish {
             Self::Rainbow | Self::BirdGift | Self::Flower | Self::Breeze => {
                 world.season() != Season::Winter
             }
-            Self::Snow => matches!(world.date.month(), 11 | 12 | 1 | 2),
+            Self::Snow => world.season() == Season::Winter,
             Self::Passerby(kind) => kind.in_season(world.date),
             _ => true,
         }
@@ -257,8 +257,7 @@ impl Wish {
             Self::Constellation => world.stage() != Stage::Newborn,
             Self::BirdGift => world.life.bird_trust >= 1.0 / 3.0,
             Self::Flower => {
-                world.plant.seeds > 0
-                    || world.seedlings.iter().any(|seedling| seedling.growth < 1.0)
+                world.seed_ready() || world.seedlings.iter().any(|seedling| seedling.growth < 1.0)
             }
             Self::Friend { .. } => world.life.friend.is_some(),
             Self::ViewerName => world.life.viewer_name.is_none(),
@@ -542,6 +541,21 @@ impl Wish {
     }
 }
 
+impl Life {
+    /// Moves a wish that came true into the granted history, keeping the
+    /// newest twelve.
+    pub(super) fn grant(&mut self, wish: Wish, day: &str) {
+        self.wish = None;
+        self.granted.push(Granted {
+            wish,
+            day: day.to_owned(),
+        });
+        if self.granted.len() > 12 {
+            self.granted.drain(..self.granted.len() - 12);
+        }
+    }
+}
+
 impl World {
     fn wish_options(&self) -> Vec<Wish> {
         let height = if self.stage() == Stage::Newborn {
@@ -777,9 +791,10 @@ mod tests {
                 Wish::Rainbow.eligible(&world),
                 world.season() != Season::Winter
             );
+            // Only winter brings snow, so a snow wish waits for it.
             assert_eq!(
                 Wish::Snow.eligible(&world),
-                matches!(month, 11 | 12 | 1 | 2)
+                world.season() == Season::Winter
             );
             for kind in Passerby::ALL {
                 assert_eq!(

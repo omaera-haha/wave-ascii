@@ -2091,14 +2091,7 @@ impl World {
         });
         let wish_granted = granted.is_some();
         if let Some(wish) = granted {
-            self.life.wish = None;
-            self.life.granted.push(Granted {
-                wish: wish.clone(),
-                day: self.date.to_string(),
-            });
-            if self.life.granted.len() > 12 {
-                self.life.granted.drain(..self.life.granted.len() - 12);
-            }
+            self.life.grant(wish.clone(), &self.date.to_string());
             self.record(EventKind::WishGranted(wish.clone()));
             self.pending_wish = Some(wish);
         }

@@ -848,20 +848,20 @@ impl App {
         let along = -offset.dot(direction);
         let miss = (offset + direction * along).length();
         let ball = (along > 0.0 && miss < Ball::RADIUS * 1.6).then_some(along);
+        let music_box = crate::world::music::hit_box(view.eye, direction);
         // Whichever the ray meets first takes the click.
-        match (block, ball) {
-            (Some((index, block)), ball) if ball.is_none_or(|ball| block < ball) => {
+        let nearest = [block.map(|(_, distance)| distance), ball, music_box]
+            .into_iter()
+            .flatten()
+            .min_by(f32::total_cmp);
+        if let Some(nearest) = nearest {
+            if let Some((index, _)) = block.filter(|(_, distance)| *distance == nearest) {
                 self.world.nudge_block(index, direction);
-                return;
-            }
-            (_, Some(_)) => {
+            } else if ball == Some(nearest) {
                 self.world.kick_ball(direction);
-                return;
+            } else {
+                self.world.wind_music_box();
             }
-            _ => {}
-        }
-        if crate::world::music::hit_box(view.eye, direction).is_some() {
-            self.world.wind_music_box();
             return;
         }
         if view.on_window(point).is_some() {
@@ -1333,6 +1333,21 @@ mod tests {
         assert_eq!(app.world.ghost.asleep, 1.0);
         assert_eq!(app.world.ghost.plan, plan);
         assert!(app.world.motes.is_empty());
+    }
+
+    #[test]
+    fn a_click_goes_to_the_music_box_when_it_stands_in_front_of_the_ball() {
+        let mut app = app();
+        let view = app.view.unwrap();
+        let target = crate::world::music::POSITION + Vec3::Y * 0.13;
+        let point = view.project(target).unwrap();
+        // The ball waits behind the box along the same ray.
+        let behind = target + (target - view.eye).normalize() * 0.6;
+        app.world.ball = Ball::at(behind.x, behind.z);
+        app.world.ball.position.y = behind.y;
+        app.click(point);
+        assert!(app.world.music.is_some());
+        assert_eq!(app.world.ball.velocity, Vec3::ZERO);
     }
 
     use super::*;
