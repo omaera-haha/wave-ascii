@@ -124,7 +124,7 @@ mod tests {
         assert!(!world.ghost.plan.overnight);
         assert!(world.ghost.asleep > 0.9);
         world.hour = 22.0;
-        world.step(70.0);
+        world.step(1700.0);
         assert!(world.needs_decision());
         assert_eq!(world.ghost.asleep, 0.0);
         assert!(!world.drowsy());

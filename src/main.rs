@@ -1,5 +1,7 @@
 mod album;
 mod app;
+#[cfg(test)]
+mod audit;
 mod canvas;
 mod color;
 mod face;

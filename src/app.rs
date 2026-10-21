@@ -1384,7 +1384,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..3600 {
+        for _ in 0..9600 {
             app.advance(0.05);
         }
         assert!(
@@ -2693,7 +2693,9 @@ mod tests {
         assert!(world.plant.blossom > 0.0 && world.plant.blossom < 0.1);
         assert!(world.seedlings[0].growth > 0.5 && world.seedlings[0].growth < 0.51);
         assert_eq!(world.seedlings[0].age, save.seedlings[0].age + 300.0);
-        assert!((world.seedlings[0].thirst - 1.0 / 3.0).abs() < 1e-5);
+        assert!(
+            (world.seedlings[0].thirst - 300.0 / crate::world::Plant::THIRST_TIME).abs() < 1e-5
+        );
         let mut old = World::new(2, 12.0);
         restore(&mut old, &save, save.last_seen + 86_400 * 30);
         let mut ancient = World::new(3, 12.0);
@@ -2702,7 +2704,8 @@ mod tests {
         assert_eq!(old.plant, ancient.plant);
         assert_eq!(old.seedlings[0].thirst, 1.0);
         assert_eq!(old.seedlings[0].droop, 1.0);
-        assert!(old.seedlings[0].growth < 0.51);
+        // It grows only while the last watering keeps it moist.
+        assert!(old.seedlings[0].growth < 0.52);
         assert_eq!(old.seedlings.len(), 1);
         assert!(old.petals.is_empty());
         let mut winter = World::new(1, 12.0);

@@ -113,6 +113,8 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 (true, false) if needs.energy > 0.3 => 0.9,
                 (true, true) if needs.energy < 0.3 => 0.5,
                 (false, true) => 0.35,
+                // Daylight needs no lamp unless rain darkens the room.
+                (false, false) if world.weather.rain(world.time) < 0.5 => 0.0,
                 _ => 0.04,
             },
             Activity::Visit => {
@@ -244,7 +246,6 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                                 | EventKind::GameOver(Outcome::GhostWon { .. })
                                 | EventKind::ExpectedArrival
                                 | EventKind::Fetched
-                                | EventKind::AteMote
                                 | EventKind::Milestone(_)
                                 | EventKind::Celebrated(Occasion::NewYear)
                         )
@@ -255,7 +256,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     0.0
                 };
                 let company = if world.viewer_present() && needs.company > 0.7 {
-                    0.4
+                    0.2
                 } else {
                     0.0
                 };
@@ -267,7 +268,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     }
                     + if delighted { 0.7 } else { 0.0 }
                     + company
-                    + if needs.fun > 0.7 { 0.3 } else { 0.0 })
+                    + if needs.fun > 0.7 { 0.15 } else { 0.0 })
                     * needs.energy
             }
             Activity::Hide => {
@@ -629,6 +630,18 @@ mod tests {
     }
 
     #[test]
+    fn a_bright_day_needs_no_lamp_but_a_rainy_one_might() {
+        let mut world = World::new(1, 12.0);
+        world.lamp.on = false;
+        let options = world.options();
+        assert_eq!(chance(&weigh(&world, &options), Activity::Lamp), 0.0);
+        world.weather.sky = crate::world::Sky::Rain;
+        world.weather.since = world.time - 100.0;
+        world.weather.until = world.time + 500.0;
+        assert!(chance(&weigh(&world, &options), Activity::Lamp) > 0.0);
+    }
+
+    #[test]
     fn the_bedtime_lamp_is_left_for_the_viewer_and_switched_off_when_alone() {
         let mut world = World::new(1, 22.0);
         let options = [Activity::Float, Activity::Lamp, Activity::Rest];
@@ -762,11 +775,25 @@ mod tests {
     }
 
     #[test]
+    fn a_mote_is_an_everyday_snack_and_no_reason_to_dance() {
+        let mut world = World::new(1, 12.0);
+        let options = world.options();
+        let before = weigh(&world, &options);
+        world.events.push(Event {
+            time: world.time,
+            kind: EventKind::AteMote,
+        });
+        assert_eq!(
+            chance(&weigh(&world, &options), Activity::Dance),
+            chance(&before, Activity::Dance)
+        );
+    }
+
+    #[test]
     fn good_things_raise_dance_for_a_little_while() {
         for kind in [
             EventKind::Bloomed,
             EventKind::Fetched,
-            EventKind::AteMote,
             EventKind::GameOver(Outcome::GhostWon { line: [0, 1, 2] }),
         ] {
             let mut world = World::new(1, 12.0);

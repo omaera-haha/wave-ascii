@@ -368,7 +368,8 @@ April, the Eta Aquariids in May, the Perseids in August, the Orionids in
 October, the Leonids in November, and the Geminids in December. On those nights
 the ghost likes to watch the sky, and if it sees one fall, it makes a wish.
 
-The ghost naps when tired by day. Bedtime runs from ten at night to half past
+The ghost naps when tired by day, a few times a day for a quarter hour or
+so (newborns and sleepy natures more often); light motes are only snacks. Bedtime runs from ten at night to half past
 six in the morning: it turns the lamp off if you're away and sleeps through
 until morning. Keep it company and it stays up a while longer, until you
 wish it goodnight ("goodnight", "잘자"), which sends it to bed. Opening the
@@ -389,8 +390,9 @@ above the lamp, keeping the newest eight. The life panel (`l`) shows their
 friendship and its keepsakes; gifts and friendship become moments and diary
 entries too.
 
-Showers come more often in spring and less often in summer; rain that ends by
-day leaves a rainbow for a couple of minutes. Some showers become
+Clear spells last hours, and showers of five to twenty minutes come more
+often in spring and less often in summer; about a third of the showers that
+end by day leave a rainbow for a few minutes. Some showers become
 thunderstorms, especially in summer: jagged lightning flashes across the
 window and lights the room, followed a moment later by thunder. The ghost
 flinches and may wake from a nap. While it barely knows you, it favors the
@@ -398,8 +400,9 @@ cushion and shies away from the window; once it trusts you, it comes to the
 glass to be near you when thunder rolls, unless it is resting, tending the
 plant, or fetching the ball. Winter brings soft falling snow instead,
 whitening the hills and dusting the branches. Snow builds in about two
-minutes and melts over about twenty minutes by day or an hour at night. The
-ghost lights up when it spots a rainbow or falling snow.
+minutes; in winter it lingers for hours, and once spring comes it melts over
+about twenty minutes by day or an hour at night. The ghost lights up when it
+spots a rainbow or falling snow.
 
 **A friend.** On some clear evenings, between about half past five and a quarter
 to ten, a smaller ghost drifts in through the window. A full moon and a lonely
@@ -603,7 +606,7 @@ first, deciding on instinct. `--hour` sets the time of day (default noon),
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
-COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time 180 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time 480 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat
@@ -630,6 +633,15 @@ cargo clippy --all-targets
 
 The API clients are tested against local mock servers, so the tests need no
 keys or network.
+
+To check the ghost's rhythm after tuning it, an ignored test lets a ghost
+live three days offline beside a simulated viewer and prints how it spent
+them: activity shares by hour, how long plans last, every kind of event,
+its most repeated thoughts and speech, its diary, and its milestones.
+
+```bash
+cargo test --release audit -- --ignored --nocapture
+```
 
 Dependencies: `crossterm` for the terminal, `glam` for vector math, `tokio`
 and `reqwest` for the API calls, `serde` and `serde_json`, `jiff` for the local

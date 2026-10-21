@@ -1181,11 +1181,14 @@ impl World {
                     .as_ref()
                     .map_or(0.0, |focus| focus.remaining(self.time)) as f32
             }
-            Activity::Float => self.random.range(5.0, 11.0),
-            Activity::Visit => self.random.range(8.0, 15.0),
+            Activity::Float => self.random.range(12.0, 30.0),
+            // With the viewer there it stays a while; alone, it only looks
+            // out for them.
+            Activity::Visit if self.viewer_present() => self.random.range(15.0, 40.0),
+            Activity::Visit => self.random.range(10.0, 20.0),
             Activity::Wait => self.random.range(60.0, 120.0),
-            Activity::Window if self.starry_night() => self.random.range(28.0, 38.0),
-            Activity::Window => self.random.range(10.0, 18.0),
+            Activity::Window if self.starry_night() => self.random.range(40.0, 70.0),
+            Activity::Window => self.random.range(20.0, 45.0),
             Activity::Fetch => 6.0,
             Activity::Dance => growth::dance_length(
                 self.random.range(5.0, 7.0),
@@ -2238,7 +2241,7 @@ impl World {
                                 return;
                             }
                             self.motes.remove(index);
-                            self.ghost.needs.change(0.25, 0.1, 0.0);
+                            self.ghost.needs.change(0.03, 0.1, 0.0);
                             self.record(EventKind::AteMote);
                             self.ghost.plan.done = true;
                         }
@@ -2275,7 +2278,7 @@ impl World {
                 self.ghost.plan.target = behind;
                 if position.distance(behind) < 0.24 && self.ball.velocity.length() < 0.4 {
                     self.ball.velocity += self.push * 1.6;
-                    self.ghost.needs.change(-0.02, 0.12, 0.0);
+                    self.ghost.needs.change(-0.004, 0.12, 0.0);
                     self.ghost.plan.count += 1;
                     self.record(EventKind::NudgedBall);
                     if self.ghost.plan.count >= 3 {
@@ -2592,20 +2595,22 @@ impl World {
         let newborn = self.stage() == Stage::Newborn;
         let fresh_air = self.enjoying_air();
         let ghost = &mut self.ghost;
+        // A day awake tires it out slowly; motes are snacks, and a nap of
+        // a quarter hour or so restores it.
         if ghost.asleep > 0.5 {
             ghost.needs.change(
-                0.012 * seconds / tiring * if newborn { 1.2 } else { 1.0 },
+                0.0006 * seconds / tiring * if newborn { 1.2 } else { 1.0 },
                 0.0,
                 0.03 * self.petting * seconds,
             );
             return;
         }
         let effort = (ghost.velocity.length() / 1.3).min(1.0);
-        let mut fun = -0.0016 * (0.8 + 0.4 * nature.playful);
+        let mut fun = -0.0008 * (0.8 + 0.4 * nature.playful);
         if fresh_air {
             fun += 0.003;
         }
-        let mut company = -0.0012 * (1.15 - 0.3 * nature.shy);
+        let mut company = -0.0006 * (1.15 - 0.3 * nature.shy);
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
             Activity::Game | Activity::Friend | Activity::Puzzle if !ghost.plan.done => {
@@ -2627,7 +2632,7 @@ impl World {
         company += 0.03 * self.petting;
         fun += 0.01 * self.petting;
         ghost.needs.change(
-            -(0.0012 + 0.0025 * effort)
+            -(0.00006 + 0.00014 * effort)
                 * night
                 * tiring
                 * if newborn { 1.3 } else { 1.0 }
@@ -2798,7 +2803,7 @@ mod tests {
             world.drop_mote(Vec3::new(1.0, 1.0, 0.0));
             world.ghost.needs.energy = 0.5;
             world.begin(activity);
-            let duration = world.ghost.plan.length.max(60.0) + 10.0;
+            let duration = world.ghost.plan.length.max(nap_or_minute(activity)) + 10.0;
             run(&mut world, duration);
             assert!(
                 world.needs_decision(),
@@ -3161,6 +3166,16 @@ mod tests {
         }
     }
 
+    // A nap from half rested takes a quarter hour or so; everything else
+    // ends within a minute.
+    fn nap_or_minute(activity: Activity) -> f32 {
+        if activity == Activity::Rest {
+            1200.0
+        } else {
+            60.0
+        }
+    }
+
     #[test]
     fn every_activity_finishes_on_its_own() {
         for activity in Activity::ALL {
@@ -3168,7 +3183,7 @@ mod tests {
             world.drop_mote(Vec3::new(1.0, 1.0, 0.0));
             world.ghost.needs.energy = 0.5;
             world.begin(activity);
-            let duration = world.ghost.plan.length.max(60.0) + 10.0;
+            let duration = world.ghost.plan.length.max(nap_or_minute(activity)) + 10.0;
             run(&mut world, duration);
             assert!(world.needs_decision(), "{activity:?} never finished");
         }
@@ -3183,7 +3198,7 @@ mod tests {
         world.begin(Activity::Chase);
         run(&mut world, 6.0);
         assert!(world.motes.iter().all(|mote| mote.id != dropped));
-        assert!(world.ghost.needs.energy > 0.55);
+        assert!(world.ghost.needs.energy > 0.42);
         assert!(
             world
                 .events
@@ -3200,7 +3215,9 @@ mod tests {
         run(&mut world, 20.0);
         assert!(world.ghost.asleep > 0.9);
         assert_eq!(world.ghost.mood, Mood::Sleepy);
-        run(&mut world, 70.0);
+        run(&mut world, 600.0);
+        assert!(!world.needs_decision(), "a nap lasts a while");
+        run(&mut world, 1100.0);
         assert!(
             world
                 .events

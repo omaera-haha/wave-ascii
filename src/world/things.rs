@@ -152,8 +152,9 @@ impl Plant {
     pub const POT_RADIUS: f32 = 0.2;
     pub const POT_HEIGHT: f32 = 0.26;
     pub const BLOOM: f32 = 0.8;
-    /// Seconds for a watered plant to grow fully thirsty.
-    pub const THIRST_TIME: f32 = 900.0;
+    /// Seconds for a watered plant to grow fully thirsty: a few waterings
+    /// a day keep it well.
+    pub const THIRST_TIME: f32 = 10_800.0;
 
     pub fn height(&self) -> f32 {
         Self::POT_HEIGHT + 0.2 + 0.6 * self.growth

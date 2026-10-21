@@ -658,7 +658,7 @@ impl World {
                     self.record(EventKind::Built {
                         height: height as u32,
                     });
-                    self.ghost.needs.change(-0.015, 0.2, 0.0);
+                    self.ghost.needs.change(-0.003, 0.2, 0.0);
                     if self.random.unit()
                         < 0.25 + 0.5 * self.life.nature.unwrap_or_default().playful
                     {
