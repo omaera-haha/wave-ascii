@@ -76,6 +76,22 @@ pub fn write(
     column
 }
 
+/// Where to start showing `text` so that the characters before `cursor`
+/// fit in fewer than `room` cells, leaving a cell for the cursor.
+pub fn visible_start(text: &[char], cursor: usize, room: usize) -> usize {
+    let mut start = cursor;
+    let mut used = 0;
+    while start > 0 {
+        let next = text[start - 1].width().unwrap_or(0);
+        if used + next >= room {
+            break;
+        }
+        used += next;
+        start -= 1;
+    }
+    start
+}
+
 /// How many cells `text` takes.
 pub fn width(text: &str) -> usize {
     text.chars()
@@ -200,15 +216,10 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
         let column = write(screen, 1, row, columns, "› ", ACCENT, None);
         let room = columns.saturating_sub(column + 1);
         let text: Vec<char> = app.talk.text().chars().collect();
-        // Scroll so the cursor stays in view.
-        let mut start = 0;
-        while start < app.talk.cursor()
-            && width(&text[start..app.talk.cursor()].iter().collect::<String>()) >= room
-        {
-            start += 1;
-        }
-        let before: String = text[start..app.talk.cursor()].iter().collect();
-        let after: String = text[app.talk.cursor()..].iter().collect();
+        let cursor = app.talk.cursor();
+        let start = visible_start(&text, cursor, room);
+        let before: String = text[start..cursor].iter().collect();
+        let after: String = text[cursor..].iter().take(room + 1).collect();
         let column = write(screen, column, row, columns, &before, TITLE, None);
         let under: String = after.chars().next().map_or(" ".to_owned(), String::from);
         let next = write(screen, column, row, columns, &under, PANEL, Some(ACCENT));
@@ -615,6 +626,16 @@ mod tests {
         assert_eq!(wrap("abcdefgh", 3), ["abc", "def", "gh"]);
         assert_eq!(wrap("안녕하세요", 4), ["안녕", "하세", "요"]);
         assert!(wrap("   ", 5).is_empty());
+    }
+
+    #[test]
+    fn the_talk_line_scrolls_to_keep_the_cursor_in_view() {
+        let text: Vec<char> = "hello 안녕하세요".chars().collect();
+        assert_eq!(visible_start(&text, 3, 10), 0);
+        // Ten cells before the cursor; "안녕하세요" alone takes ten.
+        assert_eq!(visible_start(&text, text.len(), 11), 6);
+        assert_eq!(visible_start(&text, text.len(), 10), 7);
+        assert_eq!(visible_start(&text, 0, 5), 0);
     }
 
     #[test]

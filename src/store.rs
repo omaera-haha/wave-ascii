@@ -4,6 +4,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,9 @@ use crate::mind::claude::{Cache, Effort};
 use crate::world::{Needs, Plant};
 
 const APP: &str = "wave-ascii";
+
+/// Saves made by this process, which name their temporary files apart.
+static SAVES: AtomicU64 = AtomicU64::new(0);
 
 /// Where the app keeps its settings and the ghost's life between runs.
 #[derive(Clone, Debug, PartialEq)]
@@ -220,17 +224,27 @@ pub fn save_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
     }
     let bytes = serde_json::to_vec_pretty(value)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
-    let partial = path.with_extension("json.partial");
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&partial)?;
-    file.set_permissions(fs::Permissions::from_mode(0o600))?;
-    file.write_all(&bytes)?;
-    file.sync_all()?;
-    fs::rename(&partial, path)
+    // A temporary file of this save's own, so two copies of the app saving
+    // at once never write into the same file.
+    let partial = path.with_extension(format!(
+        "json.{}-{}.partial",
+        std::process::id(),
+        SAVES.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&partial)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        fs::rename(&partial, path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&partial);
+    }
+    written
 }
 
 #[cfg(test)]
@@ -306,6 +320,17 @@ mod tests {
             key_from("WAVE_ASCII_TEST_UNSET_VARIABLE", &Some(" key ".to_owned())).as_deref(),
             Some("key")
         );
+    }
+
+    #[test]
+    fn saving_twice_replaces_the_file_and_leaves_nothing_else_behind() {
+        let directory = scratch("twice");
+        let path = directory.join("ghost.json");
+        save_json(&path, &1).unwrap();
+        save_json(&path, &2).unwrap();
+        assert_eq!(load_json::<i32>(&path).unwrap(), Some(2));
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
 use crate::terminal::{Input, Key, Mouse, MouseAction};
 use crate::ui;
-use crate::world::{Ball, Mood, ROOM_MAX, ROOM_MIN, World};
+use crate::world::{Ball, Mood, Needs, ROOM_MAX, ROOM_MIN, World};
 
 // Radians per arrow key press, and per cell dragged.
 const TURN: f32 = 0.12;
@@ -48,6 +48,10 @@ pub enum Mode {
     Journal,
 }
 
+/// The most characters a line holds; more is cut off as it is typed or
+/// pasted.
+const LINE_LIMIT: usize = 2000;
+
 /// A line of text being edited, with a cursor between characters.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Line {
@@ -66,11 +70,13 @@ impl Line {
     }
 
     /// Inserts `text` at the cursor, with line breaks and other control
-    /// characters turned into spaces.
+    /// characters turned into spaces, up to `LINE_LIMIT` characters.
     pub fn insert(&mut self, text: &str) {
         let index = self.byte_index();
+        let room = LINE_LIMIT.saturating_sub(self.text.chars().count());
         let clean: String = text
             .chars()
+            .take(room)
             .map(|character| {
                 if character.is_control() {
                     ' '
@@ -588,10 +594,22 @@ pub fn local_hour() -> f32 {
 
 /// Starts the world from a saved life, catching up on the time the app was
 /// closed: the plant grew thirsty and the ghost lonely while nobody came.
+///
+/// Saved values are kept within their ranges and the furniture stays where
+/// the room puts it, so a hand-edited or damaged save can't break the world.
 pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
-    world.ghost.name = save.name.clone();
-    world.ghost.needs = save.needs;
-    world.plant = save.plant;
+    let name: String = save.name.trim().chars().take(24).collect();
+    if !name.is_empty() {
+        world.ghost.name = name;
+    }
+    let needs = save.needs;
+    world.ghost.needs = Needs {
+        energy: needs.energy.clamp(0.0, 1.0),
+        fun: needs.fun.clamp(0.0, 1.0),
+        company: needs.company.clamp(0.0, 1.0),
+    };
+    world.plant.growth = save.plant.growth.clamp(0.0, 1.0);
+    world.plant.thirst = save.plant.thirst.clamp(0.0, 1.0);
     world.lamp.on = save.lamp_on;
     world.ghost.goal = save.goal.clone();
     let away = (now - save.last_seen).max(0) as f32;
@@ -668,6 +686,15 @@ mod tests {
         assert_eq!(line.cursor(), 6);
         assert_eq!(line.take(), "녕 bo!");
         assert_eq!(line.text(), "");
+    }
+
+    #[test]
+    fn a_huge_paste_is_cut_to_the_line_limit() {
+        let mut line = Line::default();
+        line.insert(&"ab".repeat(1_000_000));
+        line.insert("more");
+        assert_eq!(line.text().chars().count(), LINE_LIMIT);
+        assert_eq!(line.cursor(), LINE_LIMIT);
     }
 
     #[test]
@@ -873,6 +900,40 @@ mod tests {
             world.events.last().unwrap().kind,
             EventKind::Returned { .. }
         ));
+    }
+
+    #[test]
+    fn a_saved_life_with_impossible_values_is_brought_back_in_range() {
+        let mut world = World::new(1, 12.0);
+        let layout = world.plant.position;
+        let save = Save {
+            version: Save::VERSION,
+            name: "   ".into(),
+            born: 0,
+            last_seen: 1000,
+            needs: crate::world::Needs {
+                energy: 99.0,
+                fun: -3.0,
+                company: 0.5,
+            },
+            plant: crate::world::Plant {
+                position: Vec3::new(1.0e9, -4.0, 7.0),
+                growth: 1.0e6,
+                thirst: -5.0,
+            },
+            lamp_on: true,
+            goal: None,
+            memories: Vec::new(),
+            conversation: Vec::new(),
+        };
+        restore(&mut world, &save, 1000);
+        assert_eq!(world.ghost.name, "Boo");
+        assert_eq!(
+            (world.ghost.needs.energy, world.ghost.needs.fun),
+            (1.0, 0.0)
+        );
+        assert_eq!(world.plant.position, layout);
+        assert_eq!((world.plant.growth, world.plant.thirst), (1.0, 0.0));
     }
 
     #[test]

@@ -56,7 +56,10 @@ enum Answer {
         id: u64,
         decision: Result<Decision, String>,
     },
-    Requested(Result<Option<Activity>, String>),
+    Requested {
+        id: u64,
+        activity: Result<Option<Activity>, String>,
+    },
     Reflected(Result<Option<Reflection>, String>),
 }
 
@@ -87,6 +90,9 @@ pub struct Mind {
     last_reflection: Option<f64>,
     /// Messages from the viewer still waiting for a reply.
     heard: VecDeque<String>,
+    /// The id of the latest message's request routing; answers to earlier
+    /// messages that arrive later are dropped.
+    latest_request: u64,
 }
 
 impl Mind {
@@ -111,6 +117,7 @@ impl Mind {
             reflecting: false,
             last_reflection: None,
             heard: VecDeque::new(),
+            latest_request: 0,
         };
         mind.reconfigure(config);
         mind
@@ -266,11 +273,15 @@ impl Mind {
             let jev = jev.clone();
             let questions = decision::request_questions(&Activity::ALL);
             let state = serde_json::Value::String(text.to_owned());
+            self.next_id += 1;
+            let id = self.next_id;
+            self.latest_request = id;
             self.spawn(async move {
-                Answer::Requested(match jev.ask(&state, &questions).await {
+                let activity = match jev.ask(&state, &questions).await {
                     Ok(answers) => Ok(decision::read_request(&answers)),
                     Err(error) => Err(error.to_string()),
-                })
+                };
+                Answer::Requested { id, activity }
             });
         }
     }
@@ -309,14 +320,23 @@ impl Mind {
                     }
                 }
             }
-            Answer::Requested(Ok(Some(activity))) => {
+            Answer::Requested { id, .. } if id != self.latest_request => {}
+            Answer::Requested {
+                activity: Ok(Some(activity)),
+                ..
+            } => {
                 self.one = Status::Ready;
                 if world.options().contains(&activity) {
                     world.begin(activity);
                 }
             }
-            Answer::Requested(Ok(None)) => self.one = Status::Ready,
-            Answer::Requested(Err(message)) => self.one = Status::Failed(message),
+            Answer::Requested {
+                activity: Ok(None), ..
+            } => self.one = Status::Ready,
+            Answer::Requested {
+                activity: Err(message),
+                ..
+            } => self.one = Status::Failed(message),
             Answer::Reflected(result) => {
                 self.reflecting = false;
                 match result {
@@ -619,6 +639,30 @@ mod tests {
         assert_eq!(mind.journal.conversation.len(), 2);
         world.step(0.05);
         assert_eq!(world.ghost.mood, crate::world::Mood::Cheerful);
+    }
+
+    #[test]
+    fn an_answer_to_an_older_message_cannot_undo_a_newer_one() {
+        let mut mind = offline();
+        let mut world = World::new(3, 12.0);
+        mind.latest_request = 2;
+        world.begin(Activity::Play);
+        mind.apply(
+            Answer::Requested {
+                id: 1,
+                activity: Ok(Some(Activity::Rest)),
+            },
+            &mut world,
+        );
+        assert_eq!(world.ghost.plan.activity, Activity::Play);
+        mind.apply(
+            Answer::Requested {
+                id: 2,
+                activity: Ok(Some(Activity::Explore)),
+            },
+            &mut world,
+        );
+        assert_eq!(world.ghost.plan.activity, Activity::Explore);
     }
 
     #[test]

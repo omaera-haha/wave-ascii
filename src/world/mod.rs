@@ -527,8 +527,11 @@ impl World {
         if arrived_now && plan.arrived.is_none() {
             self.ghost.plan.arrived = Some(time);
         }
-        // A rest lasts until the ghost is rested or woken.
-        if self.ghost.plan.elapsed(time) > GIVE_UP && self.ghost.plan.activity != Activity::Rest {
+        // Once on the cushion, a rest lasts until the ghost is rested or
+        // woken; on the way there it gives up like any plan.
+        let resting =
+            self.ghost.plan.activity == Activity::Rest && self.ghost.plan.arrived.is_some();
+        if self.ghost.plan.elapsed(time) > GIVE_UP && !resting {
             self.ghost.plan.done = true;
             return;
         }
@@ -865,6 +868,17 @@ mod tests {
         assert!(world.ghost.needs.energy > 0.9);
         assert!(world.needs_decision());
         assert_eq!(world.ghost.asleep, 0.0);
+    }
+
+    #[test]
+    fn a_rest_that_never_reaches_the_cushion_is_given_up() {
+        let mut world = World::new(4, 23.0);
+        world.ghost.needs.energy = 0.1;
+        world.begin(Activity::Rest);
+        // Somewhere the ghost can never get to.
+        world.ghost.plan.target = Vec3::new(0.0, -5.0, 0.0);
+        run(&mut world, 65.0);
+        assert!(world.needs_decision());
     }
 
     #[test]
