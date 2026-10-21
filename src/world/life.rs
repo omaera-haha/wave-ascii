@@ -185,6 +185,10 @@ pub struct Tally {
     pub passersby: u32,
     #[serde(default)]
     pub passerby_kinds: Vec<super::Passerby>,
+    #[serde(default)]
+    pub word_games: u32,
+    #[serde(default)]
+    pub words_guessed: u32,
 }
 
 impl Tally {
@@ -244,6 +248,12 @@ impl Tally {
             }
             EventKind::LearnedPicture(_) => {
                 self.pictures_learned = self.pictures_learned.saturating_add(1)
+            }
+            EventKind::WordGame { solved, .. } => {
+                self.word_games = self.word_games.saturating_add(1);
+                if *solved {
+                    self.words_guessed = self.words_guessed.saturating_add(1);
+                }
             }
             EventKind::GameOver(outcome) if outcome.finished() => {
                 self.games = self.games.saturating_add(1);
@@ -585,6 +595,18 @@ impl Tally {
             1 => deeds.push("wished on a shooting star".to_owned()),
             stars => deeds.push(format!("wished on {stars} shooting stars")),
         }
+        if self.word_games > 0 {
+            deeds.push(format!(
+                "played {} word {} with you; you guessed {}",
+                super::friend::count_words(self.word_games),
+                if self.word_games == 1 {
+                    "game"
+                } else {
+                    "games"
+                },
+                super::friend::count_words(self.words_guessed)
+            ));
+        }
         match self.stories {
             0 => {}
             1 => deeds.push("told you a story".to_owned()),
@@ -835,6 +857,7 @@ impl Life {
                 completed: true, ..
             } => 0.01,
             EventKind::ToldStory => 0.005,
+            EventKind::WordGame { .. } => 0.003,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
             EventKind::LearnedPicture(_) => 0.005,
             EventKind::Heard(_) => 0.015,
@@ -1112,6 +1135,8 @@ impl Life {
             tally.focus_minutes = tally.focus_minutes.min(100_000_000);
             tally.stories = tally.stories.min(100_000_000);
             tally.airings = tally.airings.min(100_000_000);
+            tally.word_games = tally.word_games.min(100_000_000);
+            tally.words_guessed = tally.words_guessed.min(tally.word_games);
             tally.friend_visits = tally.friend_visits.min(1_000_000);
             tally.friend_games = tally.friend_games.min(100_000_000);
             tally.friend_name = tally.friend_name.take().filter(|name| {
@@ -1236,6 +1261,9 @@ impl Life {
             return first;
         }
         let text = match kind {
+            EventKind::WordGame { solved: true, .. } if total.words_guessed == 1 => {
+                "You guessed my secret word for the first time.".to_owned()
+            }
             EventKind::ToldStory if total.stories == 1 => "I told you my first story.".to_owned(),
             EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {
                 format!("You taught me to draw a {name}.")

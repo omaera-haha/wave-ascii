@@ -583,7 +583,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "?          this help            q, Esc        quit",
     ];
     let notes = [
-        "",
+        "Ask for a word game; type a letter to guess in talk mode.",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "While a reading panel is open, the mouse selects text.",
         "In the album: left/right, Home/End · Esc or b closes it.",

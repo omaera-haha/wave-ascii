@@ -209,7 +209,10 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         }
         EventKind::OpenedWindow => Emote::Note,
         EventKind::Puddle => Emote::Alarm,
-        EventKind::ShootingStar | EventKind::FoundConstellation(_) => Emote::Sparkle,
+        EventKind::ShootingStar
+        | EventKind::FoundConstellation(_)
+        | EventKind::WordGame { solved: true, .. } => Emote::Sparkle,
+        EventKind::WordGame { solved: false, .. } => Emote::Sigh,
         EventKind::Noticed(_)
         | EventKind::KickedBall
         | EventKind::DroppedMote

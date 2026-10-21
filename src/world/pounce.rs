@@ -34,7 +34,11 @@ impl World {
         self.viewer.pointer = pointer;
         // Darting the pointer right after speaking may be what the words
         // were about.
-        if self.focus.is_none() && !was_lively && self.viewer.pointer_is_lively() {
+        if self.focus.is_none()
+            && !self.puzzle_active()
+            && !was_lively
+            && self.viewer.pointer_is_lively()
+        {
             self.shown(Activity::Pounce);
         }
 

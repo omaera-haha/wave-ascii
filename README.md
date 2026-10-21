@@ -237,6 +237,18 @@ spent together, including early endings. Quitting silently ends the timer.
   remembers your games, wins, losses, and draws. Leave a turn unanswered for
   forty-five seconds and it says "Maybe later." The board fades over forty
   seconds. Games in progress aren't kept when the app closes.
+- **Word games.** Say "word game", "let's play a word game", "단어 게임 하자",
+  or "낱말 맞추기". It thinks of a word from its life and draws a blank for
+  each letter beside a flower with six petals. Once it finishes drawing,
+  press `t` or Enter to talk, type a letter, and send it with Enter; you can
+  also try the whole word. Korean words take whole Hangul syllables. Correct
+  guesses fill every matching blank; wrong guesses cost a petal and appear
+  below the word. Repeats cost nothing. Solve it and the word glows; lose all
+  the petals and it writes the answer for you. After two quiet minutes it
+  gently ends the game. Sleeping, saying no, or leaving interrupts silently;
+  pokes are fine. It may invite you when playful or bored, but stays quiet
+  during focus sessions. Finished games and solved words count in its life;
+  a running board is not saved. No model keys are needed.
 - **Doodles.** It breathes on the glass and draws a heart, star, smile, spiral,
   sun, flower, wave, or snowflake, chosen from its mood, the weather, and how
   close it feels to you. The stroke takes a few seconds; then it backs away to

@@ -259,6 +259,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             vec!["I'll draw you something.", "This one's for you."]
         }
         Activity::Doodle => vec!["Let me draw something.", "Hm, what shall I draw?"],
+        Activity::Puzzle => vec!["A word and a little flower. I wonder what you will guess."],
         Activity::Game => vec!["Shall we play?", "I'll draw the board. You be crosses."],
         Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
         Activity::Window if world.life.sill.is_some() => {
@@ -559,6 +560,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Dance => "I've been working on a new twirl.",
             Activity::Hide => "Nobody hides like a ghost.",
             Activity::Game => "Another game on the glass?",
+            Activity::Puzzle => "I could think of another word for you.",
             Activity::Doodle => "I should draw on the glass again.",
             Activity::Look => "I like seeing what you draw.",
             Activity::Air => "A breeze makes the room feel new.",
@@ -1578,6 +1580,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Look => "네가 그린 그림을 보는 중",
         Activity::Air => "창문을 여닫는 중",
         Activity::Company => "네가 일하는 동안 옆에 있어 주는 중",
+        Activity::Puzzle => "유리에 낱말 맞추기 하는 중",
     }
 }
 
@@ -1605,6 +1608,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Look => "네 그림 보기",
         Activity::Air => "신선한 바람 쐬기",
         Activity::Company => "일하는 네 옆에 있기",
+        Activity::Puzzle => "낱말 맞추기",
     }
 }
 

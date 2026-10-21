@@ -353,6 +353,12 @@ impl Mind {
             self.latest_request = self.next_id;
             return;
         }
+        if heard.understanding == Understanding::WordGame {
+            self.next_id += 1;
+            self.latest_request = self.next_id;
+            self.remember_speech(world);
+            return;
+        }
         let story = matches!(
             heard.understanding,
             Understanding::Asked {
@@ -379,7 +385,11 @@ impl Mind {
         // Without System One to ask, words heard before and still not
         // understood make it try something, to see if that's what they mean.
         let guessed = match heard.understanding {
-            Understanding::Puzzled { again: true, .. } if self.jev.is_none() => world.guess(),
+            Understanding::Puzzled { again: true, .. }
+                if self.jev.is_none() && !world.puzzle_active() =>
+            {
+                world.guess()
+            }
             _ => None,
         };
         // Without System Two, it answers in the few words of its own.
@@ -732,6 +742,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Named { .. }
                 | Understanding::Focusing { .. }
                 | Understanding::Airing { .. }
+                | Understanding::WordGame
         )
 }
 
@@ -756,6 +767,32 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn puzzle_requests_and_guesses_bypass_jev_and_keep_the_worlds_reply() {
+        let mut mind = offline();
+        let mut world = World::new(5, 12.0);
+        assert!(!routes_to_jev(&World::new(5, 12.0).hear("word game")));
+        mind.hear(&mut world, "word game");
+        assert!(world.puzzle_active());
+        world.step(30.0);
+        let letter = world
+            .puzzle
+            .as_ref()
+            .unwrap()
+            .word
+            .chars()
+            .next()
+            .unwrap()
+            .to_string();
+        let mut same = world.clone();
+        assert!(!routes_to_jev(&same.hear(&letter)));
+        mind.hear(&mut world, &letter);
+        assert!(world.puzzle.as_ref().unwrap().shown() > 0);
+        let speech = world.ghost.speech.as_ref().unwrap().text.as_str();
+        assert!(speech == "Yes! That fits!" || speech == "You found my word!");
+        assert_eq!(mind.journal.conversation.last().unwrap().text, speech);
+    }
 
     #[test]
     fn focus_requests_bypass_jev_and_reply_offline_in_the_viewers_language() {

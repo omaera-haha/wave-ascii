@@ -934,6 +934,12 @@ impl App {
                 reaction.map(|reaction| (event.time, reaction))
             })
             .collect();
+        if let Some(puzzle) = &world.puzzle
+            && puzzle.ended.is_none()
+            && let Some(worried) = puzzle.worried_at
+        {
+            reactions.push((worried, Expression::Worry));
+        }
         // The first morning also earns a milestone; let the stretch take
         // precedence over reactions recorded at that same moment.
         reactions.sort_by(|(time, expression), (other_time, other_expression)| {
