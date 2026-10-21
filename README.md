@@ -9,8 +9,9 @@ is a point in that room with a body, needs, a mood, and a gaze: it sees what
 lies within sixty degrees of where it faces, and furniture hides what's behind
 it. You see it as an abstract shape made of dots, and its glow shows how it
 is. It floats about, chases and eats the light motes it has spotted, plays with
-the ball, waters the plant, switches the lamp, gazes out of the window, naps
-when tired, and comes to the glass to look at you.
+the ball, brings it back after a throw, waters the plant, switches the lamp,
+gazes out of the window, naps when tired, and comes to the glass to look at you.
+When delighted, it may dance a little twirl in the air.
 
 Two models give it a mind:
 
@@ -68,8 +69,12 @@ the next requests use them at once.
 
 With the mouse, click the ghost to poke it (poke it a few times and it gets
 grumpy), click the ball to flick it, and click anywhere else in the room to
-drop in a light mote. Drag to turn the view and scroll to zoom. The ghost's
-eyes follow the pointer. While the journal or help panel is open, the terminal
+drop in a light mote. A flick can start a game of fetch: an awake ghost with
+energy to spare may collect the ball, carry it back to the glass, and wait a
+few seconds for another throw. It drops the ball if you poke it or it starts
+something else. You can also ask it to fetch or dance when talking to it.
+Drag to turn the view and scroll to zoom. The ghost's eyes follow the pointer.
+While the journal or help panel is open, the terminal
 handles the mouse so you can select and copy text directly. Many terminals
 send wheel movements as arrow keys here, which scroll the journal. Elsewhere,
 hold Shift (Option in iTerm2) to select text while the app has the mouse.

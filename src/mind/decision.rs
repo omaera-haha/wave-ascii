@@ -99,6 +99,8 @@ fn request(activity: Activity) -> &'static str {
         Activity::Window => {
             "Asks it to look out of the window, or at the sky, the rain, or a rainbow."
         }
+        Activity::Fetch => "Asks it to fetch, catch, or bring back the ball.",
+        Activity::Dance => "Asks it to dance, spin, twirl, or do a trick.",
     }
 }
 
@@ -170,9 +172,22 @@ mod tests {
             }))
         };
         assert_eq!(read_request(&reply("play", 0.8)), Some(Activity::Play));
+        assert_eq!(read_request(&reply("fetch", 0.8)), Some(Activity::Fetch));
+        assert_eq!(read_request(&reply("dance", 0.8)), Some(Activity::Dance));
         assert_eq!(read_request(&reply("none", 0.9)), None);
         assert_eq!(read_request(&reply("play", 0.3)), None);
         let body = serde_json::to_string(&request_questions(&[Activity::Rest])).unwrap();
         assert!(body.find("\"none\"").unwrap() < body.find("\"rest\"").unwrap());
+    }
+
+    #[test]
+    fn every_request_keeps_the_activity_order() {
+        let body = serde_json::to_string(&request_questions(&Activity::ALL)).unwrap();
+        let mut previous = body.find("\"none\"").unwrap();
+        for activity in Activity::ALL {
+            let position = body.find(&format!("\"{}\"", activity.name())).unwrap();
+            assert!(position > previous, "{body}");
+            previous = position;
+        }
     }
 }

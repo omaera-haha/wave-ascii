@@ -45,6 +45,9 @@ pub enum EventKind {
     },
     AteMote,
     NudgedBall,
+    PickedUpBall,
+    Fetched,
+    Danced,
     Tended,
     Bloomed,
     SwitchedLamp {
@@ -83,6 +86,9 @@ impl EventKind {
             Self::Poked { count } => format!("the viewer poked you {count} times in a row"),
             Self::AteMote => "caught and ate a light mote".to_owned(),
             Self::NudgedBall => "nudged the ball".to_owned(),
+            Self::PickedUpBall => "picked up the ball".to_owned(),
+            Self::Fetched => "brought the ball back to the viewer".to_owned(),
+            Self::Danced => "danced a little twirl".to_owned(),
             Self::Tended => "watered the plant".to_owned(),
             Self::Bloomed => "the plant came into flower".to_owned(),
             Self::SwitchedLamp { on: true } => "switched the lamp on".to_owned(),
@@ -298,6 +304,13 @@ impl World {
 
         self.carry_out(seconds);
         self.move_ghost(seconds);
+        if self.ball.held {
+            self.ball.position = (self.ghost.position - Vec3::Y * 0.42).clamp(
+                ROOM_MIN + Vec3::splat(Ball::RADIUS),
+                ROOM_MAX - Vec3::splat(Ball::RADIUS),
+            );
+            self.ball.velocity = self.ghost.velocity;
+        }
         self.update_needs(seconds);
         self.ghost.mood = self.feeling();
         self.look_around(seconds);
@@ -331,6 +344,20 @@ impl World {
                 Activity::Rest => self.ghost.needs.energy < 0.85,
                 Activity::Tend => self.plant.thirst > 0.25,
                 Activity::Visit => self.viewer_present() || self.ghost.needs.company < 0.6,
+                Activity::Fetch => {
+                    self.ghost.asleep < 0.3
+                        && self.ghost.needs.energy > 0.3
+                        && self
+                            .events
+                            .iter()
+                            .rev()
+                            .find(|event| event.kind == EventKind::KickedBall)
+                            .is_some_and(|event| {
+                                self.time - event.time < 20.0
+                                    || self.ball.velocity.length_squared() > 0.0
+                            })
+                }
+                Activity::Dance => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.35,
                 Activity::Float
                 | Activity::Explore
                 | Activity::Play
@@ -386,6 +413,12 @@ impl World {
                      and above all when something is happening outside."
                 )
             }
+            Activity::Fetch => "The viewer just threw the ball. Go and get it and bring it back \
+                                to the glass for them. Fits when playful and the viewer is around."
+                .to_owned(),
+            Activity::Dance => "Do a happy little twirl in the air. Fits when delighted, after \
+                                something good happened, or to show off for the viewer."
+                .to_owned(),
         }
     }
 
@@ -397,11 +430,14 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        self.drop_ball();
         let position = self.ghost.position;
         let length = match activity {
             Activity::Float => self.random.range(5.0, 11.0),
             Activity::Visit => self.random.range(8.0, 15.0),
             Activity::Window => self.random.range(10.0, 18.0),
+            Activity::Fetch => 6.0,
+            Activity::Dance => self.random.range(5.0, 7.0),
             _ => 0.0,
         };
         let target = match activity {
@@ -411,6 +447,11 @@ impl World {
             Activity::Lamp => self.lamp.bulb() + Vec3::new(0.35, -0.15, 0.25),
             Activity::Visit => self.glass_spot(),
             Activity::Window => WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.55),
+            Activity::Fetch => self.ball.position + Vec3::Y * 0.42,
+            Activity::Dance => position.clamp(
+                ROOM_MIN + Vec3::new(0.6, 0.9, 0.6),
+                Vec3::new(ROOM_MAX.x - 0.6, 1.6, ROOM_MAX.z - 0.6),
+            ),
             Activity::Float | Activity::Chase | Activity::Play => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
@@ -454,8 +495,18 @@ impl World {
 
     /// The viewer flicked the ball along `direction` on the floor.
     pub fn kick_ball(&mut self, direction: Vec3) {
+        self.drop_ball();
         let along = Vec3::new(direction.x, 0.0, direction.z).normalize_or_zero();
         self.ball.velocity += along * 2.2;
+        let plan = &mut self.ghost.plan;
+        if self.ghost.asleep < 0.3
+            && (matches!(
+                plan.activity,
+                Activity::Float | Activity::Explore | Activity::Window | Activity::Visit
+            ) || (plan.activity == Activity::Fetch && plan.count >= 2))
+        {
+            plan.done = true;
+        }
         self.record(EventKind::KickedBall);
     }
 
@@ -533,12 +584,23 @@ impl World {
     }
 
     fn wake(&mut self) {
+        if self.ball.held {
+            self.drop_ball();
+            self.ghost.plan.done = true;
+        }
         if self.ghost.asleep > 0.3 {
             self.ghost.asleep = 0.0;
             self.record(EventKind::WokeUp);
         }
         if self.ghost.plan.activity == Activity::Rest {
             self.ghost.plan.done = true;
+        }
+    }
+
+    fn drop_ball(&mut self) {
+        if self.ball.held {
+            self.ball.held = false;
+            self.ball.position.y = Ball::RADIUS;
         }
     }
 
@@ -594,6 +656,7 @@ impl World {
             self.ghost.asleep = (self.ghost.asleep - seconds / 1.2).max(0.0);
         }
         if plan.done {
+            self.drop_ball();
             return;
         }
         let arrived_now = position.distance(plan.target) < ARRIVED;
@@ -605,6 +668,7 @@ impl World {
         let resting =
             self.ghost.plan.activity == Activity::Rest && self.ghost.plan.arrived.is_some();
         if self.ghost.plan.elapsed(time) > GIVE_UP && !resting {
+            self.drop_ball();
             self.ghost.plan.done = true;
             return;
         }
@@ -721,6 +785,67 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
+            Activity::Fetch => {
+                if self.ghost.plan.count == 0 {
+                    let target = self.ball.position + Vec3::Y * 0.42;
+                    self.ghost.plan.target = target;
+                    look = Some(self.ball.position);
+                    if position.distance(target) < ARRIVED && self.ball.velocity.length() < 0.8 {
+                        self.ball.held = true;
+                        self.ghost.plan.count = 1;
+                        self.ghost.plan.arrived = None;
+                        self.record(EventKind::PickedUpBall);
+                    }
+                }
+                if self.ghost.plan.count == 1 {
+                    if self.ball.held {
+                        let mut target = self.glass_spot();
+                        target.y = 0.7;
+                        self.ghost.plan.target = target;
+                        look = Some(target + Vec3::Z * 3.0);
+                        if position.distance(target) < ARRIVED {
+                            self.drop_ball();
+                            let middle = Vec3::new(0.0, Ball::RADIUS, ROOM_MAX.z - Ball::RADIUS);
+                            self.ball.velocity =
+                                (middle - self.ball.position).normalize_or_zero() * 0.3;
+                            self.ghost.plan.count = 2;
+                            self.ghost.plan.arrived = Some(time);
+                            self.ghost.needs.change(0.0, 0.12, 0.08);
+                            self.record(EventKind::Fetched);
+                        }
+                    } else {
+                        self.ghost.plan.done = true;
+                    }
+                }
+                if self.ghost.plan.count >= 2 {
+                    look = Some(self.ghost.plan.target + Vec3::Z * 3.0);
+                    if self.ghost.plan.stayed(time) > self.ghost.plan.length {
+                        self.ghost.plan.done = true;
+                    }
+                }
+            }
+            Activity::Dance => {
+                let progress = self.ghost.plan.elapsed(time) / self.ghost.plan.length;
+                let offset = if progress < 0.8 {
+                    let phase = progress / 0.8 * std::f32::consts::TAU * 2.0;
+                    Vec3::new(phase.sin(), -phase.cos(), 0.0) * 0.3
+                } else {
+                    let bounce = ((progress - 0.8) / 0.2).min(1.0);
+                    Vec3::Y * (-0.3 * (1.0 - bounce) + 0.15 * (bounce * std::f32::consts::PI).sin())
+                };
+                self.ghost.plan.target = self.ghost.plan.anchor + offset;
+                look = Some(if self.viewer_present() {
+                    self.glass_spot() + Vec3::Z * 3.0
+                } else {
+                    self.ghost.plan.target
+                });
+                if progress >= 1.0 {
+                    self.ghost.plan.target = self.ghost.plan.anchor;
+                    self.ghost.needs.change(0.0, 0.1, 0.0);
+                    self.record(EventKind::Danced);
+                    self.ghost.plan.done = true;
+                }
+            }
         }
         self.ghost.look = look;
     }
@@ -743,6 +868,7 @@ impl World {
             Activity::Float => 0.35,
             Activity::Rest => 0.5,
             Activity::Explore => 0.7,
+            Activity::Dance => 1.5,
             _ => 0.8,
         } * (0.6 + 0.4 * ghost.needs.energy);
 
@@ -853,7 +979,10 @@ impl World {
         if recent(6.0).any(|event| {
             matches!(
                 event.kind,
-                EventKind::AteMote | EventKind::NudgedBall | EventKind::Bloomed
+                EventKind::AteMote
+                    | EventKind::NudgedBall
+                    | EventKind::Bloomed
+                    | EventKind::Fetched
             )
         }) {
             return Mood::Excited;
@@ -894,6 +1023,14 @@ mod tests {
     #[test]
     fn the_ghost_stays_in_the_room_whatever_it_does() {
         let mut world = World::new(5, 12.0);
+        for activity in Activity::ALL {
+            world.begin(activity);
+            for _ in 0..400 {
+                world.step(0.05);
+                assert!(inside(world.ghost.position), "{activity:?}");
+                assert!(inside(world.ball.position), "{activity:?}");
+            }
+        }
         for round in 0..200 {
             if world.needs_decision() {
                 let options = world.options();
@@ -998,6 +1135,262 @@ mod tests {
                 .iter()
                 .any(|event| event.kind == EventKind::NudgedBall)
         );
+    }
+
+    #[test]
+    fn a_throw_ends_a_quiet_plan_and_opens_fetch() {
+        for activity in [
+            Activity::Float,
+            Activity::Explore,
+            Activity::Window,
+            Activity::Visit,
+        ] {
+            let mut world = World::new(6, 12.0);
+            assert!(!world.options().contains(&Activity::Fetch));
+            world.begin(activity);
+            world.kick_ball(-Vec3::Z);
+            assert!(world.needs_decision(), "{activity:?}");
+            assert!(world.options().contains(&Activity::Fetch));
+        }
+    }
+
+    #[test]
+    fn a_throw_leaves_busy_or_sleeping_ghosts_to_their_plans() {
+        for activity in [
+            Activity::Rest,
+            Activity::Tend,
+            Activity::Lamp,
+            Activity::Chase,
+            Activity::Play,
+            Activity::Dance,
+            Activity::Fetch,
+        ] {
+            let mut world = World::new(6, 12.0);
+            world.begin(activity);
+            world.kick_ball(Vec3::X);
+            assert!(!world.needs_decision(), "{activity:?}");
+        }
+        let mut world = World::new(6, 12.0);
+        world.ghost.asleep = 0.8;
+        world.kick_ball(Vec3::X);
+        assert!(!world.needs_decision());
+        assert!(!world.options().contains(&Activity::Fetch));
+    }
+
+    #[test]
+    fn fetch_needs_energy_and_a_recent_throw_or_a_ball_still_rolling_after_one() {
+        let mut world = World::new(6, 12.0);
+        world.ball.velocity = Vec3::X;
+        assert!(!world.options().contains(&Activity::Fetch));
+        world.kick_ball(Vec3::X);
+        world.ghost.needs.energy = 0.3;
+        assert!(!world.options().contains(&Activity::Fetch));
+        world.ghost.needs.energy = 0.8;
+        world.time += 21.0;
+        assert!(world.options().contains(&Activity::Fetch));
+        world.ball.velocity = Vec3::ZERO;
+        assert!(!world.options().contains(&Activity::Fetch));
+    }
+
+    #[test]
+    fn fetching_picks_up_the_ball_and_returns_it_before_waiting_for_another_throw() {
+        for direction in [Vec3::X, -Vec3::X, Vec3::Z, -Vec3::Z] {
+            let mut world = World::new(6, 12.0);
+            world.notice_viewer();
+            world.kick_ball(direction);
+            world.begin(Activity::Fetch);
+            let mut carried = false;
+            let fun = world.ghost.needs.fun;
+            let company = world.ghost.needs.company;
+            for _ in 0..1200 {
+                world.step(0.05);
+                assert!(
+                    world
+                        .ball
+                        .position
+                        .cmpge(ROOM_MIN + Vec3::splat(Ball::RADIUS))
+                        .all()
+                );
+                assert!(
+                    world
+                        .ball
+                        .position
+                        .cmple(ROOM_MAX - Vec3::splat(Ball::RADIUS))
+                        .all()
+                );
+                if world.ball.held {
+                    carried = true;
+                    let height = (world.ghost.position.y - 0.42).max(Ball::RADIUS);
+                    assert!((world.ball.position.y - height).abs() < 1e-5);
+                    assert_eq!(world.ball.velocity, world.ghost.velocity);
+                }
+                if world
+                    .events
+                    .iter()
+                    .any(|event| event.kind == EventKind::Fetched)
+                {
+                    break;
+                }
+            }
+            assert!(carried, "{direction:?}");
+            let actions: Vec<_> = world
+                .events
+                .iter()
+                .filter(|event| matches!(event.kind, EventKind::PickedUpBall | EventKind::Fetched))
+                .map(|event| event.kind.clone())
+                .collect();
+            assert_eq!(
+                actions,
+                [EventKind::PickedUpBall, EventKind::Fetched],
+                "{direction:?}"
+            );
+            assert!(!world.ball.held);
+            assert!(world.ball.position.z > ROOM_MAX.z - 0.75);
+            assert_eq!(world.ball.position.y, Ball::RADIUS);
+            assert!(world.ghost.needs.fun > fun);
+            assert!(world.ghost.needs.company > company);
+            assert_eq!(world.ghost.mood, Mood::Excited);
+            assert!(!world.needs_decision());
+            assert!(world.ghost.look.unwrap().z > ROOM_MAX.z);
+            run(&mut world, 5.9);
+            assert!(!world.needs_decision());
+            run(&mut world, 0.2);
+            assert!(world.needs_decision());
+        }
+    }
+
+    #[test]
+    fn another_throw_ends_the_wait_after_a_fetch() {
+        let mut world = World::new(6, 12.0);
+        world.begin(Activity::Fetch);
+        for _ in 0..600 {
+            world.step(0.05);
+            if world.ghost.plan.count == 2 {
+                break;
+            }
+        }
+        assert_eq!(world.ghost.plan.count, 2);
+        assert!(!world.needs_decision());
+        world.kick_ball(-Vec3::Z);
+        assert!(world.needs_decision());
+        assert!(world.options().contains(&Activity::Fetch));
+    }
+
+    #[test]
+    fn changing_activity_or_waking_or_poking_lets_go_of_a_held_ball() {
+        for interruption in 0..3 {
+            let mut world = World::new(6, 12.0);
+            world.begin(Activity::Fetch);
+            for _ in 0..600 {
+                world.step(0.05);
+                if world.ball.held {
+                    break;
+                }
+            }
+            assert!(world.ball.held);
+            let velocity = world.ball.velocity;
+            match interruption {
+                0 => world.begin(Activity::Explore),
+                1 => world.wake(),
+                _ => world.poke(),
+            }
+            assert!(!world.ball.held);
+            assert_eq!(world.ball.position.y, Ball::RADIUS);
+            assert_eq!(world.ball.velocity, velocity);
+            world.step(0.05);
+            assert!(!world.ball.held);
+        }
+    }
+
+    #[test]
+    fn giving_up_on_a_fetch_releases_the_ball() {
+        let mut world = World::new(6, 12.0);
+        world.begin(Activity::Fetch);
+        for _ in 0..600 {
+            world.step(0.05);
+            if world.ball.held {
+                break;
+            }
+        }
+        assert!(world.ball.held);
+        world.ghost.plan.started = world.time - f64::from(GIVE_UP);
+        world.step(0.1);
+        assert!(world.needs_decision());
+        assert!(!world.ball.held);
+        assert_eq!(world.ball.position.y, Ball::RADIUS);
+        assert!(
+            !world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::Fetched)
+        );
+    }
+
+    #[test]
+    fn a_dance_moves_through_the_air_and_finishes_with_a_twirl() {
+        for position in [Vec3::new(0.0, 1.2, 0.0), ROOM_MIN, ROOM_MAX] {
+            let mut world = World::new(6, 12.0);
+            world.ghost.position = position;
+            world.begin(Activity::Dance);
+            let anchor = world.ghost.plan.anchor;
+            assert!(anchor.x >= ROOM_MIN.x + 0.6 && anchor.x <= ROOM_MAX.x - 0.6);
+            assert!(anchor.z >= ROOM_MIN.z + 0.6 && anchor.z <= ROOM_MAX.z - 0.6);
+            assert!((0.9..=1.6).contains(&anchor.y));
+            assert!((5.0..7.0).contains(&world.ghost.plan.length));
+            let mut lowest = f32::INFINITY;
+            let mut highest = f32::NEG_INFINITY;
+            let fun = world.ghost.needs.fun;
+            for _ in 0..160 {
+                world.step(0.05);
+                assert!(inside(world.ghost.position));
+                lowest = lowest.min(world.ghost.position.y);
+                highest = highest.max(world.ghost.position.y);
+                if world.needs_decision() {
+                    break;
+                }
+            }
+            assert!(highest - lowest > 0.25, "{lowest}..{highest}");
+            assert!(world.needs_decision());
+            assert!(world.time < 8.0);
+            assert!(world.ghost.needs.fun > fun);
+            assert_eq!(
+                world
+                    .events
+                    .iter()
+                    .filter(|event| event.kind == EventKind::Danced)
+                    .count(),
+                1
+            );
+            run(&mut world, 2.0);
+            assert_eq!(
+                world
+                    .events
+                    .iter()
+                    .filter(|event| event.kind == EventKind::Danced)
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn dancing_needs_energy_and_turns_toward_a_present_viewer() {
+        let mut world = World::new(6, 12.0);
+        world.ghost.needs.energy = 0.35;
+        assert!(!world.options().contains(&Activity::Dance));
+        world.ghost.needs.energy = 0.8;
+        assert!(world.options().contains(&Activity::Dance));
+        world.ghost.asleep = 0.8;
+        assert!(!world.options().contains(&Activity::Dance));
+        world.ghost.asleep = 0.0;
+        world.notice_viewer();
+        world.begin(Activity::Dance);
+        world.step(0.1);
+        assert!(world.ghost.look.unwrap().z > ROOM_MAX.z);
+        world.time += PRESENT_FOR;
+        world.ghost.plan.started = world.time;
+        world.step(0.1);
+        assert_eq!(world.ghost.look, Some(world.ghost.plan.target));
     }
 
     #[test]
