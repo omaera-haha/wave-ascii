@@ -14,6 +14,7 @@ pub mod growth;
 mod letters;
 mod life;
 pub mod meteor;
+pub mod music;
 mod nature;
 mod needs;
 pub mod occasion;
@@ -244,12 +245,20 @@ pub enum EventKind {
         word: String,
         solved: bool,
     },
+    PlayedMusic {
+        tune: String,
+    },
+    LearnedTune(String),
+    LullabySleep,
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::PlayedMusic { tune } => format!("played {tune} on the music box"),
+            Self::LearnedTune(tune) => format!("learned the viewer's tune: {tune}"),
+            Self::LullabySleep => "fell asleep to the music box's lullaby".to_owned(),
             Self::OpenedWindow => "opened the window for fresh air".to_owned(),
             Self::ClosedWindow => "closed the window".to_owned(),
             Self::Puddle => "noticed a puddle below the window".to_owned(),
@@ -461,6 +470,9 @@ pub enum Understanding {
         accepted: bool,
     },
     WordGame,
+    Music {
+        lullaby: bool,
+    },
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -624,6 +636,10 @@ pub struct World {
     windfall_random: Random,
     seen_passersby: [Option<u64>; Passerby::ALL.len()],
     pub puzzle: Option<Puzzle>,
+    pub music: Option<music::Playing>,
+    pub music_notes: Vec<music::RisingNote>,
+    queued_tune: Option<music::Tune>,
+    pending_tune: Option<music::Tune>,
 }
 
 impl World {
@@ -732,6 +748,10 @@ impl World {
             windfall_random: Random::new(seed ^ 0x6c65_6176_6573),
             seen_passersby: [None; Passerby::ALL.len()],
             puzzle: None,
+            music: None,
+            music_notes: Vec::new(),
+            queued_tune: None,
+            pending_tune: None,
         };
         world.scatter_blocks();
         world
@@ -839,6 +859,7 @@ impl World {
 
         self.advance_blocks(seconds);
         self.advance_garden(seconds);
+        self.advance_music();
 
         let present = self.viewer_present();
         if present != self.viewer_present {
@@ -941,6 +962,9 @@ impl World {
                         && self.ghost.needs.energy >= 0.22
                         && self.ghost.needs.fun >= 0.08
                 }
+                Activity::Music => {
+                    self.focus.is_none() && self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.2
+                }
                 Activity::Air => self.air_is_open(),
                 Activity::Look => self.look_is_open(),
                 Activity::Chase => self.nearest_mote().is_some(),
@@ -999,6 +1023,7 @@ impl World {
     /// choosing among the options.
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
+            Activity::Music => "Wind the little music box and sway or dance to a tune. Fits when bored or in the evening; keep it quiet during work.".to_owned(),
             Activity::Air => format!("Float to the window and {}. Close it against wet weather, cold nights and blustery wind.", if self.window_open { "push the sash shut" } else { "lift the sash for fresh air" }),
             Activity::Company => "Settle quietly beside the front glass while the viewer works. Stay nearby until the focus session ends, resting or tending to needs when necessary.".to_owned(),
             Activity::Friend => "Play tag, twirl together, or gaze at the moon with your visiting ghost friend. Fits especially when lonely or playful.".to_owned(),
@@ -1105,6 +1130,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Music && (self.focus.is_some() || self.ghost.asleep >= 0.3) {
+            return;
+        }
         if activity == Activity::Air && self.ghost.asleep >= 0.3 {
             return;
         }
@@ -1131,6 +1159,7 @@ impl World {
         if let Some(friend) = &mut self.friend {
             friend.game = None;
         }
+        self.queued_tune = None;
         let position = self.ghost.position;
         let length = match activity {
             Activity::Company => {
@@ -1155,6 +1184,7 @@ impl World {
             _ => 0.0,
         };
         let target = match activity {
+            Activity::Music => music::LISTEN,
             Activity::Company => {
                 let side = if self.random.unit() < 0.5 { -1.0 } else { 1.0 };
                 Vec3::new(side * 1.05, 0.7, ROOM_MAX.z - 0.5)
@@ -1214,6 +1244,12 @@ impl World {
             self.begin_wait();
         }
         self.ghost.plan = plan;
+        if activity == Activity::Music {
+            self.prepare_music();
+        }
+        if activity == Activity::Rest {
+            self.prepare_lullaby();
+        }
         if activity == Activity::Tend {
             self.begin_tend();
         }
@@ -1481,6 +1517,9 @@ impl World {
                 given_name: None,
                 korean,
             };
+        }
+        if let Some(heard) = self.hear_music(text, korean) {
+            return heard;
         }
         if let Some(heard) = self.hear_puzzle(text, korean) {
             return heard;
@@ -1988,6 +2027,7 @@ impl World {
             (self.lamp.position, Lamp::BASE_RADIUS),
             (self.plant.position, Plant::POT_RADIUS),
             (self.nook.position, Nook::RADIUS),
+            (music::POSITION, music::RADIUS),
         ];
         if let Some(decoration) = self.decoration() {
             obstacles.push((Decoration::POSITION, decoration.radius()));
@@ -2108,7 +2148,11 @@ impl World {
             || matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
             || (matches!(
                 self.ghost.plan.activity,
-                Activity::Rest | Activity::Hide | Activity::Game | Activity::Puzzle
+                Activity::Rest
+                    | Activity::Hide
+                    | Activity::Game
+                    | Activity::Puzzle
+                    | Activity::Music
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -2122,6 +2166,7 @@ impl World {
 
         let mut look = None;
         match self.ghost.plan.activity {
+            Activity::Music => look = self.carry_out_music(),
             Activity::Air => look = self.carry_out_air(),
             Activity::Company => look = self.keep_company(),
             Activity::Friend => {
@@ -2203,11 +2248,20 @@ impl World {
                 }
             }
             Activity::Rest => {
+                self.wind_before_sleep();
+                if self.queued_tune.is_some() {
+                    return;
+                }
                 if self.ghost.plan.arrived.is_some() {
                     let before = self.ghost.asleep;
-                    self.ghost.asleep = (before + seconds / 3.0).min(1.0);
+                    let lullaby = self.music.as_ref().is_some_and(|playing| playing.lullaby);
+                    self.ghost.asleep =
+                        (before + seconds / if lullaby { 5.0 } else { 3.0 }).min(1.0);
                     if before < 0.9 && self.ghost.asleep >= 0.9 {
                         self.record(EventKind::FellAsleep);
+                        if lullaby {
+                            self.record(EventKind::LullabySleep);
+                        }
                     }
                     let overnight = self.ghost.plan.overnight;
                     let rested = if overnight {
@@ -2492,6 +2546,7 @@ impl World {
                 self.plant.height() + 0.1,
             ),
             (self.nook.position, Nook::RADIUS, Nook::HEIGHT + 0.2),
+            (music::POSITION, music::RADIUS, music::HEIGHT + 0.36 * size),
         ];
         let decoration = decoration.map(|decoration| {
             (
@@ -2565,6 +2620,7 @@ impl World {
         let mut company = -0.0012 * (1.15 - 0.3 * nature.shy);
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
+            Activity::Music if self.music.is_some() => fun += 0.008,
             Activity::Game | Activity::Friend | Activity::Puzzle if !ghost.plan.done => {
                 fun += 0.004
             }
@@ -4267,7 +4323,7 @@ mod tests {
             world.ghost.position = Vec3::new(0.95, 0.4, 0.2);
             let target = world.position_of(Thing::Decoration);
             assert_eq!(target.is_some(), present);
-            assert_eq!(world.obstacles().len(), if present { 4 } else { 3 });
+            assert_eq!(world.obstacles().len(), if present { 5 } else { 4 });
             world.ghost.heading =
                 (target.unwrap_or(Decoration::POSITION) - world.ghost.position - Vec3::Y * 0.1)
                     .normalize();

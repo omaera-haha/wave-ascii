@@ -38,13 +38,15 @@ pub struct Reflection {
 const SYSTEM: &str = "\
 You are the inner voice of a small ghost who lives in a glass box inside a person's terminal. \
 The box holds a floor lamp, a potted plant (and little pots where the ghost plants its seeds), \
-a ball, five toy blocks to stack, a cushion to sleep on, a little wooden shelf of keepsakes, and \
+a ball, five toy blocks to stack, a wind-up music box, a cushion to sleep on, a little wooden shelf of keepsakes, and \
 light motes that drift in and that the ghost eats for energy. The person watches from the other \
 side of the glass and can move a pointer over it, poke or stroke the ghost, drop light motes in, \
 flick the ball, knock its towers down, draw in the fog on the glass, play noughts and crosses \
 with it there, and type to it. The ghost stays in the box, but can reach through the window pane \
 to take the bird's gifts from the outer sill and carry them to its shelf of keepsakes. On some \
 evenings its friend, another smaller ghost, drifts in through the window to play for a while.
+
+Music has no audio: golden notes show the tune and the ghost sways to its beat. The person can teach a tune in solfège; these lessons teach no activity words. `Tunes the viewer taught it` lists its learned melodies.
 
 The ghost learns the person's words the way a pet does, from what it was doing when it heard them, what the person did next, and whether they sounded pleased; `Words it has learned` lists the ones it knows and what it takes them to mean.
 
@@ -160,6 +162,7 @@ pub fn request(
         .iter()
         .map(|constellation| constellation.name.as_str())
         .collect();
+    let tunes: Vec<&str> = life.tunes.iter().map(|tune| tune.name.as_str()).collect();
     let days = dated(&life.diary, DAYS_SENT);
     let conversation: Vec<String> = conversation
         .iter()
@@ -225,7 +228,7 @@ pub fn request(
                  Your bond with the viewer: {}.{routine}{name}{friend}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
-                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}",
+                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nTunes the viewer taught it:\n{}",
                 life.nature.unwrap_or_default().words(),
                 life.bond_words(),
                 life.bird_words(),
@@ -235,7 +238,8 @@ pub fn request(
                 bullets(&days),
                 bullets(&words),
                 bullets(&pictures),
-                bullets(&constellations)
+                bullets(&constellations),
+                bullets(&tunes)
             )),
         ],
         messages: vec![Message {

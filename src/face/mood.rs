@@ -123,6 +123,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Danced
         | EventKind::Doodled(_)
         | EventKind::Wrote { .. } => Expression::Smile,
+        EventKind::PlayedMusic { .. } | EventKind::LearnedTune(_) => Expression::Smile,
         EventKind::OpenedWindow | EventKind::ClosedWindow => Expression::Smile,
         EventKind::Puddle => Expression::Worry,
         EventKind::BirdSang | EventKind::ToldStory => Expression::Smile,

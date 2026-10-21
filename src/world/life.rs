@@ -189,6 +189,12 @@ pub struct Tally {
     pub word_games: u32,
     #[serde(default)]
     pub words_guessed: u32,
+    #[serde(default)]
+    pub tunes_played: u32,
+    #[serde(default)]
+    pub tunes_learned: u32,
+    #[serde(default)]
+    pub lullaby_sleeps: u32,
 }
 
 impl Tally {
@@ -199,6 +205,11 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::PlayedMusic { .. } => {
+                self.tunes_played = self.tunes_played.saturating_add(1)
+            }
+            EventKind::LearnedTune(_) => self.tunes_learned = self.tunes_learned.saturating_add(1),
+            EventKind::LullabySleep => self.lullaby_sleeps = self.lullaby_sleeps.saturating_add(1),
             EventKind::SawPasserby(passerby) => {
                 self.passersby = self.passersby.saturating_add(1);
                 if !self.passerby_kinds.contains(passerby) {
@@ -607,6 +618,23 @@ impl Tally {
                 super::friend::count_words(self.words_guessed)
             ));
         }
+        if self.tunes_played > 0 {
+            deeds.push(format!(
+                "played {} {} on the music box",
+                super::friend::count_words(self.tunes_played),
+                if self.tunes_played == 1 {
+                    "tune"
+                } else {
+                    "tunes"
+                }
+            ));
+        }
+        if self.tunes_learned > 0 {
+            deeds.push("learned a tune from you".to_owned());
+        }
+        if self.lullaby_sleeps > 0 {
+            deeds.push("fell asleep to a lullaby".to_owned());
+        }
         match self.stories {
             0 => {}
             1 => deeds.push("told you a story".to_owned()),
@@ -731,6 +759,8 @@ pub struct Life {
     /// The evening of its last search, including an unsuccessful one.
     #[serde(default)]
     pub constellation_night: Option<String>,
+    #[serde(default)]
+    pub tunes: Vec<super::music::Tune>,
 }
 
 impl Life {
@@ -857,6 +887,7 @@ impl Life {
                 completed: true, ..
             } => 0.01,
             EventKind::ToldStory => 0.005,
+            EventKind::LearnedTune(_) => 0.005,
             EventKind::WordGame { .. } => 0.003,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
             EventKind::LearnedPicture(_) => 0.005,
@@ -1076,6 +1107,24 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.tunes = self
+            .tunes
+            .into_iter()
+            .filter_map(super::music::Tune::sanitized)
+            .collect();
+        self.tunes.reverse();
+        let mut kept = Vec::new();
+        for tune in self.tunes {
+            if kept.len() < 8
+                && !kept
+                    .iter()
+                    .any(|known: &super::music::Tune| known.notes == tune.notes)
+            {
+                kept.push(tune);
+            }
+        }
+        kept.reverse();
+        self.tunes = kept;
         self.constellations
             .retain(super::stars::Constellation::valid);
         if self.constellations.len() > 12 {
@@ -1123,6 +1172,9 @@ impl Life {
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
+            tally.tunes_played = tally.tunes_played.min(100_000_000);
+            tally.tunes_learned = tally.tunes_learned.min(100_000_000);
+            tally.lullaby_sleeps = tally.lullaby_sleeps.min(100_000_000);
             tally.passersby = tally.passersby.min(100_000_000);
             let mut kinds = Vec::new();
             for kind in &tally.passerby_kinds {
@@ -1199,6 +1251,12 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if matches!(kind, EventKind::LearnedTune(_)) {
+            return self.reach("You taught me my first tune.".to_owned());
+        }
+        if matches!(kind, EventKind::LullabySleep) {
+            return self.reach("I fell asleep to my first lullaby.".to_owned());
+        }
         if let EventKind::SawPasserby(passerby) = kind {
             return self.reach(format!("I saw {} for the first time.", passerby.name()));
         }

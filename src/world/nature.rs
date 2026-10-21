@@ -100,6 +100,7 @@ impl Nature {
                 signed(self.curious)
             }
             Activity::Rest => signed(self.sleepy),
+            Activity::Music => (signed(self.tender) + signed(self.playful)) / 2.0,
             Activity::Tend | Activity::Doodle => signed(self.tender),
             Activity::Visit => {
                 -signed(self.shy) * (1.0 - bond / 0.3).clamp(0.0, 1.0)

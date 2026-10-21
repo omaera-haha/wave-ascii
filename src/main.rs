@@ -74,8 +74,8 @@ Keys:
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, a block to nudge it or a tower to topple it, the window to ask it
-to open or shut, and elsewhere in the room to drop in a light mote. Press on
-the ghost and drag across it to stroke it; drag elsewhere to turn the view,
+to open or shut, the music box to wind it, and elsewhere to drop a light mote.
+Press on the ghost and drag across it to stroke it; drag elsewhere to turn the view,
 and scroll to zoom. Right-drag draws in the fog on the glass. In the
 journal, help, life, or album panel, the mouse selects text. In the journal,
 PageUp/PageDown and Home/End also scroll; Esc, Enter, or j closes it. In the

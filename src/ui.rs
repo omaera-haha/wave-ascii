@@ -585,7 +585,7 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
     let notes = [
         "Ask for a word game; type a letter to guess in talk mode.",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
-        "While a reading panel is open, the mouse selects text.",
+        "Click the music box to wind a tune; teach it do re mi.",
         "In the album: left/right, Home/End · Esc or b closes it.",
     ];
     let room = rows.saturating_sub(3);
@@ -1075,6 +1075,9 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         }
         header.extend(labeled("Friend", words));
     }
+    if !life.tunes.is_empty() {
+        header.extend(labeled("Tunes", app.world.learned_tune_words()));
+    }
     let garden = labeled("Garden", app.world.garden_words());
     let sky = if life.constellations.is_empty() {
         Vec::new()
@@ -1103,6 +1106,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             total.nudges,
         ),
         ("fetches", total.fetches, "dances", total.dances),
+        (
+            "tunes played",
+            total.tunes_played,
+            "tunes learned",
+            total.tunes_learned,
+        ),
         ("found hiding", total.finds, "finger pounces", total.pounces),
         ("doodles", total.doodles, "words written", total.writings),
         (

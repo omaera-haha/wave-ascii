@@ -59,6 +59,16 @@ impl Pose {
         }
     }
 
+    pub fn to_music(mut self, beat: Option<f32>) -> Self {
+        if let Some(beat) = beat {
+            let phase = beat * TAU as f32;
+            self.lift = 0.07 * phase.cos();
+            self.lean += 0.08 * (phase / 2.0).sin();
+            self.ripple = phase;
+        }
+        self
+    }
+
     pub fn in_breeze(mut self, sideways: f32, shake: f32) -> Self {
         self.trail = (self.trail - sideways * 0.6).clamp(-0.44, 0.44);
         self.lean += shake * 0.08;

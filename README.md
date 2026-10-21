@@ -3,7 +3,7 @@
 A ghost lives in a glass box in your terminal.
 
 The box is a small room drawn in dots: a floor lamp, a potted plant and the
-little pots its seeds grow in, a ball, five bright toy blocks, a cushion to
+little pots its seeds grow in, a ball, five bright toy blocks, a wind-up music box, a cushion to
 sleep on, a little shelf of keepsakes, specks of light that drift in, and a
 window onto hills where the seasons turn, birds come to perch, storms roll
 through, snow falls in winter, rain can leave a rainbow, and shooting stars
@@ -37,6 +37,27 @@ to bed and sleeps until morning. On some moonlit evenings a smaller ghost,
 its friend, drifts in through the window to play.
 On clear nights it finds and names pictures in the stars, keeping their faint
 outlines in its sky.
+
+A small wooden music box sits by the right wall. The ghost winds its crank,
+then listens with closed eyes, sways, or dances little loops to the beat.
+Golden notes rise from its open lid and fade as the tune winds down. There
+is no audio. It knows a lullaby, a waltz, a tiny march, and a sparkling little
+melody; sometimes it winds the lullaby on its way to bed and falls asleep
+before the music ends. Clicking the box winds it, and a sleeper sleeps on.
+
+Teach it a tune by typing only three to twenty-four solfège syllables:
+`do re mi fa sol la ti` (also `so` and `si`), `do-re-mi`, or `도레미` /
+`도 레 미`. Add `~` or a trailing dash before a space or the end to hold a
+note: `do- re mi~~`. Holds last up to four beats. It plays your tune back
+and remembers the newest eight, named by their first notes, in its life
+panel. Repeating a lesson keeps one copy. Later it may play your tune on its
+own or dream of it. Ask “do you like music?” or “what songs do you know?”
+(“음악 좋아해?” / “무슨 노래 알아?”) to hear about them.
+
+During focus sessions the box stays quiet and lessons wait until work ends.
+You can explicitly ask for `play a lullaby` or `자장가 들려줘` during work;
+it plays without drawing the ghost away from its quiet company. Lessons
+heard while sleeping wait until it wakes.
 
 Each ghost is born a small wisp with a nature of its own, and grows up over
 its first month, getting better at what it practices. Over days it grows
@@ -120,8 +141,8 @@ the next requests use them at once.
 
 With the mouse, click the ghost to poke it (poke it a few times and it gets
 grumpy), click the ball to flick it, click a loose block to nudge it or a
-tower to knock it down, click the window to ask it to open or shut, and click
-anywhere else in the room to drop in a
+tower to knock it down, click the window to ask it to open or shut, click
+the music box to wind it, and click anywhere else in the room to drop in a
 light mote. Press on the ghost and drag back and forth across it to
 stroke it. Drag anywhere else to turn the view, and scroll to zoom. The
 ghost's eyes follow the pointer. Right-drag on the glass to draw in its fog,

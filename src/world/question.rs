@@ -35,6 +35,8 @@ pub enum Question {
     Story,
     Away,
     Constellations,
+    Music,
+    Songs,
 }
 
 impl Question {
@@ -47,6 +49,20 @@ impl Question {
 // lowercased and without apostrophes. More particular questions come first,
 // so "are you tired" is not taken for "are you okay".
 const ENGLISH: &[(Question, &[&[&str]])] = &[
+    (
+        Question::Music,
+        &[
+            &["do", "you", "like", "music"],
+            &["do", "you", "like", "songs"],
+        ],
+    ),
+    (
+        Question::Songs,
+        &[
+            &["what", "songs", "do", "you", "know"],
+            &["what", "tunes", "do", "you", "know"],
+        ],
+    ),
     (
         Question::Story,
         &[
@@ -240,6 +256,12 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // and whether the message must end in a question mark, for words that are
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
+    (Question::Music, &["음악좋아", "노래좋아"], false),
+    (
+        Question::Songs,
+        &["무슨노래알아", "어떤노래알아", "아는노래"],
+        false,
+    ),
     (
         Question::Story,
         &[

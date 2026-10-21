@@ -32,11 +32,12 @@ pub enum Thing {
     Friend,
     Drawing,
     Seedlings,
+    MusicBox,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 15] = [
+    pub const NAMES: [&str; 16] = [
         "viewer",
         "window",
         "plant",
@@ -52,6 +53,7 @@ impl Thing {
         "friend",
         "drawing",
         "pots",
+        "music box",
     ];
 
     pub fn name(self) -> &'static str {
@@ -71,6 +73,7 @@ impl Thing {
             Self::Friend => "friend",
             Self::Drawing => "drawing",
             Self::Seedlings => "pots",
+            Self::MusicBox => "music box",
         }
     }
 }
@@ -104,6 +107,7 @@ impl World {
     /// Where a thing is, if it is still in the room.
     pub fn position_of(&self, thing: Thing) -> Option<Vec3> {
         Some(match thing {
+            Thing::MusicBox => super::music::POSITION + Vec3::Y * 0.2,
             Thing::Viewer => self
                 .viewer
                 .pointer
@@ -179,6 +183,7 @@ impl World {
             Thing::Friend,
             Thing::Drawing,
             Thing::Seedlings,
+            Thing::MusicBox,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -243,6 +248,7 @@ impl World {
                 Thing::Friend,
                 Thing::Drawing,
                 Thing::Seedlings,
+                Thing::MusicBox,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -256,6 +262,11 @@ impl World {
     // rough spheres around each piece.
     fn blocker(&self, eye: Vec3, target: Vec3, thing: Thing) -> Option<Thing> {
         let blockers = [
+            (
+                Thing::MusicBox,
+                super::music::POSITION + Vec3::Y * 0.16,
+                0.22,
+            ),
             (Thing::Lamp, self.lamp.bulb() + Vec3::Y * 0.06, 0.2),
             (
                 Thing::Plant,
