@@ -97,7 +97,12 @@ impl World {
         }
         self.record(EventKind::Jostled { rattled });
         if !rattled {
-            if self.ghost.plan.activity == Activity::Float && !self.ghost.plan.done {
+            // Counting while the viewer hides a treasure floats too; the
+            // jolt mustn't end the game.
+            if self.ghost.plan.activity == Activity::Float
+                && !self.ghost.plan.done
+                && !self.hunt_counting()
+            {
                 self.ghost.plan.done = true;
             }
             return;
@@ -156,6 +161,15 @@ mod tests {
         world.step(SHAKING_FOR as f32 + 1.0);
         world.jostle(0.2, 0.1);
         assert_eq!(count(&world, false), 2);
+    }
+
+    #[test]
+    fn a_jolt_while_the_viewer_hides_a_treasure_keeps_the_game() {
+        let mut world = World::new(5, 12.0);
+        world.start_hiding().unwrap();
+        world.jostle(0.3, 0.0);
+        world.step(0.5);
+        assert!(world.hunt_counting());
     }
 
     #[test]

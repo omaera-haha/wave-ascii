@@ -349,7 +349,7 @@ fn print_peek(paths: Option<&Paths>) -> io::Result<()> {
     let line = match save {
         Some(save) => {
             let now = jiff::Zoned::now();
-            let away = now.timestamp().as_second() - save.last_seen;
+            let away = now.timestamp().as_second().saturating_sub(save.last_seen);
             peek::glance(&save, now.datetime(), away.max(0))
         }
         None => peek::nobody().to_owned(),
