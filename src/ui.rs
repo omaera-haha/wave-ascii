@@ -541,7 +541,7 @@ fn help_panel(screen: &mut Canvas) {
         "Without keys it lives on instinct. Press k to add keys.",
         "Models, effort, and caching change in the same place, at once.",
         "",
-        "t, Enter   talk to it          click ghost   poke it",
+        "t, Enter   talk to it          click ghost   poke or find it",
         "k          keys and models     click ball    flick it",
         "j          journal and diary   click room    drop a light mote",
         "l          its life and bond",
