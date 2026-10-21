@@ -39,7 +39,7 @@ const MUSES_ON_SETTING_OUT: f32 = 0.35;
 const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
 const DREAMS_EVERY: (f32, f32) = (18.0, 30.0);
 /// Seconds a thought stays before a musing may replace it.
-const THOUGHT_HOLDS: f64 = 12.0;
+const THOUGHT_HOLDS: f64 = crate::world::dream::HOLDS;
 const MEMORIES_KEPT: usize = 60;
 const REMARKS_KEPT: usize = 40;
 
@@ -342,7 +342,7 @@ impl Mind {
     fn muse(&mut self, world: &mut World) {
         let since = self.mused_at;
         self.mused_at = world.time;
-        let asleep = world.ghost.asleep > 0.9;
+        let asleep = world.ghost.asleep > crate::world::dream::SLEEPING;
         let (low, high) = if asleep { DREAMS_EVERY } else { MUSES_EVERY };
         if asleep != self.dreaming {
             self.dreaming = asleep;
@@ -381,7 +381,11 @@ impl Mind {
             return;
         }
         if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
-            world.think(&musing::named_friend_line(world, lines[index]));
+            let line = musing::named_friend_line(world, lines[index]);
+            world.think(&line);
+            if asleep {
+                world.dream_of(&line);
+            }
         }
     }
 
@@ -827,6 +831,34 @@ mod tests {
         let dream = world.ghost.thought.clone().unwrap();
         assert!(dream.text.starts_with('…'), "{}", dream.text);
         assert!(dream.time > mused.time);
+    }
+
+    #[test]
+    fn a_dream_musing_starts_a_picture_with_its_thought_but_held_thoughts_defer_it() {
+        let mut mind = offline();
+        let mut world = World::new(3, 23.0);
+        world.tuck_in();
+        mind.dreaming = true;
+        mind.next_musing = 0.0;
+        world.think("Still thinking.");
+        mind.muse(&mut world);
+        assert!(world.dream.is_none());
+        world.ghost.thought = None;
+        mind.next_musing = world.time;
+        mind.muse(&mut world);
+        let dream = world.dream.unwrap();
+        let thought = world.ghost.thought.as_ref().unwrap();
+        assert_eq!(dream.started, thought.time);
+        assert_eq!(
+            dream.picture,
+            crate::world::dream::DreamPicture::from_line(&thought.text, None)
+        );
+        world.poke();
+        assert!(world.dream.is_none());
+        world.ghost.thought = None;
+        mind.next_musing = world.time;
+        mind.muse(&mut world);
+        assert!(world.dream.is_none());
     }
 
     #[test]

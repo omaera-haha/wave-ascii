@@ -2,6 +2,7 @@ mod activity;
 pub mod blocks;
 pub mod calendar;
 mod doodle;
+pub mod dream;
 pub mod fog;
 pub mod friend;
 pub mod game;
@@ -31,6 +32,7 @@ pub use activity::{Activity, Plan};
 pub use blocks::Block;
 pub use calendar::Season;
 pub use doodle::{Doodle, Picture, Sketch, Writing};
+pub use dream::Dream;
 pub use fog::{Drawing, LearnedPicture};
 pub use friend::{Companion, Friend};
 pub use game::{Game, Mark, Outcome};
@@ -539,6 +541,7 @@ pub struct World {
     pub seedlings: Vec<Seedling>,
     pub petals: Vec<Petal>,
     tending: Option<garden::Tending>,
+    pub dream: Option<Dream>,
 }
 
 impl World {
@@ -631,6 +634,7 @@ impl World {
             seedlings: Vec::new(),
             petals: Vec::new(),
             tending: None,
+            dream: None,
         };
         world.scatter_blocks();
         world
@@ -741,6 +745,7 @@ impl World {
         self.holiday_greeting();
         self.advance_fog();
         self.carry_out(seconds);
+        self.advance_dream();
         let hiding = !self.ghost.plan.done
             && self.ghost.plan.activity == Activity::Hide
             && self.ghost.plan.arrived.is_some();
@@ -1687,6 +1692,7 @@ impl World {
     }
 
     fn wake(&mut self) {
+        self.dream = None;
         if self.ghost.keepsake.is_some() {
             self.put_keepsake_away();
             self.ghost.plan.done = true;

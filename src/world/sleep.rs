@@ -53,6 +53,7 @@ impl World {
     }
 
     pub(super) fn greet_morning(&mut self) {
+        self.dream = None;
         self.drowsy_until = 0.0;
         self.morning_at = Some(self.time);
         self.ghost.velocity.y += 0.6;
