@@ -13,7 +13,11 @@ use crate::color::Rgb;
 use crate::store::{self, Paths};
 use crate::world::{EventKind, Outcome, World};
 
+/// Ordinary pages kept, the newest.
 const PAGES_KEPT: usize = 60;
+/// Milestone pages kept besides them. Each milestone is reached only once,
+/// so a life's firsts stay, from the day it came into being.
+const MILESTONES_KEPT: usize = 120;
 const CAPTURE_DELAY: f64 = 2.0;
 const CAPTURE_EXPIRES: f64 = 60.0;
 const CAPTURE_INTERVAL: f64 = 300.0;
@@ -42,6 +46,8 @@ pub struct Page {
     characters: String,
     colors: Vec<ColorRun>,
     daily: Option<String>,
+    /// Whether it keeps a milestone, which outlasts ordinary pages.
+    milestone: bool,
 }
 
 impl Page {
@@ -341,6 +347,7 @@ impl Album {
             }
             let mut page = Page::new(canvas, world, now, capture.caption);
             page.daily = capture.daily;
+            page.milestone = capture.milestone;
             if !page.valid() {
                 continue;
             }
@@ -404,11 +411,23 @@ fn filename_order(path: &Path) -> (&str, u64) {
     }
 }
 
+// Keeps the newest ordinary pages and milestone pages, each up to its own
+// limit, and deletes the rest. Entries come newest first.
 fn prune(entries: &mut Vec<(PathBuf, Page)>) {
-    for (path, _) in entries.iter().skip(PAGES_KEPT) {
-        let _ = fs::remove_file(path);
-    }
-    entries.truncate(PAGES_KEPT);
+    let (mut ordinary, mut milestones) = (0, 0);
+    entries.retain(|(path, page)| {
+        let kept = if page.milestone {
+            milestones += 1;
+            milestones <= MILESTONES_KEPT
+        } else {
+            ordinary += 1;
+            ordinary <= PAGES_KEPT
+        };
+        if !kept {
+            let _ = fs::remove_file(path);
+        }
+        kept
+    });
 }
 
 fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
@@ -602,11 +621,59 @@ mod tests {
         world.time = 2.0;
         album.elapse(2.0);
         album.capture(&paths, &world, &canvas, 100).unwrap();
-        assert_eq!(album.pages.len(), 60);
+        assert_eq!(album.pages.len(), 62);
         assert_eq!(album.pages[0].caption, "Moment 61.");
-        assert_eq!(album.pages[59].caption, "Moment 2.");
-        assert_eq!(fs::read_dir(paths.album()).unwrap().count(), 60);
+        assert_eq!(album.pages[61].caption, "Moment 0.");
+        assert_eq!(fs::read_dir(paths.album()).unwrap().count(), 62);
         assert_eq!(Album::load(&paths, 100).pages, album.pages);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn milestone_pages_outlast_ordinary_ones_up_to_their_own_limit() {
+        let directory = scratch("milestones-kept");
+        let paths = Paths::in_directory(&directory);
+        let world = World::new(1, 12.0);
+        let canvas = Canvas::blank(1, 1);
+        // The first moment of a life, then a long run of ordinary pages.
+        let mut first = Page::new(&canvas, &world, 0, "I came into being.".to_owned());
+        first.milestone = true;
+        first.save(&paths, "page-first").unwrap();
+        for captured in 1..=(PAGES_KEPT as i64 + 10) {
+            Page::new(&canvas, &world, captured, "A moment.".to_owned())
+                .save(&paths, &format!("page-{captured}"))
+                .unwrap();
+        }
+        let album = Album::load(&paths, 1000);
+        assert_eq!(album.pages.len(), PAGES_KEPT + 1);
+        assert_eq!(album.pages.last().unwrap().caption, "I came into being.");
+        assert_eq!(album.pages[PAGES_KEPT - 1].captured, 11);
+        // Milestones beyond their own limit go, oldest first.
+        for captured in 0..(MILESTONES_KEPT as i64 + 1) {
+            let mut page = Page::new(
+                &canvas,
+                &world,
+                2000 + captured,
+                "Another first.".to_owned(),
+            );
+            page.milestone = true;
+            page.save(&paths, &format!("first-{captured}")).unwrap();
+        }
+        let album = Album::load(&paths, 5000);
+        assert_eq!(
+            album.pages.iter().filter(|page| page.milestone).count(),
+            MILESTONES_KEPT
+        );
+        assert!(
+            album
+                .pages
+                .iter()
+                .all(|page| page.caption != "I came into being.")
+        );
+        assert_eq!(
+            album.pages.iter().filter(|page| !page.milestone).count(),
+            PAGES_KEPT
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 

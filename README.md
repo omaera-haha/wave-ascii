@@ -209,11 +209,12 @@ and its place in the album. Smaller terminals crop pictures around the
 center. Pictures follow the current color mode, and the mouse selects text
 while the album is open. The life panel (`l`) shows how many moments it holds.
 
-The newest sixty pages live in `~/.local/share/wave-ascii/album/`
+The newest sixty ordinary pages, and up to a hundred twenty pages of
+milestones besides, live in `~/.local/share/wave-ascii/album/`
 (`$XDG_DATA_HOME` if set), beside the saved life, as private JSON files with
-local timestamp names and run-length encoded truecolor cells. Older pages
-are deleted as new ones arrive; missing, damaged, and foreign files are
-skipped. Without a saved life, including piped previews, no pictures are kept.
+local timestamp names and run-length encoded truecolor cells. Older ordinary
+pages are deleted as new ones arrive, while a life's firsts stay, back to the
+day it came into being; missing, damaged, and foreign files are skipped. Without a saved life, including piped previews, no pictures are kept.
 
 ### Letters from the ghost
 
