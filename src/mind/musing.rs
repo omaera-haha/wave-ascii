@@ -1,4 +1,4 @@
-use crate::world::{Activity, Heard, Mood, Occasion, Sky, Tone, Understanding, World};
+use crate::world::{Activity, Heard, Mood, Occasion, Question, Sky, Tone, Understanding, World};
 
 // Thoughts the ghost has on its own while it has no System Two to think
 // with: a few words that fit the moment, so a ghost without keys still has
@@ -357,6 +357,14 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             ];
         }
         Understanding::Unable { activity, .. } => return unable(world, *activity),
+        Understanding::Asked { question, doing } => {
+            let answers = answer(world, *question, *doing);
+            return if heard.tone == Some(Tone::Greeting) {
+                answers.iter().map(|line| format!("Hi! {line}")).collect()
+            } else {
+                answers
+            };
+        }
         _ => {}
     }
     let bond = world.life.bond;
@@ -389,6 +397,129 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
         Some(Tone::Greeting) => lines(&["Hi! You're here!", "Hello, you!"]),
         _ if heard.named => lines(&["Yes? That's me!", "You called?"]),
         _ => Vec::new(),
+    }
+}
+
+// What the ghost says to `question`, from what it knows of itself: its
+// mood, needs, plan, name, age, habits, and the weather. `doing` is what it
+// was doing when asked, or `None` if the question woke it.
+fn answer(world: &World, question: Question, doing: Option<Activity>) -> Vec<String> {
+    let lines = |items: &[&str]| items.iter().map(|line| (*line).to_owned()).collect();
+    let ghost = &world.ghost;
+    let needs = ghost.needs;
+    let bond = world.life.bond;
+    match question {
+        Question::Feeling => match ghost.mood {
+            Mood::Content => lines(&["I'm good, thanks.", "Content. Just being a ghost."]),
+            Mood::Cheerful => lines(&["Happy! Really happy.", "Great, thanks!"]),
+            Mood::Excited => lines(&["So excited!", "Wonderful! Can you tell?"]),
+            Mood::Curious => lines(&["Curious about everything!", "Wondering about things."]),
+            Mood::Sleepy => lines(&["Sleepy… so sleepy.", "*yawn* A little drowsy."]),
+            Mood::Lonely => lines(&["A bit lonely. I'm glad you're here.", "Better now."]),
+            Mood::Bored => lines(&["Bored… play with me?", "A little bored, honestly."]),
+            Mood::Grumpy => lines(&["Hmph. Grumpy.", "Don't ask."]),
+        },
+        Question::Doing => match doing {
+            None => lines(&["I was asleep!", "Sleeping… until now."]),
+            Some(Activity::Float) => lines(&["Just floating about.", "Nothing much. Floating."]),
+            Some(Activity::Visit) => lines(&["Looking at you!", "Watching you, of course."]),
+            Some(activity) => {
+                let doing = capitalized(activity.doing());
+                vec![format!("{doing}."), format!("{doing}. Want to watch?")]
+            }
+        },
+        Question::Name => {
+            let name = &ghost.name;
+            vec![format!("I'm {name}."), format!("{name}! That's me.")]
+        }
+        Question::Liking => match bond {
+            bond if bond < 0.12 => lines(&["I don't know you yet…", "Maybe? We just met."]),
+            bond if bond < 0.3 => lines(&["I think so!", "I'm starting to."]),
+            bond if bond < 0.55 => lines(&["I like you!", "Of course I do."]),
+            bond if bond < 0.8 => lines(&["I really like you.", "You're my favorite."]),
+            _ => lines(&["I love you!", "More than all the light motes."]),
+        },
+        Question::Age => match world.birthday {
+            Some(birthday) if birthday <= world.date => {
+                let days = world.date.since(birthday).map_or(0, |span| span.get_days());
+                vec![age_words(days)]
+            }
+            _ => lines(&["I'm not sure. Young, I think.", "Old enough to float."]),
+        },
+        Question::Favorite => match world.life.favorite() {
+            Some(activity) => {
+                let doing = activity.doing();
+                vec![
+                    format!("I love {doing}!"),
+                    format!("{}, most of all.", capitalized(doing)),
+                ]
+            }
+            None => lines(&["I'm still finding out.", "Everything is new to me!"]),
+        },
+        Question::Weather => {
+            let night = world.is_night();
+            match world.weather.sky {
+                Sky::Rain if world.weather.storm => lines(&[
+                    "A thunderstorm… stay close?",
+                    "Stormy. I don't like the thunder.",
+                ]),
+                Sky::Rain => lines(&["It's raining outside.", "Rainy. Pitter-patter."]),
+                Sky::Snow => lines(&["It's snowing!", "Snow is falling outside."]),
+                Sky::Rainbow => lines(&["There's a rainbow!", "Sunny, with a rainbow."]),
+                Sky::Clear if night => lines(&["A clear night.", "Quiet. Look at the stars."]),
+                Sky::Clear => lines(&["Clear skies.", "Lovely out there."]),
+            }
+        }
+        Question::Tired => match needs.energy {
+            energy if energy < 0.3 => lines(&["Very. I need a nap.", "So tired…"]),
+            energy if energy < 0.6 => lines(&["A little.", "Somewhat."]),
+            _ => lines(&["Not at all!", "I'm full of energy!"]),
+        },
+        Question::Hungry if needs.energy < 0.4 => {
+            lines(&["I could eat a light mote…", "Hungry for light."])
+        }
+        Question::Hungry if world.life.today.motes > 0 => {
+            lines(&["Not really. I ate a light mote today.", "No, thanks!"])
+        }
+        Question::Hungry => lines(&["Not really.", "Maybe a little light mote later."]),
+        Question::Bored => match needs.fun {
+            fun if fun < 0.3 => lines(&["So bored. Play with me?", "Yes! Throw the ball?"]),
+            fun if fun < 0.6 => lines(&["A little.", "Kind of."]),
+            _ => lines(&["No, I'm having fun!", "Not with you around."]),
+        },
+        Question::Lonely if needs.company < 0.3 && bond >= 0.3 => {
+            lines(&["I missed you!", "I was. Not now."])
+        }
+        Question::Lonely if needs.company < 0.3 => lines(&["A little.", "It's quiet in here."]),
+        Question::Lonely if bond >= 0.3 => lines(&["Not with you here.", "Never with you here."]),
+        Question::Lonely => lines(&["Not really.", "I have the plant."]),
+    }
+}
+
+// How old the ghost is, `days` after it came into being, in its words.
+fn age_words(days: i32) -> String {
+    let number = |count: i32| {
+        const WORDS: [&str; 13] = [
+            "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+            "eleven", "twelve",
+        ];
+        usize::try_from(count)
+            .ok()
+            .and_then(|count| WORDS.get(count))
+            .map_or_else(|| count.to_string(), |word| (*word).to_owned())
+    };
+    let plural = |count: i32, unit: &str| {
+        if count == 1 {
+            format!("one {unit}")
+        } else {
+            format!("{} {unit}s", number(count))
+        }
+    };
+    match days {
+        0 => "I came into being today!".to_owned(),
+        days if days < 60 => capitalized(&format!("{} old.", plural(days, "day"))),
+        days if days < 365 => capitalized(&format!("{} old.", plural(days / 30, "month"))),
+        days => capitalized(&format!("{} old.", plural(days / 365, "year"))),
     }
 }
 
@@ -566,6 +697,73 @@ mod tests {
                     .any(|line| !ordinary_dreams.contains(line))
             );
         }
+    }
+
+    #[test]
+    fn questions_are_answered_from_what_the_ghost_knows_of_itself() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.ghost.name = "Wisp".to_owned();
+        let asked = |world: &mut World, text: &str| {
+            let heard = world.hear(text);
+            reply(world, &heard, None)
+        };
+        assert!(
+            asked(&mut world, "what's your name?")
+                .iter()
+                .all(|line| line.contains("Wisp"))
+        );
+
+        world.begin(Activity::Window);
+        let lines = asked(&mut world, "what are you doing?");
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.starts_with("Gazing out of the window"))
+        );
+
+        world.ghost.needs.energy = 0.1;
+        assert!(asked(&mut world, "are you tired?").contains(&"Very. I need a nap.".to_owned()));
+        world.ghost.needs.energy = 0.9;
+        assert!(asked(&mut world, "are you tired?").contains(&"Not at all!".to_owned()));
+
+        world.life.bond = 0.9;
+        assert!(asked(&mut world, "do you love me?").contains(&"I love you!".to_owned()));
+        assert!(
+            asked(&mut world, "hi, how are you?")
+                .iter()
+                .all(|line| line.starts_with("Hi! "))
+        );
+
+        assert_eq!(
+            asked(&mut world, "how old are you?"),
+            ["I'm not sure. Young, I think.", "Old enough to float."]
+        );
+        world.birthday = Some(jiff::civil::Date::constant(2026, 6, 18));
+        assert_eq!(asked(&mut world, "몇 살이야?"), ["Three days old."]);
+        world.birthday = Some(world.date);
+        assert_eq!(
+            asked(&mut world, "how old are you"),
+            ["I came into being today!"]
+        );
+        world.birthday = Some(jiff::civil::Date::constant(2025, 6, 1));
+        assert_eq!(asked(&mut world, "how old are you"), ["One year old."]);
+    }
+
+    #[test]
+    fn a_sleeping_ghost_asked_what_it_is_doing_says_it_was_asleep() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.needs.energy = 0.2;
+        world.begin(Activity::Rest);
+        for _ in 0..300 {
+            world.step(0.1);
+        }
+        assert!(world.ghost.asleep > 0.9);
+        let heard = world.hear("뭐해?");
+        assert_eq!(
+            reply(&world, &heard, None),
+            ["I was asleep!", "Sleeping… until now."]
+        );
     }
 
     #[test]

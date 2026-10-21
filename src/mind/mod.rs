@@ -311,9 +311,11 @@ impl Mind {
                 trim(&mut self.journal.conversation, REMARKS_KEPT);
             }
         }
-        // A no asks for nothing to be done.
+        // A no asks for nothing to be done, and a question only for an
+        // answer.
         if let Some(jev) = &self.jev
             && heard.tone != Some(Tone::Scolding)
+            && !matches!(heard.understanding, Understanding::Asked { .. })
         {
             let jev = jev.clone();
             let questions = decision::request_questions(&Activity::ALL);
@@ -670,6 +672,21 @@ mod tests {
         mind.think(&mut world);
         assert!(!world.needs_decision());
         assert!(mind.runtime.is_none());
+    }
+
+    #[test]
+    fn questions_are_answered_rather_than_sent_to_jev_as_requests() {
+        let config = Config {
+            typesafe_api_key: Some("test-key".to_owned()),
+            jev_base_url: Some("http://127.0.0.1:9".to_owned()),
+            ..Config::default()
+        };
+        let mut mind = Mind::new(&config, Journal::default(), false);
+        let mut world = World::new(3, 12.0);
+        mind.hear(&mut world, "what are you doing?");
+        assert_eq!(mind.latest_request, 0);
+        mind.hear(&mut world, "dance!");
+        assert_eq!(mind.latest_request, 1);
     }
 
     #[test]

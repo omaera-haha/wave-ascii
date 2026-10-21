@@ -34,7 +34,8 @@ Two models give it a mind:
 
 Without API keys the ghost lives on instinct: its needs alone decide what it
 does. It can't hold a conversation, but it reads your tone the way a pet does,
-answers in a few words of its own, and slowly learns what your words mean. It
+answers in a few words of its own, answers simple questions about itself, and
+slowly learns what your words mean. It
 still thinks to itself now and then ("The plant looks thirsty."), and dreams of
 its day while it sleeps.
 
@@ -146,6 +147,12 @@ piped output never saves them.
   long as it can do that just now. With a Jev key, what Jev understands
   teaches it too, so it keeps those words if you go without. The life panel
   lists the words it knows, and Claude hears them.
+- **Asking it things.** Without keys it still answers simple questions about
+  itself, in English or Korean: how it feels ("how are you?", "기분 어때?"),
+  what it's doing ("뭐해?"), its name, its age, whether it likes you, what it
+  loves most, the weather outside, and whether it's tired, hungry, bored, or
+  lonely. It answers from its mood, needs, habits, and bond, and learns no
+  words from a question. With a Claude key, Claude answers instead.
 
 ### What you see
 

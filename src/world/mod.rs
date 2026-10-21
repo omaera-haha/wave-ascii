@@ -6,6 +6,7 @@ mod nature;
 mod needs;
 pub mod occasion;
 mod pounce;
+mod question;
 mod random;
 mod sight;
 mod sleep;
@@ -23,6 +24,7 @@ pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
+pub use question::Question;
 pub use random::Random;
 pub use sight::{Seen, Thing};
 pub use things::{Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, WINDOW_CENTER, flat};
@@ -247,6 +249,12 @@ pub enum Understanding {
     Doing { word: String, activity: Activity },
     /// It took `word` to ask for `activity`, which it can't do now.
     Unable { word: String, activity: Activity },
+    /// A question it can answer about itself; `doing` is what it was doing
+    /// when asked, or `None` if it was asleep.
+    Asked {
+        question: Question,
+        doing: Option<Activity>,
+    },
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -852,7 +860,22 @@ impl World {
     /// it was doing, and whether the viewer sounds pleased with what it did
     /// about their last words, teach it what words mean.
     pub fn hear(&mut self, text: &str) -> Heard {
-        let reading = vocabulary::read(text, &self.ghost.name);
+        let mut reading = vocabulary::read(text, &self.ghost.name);
+        // A question's words ask about the ghost rather than for something
+        // to do, so it learns nothing from them, and "do you love me?" is
+        // no praise.
+        let question = question::ask(text);
+        if question.is_some() {
+            reading.words.clear();
+            if reading.tone == Some(Tone::Praise) {
+                reading.tone = None;
+            }
+        }
+        let doing = (self.ghost.asleep <= 0.5).then_some(if self.ghost.plan.done {
+            Activity::Float
+        } else {
+            self.ghost.plan.activity
+        });
         // What the viewer saw it doing, before it turns to listen.
         let plan = &self.ghost.plan;
         let busy = if !plan.done && !matches!(plan.activity, Activity::Float | Activity::Visit) {
@@ -917,7 +940,9 @@ impl World {
 
         let vocabulary = &self.life.vocabulary;
         // Words said with a no, as in "no spin", ask for nothing.
-        let understanding = if reading.words.is_empty() || scolded {
+        let understanding = if let Some(question) = question {
+            Understanding::Asked { question, doing }
+        } else if reading.words.is_empty() || scolded {
             Understanding::Nothing
         } else if let Some((word, activity)) = vocabulary.meaning(&reading.words) {
             if self.options().contains(&activity) {
@@ -2515,6 +2540,31 @@ mod tests {
             .filter(|event| event.time >= since)
             .map(|event| event.kind.clone())
             .collect()
+    }
+
+    #[test]
+    fn a_question_brings_the_ghost_to_the_glass_without_teaching_or_praising() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.begin(Activity::Play);
+        let heard = world.hear("do you love me? what are you doing?");
+        assert_eq!(
+            heard.understanding,
+            Understanding::Asked {
+                question: Question::Liking,
+                doing: Some(Activity::Play),
+            }
+        );
+        assert_eq!(heard.tone, None);
+        assert!(heard.learned.is_empty());
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
+        assert!(world.life.vocabulary.words.is_empty());
+        assert!(
+            !world
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::Praised | EventKind::Puzzled(_)))
+        );
     }
 
     #[test]
