@@ -1,4 +1,4 @@
-use crate::world::{Activity, EventKind, GREETS_FROM, Mood, Occasion, Outcome, World, flat};
+use crate::world::{Activity, EventKind, GREETS_FROM, Mood, Occasion, Outcome, Stage, World, flat};
 
 /// How much the ghost's needs, surroundings, nature, and habits pull it toward each
 /// of the activities open to it, as chances that add up to 1. This is the mind it
@@ -36,6 +36,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         0.0
                     }
                     + if shelter { 0.6 } else { 0.0 }
+                    + if world.stage() == Stage::Newborn {
+                        0.4 + 0.8 * (1.0 - needs.energy)
+                    } else {
+                        0.0
+                    }
             }
             Activity::Play => {
                 let close = (1.5 - flat(world.ball.position - world.ghost.position).length())
@@ -278,6 +283,16 @@ mod tests {
             .iter()
             .find(|(candidate, _)| *candidate == activity)
             .map_or(0.0, |(_, chance)| *chance)
+    }
+
+    #[test]
+    fn a_newborn_is_more_likely_to_take_a_nap() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.needs.energy = 0.6;
+        let options = [Activity::Rest, Activity::Float];
+        let grown = weigh(&world, &options)[0].1;
+        world.birthday = Some(world.date);
+        assert!(weigh(&world, &options)[0].1 > grown);
     }
 
     #[test]

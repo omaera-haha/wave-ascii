@@ -71,7 +71,7 @@ the next requests use them at once.
 | `t`, Enter      | Talk to the ghost (Enter sends, Esc cancels)               |
 | `k`             | Settings: keys, models, effort, cache                      |
 | `j`             | Journal: memories, moments, diary, conversation            |
-| `l`             | Its life: age, bond with you, what it loves, today so far  |
+| `l`             | Its life: age, growth, skills, bond, today so far           |
 | `p`             | Save a postcard of the moment                             |
 | `g`             | Invite it to noughts and crosses on the glass              |
 | `1`–`9`         | Choose a square, from top left to bottom right             |
@@ -275,6 +275,19 @@ Special days find their way into its thoughts, dreams, and diary, even offline.
 
 ### Its life between runs
 
+**Growing up.** A newborn is a small wisp, a young ghost after three days,
+and fully grown after its first month. Its body grows smoothly with age,
+even while the app is closed. Newborns tire faster, nap more, and sometimes
+babble. Practice stays with it: stacking blocks, catching motes, fetching,
+noughts and crosses, writing, and dancing each get better as it finishes
+them. Towers grow taller and steadier, catches and fetches grow quicker,
+game mistakes become rarer, shaky letters settle, and twirls grow into
+larger loops. It remembers becoming young, growing up, and getting good at
+each skill. Press `l` to see its stage and what it is getting good at, from
+clumsy through learning to masterful. Older saved ghosts keep their practice
+from their lifetime counts; ordinary seeded pictures remain full size unless
+`--born` supplies a birth date.
+
 Each ghost is born with its own nature: playful, curious, shy, sleepy, tender,
 or some quiet mix of these. It keeps that nature for life. A playful ghost
 gets bored sooner and likes the ball; a sleepy one naps more and longer.
@@ -317,7 +330,7 @@ days of the diary and its latest moments.
 
 The ghost's name, needs, the plant, the lamp, its goal, its memories, its
 nature, bond, habits, moments, diary, the words it has learned, your name, the
-hours you usually come, its friendship with the bird, keepsakes, any gift
+hours you usually come, its practiced skills, its friendship with the bird, keepsakes, any gift
 waiting on the sill, and the recent conversation are saved in
 `~/.local/share/wave-ascii/ghost.json` (`$XDG_DATA_HOME` if set) every minute
 and on quit. Games, block towers, and pictures on the glass are not. While the

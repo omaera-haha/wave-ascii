@@ -167,6 +167,19 @@ pub fn height_words(height: usize) -> &'static str {
     }
 }
 
+fn placement_jitter(level: f32) -> f32 {
+    1.5 - level
+}
+
+fn tower_height_range(level: f32) -> (usize, usize) {
+    let minimum = 2 + (level * 2.0).round() as usize;
+    (minimum, minimum + 1)
+}
+
+fn accident_chance(level: f32) -> f32 {
+    0.12 * (1.0 - level).powi(2)
+}
+
 impl World {
     pub fn tower_height(&self) -> usize {
         self.blocks.iter().filter(|block| block.stacked).count()
@@ -398,8 +411,12 @@ impl World {
             return;
         }
         let needs = self.ghost.needs;
-        let height = (3 + ((needs.energy + 1.0 - needs.fun) * self.random.unit() * 1.5) as usize)
-            .min(available);
+        let (minimum, maximum) = tower_height_range(self.life.skills.level(super::Skill::Stacking));
+        let height = (minimum
+            + ((needs.energy + 1.0 - needs.fun) * self.random.unit() * 1.5) as usize)
+            .min(maximum)
+            .min(available)
+            .max((self.tower_height() + 1).min(available));
         self.building = Some(Building {
             spot,
             height,
@@ -492,10 +509,11 @@ impl World {
                 self.ghost.plan.target = target;
                 if let Some(index) = self.blocks.iter().position(|block| block.held) {
                     if self.ghost.position.distance(target) < ARRIVED {
+                        let level = self.life.skills.level(super::Skill::Stacking);
                         let jitter = Vec3::new(
-                            self.random.range(-0.018, 0.018),
+                            self.random.range(-0.018, 0.018) * placement_jitter(level),
                             0.0,
-                            self.random.range(-0.018, 0.018),
+                            self.random.range(-0.018, 0.018) * placement_jitter(level),
                         );
                         let block = &mut self.blocks[index];
                         block.position =
@@ -507,6 +525,25 @@ impl World {
                         self.tower = Some(building.spot);
                         self.ghost.plan.count = height as u32 + 1;
                         building.stage = Stage::Gather;
+                        if height > 0 && self.random.unit() < accident_chance(level) {
+                            self.topple(self.ghost.velocity);
+                            self.record(EventKind::Toppled { by_viewer: false });
+                            let playful = self.life.nature.unwrap_or_default().playful >= 0.5;
+                            self.suggest_mood(
+                                if playful {
+                                    Mood::Cheerful
+                                } else {
+                                    Mood::Grumpy
+                                },
+                                4.0,
+                            );
+                            self.say(if playful {
+                                "Oops! Hee hee."
+                            } else {
+                                "Oh… my tower."
+                            });
+                            self.ghost.plan.done = true;
+                        }
                     }
                 } else {
                     self.ghost.plan.done = true;
@@ -589,6 +626,57 @@ mod tests {
     }
 
     #[test]
+    fn practice_reduces_jitter_and_accidents_and_raises_planned_towers() {
+        assert_eq!(placement_jitter(0.0), 1.5);
+        assert_eq!(placement_jitter(1.0), 0.5);
+        assert_eq!(tower_height_range(0.0), (2, 3));
+        assert_eq!(tower_height_range(0.5), (3, 4));
+        assert_eq!(tower_height_range(1.0), (4, 5));
+        assert_eq!(accident_chance(0.0), 0.12);
+        assert_eq!(accident_chance(1.0), 0.0);
+        assert!((accident_chance(0.5) - 0.03).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_clumsy_placement_can_topple_the_tower_and_nature_colors_its_reaction() {
+        for playful in [0.0, 1.0] {
+            let mut accident = false;
+            for seed in 0..80 {
+                let mut world = World::new(seed, 12.0);
+                world.life.nature.as_mut().unwrap().playful = playful;
+                tower(&mut world, 1);
+                world.begin(Activity::Build);
+                let mut building = world.building.unwrap();
+                building.stage = Stage::Carry;
+                world.building = Some(building);
+                world.blocks[1].held = true;
+                world.ghost.position = building.spot + Vec3::Y * (1.5 * EDGE + CARRY_HEIGHT);
+                world.build();
+                if world
+                    .events
+                    .iter()
+                    .any(|event| event.kind == EventKind::Toppled { by_viewer: false })
+                {
+                    assert!(world.ghost.plan.done);
+                    assert!(world.tower.is_none());
+                    assert!(!world.blocks.iter().any(|block| block.held));
+                    assert_eq!(
+                        world.ghost.suggested_mood.unwrap().0,
+                        if playful == 0.0 {
+                            Mood::Grumpy
+                        } else {
+                            Mood::Cheerful
+                        }
+                    );
+                    accident = true;
+                    break;
+                }
+            }
+            assert!(accident);
+        }
+    }
+
+    #[test]
     fn toppled_blocks_tumble_and_settle_on_faces_without_overlapping_or_leaving_the_room() {
         for seed in 0..20 {
             for step in [0.01, 0.05, 0.1] {
@@ -633,6 +721,7 @@ mod tests {
             let mut world = World::new(seed, 12.0);
             world.ghost.needs.energy = 1.0;
             world.ghost.needs.fun = 0.0;
+            world.life.skills.stacking = 1_000_000.0;
             world.begin(Activity::Build);
             let building = world.building.unwrap();
             assert!((3..=5).contains(&building.height));

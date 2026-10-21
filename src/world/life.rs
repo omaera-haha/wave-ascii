@@ -485,6 +485,9 @@ pub struct Life {
     pub last_arrival: Option<(String, f32)>,
     #[serde(default)]
     pub viewer_name: Option<String>,
+    /// Completed practice, migrated from lifetime totals in older saves.
+    #[serde(default = "super::Skills::from_old_save")]
+    pub skills: super::Skills,
 }
 
 impl Life {
@@ -553,10 +556,18 @@ impl Life {
     /// Counts what happened, and lets it warm or cool the bond. Returns the
     /// milestone this reached, if any.
     pub fn note(&mut self, kind: &EventKind) -> Option<String> {
+        self.skills.migrate(&self.total);
         self.total.note(kind);
         self.today.note(kind);
         let bond = self.bond;
+        let practiced = self.skills.note(kind);
         let milestone = self.first(kind);
+        let skill_milestone = practiced.and_then(|skill| {
+            (self.skills.level(skill) >= 0.65)
+                .then(|| self.reach(skill.milestone().to_owned()))
+                .flatten()
+        });
+        let milestone = milestone.or(skill_milestone);
         let milestone = if matches!(kind, EventKind::Built { height } if *height >= 5) {
             let tallest = self.reach("I built a tower five blocks high.".to_owned());
             milestone.or(tallest)
@@ -779,6 +790,7 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.skills = self.skills.sanitized(&self.total);
         self.nature = self.nature.map(Nature::sanitized);
         self.viewer_name = self.viewer_name.filter(|name| {
             (2..=16).contains(&name.chars().count()) && name.chars().all(char::is_alphabetic)
@@ -978,7 +990,7 @@ impl Life {
     }
 
     // Keeps a milestone, once; returns it if it is new.
-    fn reach(&mut self, text: String) -> Option<String> {
+    pub(super) fn reach(&mut self, text: String) -> Option<String> {
         if self
             .milestones
             .iter()

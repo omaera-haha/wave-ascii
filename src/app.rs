@@ -515,8 +515,9 @@ impl App {
                 self.press = Some((mouse.column, mouse.row));
                 self.dragged = false;
                 self.stroke = point.filter(|point| {
-                    self.view
-                        .is_some_and(|view| view.touches_ghost(*point, self.world.ghost.position))
+                    self.view.is_some_and(|view| {
+                        view.touches_ghost(*point, self.world.ghost.position, self.world.size())
+                    })
                 });
             }
             MouseAction::Drag => {
@@ -524,7 +525,7 @@ impl App {
                     if point != last {
                         self.dragged = true;
                         self.stroke = Some(point);
-                        if view.touches_ghost(point, self.world.ghost.position) {
+                        if view.touches_ghost(point, self.world.ghost.position, self.world.size()) {
                             self.world.pet(point.distance(last));
                             let across = point.x - last.x;
                             self.stroke_side = if across.abs() > 1e-4 {
@@ -579,7 +580,7 @@ impl App {
             self.world.mark(cell);
             return;
         }
-        if view.touches_ghost(point, self.world.ghost.position) {
+        if view.touches_ghost(point, self.world.ghost.position, self.world.size()) {
             self.world.poke();
             return;
         }
@@ -705,8 +706,9 @@ impl App {
         };
         let pose = Pose::new(
             world.time,
-            ghost.velocity.dot(view.right) / GHOST_SCALE + self.stroke_side * world.petting() * 1.2,
-            ghost.velocity.y / GHOST_SCALE,
+            ghost.velocity.dot(view.right) / (GHOST_SCALE * world.size())
+                + self.stroke_side * world.petting() * 1.2,
+            ghost.velocity.y / (GHOST_SCALE * world.size()),
             ghost.asleep,
         );
         let samples = if self.style == Style::Braille { 1 } else { 2 };

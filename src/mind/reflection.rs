@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::claude::{Block, Cache, Effort, Message, Request, Role};
 use crate::store::{Memory, Remark, Speaker};
-use crate::world::{Entry, Life, Mood, Thing};
+use crate::world::{Entry, Life, Mood, Skill, Stage, Thing};
 
 /// At most this many memories, milestones, diary days, and lines of
 /// conversation go into a request.
@@ -163,12 +163,33 @@ pub fn request(
     let name = life.viewer_name.as_ref().map_or_else(String::new, |name| {
         format!("\nThe viewer's name is {name}.")
     });
+    let stage = observation["ghost"]["stage"]
+        .as_str()
+        .unwrap_or("a grown ghost");
+    let voice = if stage == Stage::Newborn.words() {
+        " Speak in very short, simple sentences."
+    } else {
+        ""
+    };
+    let skills = |good: bool| -> Vec<String> {
+        Skill::ALL
+            .into_iter()
+            .filter(|skill| {
+                life.skills.practice(*skill) > 0.0 && (life.skills.level(*skill) >= 0.65) == good
+            })
+            .map(|skill| life.skills.description(skill))
+            .collect()
+    };
+    let good = bullets(&skills(true));
+    let learning = bullets(&skills(false));
     let block = |text: String| Block { text, cache };
     Request {
         system: vec![
             Block::new(SYSTEM),
             block(format!(
                 "By nature you are {}. Let that color your voice.\n\
+                 You are {stage}.{voice}\n\n\
+                 Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
                  Your bond with the viewer: {}.{routine}{name}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
@@ -230,6 +251,22 @@ pub fn read(value: Value) -> Option<Reflection> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reflections_know_the_stage_and_separate_practiced_skills_from_learning() {
+        let mut world = crate::world::World::new(1, 12.0);
+        world.birthday = Some(world.date);
+        world.life.skills.catching = 100.0;
+        world.life.skills.writing = 1.0;
+        let observation = super::super::observation::observe(&world);
+        let request = request(&observation, &[], &world.life, &[], None, None, None);
+        let text = &request.system[1].text;
+        assert!(text.contains("You are a newborn wisp."));
+        assert!(text.contains("very short, simple sentences"));
+        assert!(text.contains("Skills you are good at:\n- masterful at catching motes"));
+        assert!(text.contains("Still learning:\n- clumsy at writing"));
+        assert!(!text.chars().any(|letter| letter.is_ascii_digit()));
+    }
 
     #[test]
     fn the_schema_requires_every_field_and_allows_no_others() {

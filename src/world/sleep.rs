@@ -39,7 +39,7 @@ impl World {
         }
         self.abandon_game();
         self.drop_ball();
-        let bed = self.nook.bed();
+        let bed = self.nook.bed(self.size());
         let mut plan = Plan::new(Activity::Rest, self.time, bed, 0.0);
         plan.overnight = true;
         plan.arrived = Some(self.time);
@@ -186,7 +186,7 @@ mod tests {
     fn tucking_in_starts_asleep_on_the_cushion_without_another_sleep_event() {
         let mut world = World::new(4, 23.0);
         world.tuck_in();
-        assert_eq!(world.ghost.position, world.nook.bed());
+        assert_eq!(world.ghost.position, world.nook.bed(world.size()));
         assert_eq!(world.ghost.velocity, Vec3::ZERO);
         assert_eq!(world.ghost.plan.activity, Activity::Rest);
         assert!(world.ghost.plan.overnight);
