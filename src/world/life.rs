@@ -324,6 +324,8 @@ pub struct Tally {
     pub bubbles_blown: u32,
     #[serde(default)]
     pub bubbles_popped: u32,
+    #[serde(default)]
+    pub tidies: u32,
 }
 
 impl Tally {
@@ -644,6 +646,7 @@ impl Tally {
                 self.bubbles_blown = self.bubbles_blown.saturating_add(*blown);
                 self.bubbles_popped = self.bubbles_popped.saturating_add(*popped_by_viewer);
             }
+            EventKind::Tidied { .. } => self.tidies = self.tidies.saturating_add(1).min(1_000_000),
             _ => {}
         }
     }
@@ -1343,6 +1346,9 @@ impl Tally {
                 (Salience::Small, "blew bubbles".to_owned())
             });
         }
+        if self.tidies > 0 {
+            deeds.push((Salience::Routine, "tidied up before bed".to_owned()));
+        }
         deeds
     }
 
@@ -1525,6 +1531,8 @@ pub struct Life {
     pub rhythm_suggestions: u8,
     #[serde(default)]
     pub cranes: super::cranes::Cranes,
+    #[serde(default)]
+    pub tidied_day: Option<String>,
 }
 
 impl Life {
@@ -1984,6 +1992,13 @@ impl Life {
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
         super::breaks::sanitize(&mut self);
+        self.tidied_day = self.tidied_day.filter(|day| {
+            day.parse::<jiff::civil::Date>().is_ok_and(|date| {
+                self.day
+                    .parse::<jiff::civil::Date>()
+                    .is_ok_and(|today| date <= today)
+            })
+        });
         self.cranes.sanitize(&self.day);
         for (tally, maximum) in [
             (&mut self.today, 3),
@@ -2262,6 +2277,7 @@ impl Life {
             tally.bubble_sessions = tally.bubble_sessions.min(1_000_000);
             tally.bubbles_blown = tally.bubbles_blown.min(tally.bubble_sessions * 10);
             tally.bubbles_popped = tally.bubbles_popped.min(tally.bubbles_blown);
+            tally.tidies = tally.tidies.min(1_000_000);
             for errands in [
                 &mut tally.heard_plans,
                 &mut tally.wished_plans,
@@ -2602,6 +2618,9 @@ impl Life {
             EventKind::BlewBubbles {
                 popped_by_viewer, ..
             } if *popped_by_viewer > 0 => "You popped my bubbles for the first time.".to_owned(),
+            EventKind::Tidied { .. } if total.tidies == 1 => {
+                "I tidied my room before bed for the first time.".to_owned()
+            }
             _ => return None,
         };
         self.reach(text)

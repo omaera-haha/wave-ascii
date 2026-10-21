@@ -83,6 +83,7 @@ pub fn observe(world: &World) -> Value {
             "reading": world.reading_words(),
             "cranes": world.life.cranes.words(),
             "folding": world.folding_words(),
+            "tidying": world.tidy_words(),
         },
         "friend": world.friend.as_ref().zip(world.life.friend.as_ref()).map(|(friend, companion)| {
             format!("{}, another ghost and {}, is {}", companion.name, companion.closeness_words(), friend.doing())

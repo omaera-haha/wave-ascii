@@ -2,8 +2,8 @@ use glam::Vec3;
 
 use super::{Activity, EventKind, Mood, Plan, World};
 
-const BEDTIME_HOUR: f32 = 22.0;
-const MORNING_HOUR: f32 = 6.5;
+pub(super) const BEDTIME_HOUR: f32 = 22.0;
+pub(super) const MORNING_HOUR: f32 = 6.5;
 
 impl World {
     /// Bedtime runs from ten at night until half past six in the morning.
@@ -44,6 +44,9 @@ impl World {
         self.reading = None;
         self.abandon_game();
         self.drop_ball();
+        self.drop_block();
+        self.tidying = None;
+        self.tidy_rest = false;
         let bed = self.nook.bed(self.size());
         let mut plan = Plan::new(Activity::Rest, self.time, bed, 0.0);
         plan.overnight = true;

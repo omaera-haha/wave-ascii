@@ -606,6 +606,19 @@ app at bedtime finds it asleep on its cushion; poking or talking wakes it,
 and leaves it drowsy for a couple of minutes. In the morning it stretches,
 looks out of the window, and comes to the glass to greet you.
 
+On messy evenings, from half an hour before bedtime, it sometimes puts the
+room to bed too: loose blocks go into neat stacks of at most three in the
+front-right corner, and the ball rests beside its cushion. A tower it built
+stays standing. It looks around, satisfied, then turns off the lamp and
+settles in for the night. Very tired ghosts may skip the chores;
+playful ones sometimes leave one block out. Tidying happens at most once a
+day. Click a tidy stack or roll the ball into it to topple it, and the next
+day's building can borrow its blocks. The layout stays between visits.
+
+Ask “tidy up”, “clean up your room”, “정리하자”, or “방 치워” at any hour.
+Requests wait through sleep, work, stories, games, and visits from its
+friend, and leave its daily evening tidy available.
+
 By day, a little bird sometimes lands on a branch or the outer sill, hops,
 pecks, and sings. Winter brings a robin, even in snow; rain sends it away.
 The ghost likes to watch quietly. Coming too close or rushing at the window
