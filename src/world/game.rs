@@ -348,8 +348,13 @@ impl World {
     pub(super) fn begin_game(&mut self) -> Vec3 {
         let center = Vec2::new(self.ghost.position.x.clamp(-1.0, 1.0), 1.25);
         let game = Game::new(center, Mark::Nought, self.time);
-        self.doodles
-            .retain(|doodle| game.cell_at(doodle.center).is_none());
+        // It wipes the glass first: every picture whose strokes reach the
+        // board.
+        let board = Vec2::splat(1.5 * game.cell_size);
+        self.doodles.retain(|doodle| {
+            let reach = doodle.picture.extent() * doodle.size;
+            ((doodle.center - game.center).abs() - reach - board).max_element() >= 0.0
+        });
         let target = inside(game.grid_pen(self.time), 0.3);
         self.game = Some(game);
         target
@@ -799,7 +804,9 @@ mod tests {
     }
 
     #[test]
-    fn beginning_a_board_wipes_only_doodles_centered_on_it() {
+    fn beginning_a_board_wipes_only_pictures_whose_strokes_reach_it() {
+        use crate::world::Writing;
+
         let mut world = World::new(3, 12.0);
         let doodle = Doodle {
             picture: Picture::Sketch(Sketch::Heart),
@@ -811,7 +818,15 @@ mod tests {
             center: Vec2::new(-1.5, 1.25),
             ..doodle.clone()
         };
-        world.doodles.extend([doodle, away.clone()]);
+        // A long word centered off the board still writes across it.
+        let word = Doodle {
+            picture: Picture::Word(Writing::new("GOODNESS".to_owned(), false)),
+            center: Vec2::new(-0.5, 1.25),
+            size: 1.0,
+            started: 0.0,
+        };
+        assert!(word.picture.extent().x > 0.5);
+        world.doodles.extend([doodle, away.clone(), word]);
         world.begin(Activity::Game);
         assert_eq!(world.doodles, [away]);
     }

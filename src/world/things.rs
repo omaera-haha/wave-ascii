@@ -111,6 +111,19 @@ impl Ball {
                 }
             }
         }
+        // An obstacle can push a ball lying against a wall into it; the
+        // wall holds it in the room.
+        for axis in [0, 2] {
+            let low = ROOM_MIN[axis] + Self::RADIUS;
+            let high = ROOM_MAX[axis] - Self::RADIUS;
+            if self.position[axis] < low {
+                self.position[axis] = low;
+                self.velocity[axis] = self.velocity[axis].max(0.0);
+            } else if self.position[axis] > high {
+                self.position[axis] = high;
+                self.velocity[axis] = self.velocity[axis].min(0.0);
+            }
+        }
         bounce
     }
 }
@@ -208,6 +221,19 @@ pub fn flat(point: Vec3) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_obstacle_pushing_a_ball_at_the_wall_leaves_it_in_the_room() {
+        for (wall, inward) in [(ROOM_MAX.x, -1.0), (ROOM_MIN.x, 1.0)] {
+            let mut ball = Ball::at(wall + inward * Ball::RADIUS, 0.0);
+            let block = Vec3::new(wall + inward * (Ball::RADIUS + 0.1), 0.09, 0.0);
+            ball.roll(0.1, &[(block, 0.16)]);
+            assert!(
+                (ROOM_MIN.x + Ball::RADIUS..=ROOM_MAX.x - Ball::RADIUS).contains(&ball.position.x)
+            );
+            assert!(ball.velocity.x * inward >= 0.0);
+        }
+    }
 
     #[test]
     fn a_rolling_ball_stays_in_the_room_and_comes_to_rest() {

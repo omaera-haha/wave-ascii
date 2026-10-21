@@ -596,16 +596,21 @@ impl App {
                 (along > 0.0 && miss < crate::world::blocks::RADIUS).then_some((index, along))
             })
             .min_by(|first, second| first.1.total_cmp(&second.1));
-        if let Some((index, _)) = block {
-            self.world.nudge_block(index, direction);
-            return;
-        }
         let offset = view.eye - self.world.ball.position;
         let along = -offset.dot(direction);
         let miss = (offset + direction * along).length();
-        if along > 0.0 && miss < Ball::RADIUS * 1.6 {
-            self.world.kick_ball(direction);
-            return;
+        let ball = (along > 0.0 && miss < Ball::RADIUS * 1.6).then_some(along);
+        // Whichever the ray meets first takes the click.
+        match (block, ball) {
+            (Some((index, block)), ball) if ball.is_none_or(|ball| block < ball) => {
+                self.world.nudge_block(index, direction);
+                return;
+            }
+            (_, Some(_)) => {
+                self.world.kick_ball(direction);
+                return;
+            }
+            _ => {}
         }
         // A mote appears where the ray meets the floor, a little above it,
         // or behind the glass if the ray misses the floor.
@@ -1298,6 +1303,22 @@ mod tests {
         click(&mut app, column, row);
         assert_eq!(app.world.events.last().unwrap().kind, EventKind::KickedBall);
         assert!(app.world.ball.velocity.length() > 1.0);
+    }
+
+    #[test]
+    fn a_click_goes_to_the_ball_in_front_rather_than_a_block_behind_it() {
+        let mut app = app();
+        app.world.ball.position = Vec3::new(0.0, Ball::RADIUS, 0.5);
+        let behind = app.world.blocks[0].position;
+        let toward = (app.world.ball.position - app.view.unwrap().eye).normalize();
+        app.world.blocks[0].position = app.world.ball.position + toward * 0.3;
+        app.world.blocks[0].position.y = behind.y;
+        let block = app.world.blocks[0].position;
+        let (column, row) = cell_of(&app, app.world.ball.position);
+        click(&mut app, column, row);
+        assert_eq!(app.world.events.last().unwrap().kind, EventKind::KickedBall);
+        assert_eq!(app.world.blocks[0].position, block);
+        assert_eq!(app.world.blocks[0].velocity, Vec3::ZERO);
     }
 
     #[test]
