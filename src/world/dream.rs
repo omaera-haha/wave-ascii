@@ -62,7 +62,10 @@ impl DreamPicture {
                 (&["ball", "fetch"][..], Self::Ball),
                 (&["bird", "feather", "song", "wing"][..], Self::Bird),
                 (&["moon"][..], Self::Moon),
-                (&["star", "wish", "shooting"][..], Self::Star),
+                (
+                    &["star", "wish", "shooting", "constellation"][..],
+                    Self::Star,
+                ),
                 (&["heart", "love"][..], Self::Heart),
                 (
                     &["flower", "seed", "garden", "petal", "bloom"][..],
@@ -290,6 +293,7 @@ mod tests {
             ("draw pictures on a door", DreamPicture::Spiral),
             ("…LUMI and I twirl among the stars…", DreamPicture::Friend),
             ("stars above Lumi", DreamPicture::Star),
+            ("…my constellation winks at me…", DreamPicture::Star),
             ("…zzz…", DreamPicture::Moon),
             ("", DreamPicture::Moon),
         ] {

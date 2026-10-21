@@ -132,6 +132,16 @@ pub fn returned(world: &World, korean: bool) -> Vec<String> {
                 "창밖으로 별똥별이 지나갔어. 소원을 빌었지.",
             ),
         ],
+        Happening::StarGazed => [
+            (
+                "I said goodnight to my constellations.",
+                "내 별자리들에게 잘 자라고 인사했어.",
+            ),
+            (
+                "My stars came out while you were gone.",
+                "너 없는 동안 내 별자리가 떴었어.",
+            ),
+        ],
         Happening::FriendVisited => [
             (
                 "My ghost friend came by while you were gone!",
@@ -1333,6 +1343,30 @@ fn story_threads(world: &World) -> Vec<[StoryBeat; 2]> {
             ),
         ]);
     }
+    if !life.constellations.is_empty() {
+        threads.push([
+            (
+                "One clear night, I found {constellation} in the stars.",
+                "어느 맑은 밤, 별들이 그림이 되었어. 이름은 {constellation}.",
+            ),
+            (
+                "Now it keeps watch over the little room every night.",
+                "이제 밤마다 작은 방을 지켜 줘.",
+            ),
+        ]);
+    }
+    if life.total.focus_sessions > 0 {
+        threads.push([
+            (
+                "One day you had work to do, and I kept you company.",
+                "어느 날 네가 일할 때, 나는 곁을 지켰어.",
+            ),
+            (
+                "The room stayed quiet, and we finished it together.",
+                "방은 조용했고, 우리는 함께 끝냈지.",
+            ),
+        ]);
+    }
     if life.total.shooting_stars > 0 {
         threads.push([
             (
@@ -1459,6 +1493,20 @@ pub fn story(world: &mut World, korean: bool) -> Vec<String> {
                         .friend
                         .as_ref()
                         .map_or("", |friend| friend.name.as_str()),
+                )
+                .replace(
+                    "{constellation}",
+                    world
+                        .life
+                        .constellations
+                        .last()
+                        .map_or("", |constellation| {
+                            if korean {
+                                constellation.korean.as_str()
+                            } else {
+                                constellation.name.as_str()
+                            }
+                        }),
                 )
         })
         .collect()
@@ -1619,6 +1667,28 @@ mod tests {
     }
 
     use crate::world::EventKind;
+
+    #[test]
+    fn constellations_and_focus_sessions_become_story_threads() {
+        let mut world = World::new(1, 12.0);
+        world
+            .life
+            .constellations
+            .push(crate::world::stars::Constellation {
+                name: "the Sleepy Heart".to_owned(),
+                korean: "졸린 하트".to_owned(),
+                stars: vec![0, 1, 2],
+                found: "2026-06-21".to_owned(),
+            });
+        assert_eq!(story_threads(&world).len(), 1);
+        for (korean, name) in [(false, "the Sleepy Heart"), (true, "졸린 하트")] {
+            let lines = story(&mut world, korean);
+            assert!(lines.iter().any(|line| line.contains(name)), "{lines:?}");
+            assert!(lines.iter().all(|line| !line.contains('{')));
+        }
+        world.life.total.focus_sessions = 1;
+        assert_eq!(story_threads(&world).len(), 2);
+    }
 
     #[test]
     fn story_threads_require_the_memories_they_recount() {

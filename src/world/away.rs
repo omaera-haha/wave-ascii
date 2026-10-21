@@ -29,11 +29,15 @@ pub enum Happening {
     WatchedSnow,
     SawRainbow,
     WatchedBird,
-    BuiltTower { standing: bool },
+    BuiltTower {
+        standing: bool,
+    },
     PlayedBall,
     Drew(Sketch),
     WateredPlant,
     WishedOnStar,
+    /// Looked for its own constellations on a clear night.
+    StarGazed,
     FriendVisited,
     Waited,
     MissedViewer,
@@ -55,6 +59,7 @@ impl Happening {
             Self::Drew(sketch) => return format!("drew a {} in the fog", sketch.name()),
             Self::WateredPlant => "watered the plant",
             Self::WishedOnStar => "wished on a shooting star",
+            Self::StarGazed => "said goodnight to my constellations",
             Self::FriendVisited => "spent an evening with my ghost friend",
             Self::Waited => "waited at the glass for you",
             Self::MissedViewer => "missed you",
@@ -65,7 +70,7 @@ impl Happening {
     fn importance(self) -> u8 {
         match self {
             Self::BuiltTower { .. } | Self::WishedOnStar | Self::FriendVisited => 5,
-            Self::Drew(_) | Self::SawRainbow | Self::Waited => 4,
+            Self::Drew(_) | Self::SawRainbow | Self::Waited | Self::StarGazed => 4,
             Self::WatchedSnow | Self::WatchedStorm | Self::WatchedBird | Self::MissedViewer => 3,
             Self::PlayedBall | Self::WateredPlant | Self::WatchedRain => 2,
             Self::SleptNight | Self::Napped => 1,
@@ -288,6 +293,9 @@ pub fn story(
             }
             if dark && weather == 0 {
                 add(Happening::WishedOnStar, Activity::Window, 0.6);
+                if !life.constellations.is_empty() {
+                    add(Happening::StarGazed, Activity::Window, 0.8);
+                }
             }
             if evening && weather == 0 && life.friend.is_some() {
                 add(Happening::FriendVisited, Activity::Friend, 0.8);
@@ -531,6 +539,33 @@ mod tests {
         ] {
             assert!(seen.contains(&expected), "{expected:?}");
         }
+    }
+
+    #[test]
+    fn only_a_ghost_with_constellations_says_goodnight_to_them() {
+        let mut life = Life::default();
+        let gazed = |life: &Life| {
+            (0..60).any(|seed| {
+                story(
+                    time("2026-06-18T12:00:00"),
+                    time("2026-06-21T12:00:00"),
+                    seed,
+                    life,
+                    None,
+                )
+                .happenings
+                .contains(&Happening::StarGazed)
+            })
+        };
+        assert!(!gazed(&life));
+        life.constellations
+            .push(crate::world::stars::Constellation {
+                name: "the Shy Spiral".to_owned(),
+                korean: "수줍은 나선".to_owned(),
+                stars: vec![0, 1, 2],
+                found: "2026-06-17".to_owned(),
+            });
+        assert!(gazed(&life));
     }
 
     #[test]
