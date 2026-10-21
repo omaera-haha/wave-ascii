@@ -75,6 +75,7 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     let mut log: Vec<String> = Vec::new();
     let mut focus_day = None;
     let mut feeling_day = None;
+    let mut agenda_shared = false;
     let mut thought_count = 0u32;
     let mut speech_count = 0u32;
     let mut max_speed = 0.0f32;
@@ -160,7 +161,28 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             mind.hear(&mut world, message);
             log.push(format!("{clock} viewer says {message:?}"));
         }
+        if here && !agenda_shared && (7.75..8.0).contains(&hour) {
+            agenda_shared = true;
+            let message = if korean {
+                "내일 시험 있어"
+            } else {
+                "I have an exam tomorrow"
+            };
+            mind.hear(&mut world, message);
+            log.push(format!("{clock} viewer says {message:?}"));
+        }
         world.step(step);
+        if world.awaiting_plan_answer()
+            && world
+                .ghost
+                .speech
+                .as_ref()
+                .is_some_and(|line| world.time - line.time >= 15.0)
+        {
+            let message = if korean { "잘 봤어" } else { "It went well" };
+            mind.hear(&mut world, message);
+            log.push(format!("{clock} viewer says {message:?}"));
+        }
         if let Some(finished_day) = finished_day {
             by_day.push(format!(
                 "  {}: bond {:.2}, {} milestones, {} books owned; {}",
@@ -266,6 +288,13 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     println!(
         "switches {switches} ({:.1}/h), thoughts {thought_count}, speeches {speech_count}, max speed {max_speed:.2}, outside steps {outside}",
         f64::from(switches) / (days * 24.0)
+    );
+    println!(
+        "agenda: {} plans heard, {} luck wishes, {} good outcomes, {} hard outcomes",
+        world.life.total.plans_heard,
+        world.life.total.luck_wished,
+        world.life.total.plans_went_well,
+        world.life.total.plans_went_badly
     );
     println!("-- activity shares");
     let mut shares: Vec<_> = shares.into_iter().collect();

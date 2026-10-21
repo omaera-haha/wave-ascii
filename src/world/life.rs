@@ -277,6 +277,22 @@ pub struct Tally {
     pub feelings: Vec<super::Feeling>,
     pub comforted_feelings: Vec<super::Feeling>,
     pub felt_better: u32,
+    #[serde(default)]
+    pub plans_heard: u32,
+    #[serde(default)]
+    pub luck_wished: u32,
+    #[serde(default)]
+    pub plans_went_well: u32,
+    #[serde(default)]
+    pub plans_went_badly: u32,
+    #[serde(default)]
+    pub heard_plans: Vec<super::agenda::Errand>,
+    #[serde(default)]
+    pub wished_plans: Vec<super::agenda::Errand>,
+    #[serde(default)]
+    pub good_plans: Vec<super::agenda::Errand>,
+    #[serde(default)]
+    pub hard_plans: Vec<super::agenda::Errand>,
 }
 
 impl Tally {
@@ -529,6 +545,30 @@ impl Tally {
                 self.friend_games = self.friend_games.saturating_add(1);
                 if !self.friend_played.contains(game) {
                     self.friend_played.push(*game);
+                }
+            }
+            EventKind::HeardPlan { errand, .. } => {
+                self.plans_heard = self.plans_heard.saturating_add(1);
+                if !self.heard_plans.contains(errand) {
+                    self.heard_plans.push(*errand);
+                }
+            }
+            EventKind::WishedLuck(errand) => {
+                self.luck_wished = self.luck_wished.saturating_add(1);
+                if !self.wished_plans.contains(errand) {
+                    self.wished_plans.push(*errand);
+                }
+            }
+            EventKind::PlanWentWell(errand) => {
+                self.plans_went_well = self.plans_went_well.saturating_add(1);
+                if !self.good_plans.contains(errand) {
+                    self.good_plans.push(*errand);
+                }
+            }
+            EventKind::PlanWentBadly(errand) => {
+                self.plans_went_badly = self.plans_went_badly.saturating_add(1);
+                if !self.hard_plans.contains(errand) {
+                    self.hard_plans.push(*errand);
                 }
             }
             _ => {}
@@ -1121,6 +1161,30 @@ impl Tally {
                 format!("saw {} rainbows", count_words(rainbows)),
             )),
         }
+        deeds.extend(self.heard_plans.iter().map(|errand| {
+            (
+                Salience::Small,
+                format!("you told me about your {}", errand.name()),
+            )
+        }));
+        deeds.extend(self.wished_plans.iter().map(|errand| {
+            (
+                Salience::Notable,
+                format!("wished you luck for your {}", errand.name()),
+            )
+        }));
+        deeds.extend(self.good_plans.iter().map(|errand| {
+            (
+                Salience::Special,
+                format!("your {} went well", errand.name()),
+            )
+        }));
+        deeds.extend(self.hard_plans.iter().map(|errand| {
+            (
+                Salience::Notable,
+                format!("your {} was hard, so I stayed close", errand.name()),
+            )
+        }));
         deeds
     }
 
@@ -1291,6 +1355,8 @@ pub struct Life {
     pub received: Vec<super::penpal::ViewerLetter>,
     pub viewer: super::acquaintance::Acquaintance,
     pub feelings: Vec<super::feelings::FeelingNote>,
+    #[serde(default, deserialize_with = "super::agenda::deserialize")]
+    pub agenda: Vec<super::agenda::Engagement>,
 }
 
 impl Life {
@@ -1476,6 +1542,8 @@ impl Life {
             EventKind::GameOver(outcome) if outcome.finished() => 0.002,
             EventKind::Poked { count } if *count < 3 => 0.002,
             EventKind::Poked { .. } => -0.012,
+            EventKind::WishedLuck(_) => 0.003,
+            EventKind::PlanWentWell(_) => 0.008,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -1746,6 +1814,7 @@ impl Life {
                 .retain(|text| super::upbringing::valid_change(text));
             tally.temperament_changes.truncate(5);
         }
+        super::agenda::sanitize(&mut self.agenda, &self.day);
         self.feelings.retain(|note| note.valid(&self.day));
         if self.feelings.len() > 12 {
             self.feelings.drain(..self.feelings.len() - 12);
@@ -1975,6 +2044,26 @@ impl Life {
                 (2..=16).contains(&name.chars().count()) && name.chars().all(char::is_alphabetic)
             });
             tally.viewer_names.truncate(WORDS_NAMED);
+            tally.plans_heard = tally.plans_heard.min(100_000_000);
+            tally.luck_wished = tally.luck_wished.min(100_000_000);
+            tally.plans_went_well = tally.plans_went_well.min(100_000_000);
+            tally.plans_went_badly = tally.plans_went_badly.min(100_000_000);
+            for errands in [
+                &mut tally.heard_plans,
+                &mut tally.wished_plans,
+                &mut tally.good_plans,
+                &mut tally.hard_plans,
+            ] {
+                let mut seen = Vec::new();
+                errands.retain(|errand| {
+                    if seen.contains(errand) {
+                        false
+                    } else {
+                        seen.push(*errand);
+                        true
+                    }
+                });
+            }
             if !tally.together.is_finite() || tally.together < 0.0 {
                 tally.together = 0.0;
             }
@@ -2274,6 +2363,9 @@ impl Life {
                     })?
                     .1
                     .to_owned()
+            }
+            EventKind::PlanWentWell(errand) if total.plans_went_well == 1 => {
+                format!("You told me your {} went well.", errand.name())
             }
             _ => return None,
         };

@@ -331,7 +331,7 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
 }
 
 /// Tips for a quiet words line, the basics first.
-const TIPS: [&str; 8] = [
+const TIPS: [&str; 9] = [
     "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around",
     "drag across the ghost to stroke it · right drag draws in the fog on the glass",
     "e reads its letters, and w there writes it one back",
@@ -340,6 +340,7 @@ const TIPS: [&str; 8] = [
     "type do re mi to teach it a tune · “play a lullaby” winds the music box",
     "l shows its life · j its journal and diary · b the album of moments it kept",
     "p keeps a postcard of this moment · ? lists every key",
+    "tell it “I have an exam tomorrow” or “내일 면접 있어”, and it remembers to cheer you on",
 ];
 /// Seconds the basics show first, and each later tip after them.
 const BASICS_SHOW: f64 = 90.0;

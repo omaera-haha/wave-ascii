@@ -319,7 +319,7 @@ impl App {
             if self.world.ghost.asleep < 0.3
                 && self.world.focus.is_none()
                 && self.world.telling.is_none()
-                && self.world.asking.is_none()
+                && (self.world.asking.is_none() && !self.world.awaiting_plan_answer())
                 && self.world.comforting.is_none()
                 && !self.world.reading_viewer_letter()
             {

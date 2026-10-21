@@ -71,7 +71,7 @@ impl World {
             "My hem tingles… rain is coming."
         });
         let speaking = self.telling.is_some()
-            || self.asking.is_some()
+            || (self.asking.is_some() || self.awaiting_plan_answer())
             || self.focus.is_some()
             || self
                 .ghost

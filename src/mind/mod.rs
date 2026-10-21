@@ -556,7 +556,7 @@ impl Mind {
         }
         // It tells what it did while the viewer was away once nothing else
         // it says is still showing.
-        let speaking = world.asking.is_some()
+        let speaking = (world.asking.is_some() || world.awaiting_plan_answer())
             || world.telling.is_some()
             || world
                 .ghost
@@ -833,7 +833,11 @@ impl Mind {
         if !reflection.thought.is_empty() {
             world.think(&reflection.thought);
         }
-        if world.asking.is_none() && !reflection.say.is_empty() && world.ghost.asleep < 0.3 {
+        if world.asking.is_none()
+            && !world.awaiting_plan_answer()
+            && !reflection.say.is_empty()
+            && world.ghost.asleep < 0.3
+        {
             world.say(&reflection.say);
             self.remember_speech(world);
         }
@@ -860,6 +864,7 @@ impl Mind {
             world.take_name(&reflection.name);
         }
         if world.asking.is_none()
+            && !world.awaiting_plan_answer()
             && !world.reading_viewer_letter()
             && world.comforting.is_none()
             && !reflection.write.is_empty()
@@ -947,6 +952,8 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
+                | Understanding::Planned(_)
+                | Understanding::PlanAnswered { .. }
         )
 }
 
@@ -2403,6 +2410,46 @@ mod acquaintance_tests {
             assert!(lines.contains("고양이"));
             assert!(lines.contains("kimchi"));
             assert!(!lines.contains("{animal}") && !lines.contains("{food}"));
+        }
+    }
+
+    #[test]
+    fn plans_bypass_jev_keep_the_direct_reply_and_reach_reflection_memories() {
+        for text in ["I have an exam tomorrow", "내일 시험 있어"] {
+            let mut world = World::new(3, 12.0);
+            let heard = world.hear(text);
+            assert!(!routes_to_jev(&heard));
+            assert!(musing::reply(&world, &heard, None).is_empty());
+            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
+            mind.hear(&mut world, text);
+            assert_eq!(world.life.agenda.len(), 1);
+            assert!(world.ghost.speech.is_some());
+            let observation = observation::observe(&world);
+            let plans = observation["viewer_plans"].as_str().unwrap();
+            assert!(plans.contains("exam tomorrow"));
+            let request =
+                reflection::request(&observation, &[], &world.life, &[], Some(text), None, None);
+            assert!(
+                request
+                    .system
+                    .iter()
+                    .any(|block| block.text.contains(plans))
+            );
+            let config = Config {
+                anthropic_api_key: Some("test-key".to_owned()),
+                ..Config::default()
+            };
+            let mut mind = Mind::new(&config, Journal::default(), false);
+            mind.hear(&mut world, text);
+            assert_eq!(mind.heard.front().unwrap().text, text);
+            let answer = Heard {
+                understanding: Understanding::PlanAnswered {
+                    errand: crate::world::agenda::Errand::Exam,
+                    went_well: Some(true),
+                },
+                ..heard
+            };
+            assert!(!routes_to_jev(&answer));
         }
     }
 }

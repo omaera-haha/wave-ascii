@@ -620,7 +620,7 @@ pub fn free_text(text: &str) -> Option<String> {
 }
 
 impl World {
-    fn quiet_for_question(&self) -> bool {
+    pub(super) fn quiet_for_question(&self) -> bool {
         self.focus.is_none()
             && self.telling.is_none()
             && self.game.is_none()
@@ -639,6 +639,8 @@ impl World {
             self.asking = None;
         }
         if self.asking.is_some()
+            || self.agenda_visit_asked
+            || self.awaiting_plan_answer()
             || self.feeling_follow_up.is_some()
             || !self.viewer_present()
             || self.viewer.typing
@@ -695,6 +697,7 @@ impl World {
         self.life.viewer.last_asked = Some(day);
         self.life.viewer.asked_today.push(topic);
         self.asking = Some((topic, self.time + 180.0));
+        self.agenda_visit_question = true;
         self.last_question_at = Some(self.time);
         // It stays at the glass a minute for the answer.
         self.ghost.plan.length = self
@@ -710,6 +713,7 @@ impl World {
         let (topic, until) = self.asking.take()?;
         if super::feelings::felt(text).is_some()
             || super::promise::promised(text, self.date, self.hour).is_some()
+            || super::agenda::planned(text, self.date).is_some()
         {
             return None;
         }

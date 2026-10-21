@@ -68,7 +68,7 @@ impl Feeling {
 /// Only complete, first-person statements count. In particular a question,
 /// negation, quoted feeling, or someone else's subject supplies no evidence.
 // Whether `text` says no to something, in English or Korean.
-fn denies(text: &str) -> bool {
+pub(super) fn denies(text: &str) -> bool {
     let text = text.to_lowercase().replace(['\'', '’', '‘'], "");
     text.split(|character: char| !character.is_alphabetic())
         .any(|word| {
@@ -439,9 +439,21 @@ impl World {
         self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
-        self.remember_feeling(feeling);
-        self.comfort_viewer(feeling, korean || self.speaks_korean());
+        self.care_for_feeling(feeling, korean || self.speaks_korean());
         self.feeling_heard(Understanding::Felt(feeling), korean)
+    }
+
+    pub(super) fn care_for_feeling(&mut self, feeling: Feeling, korean: bool) {
+        self.remember_feeling(feeling);
+        self.comfort_viewer(feeling, korean);
+    }
+
+    pub(super) fn receive_message_feeling(&mut self, text: &str, korean: bool) {
+        if let Some(feeling) =
+            felt(text).or_else(|| text.split(['.', '!', ';', '\n']).find_map(felt))
+        {
+            self.care_for_feeling(feeling, korean);
+        }
     }
 
     pub(super) fn remember_feeling(&mut self, feeling: Feeling) {
@@ -655,6 +667,8 @@ impl World {
             self.feeling_follow_up = None;
         }
         if self.feeling_visit_asked
+            || self.agenda_visit_asked
+            || self.awaiting_plan_answer()
             || self.feeling_follow_up.is_some()
             || self.asking.is_some()
             || self.ghost.asleep >= 0.3
@@ -703,6 +717,7 @@ impl World {
         note.asked = true;
         self.feeling_follow_up = Some((note.feeling, self.time + 180.0));
         self.feeling_visit_asked = true;
+        self.agenda_visit_question = true;
         self.last_question_at = Some(self.time);
         self.ghost.plan.length = self
             .ghost

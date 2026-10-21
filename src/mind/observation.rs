@@ -103,6 +103,7 @@ pub fn observe(world: &World) -> Value {
         "recent_events": recent(world, 8),
         "skills": Skill::ALL.map(|skill| world.life.skills.description(skill)),
         "wish": world.wish_observation(),
+        "viewer_plans": crate::world::agenda::memories(&world.life.agenda, world.date),
         "viewer_letter": if world.waiting_letter().is_some() { "a letter from the viewer waits on the inside of the front glass" }
             else if world.life.received.iter().any(|letter| letter.reply.is_some()) { "It is thinking about how to answer the viewer's letter." }
             else { "the viewer's letters are kept safely" },

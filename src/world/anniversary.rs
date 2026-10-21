@@ -215,7 +215,7 @@ impl World {
     pub fn share_anniversary(&mut self) {
         let day = self.date.to_string();
         if self.life.anniversary_said.as_ref() == Some(&day)
-            || self.asking.is_some()
+            || (self.asking.is_some() || self.awaiting_plan_answer())
             || !self.viewer_present()
             || self.ghost.asleep >= 0.3
             || self.focus.is_some()
@@ -256,7 +256,7 @@ impl World {
             || self.game.is_some()
             || self.puzzle_active()
             || self.reading.is_some()
-            || self.asking.is_some()
+            || (self.asking.is_some() || self.awaiting_plan_answer())
             || self
                 .ghost
                 .speech

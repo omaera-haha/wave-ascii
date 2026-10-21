@@ -237,6 +237,7 @@ pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<String> {
     let mut lines: Vec<_> = idle_lines(world).into_iter().map(str::to_owned).collect();
+    lines.extend(crate::world::agenda::thoughts(world));
     if !world.viewer_present()
         && let Some(promise) = world.life.promise
     {
@@ -602,6 +603,12 @@ fn morning(world: &World) -> Vec<&'static str> {
 /// What it dreams of while it sleeps, mostly of what happened today.
 pub fn dreams(world: &World) -> Vec<String> {
     let mut lines: Vec<_> = dream_lines(world).into_iter().map(str::to_owned).collect();
+    for errand in &world.life.today.good_plans {
+        lines.push(format!(
+            "…your {} turns into a sky full of cheering stars…",
+            errand.name()
+        ));
+    }
     for (span, entry) in world.life.anniversaries(&world.date.to_string()) {
         lines.push(format!(
             "…{}…",
@@ -848,6 +855,8 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::OwnSong
             | Understanding::Answered(_)
             | Understanding::Unanswered(_)
+            | Understanding::Planned(_)
+            | Understanding::PlanAnswered { .. }
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -863,6 +872,12 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             .map(|&(english, hangul)| if korean { hangul } else { english }.to_owned())
             .collect()
     };
+    if matches!(
+        heard.understanding,
+        Understanding::Planned(_) | Understanding::PlanAnswered { .. }
+    ) {
+        return Vec::new();
+    }
     if matches!(heard.understanding, Understanding::Promised(_)) {
         // The direct handler already said goodbye, in the message's language.
         return Vec::new();
