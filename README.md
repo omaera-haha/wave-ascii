@@ -4,21 +4,22 @@ A ghost lives in a glass box in your terminal.
 
 The box is a small room drawn in dots: a floor lamp, a potted plant, a ball, a
 cushion to sleep on, specks of light that drift in, and a window onto hills
-where the seasons turn, storms roll through, snow falls in winter, and rain
-can leave a rainbow. The ghost is a point in that room with a body, needs, a
-mood, and a gaze: it sees what lies within sixty degrees of where it faces,
-and furniture hides what's behind it. You see it as an abstract shape made of
-dots, and its glow shows how it is.
-
-On lit nights, a little moth sometimes flutters in and circles the lamp. The
-ghost watches it pass; if it drifts too close, the moth darts gently away.
+where the seasons turn, birds come to perch, storms roll through, snow falls
+in winter, and rain can leave a rainbow. On lit nights, a little moth
+sometimes flutters in and circles the lamp. The ghost is a point in that room
+with a body, needs, a mood, and a gaze: it sees what lies within sixty
+degrees of where it faces, and furniture hides what's behind it. You see it
+as an abstract shape made of dots, and its glow shows how it is.
 
 It floats about, chases and eats the light motes it has spotted, plays with
-the ball and brings it back after a throw, waters the plant, switches the
-lamp, gazes out of the window, naps when tired, and comes to the glass to look
-at you. When delighted it dances a little twirl in the air. It plays
-hide-and-seek and draws little pictures in the fog on the glass. Over days it
-grows close to you, forms habits, keeps a diary, and marks its special days.
+the ball and brings it back after a throw, pounces on your pointer through
+the glass, waters the plant, switches the lamp, watches the birds from the
+window, naps when tired, and comes to the glass to look at you. When
+delighted it dances a little twirl in the air. It plays hide-and-seek and
+draws little pictures in the fog on the glass. At night it goes to bed and
+sleeps until morning. Each ghost is born with a nature of its own, and over
+days it grows close to you, learns your words, forms habits, keeps a diary,
+and marks its special days.
 
 Two models give it a mind:
 
