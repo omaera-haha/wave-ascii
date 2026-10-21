@@ -67,19 +67,20 @@ Keys:
   m, c         style, color mode      ?        help
   r            reset the view         space    pause
   p            save a postcard        b        album of moments
-  q, Esc       quit
   g            noughts and crosses    1-9      choose a square
+  o            focus together for twenty-five minutes (o again ends it)
   f            draw in the fog with left drags (f or Esc stops)
-  o            focus together for twenty-five minutes; o again ends it
+  q, Esc       quit
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, a block to nudge it or a tower to topple it, the window to ask it
-to open or shut, and elsewhere in the room to drop in a light mote. Press on the ghost and drag across it to
-stroke it; drag elsewhere to turn the view, and scroll to zoom. Right-drag
-draws in the fog on the glass. In the journal, help, life, or album panel, the
-mouse selects text. In the journal, PageUp/PageDown and Home/End also
-scroll; Esc, Enter, or j closes it. In the album, left/right flip pages,
-Home/End jump to newest/oldest, and Esc or b closes it; q quits.
+to open or shut, and elsewhere in the room to drop in a light mote. Press on
+the ghost and drag across it to stroke it; drag elsewhere to turn the view,
+and scroll to zoom. Right-drag draws in the fog on the glass. In the
+journal, help, life, or album panel, the mouse selects text. In the journal,
+PageUp/PageDown and Home/End also scroll; Esc, Enter, or j closes it. In the
+album, left/right flip pages, Home/End jump to newest/oldest, and Esc or b
+closes it; q quits.
 
 Piped output prints one frame of a fresh ghost, sized by COLUMNS and LINES.";
 
