@@ -2,11 +2,11 @@ use jiff::civil::Date;
 
 use super::{Activity, EventKind, Heard, Life, Listening, Mood, Understanding, World};
 
-const STRETCH_AFTER: f64 = 90.0 * 60.0;
+const STRETCH_AFTER: f64 = 120.0 * 60.0;
 const SESSION_GAP: f64 = 15.0 * 60.0;
 const STREAK_BREAK: f64 = 10.0 * 60.0;
 const REPLY_FOR: f64 = 120.0;
-const DAILY_SUGGESTIONS: u8 = 3;
+const DAILY_SUGGESTIONS: u8 = 2;
 
 #[derive(Clone, Debug, Default)]
 pub struct Rhythm {
@@ -841,26 +841,24 @@ mod tests {
     #[test]
     fn the_daily_cap_includes_night_nudges_survives_restarts_and_resets_on_the_next_day() {
         let mut world = sitting();
-        for _ in 0..2 {
-            world.suggest_break(false);
-            world.time += STRETCH_AFTER;
-            world.notice_viewer();
-        }
+        world.suggest_break(false);
+        world.time += STRETCH_AFTER;
+        world.notice_viewer();
         world.hour = 1.0;
         world.hear("hello");
-        assert_eq!(world.life.rhythm_suggestions, 3);
+        assert_eq!(world.life.rhythm_suggestions, 2);
         world.ghost.speech = None;
         world.suggest_break(true);
-        assert_eq!(world.life.total.breaks_suggested, 2);
+        assert_eq!(world.life.total.breaks_suggested, 1);
         let saved = serde_json::to_string(&world.life).unwrap();
         let mut restored = sitting();
         restored.life = serde_json::from_str::<Life>(&saved).unwrap().sanitized();
         restored.suggest_break(false);
-        assert_eq!(restored.life.total.breaks_suggested, 2);
+        assert_eq!(restored.life.total.breaks_suggested, 1);
         restored.date = restored.date.tomorrow().unwrap();
         restored.begin_day();
         restored.suggest_break(false);
-        assert_eq!(restored.life.total.breaks_suggested, 3);
+        assert_eq!(restored.life.total.breaks_suggested, 2);
         assert_eq!(restored.life.rhythm_suggestions, 1);
     }
 
