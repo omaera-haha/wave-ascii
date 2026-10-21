@@ -170,6 +170,10 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
         }
         world.step(step);
         mind.think(&mut world);
+        // What the app adds to each frame of a living world.
+        world.celebrate_wish();
+        world.share_wish();
+        world.share_anniversary();
         time += f64::from(step);
         let activity = world.ghost.plan.activity;
         let name = activity.name().to_owned();
