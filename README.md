@@ -132,6 +132,8 @@ cargo run --release -- --style blocks
 cargo run --release -- --offline        # never call a model
 cargo run --release -- --fps 30         # frames per second (default 60)
 wave-ascii --peek                       # one line: what your ghost is up to
+wave-ascii --album-html memories.html   # export its album as a web page
+wave-ascii --album-html memories.html --force  # replace an earlier export
 ```
 
 `--peek` prints a single line about the saved ghost without opening the
@@ -140,6 +142,16 @@ room or changing anything, such as `☾ Pip is asleep` or
 language you last spoke to it. Put it in a shell prompt or a tmux status
 bar (`set -g status-right '#(wave-ascii --peek)'`) to keep the ghost in
 the corner of your eye.
+
+`--album-html PATH` keeps the saved album as one self-contained HTML memory
+book, oldest memories first, with the original characters and colors,
+captions, dates, and milestone marks. Open it in a browser, share it, or
+print it; it needs no scripts, fonts, or other downloads. The command reads
+only the saved life and album, without opening the room, loading keys, or
+changing either. It prints `Wrote N pages to PATH`; with no saved life or
+no memories yet, it prints a friendly line and writes nothing. Existing
+files are kept unless you add `--force`. The output directory must already
+exist, and the export must go outside the saved life and album.
 
 In terminals that report focus, it draws at most 24 frames a second while
 another window has the focus, so a ghost kept beside your work stays light.

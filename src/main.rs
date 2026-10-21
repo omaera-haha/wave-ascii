@@ -19,8 +19,12 @@ mod ui;
 mod world;
 
 use std::env;
+use std::fs::{self, OpenOptions};
 use std::io::{self, IsTerminal, Write};
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use app::{App, Response};
@@ -33,6 +37,7 @@ use world::World;
 
 /// Frames per second while the terminal is in the background.
 const BACKGROUND_FPS: f64 = 24.0;
+static ALBUM_EXPORTS: AtomicU64 = AtomicU64::new(0);
 
 const HELP: &str = "\
 Usage: wave-ascii [OPTIONS]
@@ -64,6 +69,8 @@ Options:
   --born YYYY-MM-DD              when piped: the ghost's birth date (optional)
   --peek                         print one line about what the saved ghost is
                                  probably doing, for a prompt or status bar
+  --album-html PATH              export the saved album as one HTML memory book
+  --force                        allow replacing an existing HTML export
   -h, --help                     show this help
 
 Keys:
@@ -104,6 +111,8 @@ struct Options {
     date: jiff::civil::Date,
     born: Option<jiff::civil::Date>,
     peek: bool,
+    album_html: Option<PathBuf>,
+    force: bool,
 }
 
 fn main() -> ExitCode {
@@ -149,6 +158,8 @@ fn parse_options() -> io::Result<Option<Options>> {
         date: jiff::civil::Date::constant(2026, 6, 21),
         born: None,
         peek: false,
+        album_html: None,
+        force: false,
     };
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -208,12 +219,22 @@ fn parse_options() -> io::Result<Option<Options>> {
             }
             "--offline" => options.offline = true,
             "--peek" => options.peek = true,
+            "--album-html" => options.album_html = Some(PathBuf::from(value()?)),
+            "--force" => options.force = true,
             other => {
                 return Err(invalid_input(format!(
                     "unknown argument {other:?}; see --help"
                 )));
             }
         }
+    }
+    if options.force && options.album_html.is_none() {
+        return Err(invalid_input("--force needs --album-html PATH".to_owned()));
+    }
+    if options.peek && options.album_html.is_some() {
+        return Err(invalid_input(
+            "choose either --peek or --album-html PATH".to_owned(),
+        ));
     }
     Ok(Some(options))
 }
@@ -225,6 +246,10 @@ fn run() -> io::Result<()> {
     };
 
     let paths = Paths::from_environment();
+    if let Some(path) = &options.album_html {
+        println!("{}", export_album(paths.as_ref(), path, options.force)?);
+        return Ok(());
+    }
     if options.peek {
         return print_peek(paths.as_ref());
     }
@@ -364,6 +389,86 @@ fn seed() -> u64 {
         .map_or(1, |duration| duration.as_nanos() as u64)
 }
 
+fn export_album(paths: Option<&Paths>, path: &Path, force: bool) -> io::Result<String> {
+    let Some(paths) = paths else {
+        return Ok(peek::nobody().to_owned());
+    };
+    let Some(save): Option<Save> = store::load_json(&paths.save)? else {
+        return Ok(peek::nobody().to_owned());
+    };
+    let milestones: Vec<_> = save
+        .life
+        .milestones
+        .iter()
+        .map(|milestone| milestone.text.clone())
+        .collect();
+    let pages = album::Album::read_only(paths, &milestones);
+    if pages.is_empty() {
+        return Ok("The ghost hasn't kept any moments yet.".to_owned());
+    }
+    let directory = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    let destination = fs::canonicalize(directory.unwrap_or(Path::new(".")))?.join(
+        path.file_name()
+            .ok_or_else(|| invalid_input("--album-html needs a filename".to_owned()))?,
+    );
+    let existing = fs::canonicalize(path).ok();
+    if fs::canonicalize(&paths.save)
+        .is_ok_and(|save| save == destination || existing.as_ref() == Some(&save))
+        || fs::canonicalize(paths.album()).is_ok_and(|album| destination.starts_with(album))
+    {
+        return Err(invalid_input(
+            "choose an HTML path outside the saved life and album".to_owned(),
+        ));
+    }
+    write_album_html(path, &album::html(&save.name, &pages), force)?;
+    Ok(format!("Wrote {} pages to {}", pages.len(), path.display()))
+}
+
+fn write_album_html(path: &Path, contents: &str, force: bool) -> io::Result<()> {
+    let exists = || {
+        io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "{} already exists; use --force to replace it",
+                path.display()
+            ),
+        )
+    };
+    if !force && path.try_exists()? {
+        return Err(exists());
+    }
+    let partial = path.with_extension(format!(
+        "html.{}-{}.partial",
+        std::process::id(),
+        ALBUM_EXPORTS.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o644)
+        .open(&partial)?;
+    let written = (|| {
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+        if force {
+            fs::rename(&partial, path)
+        } else {
+            // Like album captures, publish without replacing a concurrent writer.
+            fs::hard_link(&partial, path).map_err(|error| {
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    exists()
+                } else {
+                    error
+                }
+            })
+        }
+    })();
+    let _ = fs::remove_file(partial);
+    written
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,5 +493,146 @@ mod tests {
             assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
             assert!(error.to_string().contains("YYYY-MM-DD"));
         }
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let directory = env::temp_dir().join(format!(
+            "wave-ascii-album-html-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        directory
+    }
+
+    fn saved_album(directory: &Path, pages: usize) -> Paths {
+        let paths = Paths::in_directory(directory);
+        let world = World::new(1, 12.0);
+        let save = Save {
+            version: Save::VERSION,
+            name: "Pip".to_owned(),
+            born: 100,
+            last_seen: 200,
+            needs: world.ghost.needs,
+            plant: world.plant,
+            lamp_on: false,
+            goal: None,
+            memories: Vec::new(),
+            conversation: Vec::new(),
+            life: world.saved_life(),
+            seedlings: Vec::new(),
+            room: None,
+        };
+        store::save_json(&paths.save, &save).unwrap();
+        for number in 0..pages {
+            let page = album::Page::new(
+                &canvas::Canvas::blank(2, 1),
+                &world,
+                100 + number as i64,
+                format!("Memory {number}."),
+            );
+            store::save_json(&paths.album().join(format!("page-{number}.json")), &page).unwrap();
+        }
+        paths
+    }
+
+    #[test]
+    fn album_export_reports_its_page_count_without_loading_config_or_changing_the_life() {
+        let directory = scratch("report");
+        let paths = saved_album(&directory, 2);
+        fs::write(&paths.config, "invalid config, which must never be loaded").unwrap();
+        let save = fs::read(&paths.save).unwrap();
+        let first = fs::read(paths.album().join("page-0.json")).unwrap();
+        let second = fs::read(paths.album().join("page-1.json")).unwrap();
+        let path = directory.join("memory book.html");
+        assert_eq!(
+            export_album(Some(&paths), &path, false).unwrap(),
+            format!("Wrote 2 pages to {}", path.display())
+        );
+        let output = fs::read_to_string(&path).unwrap();
+        assert_eq!(output.matches("<figure>").count(), 2);
+        assert!(output.find("Memory 0.").unwrap() < output.find("Memory 1.").unwrap());
+        assert_eq!(fs::read(&paths.save).unwrap(), save);
+        assert_eq!(fs::read(paths.album().join("page-0.json")).unwrap(), first);
+        assert_eq!(fs::read(paths.album().join("page-1.json")).unwrap(), second);
+        assert_eq!(fs::read_dir(paths.album()).unwrap().count(), 2);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 4);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn album_export_refuses_to_replace_a_file_unless_forced() {
+        let directory = scratch("force");
+        let paths = saved_album(&directory, 1);
+        let path = directory.join("album.html");
+        fs::write(&path, "earlier export").unwrap();
+        let error = export_album(Some(&paths), &path, false).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert!(error.to_string().contains("--force"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "earlier export");
+        assert_eq!(
+            export_album(Some(&paths), &path, true).unwrap(),
+            format!("Wrote 1 pages to {}", path.display())
+        );
+        assert!(
+            fs::read_to_string(&path)
+                .unwrap()
+                .starts_with("<!doctype html>")
+        );
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 3);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_missing_life_or_an_empty_album_writes_nothing_even_when_forced() {
+        let directory = scratch("empty");
+        let paths = Paths::in_directory(&directory);
+        let path = directory.join("album.html");
+        assert_eq!(export_album(None, &path, false).unwrap(), peek::nobody());
+        assert_eq!(
+            export_album(Some(&paths), &path, false).unwrap(),
+            peek::nobody()
+        );
+        assert!(!directory.exists());
+        let paths = saved_album(&directory, 0);
+        assert_eq!(
+            export_album(Some(&paths), &path, false).unwrap(),
+            "The ghost hasn't kept any moments yet."
+        );
+        assert!(!path.exists());
+        assert!(!paths.album().exists());
+        fs::write(&path, "earlier export").unwrap();
+        export_album(Some(&paths), &path, true).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "earlier export");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn even_a_forced_export_cannot_replace_the_saved_life_or_album() {
+        let directory = scratch("source");
+        let paths = saved_album(&directory, 1);
+        let page = paths.album().join("page-0.json");
+        for path in [&paths.save, &page, &paths.album().join("export.html")] {
+            let before = fs::read(path).ok();
+            let error = export_album(Some(&paths), path, true).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            assert_eq!(fs::read(path).ok(), before);
+        }
+        let alias = directory.join("life-link.json");
+        std::os::unix::fs::symlink(&paths.save, &alias).unwrap();
+        assert!(export_album(Some(&paths), &alias, true).is_err());
+        assert!(alias.is_symlink());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_failed_publication_removes_its_temporary_file() {
+        let directory = scratch("failure");
+        let paths = saved_album(&directory, 1);
+        let path = directory.join("album.html");
+        fs::create_dir(&path).unwrap();
+        assert!(export_album(Some(&paths), &path, true).is_err());
+        assert!(path.is_dir());
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 3);
+        fs::remove_dir_all(directory).unwrap();
     }
 }
