@@ -532,7 +532,7 @@ impl World {
         // A board nobody guessed at was no game played together.
         let unanswered = !solved && !reveal && puzzle.guesses.is_empty();
         if unanswered {
-            self.invitation_ignored_at = Some(self.time);
+            self.invitation_ignored();
         } else {
             self.record(EventKind::WordGame {
                 word: puzzle.word.clone(),

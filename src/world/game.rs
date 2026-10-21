@@ -415,7 +415,7 @@ impl World {
                 self.ghost.plan.target = inside(game.center, 0.7);
                 if time - game.turn_started >= Game::VIEWER_TIMEOUT {
                     if !game.cells.contains(&Some(Mark::Cross)) {
-                        self.invitation_ignored_at = Some(time);
+                        self.invitation_ignored();
                     }
                     self.end_game(&mut game, Outcome::Abandoned);
                 }

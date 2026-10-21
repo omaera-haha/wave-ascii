@@ -107,7 +107,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 let close = (1.5 - flat(world.ball.position - world.ghost.position).length())
                     .max(0.0)
                     * 0.15;
-                0.2 + 1.2 * (1.0 - needs.fun) * needs.energy + close
+                0.1 + 0.9 * (1.0 - needs.fun) * needs.energy + close
             }
             Activity::Build => {
                 (0.06

@@ -91,8 +91,10 @@ const PRESENT_FOR: f64 = 90.0;
 /// coming back from them is no new arrival to greet.
 pub const GONE_AFTER: f64 = 300.0;
 /// Seconds the ghost waits before inviting the viewer to another game on
-/// the glass after one they let pass without a move.
+/// the glass after one they let pass without a move. Each invitation let
+/// pass in a row doubles the wait, up to `IGNORED_PAUSE_MOST`.
 const IGNORED_PAUSE: f64 = 1200.0;
+const IGNORED_PAUSE_MOST: f64 = 4.0 * 3600.0;
 /// Pokes closer together than this many seconds count as one streak.
 const POKE_STREAK: f64 = 1.5;
 /// Seconds after the terminal loses the focus before the viewer counts as
@@ -630,8 +632,10 @@ pub struct World {
     viewer_gone: bool,
     /// When the viewer stopped counting as present, while they are away.
     absent_since: Option<f64>,
-    /// When the viewer last let a game on the glass pass without a move.
+    /// When the viewer last let a game on the glass pass without a move,
+    /// and how many invitations in a row they have let pass.
     invitation_ignored_at: Option<f64>,
+    invitations_ignored: u32,
     /// When a darting pointer last interrupted an idle plan.
     pointer_interrupted_at: Option<f64>,
     listening: Listening,
@@ -767,6 +771,7 @@ impl World {
             viewer_gone: true,
             absent_since: None,
             invitation_ignored_at: None,
+            invitations_ignored: 0,
             pointer_interrupted_at: None,
             listening: Listening::default(),
             push: Vec3::X,
@@ -1117,8 +1122,17 @@ impl World {
     /// Whether the viewer took up its last invitation to a game on the
     /// glass, or let it pass long enough ago to ask again.
     fn invitations_welcome(&self) -> bool {
+        let pause = (IGNORED_PAUSE
+            * 2f64.powi(self.invitations_ignored.saturating_sub(1).min(8) as i32))
+        .min(IGNORED_PAUSE_MOST);
         self.invitation_ignored_at
-            .is_none_or(|at| self.time - at >= IGNORED_PAUSE)
+            .is_none_or(|at| self.time - at >= pause)
+    }
+
+    /// The viewer let a game on the glass pass without a move.
+    pub(super) fn invitation_ignored(&mut self) {
+        self.invitation_ignored_at = Some(self.time);
+        self.invitations_ignored = self.invitations_ignored.saturating_add(1);
     }
 
     /// What doing `activity` would mean right now, written for a mind
@@ -2073,6 +2087,12 @@ impl World {
         }
         let morning = matches!(kind, EventKind::Morning);
         let shooting_star = matches!(kind, EventKind::ShootingStar);
+        // Playing along makes the viewer welcome to the next invitation.
+        if matches!(kind, EventKind::WordGame { .. })
+            || matches!(kind, EventKind::GameOver(outcome) if outcome.finished())
+        {
+            self.invitations_ignored = 0;
+        }
         let granted = self
             .life
             .wish
@@ -3801,6 +3821,35 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn invitations_let_pass_in_a_row_wait_longer_each_time_until_the_viewer_plays() {
+        let mut world = World::new(6, 12.0);
+        world.ghost.needs.energy = 0.9;
+        let welcome = |world: &mut World| {
+            world.notice_viewer();
+            world.options().contains(&Activity::Game)
+        };
+        assert!(welcome(&mut world));
+        world.invitation_ignored();
+        assert!(!welcome(&mut world));
+        world.time += IGNORED_PAUSE;
+        assert!(welcome(&mut world));
+        world.invitation_ignored();
+        world.time += IGNORED_PAUSE;
+        assert!(!welcome(&mut world), "the second in a row waits twice as long");
+        world.time += IGNORED_PAUSE;
+        assert!(welcome(&mut world));
+        for _ in 0..12 {
+            world.invitation_ignored();
+        }
+        world.time += IGNORED_PAUSE_MOST;
+        assert!(welcome(&mut world), "the wait never grows past its cap");
+        world.record(EventKind::GameOver(Outcome::Draw));
+        world.invitation_ignored();
+        world.time += IGNORED_PAUSE;
+        assert!(welcome(&mut world), "playing along starts the count over");
     }
 
     #[test]

@@ -333,7 +333,7 @@ impl World {
             .filter(|event| self.time - event.time <= 20.0 && delighted(&event.kind))
             .take(4)
             .count();
-        if (motes >= 3 || laughter >= 4) && self.random.unit() < 0.45 {
+        if (motes >= 3 || laughter >= 4) && self.random.unit() < 0.25 {
             self.start_quirk(Quirk::Hiccups);
         }
     }
@@ -533,7 +533,7 @@ impl World {
 fn rest_after(kind: Quirk) -> (f32, f32) {
     match kind {
         Quirk::Yawn => (480.0, 900.0),
-        Quirk::Hiccups => (900.0, 1800.0),
+        Quirk::Hiccups => (1800.0, 3600.0),
         Quirk::Sneeze | Quirk::Sigh => (120.0, 300.0),
         Quirk::Shiver => (90.0, 180.0),
     }
@@ -604,7 +604,7 @@ mod tests {
             world.record(EventKind::AteMote);
             assert!(world.quirk.is_none());
             let mut expected = world.random.clone();
-            let starts = expected.unit() < 0.45;
+            let starts = expected.unit() < 0.25;
             world.time = 29.9;
             world.record(EventKind::AteMote);
             assert_eq!(kind(&world), starts.then_some(Quirk::Hiccups));
@@ -618,7 +618,7 @@ mod tests {
                     spell.next_at,
                     world.time + f64::from(expected.range(2.5, 5.0))
                 );
-                expected.range(900.0, 1800.0);
+                expected.range(1800.0, 3600.0);
             }
             assert_eq!(world.random.unit(), expected.unit());
         }
