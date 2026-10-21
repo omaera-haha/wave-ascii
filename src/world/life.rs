@@ -157,6 +157,20 @@ pub struct Tally {
     pub drawings_seen: u32,
     #[serde(default)]
     pub pictures_learned: u32,
+    #[serde(default)]
+    pub planted: u32,
+    #[serde(default)]
+    pub sprouted: u32,
+    #[serde(default)]
+    pub flowered: u32,
+    #[serde(default)]
+    pub drooped: u32,
+    #[serde(default)]
+    pub planted_kinds: Vec<super::Flower>,
+    #[serde(default)]
+    pub sprouted_kinds: Vec<super::Flower>,
+    #[serde(default)]
+    pub flowered_kinds: Vec<super::Flower>,
 }
 
 impl Tally {
@@ -222,6 +236,25 @@ impl Tally {
                     self.viewer_names.push(name.clone());
                 }
             }
+            EventKind::Planted(kind) => {
+                self.planted = self.planted.saturating_add(1);
+                if !self.planted_kinds.contains(kind) {
+                    self.planted_kinds.push(*kind);
+                }
+            }
+            EventKind::Sprouted(kind) => {
+                self.sprouted = self.sprouted.saturating_add(1);
+                if !self.sprouted_kinds.contains(kind) {
+                    self.sprouted_kinds.push(*kind);
+                }
+            }
+            EventKind::Flowered(kind) => {
+                self.flowered = self.flowered.saturating_add(1);
+                if !self.flowered_kinds.contains(kind) {
+                    self.flowered_kinds.push(*kind);
+                }
+            }
+            EventKind::Drooped => self.drooped = self.drooped.saturating_add(1),
             EventKind::Tended => self.waterings += 1,
             EventKind::Bloomed => self.blooms += 1,
             EventKind::FellAsleep => self.naps += 1,
@@ -402,6 +435,18 @@ impl Tally {
             (0, _) => deeds.push("saw the plant flower".to_owned()),
             (_, 0) => deeds.push("watered the plant".to_owned()),
             _ => deeds.push("watered the plant until it flowered".to_owned()),
+        }
+        for kind in &self.planted_kinds {
+            deeds.push(format!("planted a {} seed", kind.name()));
+        }
+        for kind in &self.sprouted_kinds {
+            deeds.push(format!("saw the {} sprout", kind.name()));
+        }
+        for kind in &self.flowered_kinds {
+            deeds.push(format!("the {} came into flower", kind.name()));
+        }
+        if self.drooped > 0 {
+            deeds.push("noticed the plant drooping from thirst".to_owned());
         }
         match self.naps {
             0 => {}
@@ -681,6 +726,9 @@ impl Life {
         } else {
             milestone
         };
+        if matches!(kind, EventKind::Planted(_)) && self.total.planted >= 3 {
+            self.reach("My garden has three little pots.".to_owned());
+        }
         let warmth = match kind {
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
             EventKind::LearnedPicture(_) => 0.005,
@@ -948,6 +996,9 @@ impl Life {
             });
             tally.friend_played.truncate(3);
             tally.tallest = tally.tallest.min(5);
+            tally.planted_kinds.truncate(5);
+            tally.sprouted_kinds.truncate(5);
+            tally.flowered_kinds.truncate(5);
             tally.watched_writings = tally.watched_writings.min(tally.writings);
             tally.written_words.truncate(WORDS_NAMED);
             for word in &mut tally.written_words {
@@ -1035,6 +1086,13 @@ impl Life {
         let text = match kind {
             EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {
                 format!("You taught me to draw a {name}.")
+            }
+            EventKind::Planted(_) if total.planted == 1 => "I planted my first seed.".to_owned(),
+            EventKind::Sprouted(_) if total.sprouted == 1 => {
+                "Something is growing in the little pot!".to_owned()
+            }
+            EventKind::Flowered(_) if total.flowered == 1 => {
+                "The first flower I grew from a seed is blooming.".to_owned()
             }
             EventKind::Kept(_) if total.gifts == 1 => "The bird brought me a gift.".to_owned(),
             EventKind::AteMote if total.motes == 1 => "Caught my first light mote.".to_owned(),

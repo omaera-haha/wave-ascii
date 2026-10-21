@@ -299,6 +299,7 @@ impl App {
             memories: self.mind.journal.memories.clone(),
             conversation: self.mind.journal.conversation.clone(),
             life: world.saved_life(),
+            seedlings: world.seedlings.clone(),
         };
         crate::store::save_json(&paths.save, &save)
     }
@@ -1099,8 +1100,14 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
         fun: needs.fun.clamp(0.0, 1.0),
         company: needs.company.clamp(0.0, 1.0),
     };
-    world.plant.growth = save.plant.growth.clamp(0.0, 1.0);
-    world.plant.thirst = save.plant.thirst.clamp(0.0, 1.0);
+    world.plant = save.plant.sanitized(world.plant.position);
+    world.seedlings = save
+        .seedlings
+        .iter()
+        .take(crate::world::garden::SPOTS.len())
+        .cloned()
+        .map(crate::world::Seedling::sanitized)
+        .collect();
     world.lamp.on = save.lamp_on;
     world.ghost.goal = save.goal.clone();
     world.life = save.life.clone().sanitized();
@@ -1108,9 +1115,9 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
         .life
         .nature
         .get_or_insert_with(|| Nature::from_birth(save.born));
-    let away = (now - save.last_seen).max(0) as f32;
+    let away = now.saturating_sub(save.last_seen).max(0) as f32;
     world.life.miss(away);
-    world.plant.thirst = (world.plant.thirst + away / crate::world::Plant::THIRST_TIME).min(1.0);
+    world.age_garden(away);
     world
         .ghost
         .needs
@@ -1788,11 +1795,13 @@ mod tests {
             name: "Pip".into(),
             born: 0,
             last_seen: 1000,
+            seedlings: Vec::new(),
             needs: crate::world::Needs::default(),
             plant: crate::world::Plant {
                 position: world.plant.position,
                 growth: 0.5,
                 thirst: 0.0,
+                ..Default::default()
             },
             lamp_on: false,
             goal: Some("tend the plant".into()),
@@ -1843,6 +1852,7 @@ mod tests {
             name: "   ".into(),
             born: 0,
             last_seen: 1000,
+            seedlings: Vec::new(),
             needs: crate::world::Needs {
                 energy: 99.0,
                 fun: -3.0,
@@ -1852,6 +1862,7 @@ mod tests {
                 position: Vec3::new(1.0e9, -4.0, 7.0),
                 growth: 1.0e6,
                 thirst: -5.0,
+                ..Default::default()
             },
             lamp_on: true,
             goal: None,
@@ -2127,6 +2138,23 @@ mod tests {
         }
     }
 
+    fn garden_save(world: &World) -> Save {
+        Save {
+            version: Save::VERSION,
+            name: world.ghost.name.clone(),
+            born: 0,
+            last_seen: 1000,
+            needs: world.ghost.needs,
+            plant: world.plant,
+            lamp_on: world.lamp.on,
+            goal: None,
+            memories: Vec::new(),
+            conversation: Vec::new(),
+            life: world.life.clone(),
+            seedlings: world.seedlings.clone(),
+        }
+    }
+
     #[test]
     fn finger_mode_toggles_and_escape_leaves_it_without_quitting() {
         let mut app = app();
@@ -2154,5 +2182,97 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event.kind, EventKind::Poked { .. }))
         );
+    }
+
+    #[test]
+    fn saved_flowers_seeds_and_relative_seedling_ages_round_trip() {
+        let mut world = World::new(1, 12.0);
+        world.plant.growth = 1.0;
+        world.plant.blossom = 0.7;
+        world.plant.bloom_age = 2500.0;
+        world.plant.seeds = 2;
+        world.plant.droop = 0.1;
+        let mut seedling = crate::world::Seedling::new(crate::world::Flower::Tulip);
+        seedling.age = 3.0 * 86_400.0;
+        seedling.growth = 0.65;
+        seedling.thirst = 0.75;
+        seedling.droop = 0.2;
+        world.seedlings.push(seedling);
+        let save = garden_save(&world);
+        let encoded = serde_json::to_string(&save).unwrap();
+        let decoded: Save = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, save);
+        let mut restored = World::new(2, 12.0);
+        restore(&mut restored, &decoded, decoded.last_seen);
+        assert_eq!(restored.plant, world.plant);
+        assert_eq!(restored.seedlings, world.seedlings);
+        assert!(restored.petals.is_empty());
+    }
+
+    #[test]
+    fn damaged_garden_values_are_clamped_and_only_three_pots_are_restored() {
+        let mut world = World::new(1, 12.0);
+        let mut save = garden_save(&world);
+        save.plant.blossom = 9.0;
+        save.plant.growth = 1.0;
+        save.plant.bloom_age = f32::NEG_INFINITY;
+        save.plant.seeds = u32::MAX;
+        save.plant.droop = f32::NAN;
+        let mut seedling = crate::world::Seedling::new(crate::world::Flower::Daisy);
+        seedling.growth = 9.0;
+        seedling.thirst = -2.0;
+        seedling.droop = f32::INFINITY;
+        seedling.age = f64::NAN;
+        save.seedlings = vec![seedling; 5];
+        restore(&mut world, &save, save.last_seen);
+        assert_eq!(
+            (
+                world.plant.blossom,
+                world.plant.bloom_age,
+                world.plant.seeds,
+                world.plant.droop
+            ),
+            (1.0, 0.0, 3, 0.0)
+        );
+        assert_eq!(world.seedlings.len(), 3);
+        for plant in &world.seedlings {
+            assert_eq!(
+                (plant.growth, plant.thirst, plant.droop, plant.age),
+                (1.0, 0.0, 0.0, 0.0)
+            );
+        }
+    }
+
+    #[test]
+    fn time_away_ages_the_garden_without_water_and_bounds_long_absences() {
+        let mut world = World::new(1, 12.0);
+        world.plant.thirst = 0.0;
+        world.plant.growth = 1.0;
+        let mut seedling = crate::world::Seedling::new(crate::world::Flower::Bluebell);
+        seedling.age = 3.0 * 86_400.0;
+        seedling.growth = 0.5;
+        world.seedlings.push(seedling);
+        let save = garden_save(&world);
+        restore(&mut world, &save, 1300);
+        assert!(world.plant.blossom > 0.0 && world.plant.blossom < 0.1);
+        assert!(world.seedlings[0].growth > 0.5 && world.seedlings[0].growth < 0.51);
+        assert_eq!(world.seedlings[0].age, save.seedlings[0].age + 300.0);
+        assert!((world.seedlings[0].thirst - 1.0 / 3.0).abs() < 1e-5);
+        let mut old = World::new(2, 12.0);
+        restore(&mut old, &save, save.last_seen + 86_400 * 30);
+        let mut ancient = World::new(3, 12.0);
+        restore(&mut ancient, &save, i64::MAX);
+        assert_eq!(old.seedlings, ancient.seedlings);
+        assert_eq!(old.plant, ancient.plant);
+        assert_eq!(old.seedlings[0].thirst, 1.0);
+        assert_eq!(old.seedlings[0].droop, 1.0);
+        assert!(old.seedlings[0].growth < 0.51);
+        assert_eq!(old.seedlings.len(), 1);
+        assert!(old.petals.is_empty());
+        let mut winter = World::new(1, 12.0);
+        winter.date = jiff::civil::Date::constant(2026, 12, 10);
+        restore(&mut winter, &save, 1300);
+        assert_eq!(winter.plant.blossom, 0.0);
+        assert_eq!(winter.seedlings[0].growth, 0.5);
     }
 }

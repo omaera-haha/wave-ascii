@@ -25,6 +25,19 @@ your words and your name, learns when you usually come and waits for you,
 befriends the bird, which brings it little gifts, forms habits, keeps a
 diary, and marks its special days.
 
+The plant flowers in spells: buds open over about an hour, flowers last
+about a day, petals drift down, and a ripe seed is left behind. After half a
+day's rest it can bloom again. The ghost sometimes carries a seed to one of
+three little pots below the window and plants it. Daisies, tulips,
+sunflowers, bluebells, and poppies sprout, leaf out, bud, and flower with
+care over about four to six days (roughly twenty-five waterings). Repeated
+watering cannot rush a flower into bloom before four days. The ghost waters
+the thirstiest pot first. Spring helps growth; winter is a rest from flowers.
+Neglected plants only droop, and lift their heads again after watering;
+nothing dies. Its garden and first seeds, sprouts, and flowers are in its
+life panel (`l`), thoughts, and diary. Pots and their ages are saved, and
+the garden ages while the app is closed, bounded to a week per absence.
+
 Two models give it a mind:
 
 - **Jev**, TypeSafe's System One model, makes its quick choices. Each time
@@ -196,11 +209,10 @@ piped output never saves them.
   its example; its first learned picture becomes a milestone. Its diary and
   life panel remember pictures seen and learned. Copies begin mirrored,
   following the same practice as its writing.
-- 
-**Asking.** With a Jev key, what you type can ask it to do things: play,
-  fetch, build a tower, catch your finger, play noughts and crosses, dance, hide, draw, rest,
-  look at your drawing, look out of
-  the window, or come closer.
+- **Asking.** With a Jev key, what you type can ask it to do things: play,
+  fetch, build a tower, catch your finger, play noughts and crosses, dance,
+  hide, draw, rest, look at your drawing, look out of the window, play with
+  its friend while it visits, or come closer.
 - **Teaching it words.** Even without keys, the ghost hears whether you greet
   it, praise it ("good", "yay", "잘했어"), say goodbye, or tell it no ("no",
   "stop", "그만"), which stops what it's doing. Other words it has to learn,

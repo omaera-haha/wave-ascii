@@ -31,11 +31,12 @@ pub enum Thing {
     Shelf,
     Friend,
     Drawing,
+    Seedlings,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 14] = [
+    pub const NAMES: [&str; 15] = [
         "viewer",
         "window",
         "plant",
@@ -50,6 +51,7 @@ impl Thing {
         "blocks",
         "friend",
         "drawing",
+        "pots",
     ];
 
     pub fn name(self) -> &'static str {
@@ -68,6 +70,7 @@ impl Thing {
             Self::Shelf => "shelf",
             Self::Friend => "friend",
             Self::Drawing => "drawing",
+            Self::Seedlings => "pots",
         }
     }
 }
@@ -137,6 +140,21 @@ impl World {
             Thing::Shelf => SHELF_POSITION,
             Thing::Friend => self.friend.as_ref()?.position,
             Thing::Drawing => self.drawing.as_ref()?.center().extend(ROOM_MAX.z),
+            Thing::Seedlings => {
+                let (index, plant) =
+                    self.seedlings
+                        .iter()
+                        .enumerate()
+                        .min_by(|(first, _), (second, _)| {
+                            super::garden::SPOTS[*first]
+                                .distance_squared(self.ghost.position)
+                                .total_cmp(
+                                    &super::garden::SPOTS[*second]
+                                        .distance_squared(self.ghost.position),
+                                )
+                        })?;
+                super::garden::SPOTS[index] + Vec3::Y * plant.height() * 0.5
+            }
         })
     }
 
@@ -160,6 +178,7 @@ impl World {
             Thing::Shelf,
             Thing::Friend,
             Thing::Drawing,
+            Thing::Seedlings,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -223,6 +242,7 @@ impl World {
                 Thing::Shelf,
                 Thing::Friend,
                 Thing::Drawing,
+                Thing::Seedlings,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -285,17 +305,33 @@ impl World {
                 return Some(Thing::Blocks);
             }
         }
-        blockers
-            .into_iter()
-            .chain(decoration)
-            .find_map(|(blocker, center, radius)| {
-                if blocker == thing {
-                    return None;
-                }
+        let blocked =
+            blockers
+                .into_iter()
+                .chain(decoration)
+                .find_map(|(blocker, center, radius)| {
+                    if blocker == thing {
+                        return None;
+                    }
+                    let fraction = ((center - eye).dot(along) / (length * length)).clamp(0.0, 1.0);
+                    let closest = eye + along * fraction;
+                    (fraction > 0.02 && fraction < 0.95 && closest.distance(center) < radius)
+                        .then_some(blocker)
+                });
+        if blocked.is_some() || self.seedlings.is_empty() || thing == Thing::Seedlings {
+            return blocked;
+        }
+        self.seedlings
+            .iter()
+            .enumerate()
+            .find_map(|(index, plant)| {
+                let center = super::garden::SPOTS[index] + Vec3::Y * plant.height() * 0.5;
                 let fraction = ((center - eye).dot(along) / (length * length)).clamp(0.0, 1.0);
                 let closest = eye + along * fraction;
-                (fraction > 0.02 && fraction < 0.95 && closest.distance(center) < radius)
-                    .then_some(blocker)
+                (fraction > 0.02
+                    && fraction < 0.95
+                    && closest.distance(center) < super::Seedling::POT_RADIUS + 0.03)
+                    .then_some(Thing::Seedlings)
             })
     }
 
@@ -571,6 +607,9 @@ mod tests {
         ));
         world.invite_friend();
         world.draw_on_glass(Vec3::new(0.0, 1.2, ROOM_MAX.z));
+        world
+            .seedlings
+            .push(super::super::Seedling::new(super::super::Flower::Daisy));
         for name in Thing::NAMES {
             world.ghost.attention = None;
             world.attend(name, 5.0);

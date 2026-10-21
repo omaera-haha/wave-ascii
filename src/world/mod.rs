@@ -5,6 +5,7 @@ mod doodle;
 pub mod fog;
 pub mod friend;
 pub mod game;
+pub mod garden;
 pub mod growth;
 mod letters;
 mod life;
@@ -33,6 +34,7 @@ pub use doodle::{Doodle, Picture, Sketch, Writing};
 pub use fog::{Drawing, LearnedPicture};
 pub use friend::{Companion, Friend};
 pub use game::{Game, Mark, Outcome};
+pub use garden::{Flower, Petal, Seedling};
 pub use growth::{Skill, Skills, Stage};
 pub use life::{Entry, Life};
 pub use nature::Nature;
@@ -208,6 +210,10 @@ pub enum EventKind {
     },
     LearnedPicture(String),
     Copied(String),
+    Planted(Flower),
+    Sprouted(Flower),
+    Flowered(Flower),
+    Drooped,
 }
 
 impl EventKind {
@@ -232,6 +238,10 @@ impl EventKind {
             Self::Pounced => "pounced on the viewer's finger on the glass".to_owned(),
             Self::MoonWish => "made a wish on the Chuseok moon".to_owned(),
             Self::Danced => "danced a little twirl".to_owned(),
+            Self::Planted(kind) => format!("planted a {} seed in a little pot", kind.name()),
+            Self::Sprouted(kind) => format!("the {} seed in the little pot sprouted", kind.name()),
+            Self::Flowered(kind) => format!("the {} you planted came into flower", kind.name()),
+            Self::Drooped => "the plant is drooping from thirst".to_owned(),
             Self::Tended => "watered the plant".to_owned(),
             Self::Bloomed => "the plant came into flower".to_owned(),
             Self::SwitchedLamp { on: true } => "switched the lamp on".to_owned(),
@@ -526,6 +536,9 @@ pub struct World {
     wished_night: Option<jiff::civil::Date>,
     pub drawing: Option<Drawing>,
     latest_korean: bool,
+    pub seedlings: Vec<Seedling>,
+    pub petals: Vec<Petal>,
+    tending: Option<garden::Tending>,
 }
 
 impl World {
@@ -574,6 +587,7 @@ impl World {
                 position: Vec3::new(1.5, 0.0, -0.9),
                 growth: 0.15,
                 thirst: 0.4,
+                ..Plant::default()
             },
             nook: Nook {
                 position: Vec3::new(-1.3, 0.0, 0.55),
@@ -614,6 +628,9 @@ impl World {
             wished_night: None,
             drawing: None,
             latest_korean: false,
+            seedlings: Vec::new(),
+            petals: Vec::new(),
+            tending: None,
         };
         world.scatter_blocks();
         world
@@ -706,7 +723,7 @@ impl World {
         self.advance_friend();
 
         self.advance_blocks(seconds);
-        self.plant.thirst = (self.plant.thirst + seconds / Plant::THIRST_TIME).min(1.0);
+        self.advance_garden(seconds);
 
         let present = self.viewer_present();
         if present != self.viewer_present {
@@ -798,7 +815,7 @@ impl World {
                 Activity::Look => self.look_is_open(),
                 Activity::Chase => self.nearest_mote().is_some(),
                 Activity::Rest => self.ghost.needs.energy < 0.85 || self.bedtime(),
-                Activity::Tend => self.plant.thirst > 0.25,
+                Activity::Tend => self.garden_thirst() > 0.25 || self.seed_ready(),
                 Activity::Visit => self.viewer_present() || self.ghost.needs.company < 0.6,
                 Activity::Wait => self.wait_is_open(),
                 // The viewer threw the ball, or is there to bring it to.
@@ -868,9 +885,7 @@ impl World {
             Activity::Play => "Push the ball around the floor. Fits when bored and with energy \
                                to spare."
                 .to_owned(),
-            Activity::Tend => {
-                "Water and care for the potted plant. Fits when the plant is thirsty.".to_owned()
-            }
+            Activity::Tend => self.tend_description(),
             Activity::Lamp => {
                 let (verb, fits) = if self.lamp.on {
                     ("off", "it is daytime or the ghost wants to sleep")
@@ -986,7 +1001,7 @@ impl World {
             }),
             Activity::Explore => self.random_spot(),
             Activity::Rest => self.nook.bed(self.size()),
-            Activity::Tend => self.plant.top() + Vec3::new(0.0, 0.25, 0.3),
+            Activity::Tend => self.tend_target(),
             Activity::Lamp => self.lamp.bulb() + Vec3::new(0.35, -0.15, 0.25),
             Activity::Visit => self.glass_spot(),
             Activity::Wait => Vec3::new(0.0, 1.2, ROOM_MAX.z - 0.45),
@@ -1025,6 +1040,9 @@ impl World {
             self.begin_wait();
         }
         self.ghost.plan = plan;
+        if activity == Activity::Tend {
+            self.begin_tend();
+        }
         if activity == Activity::Build {
             self.begin_build();
         }
@@ -1732,6 +1750,14 @@ impl World {
         if let Some(decoration) = self.decoration() {
             obstacles.push((Decoration::POSITION, decoration.radius()));
         }
+        if !self.seedlings.is_empty() {
+            obstacles.extend(
+                self.seedlings
+                    .iter()
+                    .enumerate()
+                    .map(|(index, _)| (garden::SPOTS[index], Seedling::POT_RADIUS)),
+            );
+        }
         obstacles
     }
 
@@ -1967,20 +1993,7 @@ impl World {
                     }
                 }
             }
-            Activity::Tend => {
-                look = Some(self.plant.top());
-                if self.ghost.plan.stayed(time) > 5.0 {
-                    let was_blooming = self.plant.blooming();
-                    self.plant.thirst = 0.0;
-                    self.plant.growth = (self.plant.growth + 0.05).min(1.0);
-                    self.ghost.needs.change(0.0, 0.08, 0.0);
-                    self.record(EventKind::Tended);
-                    if !was_blooming && self.plant.blooming() {
-                        self.record(EventKind::Bloomed);
-                    }
-                    self.ghost.plan.done = true;
-                }
-            }
+            Activity::Tend => look = self.carry_out_tend(),
             Activity::Lamp => {
                 look = Some(self.lamp.bulb());
                 if self.ghost.plan.stayed(time) > 0.6 {
@@ -2252,6 +2265,17 @@ impl World {
             }
         }
 
+        for (index, plant) in self.seedlings.iter().enumerate() {
+            let center = garden::SPOTS[index];
+            let offset = flat(ghost.position - center);
+            let reach = Seedling::POT_RADIUS + 0.33;
+            let distance = offset.length();
+            if ghost.position.y < plant.height() + 0.1 && distance < reach && distance > 1e-4 {
+                let push = offset / distance * (reach - distance) * 6.0;
+                steer += Vec3::new(push.x, 0.0, push.y);
+            }
+        }
+
         let steer = steer.clamp_length_max(3.0);
         ghost.velocity += steer * seconds;
         ghost.position += ghost.velocity * seconds;
@@ -2373,6 +2397,13 @@ impl World {
                 _ => {}
             }
         }
+        if !self.seedlings.is_empty()
+            && recent(6.0).any(|event| matches!(event.kind, EventKind::Planted(_)))
+            && !recent(6.0)
+                .any(|event| matches!(event.kind, EventKind::Sprouted(_) | EventKind::Flowered(_)))
+        {
+            return Mood::Cheerful;
+        }
         if recent(6.0).any(|event| {
             matches!(
                 event.kind,
@@ -2380,6 +2411,8 @@ impl World {
                     | EventKind::GameOver(Outcome::GhostWon { .. })
                     | EventKind::NudgedBall
                     | EventKind::Bloomed
+                    | EventKind::Sprouted(_)
+                    | EventKind::Flowered(_)
                     | EventKind::Fetched
                     | EventKind::Found
                     | EventKind::Pounced
@@ -2394,7 +2427,10 @@ impl World {
         }) {
             return Mood::Excited;
         }
-        if recent(12.0).any(|event| event.kind == EventKind::Praised) {
+        if recent(12.0)
+            .any(|event| matches!(event.kind, EventKind::Praised | EventKind::Planted(_)))
+            || self.garden_recovering()
+        {
             return Mood::Cheerful;
         }
         if recent(12.0).any(|event| event.kind == EventKind::MissedVisit) {
@@ -3247,9 +3283,10 @@ mod tests {
         world.begin(Activity::Tend);
         run(&mut world, 30.0);
         assert!(world.plant.thirst < 0.1);
-        assert!(world.plant.blooming());
+        assert!(world.plant.growth >= Plant::BLOOM);
+        assert!(!world.plant.blooming());
         assert!(
-            world
+            !world
                 .events
                 .iter()
                 .any(|event| event.kind == EventKind::Bloomed)

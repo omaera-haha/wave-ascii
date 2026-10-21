@@ -1235,9 +1235,15 @@ mod tests {
 
     #[tokio::test]
     async fn connection_failures_return_a_network_error_after_retries() {
+        // The port stays bound, hanging up on every connection, so a mock
+        // server starting in a parallel test can't take it over.
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        drop(listener);
+        tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                drop(socket);
+            }
+        });
         let client = Claude::new(KEY, "claude-opus-5-5")
             .unwrap()
             .with_base_url(format!("http://{address}"))

@@ -41,11 +41,20 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             "Where shall I push it this time?",
             "Watch this.",
         ],
+        Activity::Tend if world.garden_droop() > 0.0 => vec![
+            "Oh no, the plant is drooping.",
+            "A drink will help you stand tall again.",
+        ],
+        Activity::Tend if world.seed_ready() => vec![
+            "A seed! I could give it a little pot.",
+            "A little garden of my own.",
+        ],
+        Activity::Tend if !world.seedlings.is_empty() => vec![
+            "A little water for the little pots.",
+            "Grow, little seeds. I'm here.",
+        ],
         Activity::Tend if world.plant.thirst > 0.7 => {
-            vec![
-                "Oh no, the plant is drooping.",
-                "Hold on, plant, I'm coming!",
-            ]
+            vec!["The plant looks thirsty.", "Hold on, plant, I'm coming!"]
         }
         Activity::Tend => vec!["A little water for you, plant.", "Grow, little plant."],
         Activity::Lamp if world.lamp.on && world.is_night() => vec!["Lights out."],
@@ -277,6 +286,29 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     if world.plant.thirst > 0.7 {
         lines.push("The plant looks thirsty.");
     }
+    if world.garden_droop() > 0.0 {
+        lines.push("Oh no, the plant is drooping.");
+    }
+    if world.seed_ready() {
+        lines.push("That seed is ready for a little pot.");
+    }
+    if world
+        .seedlings
+        .iter()
+        .any(|plant| plant.growth < crate::world::Seedling::SPROUT)
+    {
+        lines.push("Is there a sprout yet? I'll wait.");
+    }
+    if world
+        .seedlings
+        .iter()
+        .any(|plant| plant.flowering(world.season()))
+    {
+        lines.push("I grew that flower from a tiny seed.");
+    }
+    if !world.petals.is_empty() {
+        lines.push("The petals are floating down so softly.");
+    }
     if world.plant.blooming() {
         lines.push("The flowers smell nice.");
     }
@@ -466,6 +498,18 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if !today.words.is_empty() {
         lines.push("…your words drift by like light motes, and I catch one…");
+    }
+    if today.planted > 0 {
+        lines.push("…a tiny seed dreaming of a whole garden…");
+    }
+    if today.sprouted > 0 {
+        lines.push("…little leaves reaching up to say hello…");
+    }
+    if today.flowered > 0 {
+        lines.push("…flowers I grew myself, taller than the moon…");
+    }
+    if !world.petals.is_empty() {
+        lines.push("…pink petals drifting like sleepy butterflies…");
     }
     if today.waterings > 0 {
         lines.push("…the plant grows right up through the ceiling…");

@@ -11,7 +11,9 @@ use crate::world::{
 pub fn observe(world: &World) -> Value {
     let ghost = &world.ghost;
     let plan = &ghost.plan;
-    let doing = if let Some(gift) = ghost.keepsake {
+    let doing = if world.carried_seed().is_some() {
+        "carrying a seed to a little pot".to_owned()
+    } else if let Some(gift) = ghost.keepsake {
         format!("carrying {} to the shelf of keepsakes", gift.name())
     } else if plan.done {
         format!("just finished {}", plan.activity.doing())
@@ -46,6 +48,8 @@ pub fn observe(world: &World) -> Value {
             "light": light(world),
             "lamp": if world.lamp.on { "on" } else { "off" },
             "plant": plant(&world.plant),
+            "pots": world.garden_words(),
+            "tending": world.tend_description(),
             "ball": ball(world),
             "light_motes": motes(world),
             "glass": glass(world),
@@ -190,8 +194,14 @@ fn outside_the_window(world: &World) -> String {
 
 fn plant(plant: &Plant) -> String {
     let size = match plant.growth {
-        growth if plant.blooming() && growth >= 0.95 => "fully grown and flowering",
-        _ if plant.blooming() => "flowering",
+        _ if plant.blossom > 0.0
+            && (plant.bloom_age < 0.0 || plant.bloom_age >= 86_400.0 || plant.droop > 0.0) =>
+        {
+            "flowers fading"
+        }
+        _ if plant.blooming() => "in flower",
+        _ if plant.blossom > 0.0 => "flowers opening",
+        growth if growth >= Plant::BLOOM => "resting between flowers",
         growth if growth < 0.3 => "a small sprout",
         growth if growth < 0.6 => "a young plant",
         _ => "a leafy plant",
@@ -199,9 +209,16 @@ fn plant(plant: &Plant) -> String {
     let water = match plant.thirst {
         thirst if thirst < 0.3 => "well watered",
         thirst if thirst < 0.7 => "a little dry",
-        _ => "very thirsty and drooping",
+        _ => "very thirsty",
     };
-    format!("{size}, {water}")
+    let mut words = format!("{size}, {water}");
+    if plant.droop > 0.0 {
+        words.push_str("; the plant is drooping");
+    }
+    if plant.seeds > 0 {
+        words.push_str("; has a seed ready");
+    }
+    words
 }
 
 // What the ghost sees from where it faces: what it looks at, what else is
@@ -237,6 +254,7 @@ fn thing(world: &World, thing: Thing) -> String {
             "the floor lamp, {}",
             if world.lamp.on { "on" } else { "off" }
         ),
+        Thing::Seedlings => world.garden_words(),
         Thing::Plant => format!("the plant, {}", plant(&world.plant)),
         Thing::Ball if world.ball.held => "the ball, held by you".to_owned(),
         Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
@@ -723,8 +741,14 @@ mod tests {
             position: Vec3::ZERO,
             growth: 0.85,
             thirst: 0.9,
+            blossom: 1.0,
+            droop: 0.8,
+            ..Plant::default()
         };
-        assert_eq!(plant(&thirsty), "flowering, very thirsty and drooping");
+        assert_eq!(
+            plant(&thirsty),
+            "flowers fading, very thirsty; the plant is drooping"
+        );
     }
 
     #[test]
@@ -1053,6 +1077,47 @@ mod tests {
                 .any(|character| character.is_ascii_digit())
         );
     }
+
+    #[test]
+    fn the_garden_and_its_events_reach_both_minds_in_words() {
+        use crate::world::{Event, EventKind, Flower, Seedling};
+        let mut world = World::new(1, 12.0);
+        world.plant.growth = 1.0;
+        world.plant.blossom = 0.7;
+        world.plant.bloom_age = 87_000.0;
+        world.plant.seeds = 2;
+        let mut tulip = Seedling::new(Flower::Tulip);
+        tulip.growth = 0.8;
+        world.seedlings = vec![tulip, Seedling::new(Flower::Daisy)];
+        world.seedlings[1].growth = 0.1;
+        for kind in [
+            EventKind::Planted(Flower::Poppy),
+            EventKind::Sprouted(Flower::Daisy),
+            EventKind::Flowered(Flower::Bluebell),
+            EventKind::Drooped,
+        ] {
+            world.events.push(Event {
+                time: world.time,
+                kind,
+            });
+        }
+        let observation = observe(&world);
+        let plant = observation["room"]["plant"].as_str().unwrap();
+        assert!(plant.contains("flowers fading"));
+        assert!(plant.contains("has a seed ready"));
+        assert_eq!(
+            observation["room"]["pots"],
+            "two little pots: a tulip in bud and a daisy sprout"
+        );
+        assert!(thing(&world, Thing::Seedlings).contains("a tulip in bud"));
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+
     #[test]
     fn observations_name_the_visiting_friend_without_digits_or_a_flood_of_tags() {
         let mut world = World::new(1, 20.0);

@@ -78,7 +78,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + if present { 0.2 } else { 0.0 })
                     * needs.energy
             }
-            Activity::Tend => 1.6 * world.plant.thirst.powi(2),
+            Activity::Tend => {
+                1.6 * world.garden_thirst().powi(2)
+                    + 4.0 * world.garden_droop()
+                    + if world.seed_ready() { 0.8 } else { 0.0 }
+            }
             Activity::Lamp if bedtime => {
                 if world.lamp.on && !present {
                     1.2 + 2.0 * needs.energy
@@ -206,6 +210,8 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         matches!(
                             event.kind,
                             EventKind::Bloomed
+                                | EventKind::Sprouted(_)
+                                | EventKind::Flowered(_)
                                 | EventKind::GameOver(Outcome::GhostWon { .. })
                                 | EventKind::ExpectedArrival
                                 | EventKind::Fetched
@@ -763,5 +769,24 @@ mod tests {
         world.notice_viewer();
         world.life.bond = 0.9;
         assert!(chance(&weigh(&world, &options), Activity::Friend) < alone);
+    }
+
+    #[test]
+    fn ripe_seeds_and_drooping_pots_pull_the_ghost_toward_tending() {
+        let mut world = World::new(1, 12.0);
+        let options = [Activity::Float, Activity::Tend];
+        let ordinary = chance(&weigh(&world, &options), Activity::Tend);
+        world.plant.seeds = 1;
+        let planting = chance(&weigh(&world, &options), Activity::Tend);
+        assert!(planting > ordinary);
+        world.plant.seeds = 0;
+        let mut pot = crate::world::Seedling::new(crate::world::Flower::Sunflower);
+        pot.thirst = 1.0;
+        world.seedlings.push(pot);
+        let thirsty = chance(&weigh(&world, &options), Activity::Tend);
+        world.seedlings[0].droop = 1.0;
+        let urgent = chance(&weigh(&world, &options), Activity::Tend);
+        assert!(urgent > thirsty);
+        assert!(urgent > planting);
     }
 }

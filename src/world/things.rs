@@ -130,13 +130,22 @@ impl Ball {
 
 /// A potted plant that grows a little each time it is tended, and gets
 /// thirsty as time passes.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Plant {
     pub position: Vec3,
     /// From a sprout at 0 to grown at 1; it flowers from `BLOOM`.
     pub growth: f32,
     /// From just watered at 0 to wilting at 1.
     pub thirst: f32,
+    #[serde(default)]
+    pub blossom: f32,
+    /// Seconds into a spell; negative while resting between spells.
+    #[serde(default)]
+    pub bloom_age: f32,
+    #[serde(default)]
+    pub seeds: u32,
+    #[serde(default)]
+    pub droop: f32,
 }
 
 impl Plant {
@@ -151,11 +160,11 @@ impl Plant {
     }
 
     pub fn top(&self) -> Vec3 {
-        self.position + Vec3::Y * self.height()
+        self.position + Vec3::new(0.24 * self.droop, self.height() - 0.28 * self.droop, 0.0)
     }
 
     pub fn blooming(&self) -> bool {
-        self.growth >= Self::BLOOM
+        self.blossom > 0.5
     }
 }
 

@@ -95,7 +95,7 @@ fn request(activity: Activity) -> &'static str {
         Activity::Chase => "Asks it to catch or eat a light mote.",
         Activity::Rest => "Asks it to sleep, rest, or go to bed.",
         Activity::Play => "Asks it to play, or to push or kick the ball.",
-        Activity::Tend => "Asks it to water or look after the plant.",
+        Activity::Tend => "Asks it to water or look after the plant or garden, or plant a seed.",
         Activity::Lamp => "Asks it to switch the lamp on or off.",
         Activity::Visit => "Asks it to come closer, come here, or come to the glass.",
         Activity::Wait => "Asks it to wait for them or stay by the glass until they come back.",
