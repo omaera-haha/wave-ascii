@@ -87,6 +87,11 @@ either the journal or help. Any other key closes help.
   It shines and beats faster with more energy.
 - **Its face** shows the mood too. It makes its own expressions at irregular
   moments, reacts to what happens, and shuts its eyes in sleep.
+- **Little symbols** rise above its head, even without API keys: `z`/`Z`
+  for sleep, `♪` for humming, `♥` for affection, `♡` for loneliness, `!` for
+  surprise, `?` for curiosity, `#` for grumpiness, `…` for boredom, and `✦`
+  for delight. They drift away after a couple of seconds and move beside
+  speech bubbles so the words stay readable.
 - **The status bar** shows its name, mood, and needs (energy, fun, company),
   what it's doing, and the state of each mind: `●` ready, `◐` thinking,
   `✕` failed (the journal says why), and `○` off.

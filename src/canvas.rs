@@ -234,6 +234,11 @@ impl Canvas {
         self.rows
     }
 
+    /// One cell, or `None` outside the canvas.
+    pub fn get(&self, column: usize, row: usize) -> Option<Cell> {
+        (column < self.columns && row < self.rows).then(|| self.cells[row * self.columns + column])
+    }
+
     /// Replaces one cell. Cells outside the canvas are ignored.
     pub fn set(&mut self, column: usize, row: usize, cell: Cell) {
         if column < self.columns && row < self.rows {

@@ -264,7 +264,7 @@ impl Repertoire {
 
 /// A number from 0 to 1 that looks random but is always the same for the
 /// same `slot`, `seed`, and `salt`.
-fn random(slot: f64, seed: u32, salt: u32) -> f32 {
+pub(super) fn random(slot: f64, seed: u32, salt: u32) -> f32 {
     let mut bits = (slot as i64 as u32).wrapping_mul(0x9E37_79B9)
         ^ seed.wrapping_mul(0x85EB_CA6B)
         ^ salt.wrapping_mul(0xC2B2_AE35);
