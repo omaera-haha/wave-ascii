@@ -325,10 +325,34 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
     }
     let line = match &ghost.goal {
         Some(goal) => format!("{} means to {goal}", ghost.name),
-        None => "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around"
-            .to_owned(),
+        None => idle_tip(world.time).to_owned(),
     };
     write(screen, 1, row, columns, &line, DIM, None);
+}
+
+/// Tips for a quiet words line, the basics first.
+const TIPS: [&str; 8] = [
+    "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around",
+    "drag across the ghost to stroke it · right drag draws in the fog on the glass",
+    "e reads its letters, and w there writes it one back",
+    "o to focus together beside your work · g for noughts and crosses on the glass",
+    "tell it how you feel, like “I'm tired” or “오늘 힘들었어”, and it looks after you",
+    "type do re mi to teach it a tune · “play a lullaby” winds the music box",
+    "l shows its life · j its journal and diary · b the album of moments it kept",
+    "p keeps a postcard of this moment · ? lists every key",
+];
+/// Seconds the basics show first, and each later tip after them.
+const BASICS_SHOW: f64 = 90.0;
+const TIP_SHOWS: f64 = 40.0;
+
+// The tip for a quiet words line at `time` into the session: the basics
+// for a while, then the others in turn.
+fn idle_tip(time: f64) -> &'static str {
+    if time < BASICS_SHOW {
+        return TIPS[0];
+    }
+    let turn = ((time - BASICS_SHOW) / TIP_SHOWS) as usize;
+    TIPS[1 + turn % (TIPS.len() - 1)]
 }
 
 // The status bar: the ghost's name, mood, and needs, what it is doing, the
@@ -1700,6 +1724,20 @@ mod tests {
             assert!(lines.len() + 2 <= rows, "{rows}: {}", lines.len());
             assert!(lines[0].0.starts_with("Boo"), "{rows}");
         }
+    }
+
+    #[test]
+    fn a_quiet_words_line_shows_the_basics_first_then_every_other_tip_in_turn() {
+        assert_eq!(idle_tip(0.0), TIPS[0]);
+        assert_eq!(idle_tip(BASICS_SHOW - 0.1), TIPS[0]);
+        let later: Vec<&str> = (0..TIPS.len() - 1)
+            .map(|turn| idle_tip(BASICS_SHOW + TIP_SHOWS * (turn as f64 + 0.5)))
+            .collect();
+        assert_eq!(later, TIPS[1..]);
+        assert_eq!(
+            idle_tip(BASICS_SHOW + TIP_SHOWS * (TIPS.len() as f64 - 0.5)),
+            TIPS[1]
+        );
     }
 
     #[test]

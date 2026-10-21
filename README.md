@@ -133,6 +133,9 @@ cargo run --release -- --fps 30         # frames per second (default 60)
 
 In terminals that report focus, it draws at most 24 frames a second while
 another window has the focus, so a ghost kept beside your work stays light.
+While the ghost is quiet, the line above the status bar shows the basic
+keys, then turns through tips for the rest: letters, focus, games, telling it
+how you feel, teaching it tunes, and its panels.
 When you quit, it sees you off with a line left in your terminal, such as
 "Pip waves from the glass. See you soon."
 
