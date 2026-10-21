@@ -183,6 +183,7 @@ pub fn returned(world: &World, korean: bool) -> Vec<String> {
 pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
     let present = world.viewer_present();
     let mut lines = match activity {
+        Activity::Read => vec!["Just one more page.", "I wonder what happens next."],
         Activity::Friend => vec![
             "Tag! You’re it!",
             "Let’s play together.",
@@ -591,6 +592,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Look => "I like seeing what you draw.",
             Activity::Air => "A breeze makes the room feel new.",
             Activity::Company => "I like working quietly beside you.",
+            Activity::Read => "A book is a little window too.",
         });
     }
     if lines.is_empty() {
@@ -1031,6 +1033,32 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
             None => lines(
                 &["Just my usual glow today."],
                 &["오늘은 아무것도 안 걸쳤어."],
+            ),
+        },
+        Question::ReadAloud => Vec::new(),
+        Question::Reading => match world.current_book() {
+            Some(index) => {
+                let book = crate::world::books::LIBRARY[index];
+                vec![if korean {
+                    format!("《{}》, {}.", book.title(true), book.about(true))
+                } else {
+                    format!("{}. It's about {}.", book.title(false), book.about(false))
+                }]
+            }
+            None => lines(&["My book pile is waiting."], &["책들이 기다리고 있어."]),
+        },
+        Question::FavoriteBook => match world.life.books.favorite() {
+            Some(index) => {
+                let book = crate::world::books::LIBRARY[index];
+                vec![if korean {
+                    format!("《{}》! 자꾸 다시 읽게 돼.", book.title(true))
+                } else {
+                    format!("{}! I keep coming back to it.", book.title(false))
+                }]
+            }
+            None => lines(
+                &["I'm still finding my favorite."],
+                &["아직 제일 좋은 책을 찾는 중이야."],
             ),
         },
         Question::Story => Vec::new(),
@@ -1487,6 +1515,49 @@ fn story_threads(world: &World) -> Vec<[StoryBeat; 2]> {
 pub fn story(world: &mut World, korean: bool) -> Vec<String> {
     let newborn = world.stage() == Stage::Newborn;
     let threads = story_threads(world);
+    let finished: Vec<usize> = world
+        .life
+        .books
+        .owned
+        .iter()
+        .filter(|owned| owned.finished > 0)
+        .map(|owned| owned.index)
+        .collect();
+    if !newborn && !finished.is_empty() && world.random_unit() < 1.0 / (threads.len() + 1) as f32 {
+        let chosen = world.pick(&vec![1.0; finished.len()]).unwrap();
+        let book = crate::world::books::LIBRARY[finished[chosen]];
+        return vec![
+            if korean {
+                format!("《{}》 알아?", book.title(true))
+            } else {
+                format!("Do you know {}?", book.title(false))
+            },
+            if korean {
+                book.pages[0].1
+            } else {
+                book.pages[0].0
+            }
+            .to_owned(),
+            if korean {
+                book.pages[1].1
+            } else {
+                book.pages[1].0
+            }
+            .to_owned(),
+            if korean {
+                book.pages[book.pages.len() - 2].1
+            } else {
+                book.pages[book.pages.len() - 2].0
+            }
+            .to_owned(),
+            if korean {
+                book.pages[book.pages.len() - 1].1
+            } else {
+                book.pages[book.pages.len() - 1].0
+            }
+            .to_owned(),
+        ];
+    }
     let opening = if newborn {
         (
             "I'm {ghost}. Here is my little light.",
@@ -1621,6 +1692,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Air => "창문을 여닫는 중",
         Activity::Company => "네가 일하는 동안 옆에 있어 주는 중",
         Activity::Puzzle => "유리에 낱말 맞추기 하는 중",
+        Activity::Read => "그림책 읽는 중",
     }
 }
 
@@ -1649,6 +1721,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Air => "신선한 바람 쐬기",
         Activity::Company => "일하는 네 옆에 있기",
         Activity::Puzzle => "낱말 맞추기",
+        Activity::Read => "그림책 읽기",
     }
 }
 
@@ -1790,6 +1863,51 @@ mod tests {
         }
         let heard = world.hear("what are you wearing?");
         assert!(!reply(&world, &heard, None).is_empty());
+    }
+
+    #[test]
+    fn book_answers_name_the_current_book_and_the_most_reread_book_in_either_language() {
+        for (reading, favorite, korean) in [
+            ("what are you reading?", "what's your favorite book?", false),
+            ("무슨 책 읽어?", "제일 좋아하는 책은?", true),
+        ] {
+            let mut world = World::new(3, 12.0);
+            world.begin(Activity::Read);
+            let index = world.current_book().unwrap();
+            let book = crate::world::books::LIBRARY[index];
+            let heard = world.hear(reading);
+            let answers = reply(&world, &heard, None);
+            assert!(
+                answers
+                    .iter()
+                    .all(|line| line.contains(book.title(korean))
+                        && line.contains(book.about(korean)))
+            );
+            world.life.books.owned[0].finished = 2;
+            world.life.books.owned[1].finished = 5;
+            let heard = world.hear(favorite);
+            assert!(
+                reply(&world, &heard, None)
+                    .iter()
+                    .all(|line| line.contains(crate::world::books::LIBRARY[1].title(korean)))
+            );
+        }
+    }
+
+    #[test]
+    fn a_finished_book_can_be_retold_in_both_languages() {
+        let mut world = World::new(3, 12.0);
+        world.life.books.owned[0].finished = 1;
+        for korean in [false, true] {
+            let tale = story(&mut world, korean);
+            let book = crate::world::books::LIBRARY[0];
+            assert!(tale[0].contains(book.title(korean)));
+            assert!(tale.last().unwrap().contains(if korean {
+                book.pages.last().unwrap().1
+            } else {
+                book.pages.last().unwrap().0
+            }));
+        }
     }
 
     #[test]

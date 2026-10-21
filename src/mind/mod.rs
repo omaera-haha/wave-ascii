@@ -355,6 +355,24 @@ impl Mind {
         }
         if matches!(
             heard.understanding,
+            Understanding::Asked {
+                question: Question::ReadAloud,
+                ..
+            }
+        ) {
+            self.next_id += 1;
+            self.latest_request = self.next_id;
+            if world
+                .telling
+                .as_ref()
+                .is_some_and(|telling| telling.book.is_some())
+            {
+                self.pending_story = None;
+            }
+            return;
+        }
+        if matches!(
+            heard.understanding,
             Understanding::WordGame | Understanding::Yawning
         ) {
             self.next_id += 1;
@@ -467,6 +485,10 @@ impl Mind {
                 self.remember_speech(world);
                 return;
             }
+        }
+        if world.reading.is_some() {
+            self.mused_at = world.time;
+            return;
         }
         let since = self.mused_at;
         self.mused_at = world.time;
@@ -793,6 +815,21 @@ pub fn now() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_reading_request_preserves_a_story_still_waiting_for_its_words() {
+        let config = crate::store::Config::default();
+        let mut world = crate::world::World::new(5, 12.0);
+        let mut mind = super::Mind::new(&config, super::Journal::default(), true);
+        world.hear("tell me a story");
+        mind.pending_story = Some(9);
+        mind.hear(&mut world, "read to me");
+        assert_eq!(mind.pending_story, Some(9));
+        assert!(world.telling.as_ref().unwrap().lines.is_empty());
+        mind.reflecting_story = Some((9, false));
+        mind.apply(super::Answer::Reflected(Ok(None)), &mut world);
+        assert!(!world.telling.as_ref().unwrap().lines.is_empty());
+    }
+
     use super::*;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;

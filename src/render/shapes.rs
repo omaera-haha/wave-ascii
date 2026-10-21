@@ -1,4 +1,4 @@
-use glam::{Vec2, Vec3};
+use glam::{Quat, Vec2, Vec3};
 
 use crate::sdf::{star, trapezoid};
 use crate::world::{
@@ -43,6 +43,8 @@ pub enum Material {
     Seed,
     Curtain,
     Water,
+    BookCover(u8),
+    BookPages,
 }
 
 impl Material {
@@ -50,6 +52,14 @@ impl Material {
     /// shapes keep their contrast in plain styles.
     pub fn albedo(self, plant: &Plant) -> Vec3 {
         match self {
+            Self::BookCover(index) => match index % 5 {
+                0 => Vec3::new(0.62, 0.78, 0.9),
+                1 => Vec3::new(0.9, 0.68, 0.72),
+                2 => Vec3::new(0.7, 0.84, 0.6),
+                3 => Vec3::new(0.86, 0.73, 0.95),
+                _ => Vec3::new(0.98, 0.82, 0.56),
+            },
+            Self::BookPages => Vec3::new(1.0, 0.96, 0.84),
             Self::Curtain => Vec3::new(0.95, 0.9, 0.8),
             Self::Water => Vec3::new(0.46, 0.65, 0.78),
             Self::Ball => Vec3::new(1.0, 0.45, 0.35),
@@ -143,11 +153,21 @@ pub enum Furniture<'a> {
     Puddle(f32),
     Leaf(crate::world::Leaf, f64),
     SwayingPlant(Plant, Vec3),
+    Books(&'a [crate::world::books::OwnedBook], Option<usize>),
+    OpenBook {
+        index: usize,
+        position: Vec3,
+        size: f32,
+        rotation: Quat,
+        turning: f32,
+    },
 }
 
 impl Furniture<'_> {
     pub fn bounds(&self) -> (Vec3, f32) {
         match self {
+            Self::Books(_, _) => (crate::world::books::POSITION + Vec3::Y * 0.09, 0.29),
+            Self::OpenBook { position, size, .. } => (*position, 0.29 * size),
             Self::Curtain(side, _) => (
                 Vec3::new(side * 0.88, 1.5, crate::world::ROOM_MIN.z + 0.14),
                 0.68,
@@ -186,6 +206,45 @@ impl Furniture<'_> {
     /// nearest it.
     pub fn distance(&self, point: Vec3) -> (f32, Material) {
         match self {
+            Self::Books(owned, held) => {
+                let point = point - crate::world::books::POSITION;
+                let mut nearest = (f32::MAX, Material::BookPages);
+                for (level, book) in owned
+                    .iter()
+                    .filter(|book| Some(book.index) != *held)
+                    .take(5)
+                    .enumerate()
+                {
+                    let local = point - Vec3::Y * (0.018 + level as f32 * 0.035);
+                    let bound = local.length() - 0.23;
+                    if bound > nearest.0 {
+                        continue;
+                    }
+                    let local = Quat::from_rotation_y((level as f32 * 1.7).sin() * 0.13) * local;
+                    let cover = box_distance(local, Vec3::new(0.18, 0.016, 0.12));
+                    let pages = box_distance(local, Vec3::new(0.174, 0.011, 0.121));
+                    let surface = if pages < cover {
+                        (pages, Material::BookPages)
+                    } else {
+                        (cover, Material::BookCover(book.index as u8))
+                    };
+                    if surface.0 < nearest.0 {
+                        nearest = surface;
+                    }
+                }
+                nearest
+            }
+            Self::OpenBook {
+                index,
+                position,
+                size,
+                rotation,
+                turning,
+            } => {
+                let local = rotation.conjugate() * (point - *position) / *size;
+                let (distance, material) = open_book_distance(local, *index, *turning);
+                (distance * size, material)
+            }
             Self::Curtain(side, gust) => {
                 let mut local =
                     point - Vec3::new(side * 0.88, 1.5, crate::world::ROOM_MIN.z + 0.045);
@@ -309,6 +368,38 @@ impl Furniture<'_> {
         }
         None
     }
+}
+
+fn box_distance(point: Vec3, half: Vec3) -> f32 {
+    let corner = point.abs() - half;
+    corner.max(Vec3::ZERO).length() + corner.max_element().min(0.0)
+}
+
+fn open_book_distance(point: Vec3, index: usize, turning: f32) -> (f32, Material) {
+    let mut nearest = (f32::MAX, Material::BookPages);
+    for side in [-1.0, 1.0] {
+        let local = Quat::from_rotation_z(-side * 0.15) * point - Vec3::X * side * 0.105;
+        let cover = box_distance(local, Vec3::new(0.108, 0.018, 0.135));
+        let pages = box_distance(local - Vec3::Y * 0.013, Vec3::new(0.101, 0.014, 0.128));
+        let surface = if pages < cover {
+            (pages, Material::BookPages)
+        } else {
+            (cover, Material::BookCover(index as u8))
+        };
+        if surface.0 < nearest.0 {
+            nearest = surface;
+        }
+    }
+    if turning > 0.0 {
+        let local = Quat::from_rotation_z(-turning * std::f32::consts::PI)
+            * (point - Vec3::Y * 0.03)
+            - Vec3::X * 0.1;
+        let page = box_distance(local, Vec3::new(0.1, 0.0025, 0.126));
+        if page < nearest.0 {
+            nearest = (page, Material::BookPages);
+        }
+    }
+    nearest
 }
 
 // A plank and two diagonal brackets, with the gifts in a row above it.
@@ -965,6 +1056,45 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn book_piles_and_turning_pages_have_finite_bounded_distances_and_ray_hits() {
+        let books = crate::world::books::Books::default();
+        let mut pieces = vec![Furniture::Books(&books.owned, None)];
+        for size in [0.68, 1.0] {
+            for turning in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                pieces.push(Furniture::OpenBook {
+                    index: 0,
+                    position: Vec3::new(0.1, 0.8, 0.2),
+                    size,
+                    rotation: Quat::from_rotation_y(0.7),
+                    turning,
+                });
+            }
+        }
+        for piece in pieces {
+            let (center, radius) = piece.bounds();
+            for across in -6..=6 {
+                for up in -6..=6 {
+                    for depth in -6..=6 {
+                        let point =
+                            center + Vec3::new(across as f32, up as f32, depth as f32) * 0.06;
+                        let distance = piece.distance(point).0;
+                        assert!(distance.is_finite());
+                        assert!(piece.normal(point).is_finite());
+                        if distance <= 0.0 {
+                            assert!(point.distance(center) <= radius);
+                        }
+                    }
+                }
+            }
+            let origin = center + Vec3::Z * 2.0;
+            if let Some((distance, _)) = piece.trace(origin, -Vec3::Z, 4.0) {
+                assert!(distance.is_finite());
+                assert!((0.0..4.0).contains(&distance));
             }
         }
     }

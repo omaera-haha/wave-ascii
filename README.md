@@ -4,8 +4,8 @@ A ghost lives in a glass box in your terminal.
 
 The box is a small room drawn in dots: a floor lamp, a potted plant and the
 little pots its seeds grow in, a ball, five bright toy blocks, a cushion to
-sleep on, a little shelf of keepsakes, specks of light that drift in, and a
-window onto hills where the seasons turn, birds come to perch, storms roll
+sleep on, a pile of picture books, a little shelf of keepsakes, specks of
+light that drift in, and a window onto hills where the seasons turn, birds come to perch, storms roll
 through, snow falls in winter, rain can leave a rainbow, and shooting stars
 fall on clear nights. Migrating geese honk past, hot-air balloons drift,
 kites tug in gusts, squirrels scamper in the tree, and planes blink overhead.
@@ -202,6 +202,17 @@ spent together, including early endings. Quitting silently ends the timer.
 
 ### Playing with it
 
+- **Picture books.** It starts with three of twelve little books in English and
+  Korean. Another arrives every four life days, with an extra birthday gift,
+  until its library is full. In quiet moments it reads two to four pages on
+  the cushion or under the lamp, turning pages every fifteen to twenty-five
+  seconds and keeping its place between visits. Reading fits beside your
+  focus session; sometimes it reads a page before bed. Ask "what are you
+  reading?" or "무슨 책 읽어?", or ask for its favorite book. "Read to me",
+  "read me a book", or "책 읽어줘" brings the next pages to the glass, one
+  sentence at a time in your language. A poke or a no puts the book down;
+  pages already read stay remembered. Finished books can become retold
+  stories, and the life panel lists its library.
 - **Stories.** Ask "tell me a story" or "이야기 들려줘" and it tells a little tale
   from its life, a sentence at a time; at bedtime it says goodnight and
   floats to its cushion to sleep. Poking it or saying no stops the tale.
@@ -632,7 +643,9 @@ first, deciding on instinct. `--hour` sets the time of day (default noon),
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
-COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time 300 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time
+ 300
+ < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat

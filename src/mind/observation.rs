@@ -12,7 +12,13 @@ use crate::world::{
 pub fn observe(world: &World) -> Value {
     let ghost = &world.ghost;
     let plan = &ghost.plan;
-    let doing = if world.telling.is_some() {
+    let doing = if world
+        .telling
+        .as_ref()
+        .is_some_and(|telling| telling.book.is_some())
+    {
+        "reading a picture book aloud to the viewer".to_owned()
+    } else if world.telling.is_some() {
         "telling the viewer a story".to_owned()
     } else if world.carried_seed().is_some() {
         "carrying a seed to a little pot".to_owned()
@@ -63,6 +69,8 @@ pub fn observe(world: &World) -> Value {
             "ball": ball(world),
             "light_motes": motes(world),
             "glass": glass(world),
+            "books": world.life.books.words(),
+            "reading": world.reading_words(),
         },
         "friend": world.friend.as_ref().zip(world.life.friend.as_ref()).map(|(friend, companion)| {
             format!("{}, another ghost and {}, is {}", companion.name, companion.closeness_words(), friend.doing())
@@ -303,6 +311,7 @@ fn thing(world: &World, thing: Thing) -> String {
         Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
         Thing::Ball => "the ball".to_owned(),
         Thing::Cushion => "the cushion".to_owned(),
+        Thing::Books => format!("the picture book pile; {}", world.life.books.words()),
         Thing::Shelf => world.life.keepsake_words(),
         Thing::Friend => world.life.friend.as_ref().map_or_else(
             || "another ghost".to_owned(),
@@ -499,6 +508,29 @@ fn viewer(world: &World) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn book_observations_name_owned_and_finished_titles_and_progress_in_words() {
+        let mut world = crate::world::World::new(5, 12.0);
+        world.life.books.owned[0].finished = 1;
+        world.begin(crate::world::Activity::Read);
+        let index = world.current_book().unwrap();
+        world
+            .life
+            .books
+            .owned
+            .iter_mut()
+            .find(|owned| owned.index == index)
+            .unwrap()
+            .page = 2;
+        let observation = super::observe(&world);
+        let reading = observation["room"]["reading"].as_str().unwrap();
+        assert!(reading.contains("two of five pages read"));
+        assert!(reading.contains(crate::world::books::LIBRARY[index].title.0));
+        let books = observation["room"]["books"].as_str().unwrap();
+        assert!(books.contains("finished The Lantern Fox"));
+        assert!(!reading.chars().any(|character| character.is_ascii_digit()));
+    }
+
     use super::*;
     use crate::world::EventKind;
     use glam::Vec3;

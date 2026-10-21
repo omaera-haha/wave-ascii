@@ -36,6 +36,9 @@ pub enum Question {
     Away,
     Constellations,
     Wearing,
+    Reading,
+    FavoriteBook,
+    ReadAloud,
 }
 
 impl Question {
@@ -53,6 +56,26 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
         &[
             &["what", "are", "you", "wearing"],
             &["whats", "that", "youre", "wearing"],
+        ],
+    ),
+    (
+        Question::ReadAloud,
+        &[&["read", "to", "me"], &["read", "me", "a", "book"]],
+    ),
+    (
+        Question::Reading,
+        &[
+            &["what", "are", "you", "reading"],
+            &["what", "book", "are", "you", "reading"],
+        ],
+    ),
+    (
+        Question::FavoriteBook,
+        &[
+            &["whats", "your", "favorite", "book"],
+            &["what", "is", "your", "favorite", "book"],
+            &["whats", "your", "favourite", "book"],
+            &["what", "is", "your", "favourite", "book"],
         ],
     ),
     (
@@ -252,6 +275,21 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
         Question::Wearing,
         &["뭐입었어", "뭐입고있어", "그거뭐야"],
         true,
+    ),
+    (
+        Question::ReadAloud,
+        &["책읽어줘", "책읽어줄래", "책읽어주라"],
+        false,
+    ),
+    (
+        Question::Reading,
+        &["무슨책읽", "어떤책읽", "뭐읽어"],
+        false,
+    ),
+    (
+        Question::FavoriteBook,
+        &["제일좋아하는책", "가장좋아하는책"],
+        false,
     ),
     (
         Question::Story,

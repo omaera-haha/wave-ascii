@@ -16,6 +16,16 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
     let weights: Vec<f32> = options
         .iter()
         .map(|activity| match activity {
+            Activity::Read => {
+                let age = if world.stage() == Stage::Newborn {
+                    0.25
+                } else {
+                    1.0
+                };
+                (0.15 + 0.3 * (1.0 - needs.fun) + if world.focus.is_some() { 0.45 } else { 0.0 })
+                    * needs.energy
+                    * age
+            }
             Activity::Air => {
                 if world.ghost.asleep >= 0.3
                     || (!world.window_open && !world.fresh_air_is_fair())
@@ -389,6 +399,24 @@ pub fn blend(model: &[(Activity, f32)], own: &[(Activity, f32)]) -> Vec<(Activit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reading_is_favored_during_focus_by_curiosity_and_tenderness_and_less_by_newborns() {
+        let mut world = World::new(5, 12.0);
+        let options = [Activity::Float, Activity::Read];
+        let usual = chance(&weigh(&world, &options), Activity::Read);
+        world.start_focus(25);
+        assert!(chance(&weigh(&world, &options), Activity::Read) > usual);
+        world.focus = None;
+        world.life.nature = Some(crate::world::Nature {
+            curious: 1.0,
+            tender: 1.0,
+            ..Default::default()
+        });
+        assert!(chance(&weigh(&world, &options), Activity::Read) > usual);
+        world.birthday = Some(world.date);
+        assert!(chance(&weigh(&world, &options), Activity::Read) < usual);
+    }
 
     #[test]
     fn focus_favors_company_and_a_finished_session_favors_play_for_five_minutes() {

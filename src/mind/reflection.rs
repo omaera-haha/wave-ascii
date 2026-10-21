@@ -160,6 +160,7 @@ pub fn request(
         .iter()
         .map(|constellation| constellation.name.as_str())
         .collect();
+    let finished_books = life.books.titles(true, false);
     let days = dated(&life.diary, DAYS_SENT);
     let conversation: Vec<String> = conversation
         .iter()
@@ -225,7 +226,7 @@ pub fn request(
                  Your bond with the viewer: {}.{routine}{name}{friend}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
-                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}",
+                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}",
                 life.nature.unwrap_or_default().words(),
                 life.bond_words(),
                 life.bird_words(),
@@ -235,7 +236,8 @@ pub fn request(
                 bullets(&days),
                 bullets(&words),
                 bullets(&pictures),
-                bullets(&constellations)
+                bullets(&constellations),
+                bullets(&finished_books)
             )),
         ],
         messages: vec![Message {
@@ -310,6 +312,22 @@ pub fn read(value: Value) -> Option<Reflection> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_system_prompt_lists_the_picture_books_it_finished() {
+        let mut life = crate::world::Life::default();
+        life.books.owned[0].finished = 2;
+        let request = super::request(&serde_json::json!({}), &[], &life, &[], None, None, None);
+        let text = request
+            .system
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Picture books it finished:"));
+        assert!(text.contains("The Lantern Fox"));
+        assert!(!text.contains("Seven Small Clouds"));
+    }
+
     use super::*;
 
     #[test]

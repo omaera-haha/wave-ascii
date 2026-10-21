@@ -192,6 +192,11 @@ pub struct Tally {
     #[serde(default)]
     pub quirks: BTreeMap<super::Quirk, u32>,
     pub outfits: u32,
+    pub pages: u32,
+    #[serde(default)]
+    pub books_finished: u32,
+    #[serde(default)]
+    pub books_received: u32,
 }
 
 impl Tally {
@@ -207,6 +212,11 @@ impl Tally {
                 *count = count.saturating_add(1);
             }
             EventKind::PutOn(_) => self.outfits = self.outfits.saturating_add(1),
+            EventKind::NewBook(_) => self.books_received = self.books_received.saturating_add(1),
+            EventKind::ReadPage => self.pages = self.pages.saturating_add(1),
+            EventKind::FinishedBook(_) => {
+                self.books_finished = self.books_finished.saturating_add(1)
+            }
             EventKind::SawPasserby(passerby) => {
                 self.passersby = self.passersby.saturating_add(1);
                 if !self.passerby_kinds.contains(passerby) {
@@ -377,6 +387,35 @@ impl Tally {
         }));
         if self.outfits > 0 {
             deeds.push("wore a little accessory".to_owned());
+        }
+        if self.pages > 0 {
+            deeds.push(format!(
+                "read {} {}",
+                super::friend::count_words(self.pages),
+                if self.pages == 1 { "page" } else { "pages" }
+            ));
+        }
+        if self.books_finished > 0 {
+            deeds.push(format!(
+                "finished {} picture {}",
+                super::friend::count_words(self.books_finished),
+                if self.books_finished == 1 {
+                    "book"
+                } else {
+                    "books"
+                }
+            ));
+        }
+        if self.books_received > 0 {
+            deeds.push(format!(
+                "received {} new picture {}",
+                super::friend::count_words(self.books_received),
+                if self.books_received == 1 {
+                    "book"
+                } else {
+                    "books"
+                }
+            ));
         }
         if self.focus_sessions > 0 {
             deeds.push(format!(
@@ -754,6 +793,8 @@ pub struct Life {
     pub wardrobe_day: Option<String>,
     #[serde(default)]
     pub wardrobe_occasion: Option<Occasion>,
+    #[serde(default)]
+    pub books: super::books::Books,
 }
 
 impl Life {
@@ -1124,6 +1165,7 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        self.books.sanitize();
         self.constellations
             .retain(super::stars::Constellation::valid);
         if self.constellations.len() > 12 {
@@ -1185,6 +1227,9 @@ impl Life {
                 *count > 0
             });
             tally.outfits = tally.outfits.min(100_000_000);
+            tally.pages = tally.pages.min(100_000_000);
+            tally.books_finished = tally.books_finished.min(100_000_000);
+            tally.books_received = tally.books_received.min(12);
             tally.passersby = tally.passersby.min(100_000_000);
             let mut kinds = Vec::new();
             for kind in &tally.passerby_kinds {
@@ -1325,6 +1370,9 @@ impl Life {
         let text = match kind {
             EventKind::WordGame { solved: true, .. } if total.words_guessed == 1 => {
                 "You guessed my secret word for the first time.".to_owned()
+            }
+            EventKind::FinishedBook(_) if total.books_finished == 1 => {
+                "I finished my first picture book.".to_owned()
             }
             EventKind::ToldStory if total.stories == 1 => "I told you my first story.".to_owned(),
             EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {

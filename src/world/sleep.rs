@@ -39,6 +39,7 @@ impl World {
         }
         self.undress_for_bed();
         self.telling = None;
+        self.reading = None;
         self.abandon_game();
         self.drop_ball();
         let bed = self.nook.bed(self.size());

@@ -202,7 +202,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     } else {
         0.0
     };
+    let held_book = world.held_book();
     let mut furniture = vec![
+        Furniture::Books(
+            &world.life.books.owned,
+            held_book.map(|(index, _, _)| index),
+        ),
         Furniture::Curtain(-1.0, curtain_gust),
         Furniture::Curtain(1.0, curtain_gust),
         Furniture::Lamp(world.lamp),
@@ -217,6 +222,15 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             world.wearing.and_then(|accessory| accessory.keepsake()),
         ),
     ];
+    if let Some((index, position, turning)) = held_book {
+        furniture.push(Furniture::OpenBook {
+            index,
+            position: position - scene.view.forward * 0.2 * world.size(),
+            size: world.size(),
+            rotation: glam::Quat::from_rotation_y(-scene.view.right.z.atan2(scene.view.right.x)),
+            turning,
+        });
+    }
     if let Some(decoration) = world.decoration() {
         furniture.push(Furniture::Decoration(decoration, world.time));
     }

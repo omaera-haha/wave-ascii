@@ -6,6 +6,8 @@ pub struct Telling {
     pub next: usize,
     pub next_at: f64,
     pub bedtime: bool,
+    pub book: Option<usize>,
+    pub lighting: bool,
 }
 
 impl World {
@@ -43,6 +45,8 @@ impl World {
             lines,
             next: 0,
             bedtime,
+            book: None,
+            lighting: false,
         });
     }
 
@@ -57,6 +61,13 @@ impl World {
         if self.ghost.plan.activity != Activity::Visit || self.ghost.plan.done {
             self.begin(Activity::Visit);
         }
+        if self.telling.as_ref().unwrap().lighting {
+            self.ghost.attention = Some((Thing::Lamp, self.time + 1.0));
+            if self.light_for_reading() {
+                self.telling.as_mut().unwrap().lighting = false;
+            }
+            return;
+        }
         self.ghost.attention = Some((Thing::Viewer, self.time + 1.0));
         let telling = self.telling.as_mut().unwrap();
         if self.time < telling.next_at {
@@ -65,7 +76,11 @@ impl World {
         if let Some(line) = telling.lines.get(telling.next).cloned() {
             telling.next += 1;
             telling.next_at = self.time + (3.5 + line.chars().count() as f64 * 0.05).min(7.0);
+            let book = telling.book;
             self.say(&line);
+            if let Some(index) = book {
+                self.read_page(index, false);
+            }
             return;
         }
         let bedtime = telling.bedtime || self.bedtime();
