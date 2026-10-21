@@ -38,6 +38,8 @@ const LOOKS_FOR: f32 = 15.0;
 const MUSES_ON_SETTING_OUT: f32 = 0.35;
 const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
 const DREAMS_EVERY: (f32, f32) = (18.0, 30.0);
+/// Seconds the ghost's own words get before it brings up something new.
+const SPEECH_SETTLES: f64 = 8.0;
 /// Seconds a thought stays before a musing may replace it.
 const THOUGHT_HOLDS: f64 = crate::world::dream::HOLDS;
 const MEMORIES_KEPT: usize = 60;
@@ -223,6 +225,27 @@ impl Mind {
         if world.telling.is_none() {
             self.pending_story = None;
         }
+        // Messages queued for System Two go unanswered once it is turned
+        // off, but a story the ghost came to the glass to tell is told
+        // offline instead.
+        if self.claude.is_none() && !self.heard.is_empty() {
+            let story = self
+                .heard
+                .drain(..)
+                .filter_map(|message| message.story)
+                .next_back();
+            if let Some((id, korean)) = story
+                && self.pending_story == Some(id)
+                && world
+                    .telling
+                    .as_ref()
+                    .is_some_and(|telling| telling.lines.is_empty())
+            {
+                let lines = musing::story(world, korean);
+                world.tell(lines);
+                self.pending_story = None;
+            }
+        }
         while let Ok(answer) = self.receiver.try_recv() {
             self.apply(answer, world);
         }
@@ -405,8 +428,17 @@ impl Mind {
     // it sets out on something, when nothing much happens, and in its
     // dreams.
     fn muse(&mut self, world: &mut World) {
+        // It tells what it did while the viewer was away once nothing else
+        // it says is still showing.
+        let speaking = world.telling.is_some()
+            || world
+                .ghost
+                .speech
+                .as_ref()
+                .is_some_and(|line| world.time - line.time < SPEECH_SETTLES);
         if world.viewer_present()
             && world.ghost.asleep < 0.3
+            && !speaking
             && world.away.as_ref().is_some_and(|away| !away.told)
         {
             let lines = musing::returned(world, world.speaks_korean());
@@ -988,6 +1020,48 @@ mod tests {
                 .contains(&world.ghost.name)
         );
         assert_eq!(world.telling, telling);
+    }
+
+    #[test]
+    fn a_story_queued_for_claude_is_told_offline_once_claude_is_turned_off() {
+        let mut mind = offline();
+        mind.claude = Some(Claude::new("test-key", "test-model").unwrap());
+        let mut world = World::new(3, 12.0);
+        world.notice_viewer();
+        mind.hear(&mut world, "tell me a story");
+        assert!(world.telling.as_ref().unwrap().lines.is_empty());
+        mind.claude = None;
+        mind.think(&mut world);
+        assert!(mind.heard.is_empty());
+        assert!((3..=5).contains(&world.telling.as_ref().unwrap().lines.len()));
+    }
+
+    #[test]
+    fn the_return_line_waits_for_a_story_and_fresh_words_to_finish() {
+        let mut mind = offline();
+        let mut world = World::new(3, 12.0);
+        world.notice_viewer();
+        let mut away = crate::world::away::story(
+            "2026-06-21T12:00:00".parse().unwrap(),
+            "2026-06-21T16:00:00".parse().unwrap(),
+            1,
+            &world.life,
+            None,
+        );
+        away.happenings = vec![crate::world::away::Happening::Waited];
+        world.away = Some(away);
+        world.tell(vec!["Once.".to_owned(), "Twice.".to_owned()]);
+        world.step(0.1);
+        mind.think(&mut world);
+        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Once.");
+        world.telling = None;
+        world.step(1.0);
+        mind.think(&mut world);
+        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Once.");
+        assert!(!world.away.as_ref().unwrap().told);
+        world.step(SPEECH_SETTLES as f32);
+        mind.think(&mut world);
+        assert!(world.away.as_ref().unwrap().told);
     }
 
     #[test]
