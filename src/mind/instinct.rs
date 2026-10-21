@@ -265,6 +265,22 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     0.0
                 }
             }
+            Activity::Puzzle => {
+                if !world.viewer_present() || world.focus.is_some() {
+                    0.0
+                } else {
+                    let recent = world
+                        .puzzle
+                        .as_ref()
+                        .and_then(|puzzle| puzzle.ended)
+                        .is_some_and(|ended| world.time - ended < 40.0);
+                    (0.08
+                        + 0.25 * (1.0 - needs.fun)
+                        + 0.15 * world.life.nature.unwrap_or_default().playful)
+                        * needs.energy
+                        * if recent { 0.2 } else { 1.0 }
+                }
+            }
             Activity::Game => {
                 if !world.viewer_present() {
                     0.0
@@ -308,7 +324,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             let playful = if world.taking_break()
                 && matches!(
                     activity,
-                    Activity::Play | Activity::Dance | Activity::Game | Activity::Fetch
+                    Activity::Play
+                        | Activity::Dance
+                        | Activity::Game
+                        | Activity::Fetch
+                        | Activity::Puzzle
                 ) {
                 4.0
             } else {

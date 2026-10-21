@@ -110,6 +110,8 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Celebrated(_)
         | EventKind::Milestone(_) => Expression::Sparkle,
         EventKind::Heard(_) | EventKind::GameOver(Outcome::GhostWon { .. }) => Expression::Sparkle,
+        EventKind::WordGame { solved: true, .. } => Expression::Sparkle,
+        EventKind::WordGame { solved: false, .. } => Expression::Skeptical,
         EventKind::GameOver(Outcome::ViewerWon { .. }) => Expression::Skeptical,
         EventKind::GameOver(Outcome::Draw) => Expression::LookAround,
         EventKind::NudgedBall

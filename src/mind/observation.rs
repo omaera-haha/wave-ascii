@@ -406,6 +406,11 @@ fn glass(world: &World) -> String {
         }
         doodles.push(words);
     }
+    if let Some(puzzle) = &world.puzzle
+        && puzzle.ended.is_none()
+    {
+        doodles.push(puzzle.words(world.time));
+    }
     if let Some(drawing) = &world.drawing {
         doodles.push(drawing.words());
     }
@@ -477,6 +482,19 @@ mod tests {
     use super::*;
     use crate::world::EventKind;
     use glam::Vec3;
+
+    #[test]
+    fn a_puzzle_observation_names_the_wait_and_counts_without_the_answer() {
+        let mut world = World::new(5, 12.0);
+        world.hear("word game");
+        world.step(30.0);
+        let secret = world.puzzle.as_ref().unwrap().word.clone();
+        let words = observe(&world).to_string();
+        assert!(words.contains("waiting for the viewer to guess"));
+        assert!(words.contains("letters shown and six petals left"));
+        assert!(!words.contains(&secret));
+        assert!(!words.chars().any(|character| character.is_ascii_digit()));
+    }
 
     #[test]
     fn focus_observations_describe_quiet_work_and_remaining_time_without_digits() {

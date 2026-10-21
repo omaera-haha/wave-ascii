@@ -87,6 +87,7 @@ pub(crate) fn seeks_attention(activity: Activity) -> bool {
     matches!(
         activity,
         Activity::Game
+            | Activity::Puzzle
             | Activity::Pounce
             | Activity::Hide
             | Activity::Visit

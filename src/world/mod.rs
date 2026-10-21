@@ -17,6 +17,7 @@ mod nature;
 mod needs;
 pub mod occasion;
 mod pounce;
+pub mod puzzle;
 mod question;
 mod random;
 mod recognizer;
@@ -48,6 +49,7 @@ pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
+pub use puzzle::Puzzle;
 pub use question::{Question, ask as asked_question};
 pub use random::Random;
 pub use room::Room;
@@ -230,6 +232,10 @@ pub enum EventKind {
     },
     ToldStory,
     FoundConstellation(String),
+    WordGame {
+        word: String,
+        solved: bool,
+    },
 }
 
 impl EventKind {
@@ -373,6 +379,14 @@ impl EventKind {
                 friend::count_words(*minutes),
                 if *minutes == 1 { "minute" } else { "minutes" },
             ),
+            Self::WordGame { word, solved } => format!(
+                "{} a word game on the glass; the word was {word}",
+                if *solved {
+                    "the viewer solved"
+                } else {
+                    "ended without solving"
+                },
+            ),
             Self::PlayedWithFriend(game) => {
                 format!("finished {} with your ghost friend", game.words())
             }
@@ -430,6 +444,7 @@ pub enum Understanding {
     Focusing {
         minutes: u32,
     },
+    WordGame,
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -583,6 +598,7 @@ pub struct World {
     /// The story of its time alone, kept only for this session.
     pub away: Option<away::Away>,
     found_constellation_at: Option<f64>,
+    pub puzzle: Option<Puzzle>,
 }
 
 impl World {
@@ -681,6 +697,7 @@ impl World {
             telling: None,
             away: None,
             found_constellation_at: None,
+            puzzle: None,
         };
         world.scatter_blocks();
         world
@@ -723,6 +740,14 @@ impl World {
             .is_some_and(|game| game.opacity(self.time) <= 0.0)
         {
             self.game = None;
+        }
+
+        if self
+            .puzzle
+            .as_ref()
+            .is_some_and(|puzzle| puzzle.opacity(self.time) <= 0.0)
+        {
+            self.puzzle = None;
         }
 
         for mote in &mut self.motes {
@@ -824,7 +849,11 @@ impl World {
     pub fn viewer_present(&self) -> bool {
         self.focus.is_some()
             || (self.viewer.active_at > 0.0
-                && self.time - self.viewer.active_at < PRESENT_FOR
+                && (self.time - self.viewer.active_at < PRESENT_FOR
+                    || self
+                        .puzzle
+                        .as_ref()
+                        .is_some_and(|puzzle| puzzle.keeps_viewer_present(self.time)))
                 && self
                     .viewer
                     .looked_away_at
@@ -898,6 +927,13 @@ impl World {
                 Activity::Hide => self.viewer_present() && self.ghost.needs.energy > 0.3,
                 Activity::Doodle => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.25,
                 Activity::Pounce => self.pounce_is_open(),
+                Activity::Puzzle => {
+                    self.viewer_present()
+                        && self.ghost.asleep < 0.3
+                        && self.ghost.needs.energy > 0.25
+                        && (self.life.nature.unwrap_or_default().playful >= 0.5
+                            || self.ghost.needs.fun < 0.4)
+                }
                 Activity::Game => {
                     self.viewer_present()
                         && self.ghost.asleep < 0.3
@@ -970,6 +1006,7 @@ impl World {
                                and turn faint until they find you by clicking you. Fits when \
                                the viewer is around and the ghost feels playful."
                 .to_owned(),
+            Activity::Puzzle => "Think of a familiar word and draw blanks and a flower in the fog. The viewer guesses letters or Hangul syllables; each wrong guess costs a petal. Fits when playful or bored with the viewer present.".to_owned(),
             Activity::Game => "Draw a board in the fog and play noughts and crosses with the \
                                viewer, who clicks a square to move. Fits when the viewer is \
                                around and the ghost feels playful or bored."
@@ -1027,6 +1064,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Puzzle && (self.focus.is_some() || self.ghost.asleep >= 0.3) {
+            return;
+        }
         if self.telling.is_some() && activity != Activity::Visit {
             return;
         }
@@ -1034,6 +1074,7 @@ impl World {
             self.sebae = None;
         }
         self.abandon_game();
+        self.abandon_puzzle();
         self.put_keepsake_away();
         self.drop_ball();
         self.drop_block();
@@ -1060,6 +1101,7 @@ impl World {
             ),
             Activity::Hide => self.random.range(25.0, 45.0),
             Activity::Pounce => 25.0,
+            Activity::Puzzle => Puzzle::SILENCE as f32 + 15.0,
             Activity::Look => self.random.range(2.0, 3.0),
             _ => 0.0,
         };
@@ -1088,7 +1130,11 @@ impl World {
                 Vec3::new(ROOM_MAX.x - 0.6, 1.6, ROOM_MAX.z - 0.6),
             ),
             Activity::Hide => self.hiding_spot(),
-            Activity::Game => self.begin_game(),
+            Activity::Game => {
+                self.puzzle = None;
+                self.begin_game()
+            }
+            Activity::Puzzle => self.begin_puzzle(),
             Activity::Doodle => Vec3::new(
                 self.random.range(-1.2, 1.2),
                 self.random.range(1.0, 1.6),
@@ -1129,7 +1175,7 @@ impl World {
 
     /// Begins writing a supported word when it has the energy to draw.
     pub fn write(&mut self, text: &str) -> bool {
-        if self.telling.is_some() {
+        if self.telling.is_some() || self.puzzle_active() {
             return false;
         }
         let text = doodle::sanitize(text);
@@ -1365,6 +1411,9 @@ impl World {
                 korean,
             };
         }
+        if let Some(heard) = self.hear_puzzle(text, korean) {
+            return heard;
+        }
         let question = naming.is_none().then(|| question::ask(text)).flatten();
         // A drawing just looked at may be what the words name.
         if introduction.is_none() && naming.is_none() && question.is_none() {
@@ -1456,6 +1505,7 @@ impl World {
                     stopped = true;
                     self.drop_ball();
                     self.abandon_game();
+                    self.abandon_puzzle();
                     self.drop_block();
                 }
                 self.ghost.needs.change(0.0, -0.03, 0.0);
@@ -1515,7 +1565,10 @@ impl World {
                     && self.options().contains(&Activity::Rest);
                 if goodnight {
                     self.begin(Activity::Rest);
-                } else if self.focus.is_none() && self.ghost.plan.activity != Activity::Visit {
+                } else if self.focus.is_none()
+                    && !self.puzzle_active()
+                    && self.ghost.plan.activity != Activity::Visit
+                {
                     self.begin(Activity::Visit);
                 }
             }
@@ -1764,6 +1817,12 @@ impl World {
         ) {
             self.telling = None;
         }
+        if matches!(
+            kind,
+            EventKind::Scolded | EventKind::ViewerLeft | EventKind::FellAsleep
+        ) {
+            self.abandon_puzzle();
+        }
         let remembered = self.life.milestones.len();
         self.life.note(&kind);
         let milestones: Vec<String> = self.life.milestones[remembered..]
@@ -1949,7 +2008,9 @@ impl World {
     fn carry_out(&mut self, seconds: f32) {
         let time = self.time;
         let position = self.ghost.position;
-        if self.ghost.asleep >= 0.3 && self.ghost.plan.activity == Activity::Game {
+        if self.ghost.asleep >= 0.3
+            && matches!(self.ghost.plan.activity, Activity::Game | Activity::Puzzle)
+        {
             self.ghost.plan.done = true;
         }
         let plan = &self.ghost.plan;
@@ -1958,6 +2019,7 @@ impl World {
             self.ghost.asleep = (self.ghost.asleep - seconds / 1.2).max(0.0);
         }
         if plan.done {
+            self.abandon_puzzle();
             self.abandon_game();
             self.put_keepsake_away();
             self.drop_ball();
@@ -1975,7 +2037,7 @@ impl World {
             || matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
             || (matches!(
                 self.ghost.plan.activity,
-                Activity::Rest | Activity::Hide | Activity::Game
+                Activity::Rest | Activity::Hide | Activity::Game | Activity::Puzzle
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -1983,6 +2045,7 @@ impl World {
             self.drop_block();
             self.ghost.plan.done = true;
             self.abandon_game();
+            self.abandon_puzzle();
             return;
         }
 
@@ -2158,6 +2221,7 @@ impl World {
             }
             Activity::Pounce => look = self.pounce(seconds),
             Activity::Game => look = self.play_game(),
+            Activity::Puzzle => look = self.play_puzzle(),
             Activity::Build => look = self.build(),
             Activity::Fetch => {
                 if self.ghost.plan.count == 0 {
@@ -2425,7 +2489,9 @@ impl World {
         let mut company = -0.0012 * (1.15 - 0.3 * nature.shy);
         match ghost.plan.activity {
             Activity::Explore => fun += 0.004,
-            Activity::Game | Activity::Friend if !ghost.plan.done => fun += 0.004,
+            Activity::Game | Activity::Friend | Activity::Puzzle if !ghost.plan.done => {
+                fun += 0.004
+            }
             Activity::Visit if present => company += 0.01,
             Activity::Window if ghost.plan.arrived.is_some() => {
                 fun += 0.004 + 0.02 * self.weather.rainbow(self.time)
@@ -2537,6 +2603,7 @@ impl World {
                 event.kind,
                 EventKind::AteMote
                     | EventKind::GameOver(Outcome::GhostWon { .. })
+                    | EventKind::WordGame { solved: true, .. }
                     | EventKind::NudgedBall
                     | EventKind::Bloomed
                     | EventKind::Sprouted(_)

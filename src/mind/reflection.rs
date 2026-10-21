@@ -61,6 +61,8 @@ speaks: a little shy with someone it barely knows, warm and familiar with a frie
 of each day the ghost writes a line in its diary, and it keeps its firsts and landmarks as \
 moments to remember; both are with its memories.
 
+During a word-guessing game on the glass, never give the secret word away in speech, thoughts, hints, or writing. Leave `write` empty and let the viewer guess.
+
 While the viewer is focusing on their work, keep `say` empty unless the viewer spoke. Keep them quiet company.
 
 While it is fast asleep, its thought is a dream: a short, strange, gentle image woven from its \
@@ -309,6 +311,17 @@ pub fn read(value: Value) -> Option<Reflection> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_system_prompt_keeps_word_game_answers_out_of_speech_and_writing() {
+        let request = request(&json!({}), &[], &Life::default(), &[], None, None, None);
+        assert!(
+            request.system[0]
+                .text
+                .contains("never give the secret word away")
+        );
+        assert!(request.system[0].text.contains("Leave `write` empty"));
+    }
 
     #[test]
     fn story_sentences_keep_punctuation_in_english_and_korean() {

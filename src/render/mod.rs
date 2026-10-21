@@ -411,7 +411,10 @@ fn glass_color(
     distance: f32,
     mut color: Vec3,
 ) -> Vec3 {
-    if scene.world.doodles.is_empty() && scene.world.game.is_none() && scene.world.drawing.is_none()
+    if scene.world.doodles.is_empty()
+        && scene.world.game.is_none()
+        && scene.world.drawing.is_none()
+        && scene.world.puzzle.is_none()
     {
         return color;
     }
@@ -452,6 +455,21 @@ fn glass_color(
             color = color.lerp(frost, stroke * 0.85 * opacity);
             let winning = coverage(game.winning_distance(point, time) - 0.015, footprint * 0.5);
             color = color.lerp(Vec3::ONE, winning * 0.95 * opacity);
+        }
+    }
+    if let Some(puzzle) = &scene.world.puzzle {
+        let offset = (point - puzzle.center).abs();
+        if offset
+            .cmple(crate::world::Puzzle::EXTENT + Vec2::splat(footprint))
+            .all()
+        {
+            let opacity = puzzle.opacity(scene.world.time);
+            let stroke = coverage(
+                puzzle.distance(point, scene.world.time) - 0.0125,
+                footprint * 0.5,
+            );
+            let ink = if puzzle.solved { Vec3::ONE } else { frost };
+            color = color.lerp(ink, stroke * 0.95 * opacity);
         }
     }
     if let Some(drawing) = &scene.world.drawing {

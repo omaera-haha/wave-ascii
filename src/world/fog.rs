@@ -181,7 +181,10 @@ impl World {
         self.ghost.asleep < 0.3
             && self.ghost.fade < 0.3
             && (self.ghost.plan.done
-                || !matches!(self.ghost.plan.activity, Activity::Hide | Activity::Game))
+                || !matches!(
+                    self.ghost.plan.activity,
+                    Activity::Hide | Activity::Game | Activity::Puzzle
+                ))
             && self
                 .drawing
                 .as_ref()
@@ -206,7 +209,7 @@ impl World {
         let busy = !plan.done
             && (matches!(
                 plan.activity,
-                Activity::Rest | Activity::Tend | Activity::Game
+                Activity::Rest | Activity::Tend | Activity::Game | Activity::Puzzle
             ) || plan.activity == Activity::Fetch && self.ball.held
                 || plan.activity == Activity::Build && self.blocks.iter().any(|block| block.held));
         if !busy {
