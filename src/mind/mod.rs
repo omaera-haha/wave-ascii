@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 
 use crate::store::{Config, Memory, Remark, Speaker};
-use crate::world::{Activity, EventKind, World};
+use crate::world::{Activity, EventKind, Understanding, World};
 use claude::{Cache, Claude, Effort, Reply};
 use decision::Decision;
 use jev::Jev;
@@ -282,7 +282,7 @@ impl Mind {
     /// was asked if System One can tell, and answers once System Two has
     /// thought about it.
     pub fn hear(&mut self, world: &mut World, text: &str) {
-        world.hear(text);
+        let heard = world.hear(text);
         self.journal.conversation.push(Remark {
             at: now(),
             speaker: Speaker::Viewer,
@@ -291,6 +291,25 @@ impl Mind {
         trim(&mut self.journal.conversation, REMARKS_KEPT);
         if self.claude.is_some() {
             self.heard.push_back(text.to_owned());
+        }
+        // Without System One to ask, words heard before and still not
+        // understood make it try something, to see if that's what they mean.
+        let guessed = match heard.understanding {
+            Understanding::Puzzled { again: true, .. } if self.jev.is_none() => world.guess(),
+            _ => None,
+        };
+        // Without System Two, it answers in the few words of its own.
+        if self.claude.is_none() {
+            let lines = musing::reply(world, &heard, guessed);
+            if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
+                world.say(&lines[index]);
+                self.journal.conversation.push(Remark {
+                    at: now(),
+                    speaker: Speaker::Ghost,
+                    text: lines[index].clone(),
+                });
+                trim(&mut self.journal.conversation, REMARKS_KEPT);
+            }
         }
         if let Some(jev) = &self.jev {
             let jev = jev.clone();
@@ -398,9 +417,7 @@ impl Mind {
                 ..
             } => {
                 self.one = Status::Ready;
-                if world.options().contains(&activity) {
-                    world.begin(activity);
-                }
+                world.heed(activity);
             }
             Answer::Requested {
                 activity: Ok(None), ..
@@ -784,11 +801,38 @@ mod tests {
     }
 
     #[test]
+    fn without_system_one_a_repeated_new_word_makes_the_ghost_try_something() {
+        let mut mind = offline();
+        let mut world = World::new(3, 12.0);
+        world.notice_viewer();
+        mind.hear(&mut world, "wiggle");
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
+        mind.hear(&mut world, "wiggle");
+        assert!(!matches!(
+            world.ghost.plan.activity,
+            Activity::Visit | Activity::Float
+        ));
+        let said = &world.ghost.speech.as_ref().unwrap().text;
+        assert!(
+            ["Like this?", "Is this “wiggle”?", "Wiggle… this?"].contains(&said.as_str()),
+            "{said}"
+        );
+    }
+
+    #[test]
     fn hearing_the_viewer_is_written_in_the_journal() {
         let mut mind = offline();
         let mut world = World::new(3, 12.0);
         mind.hear(&mut world, "hello");
-        assert_eq!(mind.journal.conversation.last().unwrap().text, "hello");
+        let conversation = &mind.journal.conversation;
+        assert_eq!(conversation[0].text, "hello");
+        assert_eq!(conversation[0].speaker, Speaker::Viewer);
+        // Without System Two, it answers a greeting in its own few words.
+        assert_eq!(conversation[1].speaker, Speaker::Ghost);
+        assert_eq!(
+            world.ghost.speech.as_ref().map(|line| &line.text),
+            Some(&conversation[1].text)
+        );
         assert_eq!(world.ghost.plan.activity, Activity::Visit);
     }
 }

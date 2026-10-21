@@ -81,6 +81,10 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         }
         EventKind::Morning => Expression::Stretch,
         EventKind::ViewerArrived => Expression::Wink,
+        EventKind::Praised => Expression::Smile,
+        EventKind::Scolded => Expression::Worry,
+        EventKind::Puzzled(_) => Expression::Skeptical,
+        EventKind::LearnedWord { .. } => Expression::Sparkle,
         EventKind::Noticed(thing)
             if thing.starts_with("the rainbow") || thing == "the falling snow" =>
         {

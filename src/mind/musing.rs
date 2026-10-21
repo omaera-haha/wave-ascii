@@ -1,4 +1,4 @@
-use crate::world::{Activity, Mood, Occasion, Sky, World};
+use crate::world::{Activity, Heard, Mood, Occasion, Sky, Tone, Understanding, World};
 
 // Thoughts the ghost has on its own while it has no System Two to think
 // with: a few words that fit the moment, so a ghost without keys still has
@@ -295,6 +295,92 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     lines
 }
 
+/// What it says back when the viewer talks to it without System Two: a
+/// few words about what it made of their message. It names the word it
+/// understood or wonders about, so the viewer can see it learning.
+pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
+    let lines = |items: &[&str]| items.iter().map(|line| (*line).to_owned()).collect();
+    if let Some((word, _)) = heard.learned.last() {
+        return vec![
+            format!("So “{word}” means this!"),
+            format!("Oh! “{word}”! I get it now."),
+        ];
+    }
+    if guessed.is_some()
+        && let Understanding::Puzzled { word, .. } = &heard.understanding
+    {
+        return vec![
+            "Like this?".to_owned(),
+            format!("Is this “{word}”?"),
+            format!("{}… this?", capitalized(word)),
+        ];
+    }
+    match &heard.understanding {
+        Understanding::Doing { word, .. } => {
+            let word = capitalized(word);
+            return vec![
+                format!("{word}? Okay!"),
+                format!("{word}! I know that one."),
+                format!("{word}! Watch me."),
+            ];
+        }
+        Understanding::Unable { activity, .. } => return unable(world, *activity),
+        _ => {}
+    }
+    let bond = world.life.bond;
+    match heard.tone {
+        Some(Tone::Scolding) if heard.stopped => return lines(&["Oh… okay, I'll stop.", "Sorry…"]),
+        Some(Tone::Scolding) => return lines(&["Oh… sorry.", "Okay, okay…"]),
+        Some(Tone::Praise) if bond < 0.12 => return lines(&["Oh! Thank you.", "Hehe."]),
+        Some(Tone::Praise) => return lines(&["Hehe!", "Yay!", "You think so?"]),
+        _ => {}
+    }
+    if let Understanding::Puzzled { word, again } = &heard.understanding {
+        return if *again {
+            vec![
+                format!("“{word}” again… what does it mean?"),
+                format!("Hm, “{word}”… show me?"),
+            ]
+        } else {
+            vec![
+                format!("“{word}”?"),
+                format!("What's “{word}”?"),
+                format!("Hm? {}?", capitalized(word)),
+            ]
+        };
+    }
+    match heard.tone {
+        Some(Tone::Farewell) if world.is_night() => lines(&["Goodnight!", "Sleep well."]),
+        Some(Tone::Farewell) => lines(&["Bye… come back soon.", "See you!"]),
+        Some(Tone::Greeting) if bond < 0.12 => lines(&["Oh! Hello…", "Hi there."]),
+        Some(Tone::Greeting) if bond < 0.55 => lines(&["Hello!", "Hi! It's you."]),
+        Some(Tone::Greeting) => lines(&["Hi! You're here!", "Hello, you!"]),
+        _ if heard.named => lines(&["Yes? That's me!", "You called?"]),
+        _ => Vec::new(),
+    }
+}
+
+// Why it can't do what the viewer asked for just now.
+fn unable(world: &World, activity: Activity) -> Vec<String> {
+    let line = match activity {
+        Activity::Rest => "I'm not sleepy!",
+        Activity::Chase if world.motes.is_empty() => "I don't see any light motes.",
+        Activity::Chase => "I don't know where a light mote is.",
+        Activity::Tend => "The plant doesn't need water yet.",
+        Activity::Hide if !world.viewer_present() => "Nobody's here to find me.",
+        _ if world.ghost.needs.energy < 0.4 => "I'm too tired for that.",
+        _ => "Not right now.",
+    };
+    vec![line.to_owned()]
+}
+
+fn capitalized(text: &str) -> String {
+    let mut characters = text.chars();
+    characters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(characters).collect()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,5 +534,47 @@ mod tests {
                     .any(|line| !ordinary_dreams.contains(line))
             );
         }
+    }
+
+    #[test]
+    fn replies_name_the_word_the_ghost_understood_or_wonders_about() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        let heard = world.hear("dance");
+        let lines = reply(&world, &heard, None);
+        assert!(!lines.is_empty());
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.contains("dance") || line.contains("Dance"))
+        );
+
+        world
+            .life
+            .vocabulary
+            .teach(&["spin".to_owned()], Activity::Dance, 2.0);
+        let heard = world.hear("spin!");
+        assert!(
+            reply(&world, &heard, None)
+                .iter()
+                .all(|line| line.starts_with("Spin"))
+        );
+
+        let heard = world.hear("hmm hmm");
+        let guessed = world.guess();
+        assert!(guessed.is_some());
+        assert!(reply(&world, &heard, guessed).contains(&"Like this?".to_owned()));
+    }
+
+    #[test]
+    fn tone_alone_gets_an_answer_and_little_words_get_none() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        for text in ["hello", "good job", "no", "bye", "Boo?"] {
+            let heard = world.hear(text);
+            assert!(!reply(&world, &heard, None).is_empty(), "{text}");
+        }
+        let heard = world.hear("is it");
+        assert!(reply(&world, &heard, None).is_empty());
     }
 }

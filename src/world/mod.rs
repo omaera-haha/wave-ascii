@@ -10,6 +10,7 @@ mod random;
 mod sight;
 mod sleep;
 mod things;
+mod vocabulary;
 mod weather;
 
 use glam::{Vec2, Vec3};
@@ -24,6 +25,7 @@ pub use occasion::{Decoration, Occasion};
 pub use random::Random;
 pub use sight::{Seen, Thing};
 pub use things::{Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, WINDOW_CENTER, flat};
+pub use vocabulary::{Tone, Vocabulary};
 use weather::Change;
 pub use weather::{Sky, Weather};
 
@@ -43,6 +45,25 @@ const POKE_STREAK: f64 = 1.5;
 const EVENTS_KEPT: usize = 80;
 /// How close the ghost must feel to the viewer to come and greet them.
 pub(crate) const GREETS_FROM: f32 = 0.3;
+/// How much it learns about the viewer's words from each kind of hint:
+/// hearing them while it does something, being praised for doing what it
+/// took them to mean, being praised for a guess, a mind telling it what
+/// they asked for, the viewer showing it, and being told no.
+const NAMED: f32 = 1.0;
+const PRAISED: f32 = 1.0;
+const CONFIRMED: f32 = 2.0;
+const ROUTED: f32 = 1.5;
+const SHOWN: f32 = 1.5;
+const REFUSED: f32 = -1.5;
+/// Seconds after it began something that the viewer's words may still be
+/// about it.
+const NAMED_FOR: f64 = 20.0;
+/// Seconds after the ghost acted on words that praise or a no still counts
+/// for them.
+const HEEDED_FOR: f64 = 30.0;
+/// Seconds after the viewer spoke that what they do may show what they
+/// meant.
+const SHOWN_FOR: f64 = 12.0;
 
 /// Something that happened, which the ghost's face reacts to and its minds
 /// hear about.
@@ -103,6 +124,17 @@ pub enum EventKind {
     Celebrated(Occasion),
     Pounced,
     Morning,
+    /// The viewer sounded pleased with the ghost.
+    Praised,
+    /// The viewer told the ghost no.
+    Scolded,
+    /// The viewer said a word the ghost doesn't know yet.
+    Puzzled(String),
+    /// The ghost worked out what one of the viewer's words means.
+    LearnedWord {
+        word: String,
+        activity: Activity,
+    },
 }
 
 impl EventKind {
@@ -156,8 +188,53 @@ impl EventKind {
             Self::Doodled(name) => format!("drew a {name} on the glass"),
             Self::Celebrated(Occasion::NewYear) => "a new year began".to_owned(),
             Self::Celebrated(occasion) => format!("it is {}", occasion.words()),
+            Self::Praised => "the viewer sounded pleased with you".to_owned(),
+            Self::Scolded => "the viewer told you no".to_owned(),
+            Self::Puzzled(word) => format!("didn't know the viewer's word “{word}”"),
+            Self::LearnedWord { word, activity } => {
+                format!("worked out that “{word}” means {}", activity.doing())
+            }
         }
     }
+}
+
+/// What the ghost made of something the viewer said.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Heard {
+    pub tone: Option<Tone>,
+    pub understanding: Understanding,
+    /// Whether the message called the ghost by its name.
+    pub named: bool,
+    /// Words whose meaning it worked out just now, and what they mean.
+    pub learned: Vec<(String, Activity)>,
+    /// Whether being told no made it stop what it was doing.
+    pub stopped: bool,
+}
+
+/// What the viewer's words asked for, as far as the ghost can tell.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Understanding {
+    /// Nothing to act on: only tone, or little words.
+    Nothing,
+    /// Words it doesn't know yet, `word` above all; `again` once it has
+    /// heard one of them before.
+    Puzzled { word: String, again: bool },
+    /// It took `word` to ask for `activity` and set out to do it.
+    Doing { word: String, activity: Activity },
+    /// It took `word` to ask for `activity`, which it can't do now.
+    Unable { word: String, activity: Activity },
+}
+
+/// The viewer's latest words that might mean something, and what the
+/// ghost did about them, so it can learn from what follows.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Listening {
+    words: Vec<String>,
+    at: f64,
+    /// What it did because of the words, when, and whether it was a guess.
+    acted: Option<(Activity, f64, bool)>,
+    /// Whether the viewer already showed it what they meant.
+    shown: bool,
 }
 
 /// Something said or thought, and when.
@@ -249,6 +326,7 @@ pub struct World {
     viewer_present: bool,
     /// When a darting pointer last interrupted an idle plan.
     pointer_interrupted_at: Option<f64>,
+    listening: Listening,
     /// Which way the ghost means to push the ball next.
     push: Vec3,
     /// Until when an interrupted night's sleep leaves it drowsy.
@@ -318,6 +396,7 @@ impl World {
             next_mote_at: 8.0,
             viewer_present: false,
             pointer_interrupted_at: None,
+            listening: Listening::default(),
             push: Vec3::X,
             drowsy_until: 0.0,
             morning_at: None,
@@ -665,6 +744,7 @@ impl World {
         self.ghost.known.push(id);
         self.ghost.attention = Some((Thing::Mote(id), self.time + 2.0));
         self.record(EventKind::DroppedMote);
+        self.shown(Activity::Chase);
     }
 
     /// The viewer flicked the ball along `direction` on the floor.
@@ -682,6 +762,7 @@ impl World {
             plan.done = true;
         }
         self.record(EventKind::KickedBall);
+        self.shown(Activity::Fetch);
     }
 
     /// A new ghost comes into being on `day`, a local date as YYYY-MM-DD.
@@ -701,13 +782,167 @@ impl World {
         });
     }
 
-    /// The viewer said `text` to the ghost, which wakes and comes to listen.
-    pub fn hear(&mut self, text: &str) {
+    /// The viewer said `text` to the ghost, which wakes and reads it: their
+    /// tone, and any words it has learned. It does what the words ask if it
+    /// knows them and can, and otherwise comes to the glass to listen. What
+    /// it was doing, and whether the viewer sounds pleased with what it did
+    /// about their last words, teach it what words mean.
+    pub fn hear(&mut self, text: &str) -> Heard {
+        let reading = vocabulary::read(text, &self.ghost.name);
+        // What the viewer saw it doing, before it turns to listen.
+        let plan = &self.ghost.plan;
+        let busy = if !plan.done && !matches!(plan.activity, Activity::Float | Activity::Visit) {
+            Some(plan.activity)
+        } else {
+            self.events
+                .iter()
+                .rev()
+                .take_while(|event| self.time - event.time < NAMED_FOR)
+                .find_map(|event| match event.kind {
+                    EventKind::Began(activity)
+                        if !matches!(activity, Activity::Float | Activity::Visit) =>
+                    {
+                        Some(activity)
+                    }
+                    _ => None,
+                })
+        };
         self.wake();
         self.ghost.needs.change(0.0, 0.05, 0.25);
         self.record(EventKind::Heard(text.to_owned()));
-        if self.ghost.plan.activity != Activity::Visit {
-            self.begin(Activity::Visit);
+        self.life.vocabulary.hear(&reading.words);
+
+        let mut learned = Vec::new();
+        if let Some(activity) = busy {
+            learned.extend(self.learn(&reading.words, activity, NAMED));
+        }
+        let acted = self
+            .listening
+            .acted
+            .filter(|(_, at, _)| self.time - at < HEEDED_FOR);
+        let earlier = self.listening.words.clone();
+        let mut stopped = false;
+        match reading.tone {
+            Some(Tone::Praise) => {
+                if let Some((activity, _, guess)) = acted {
+                    let amount = if guess { CONFIRMED } else { PRAISED };
+                    learned.extend(self.learn(&earlier, activity, amount));
+                }
+                self.ghost.needs.change(0.0, 0.05, 0.05);
+                self.record(EventKind::Praised);
+            }
+            Some(Tone::Scolding) => {
+                if let Some((activity, _, _)) = acted {
+                    self.learn(&earlier, activity, REFUSED);
+                    self.listening.acted = None;
+                }
+                let plan = &mut self.ghost.plan;
+                if !plan.done && !matches!(plan.activity, Activity::Float | Activity::Visit) {
+                    plan.done = true;
+                    stopped = true;
+                    self.drop_ball();
+                }
+                self.ghost.needs.change(0.0, -0.03, 0.0);
+                self.record(EventKind::Scolded);
+            }
+            _ => {}
+        }
+
+        let vocabulary = &self.life.vocabulary;
+        let understanding = if reading.words.is_empty() {
+            Understanding::Nothing
+        } else if let Some((word, activity)) = vocabulary.meaning(&reading.words) {
+            if self.options().contains(&activity) {
+                Understanding::Doing { word, activity }
+            } else {
+                Understanding::Unable { word, activity }
+            }
+        } else {
+            // The word the viewer keeps saying is the one they mean to
+            // teach.
+            let word = reading
+                .words
+                .iter()
+                .rev()
+                .max_by_key(|word| vocabulary.heard(word))
+                .cloned()
+                .unwrap_or_default();
+            let again = reading.words.iter().any(|word| vocabulary.heard(word) > 1);
+            Understanding::Puzzled { word, again }
+        };
+        if !reading.words.is_empty() {
+            self.listening = Listening {
+                words: reading.words.clone(),
+                at: self.time,
+                acted: None,
+                shown: false,
+            };
+        }
+        match &understanding {
+            Understanding::Doing { activity, .. } => {
+                let activity = *activity;
+                self.heed_now(activity);
+            }
+            understanding => {
+                if let Understanding::Puzzled { word, .. } = understanding {
+                    self.record(EventKind::Puzzled(word.clone()));
+                }
+                if self.ghost.plan.activity != Activity::Visit {
+                    self.begin(Activity::Visit);
+                }
+            }
+        }
+        Heard {
+            tone: reading.tone,
+            understanding,
+            named: reading.named,
+            learned,
+            stopped,
+        }
+    }
+
+    /// Without a mind to ask, the ghost tries out what the viewer's latest
+    /// words might mean, right after hearing them: something it can do now,
+    /// leaning toward what the words already hint at and away from what it
+    /// was told no to. Praise for the guess teaches it the words.
+    pub fn guess(&mut self) -> Option<Activity> {
+        let listening = &self.listening;
+        if listening.words.is_empty()
+            || listening.acted.is_some()
+            || self.time - listening.at > 1.0
+            || self.ghost.asleep > 0.3
+        {
+            return None;
+        }
+        let words = listening.words.clone();
+        let candidates: Vec<Activity> = self
+            .options()
+            .into_iter()
+            .filter(|activity| !matches!(activity, Activity::Float | Activity::Visit))
+            .collect();
+        let weights: Vec<f32> = candidates
+            .iter()
+            .map(|activity| {
+                let evidence = self.life.vocabulary.evidence(&words, *activity);
+                if evidence < 0.0 { 0.1 } else { 1.0 + evidence }
+            })
+            .collect();
+        let activity = candidates[self.random.pick(&weights)?];
+        self.begin(activity);
+        self.listening.acted = Some((activity, self.time, true));
+        Some(activity)
+    }
+
+    /// A mind worked out that the viewer's latest words ask for
+    /// `activity`. The ghost takes that as what the words mean, and does it
+    /// if it can.
+    pub fn heed(&mut self, activity: Activity) {
+        if self.time - self.listening.at < HEEDED_FOR {
+            let words = self.listening.words.clone();
+            self.learn(&words, activity, ROUTED);
+        }
+        if self.options().contains(&activity) {
+            self.heed_now(activity);
         }
     }
 
@@ -758,6 +993,53 @@ impl World {
             seed,
         });
         self.next_mote
+    }
+
+    // Sets out to do what the viewer's words asked, unless it is already
+    // doing it.
+    fn heed_now(&mut self, activity: Activity) {
+        let plan = &self.ghost.plan;
+        if plan.done || plan.activity != activity {
+            self.begin(activity);
+        }
+        self.listening.acted = Some((activity, self.time, false));
+    }
+
+    // Teaches the ghost that `words` mean `activity`, by `amount`, and
+    // records each word it works out. Floating and coming to the glass are
+    // what it does for any words, so no word means them.
+    fn learn(
+        &mut self,
+        words: &[String],
+        activity: Activity,
+        amount: f32,
+    ) -> Vec<(String, Activity)> {
+        if matches!(activity, Activity::Float | Activity::Visit) {
+            return Vec::new();
+        }
+        let learned = self.life.vocabulary.teach(words, activity, amount);
+        learned
+            .into_iter()
+            .map(|word| {
+                self.record(EventKind::LearnedWord {
+                    word: word.clone(),
+                    activity,
+                });
+                (word, activity)
+            })
+            .collect()
+    }
+
+    // The viewer did something soon after speaking, which may show what
+    // their words were about. The sooner, the surer.
+    fn shown(&mut self, activity: Activity) {
+        let since = self.time - self.listening.at;
+        if self.listening.words.is_empty() || self.listening.shown || since >= SHOWN_FOR {
+            return;
+        }
+        self.listening.shown = true;
+        let words = self.listening.words.clone();
+        self.learn(&words, activity, SHOWN * (1.0 - (since / SHOWN_FOR) as f32));
     }
 
     fn record(&mut self, kind: EventKind) {
@@ -1332,9 +1614,13 @@ impl World {
                     | EventKind::Found
                     | EventKind::Pounced
                     | EventKind::Milestone(_)
+                    | EventKind::LearnedWord { .. }
             )
         }) {
             return Mood::Excited;
+        }
+        if recent(12.0).any(|event| event.kind == EventKind::Praised) {
+            return Mood::Cheerful;
         }
         if self.weather.rainbow(self.time) > 0.3 && ghost.saw_rainbow {
             return Mood::Excited;
@@ -2049,6 +2335,228 @@ mod tests {
         assert_eq!(world.ghost.plan.activity, Activity::Visit);
         run(&mut world, 8.0);
         assert!(world.ghost.position.z > ROOM_MAX.z - 0.8);
+    }
+
+    fn kinds(world: &World, since: f64) -> Vec<EventKind> {
+        world
+            .events
+            .iter()
+            .filter(|event| event.time >= since)
+            .map(|event| event.kind.clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_new_word_puzzles_the_ghost_and_brings_it_to_the_glass() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        let heard = world.hear("Boo, dance!");
+        assert_eq!(
+            heard.understanding,
+            Understanding::Puzzled {
+                word: "dance".to_owned(),
+                again: false
+            }
+        );
+        assert!(heard.named);
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
+        assert!(kinds(&world, 0.0).contains(&EventKind::Puzzled("dance".to_owned())));
+        // Heard again, the word is one it means to work out.
+        run(&mut world, 2.0);
+        let heard = world.hear("dance");
+        assert!(matches!(
+            heard.understanding,
+            Understanding::Puzzled { again: true, .. }
+        ));
+    }
+
+    #[test]
+    fn a_guess_praised_teaches_the_word_and_then_the_word_is_enough() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world.hear("twirl");
+        world.hear("twirl");
+        // Guess until it happens to dance, saying no to everything else.
+        let mut tries = 0;
+        loop {
+            tries += 1;
+            assert!(tries < 40, "it never tried dancing");
+            let guess = world.guess().expect("a fresh, repeated word gets a guess");
+            assert!(!matches!(guess, Activity::Float | Activity::Visit));
+            assert_eq!(world.ghost.plan.activity, guess);
+            run(&mut world, 1.0);
+            if guess == Activity::Dance {
+                break;
+            }
+            let heard = world.hear("no");
+            assert_eq!(heard.tone, Some(Tone::Scolding));
+            assert!(world.life.vocabulary.evidence(&["twirl".to_owned()], guess) < 0.0);
+            run(&mut world, 1.0);
+            world.hear("twirl");
+        }
+        let before = world.time;
+        let heard = world.hear("yes! good job");
+        assert_eq!(heard.tone, Some(Tone::Praise));
+        assert_eq!(heard.learned, [("twirl".to_owned(), Activity::Dance)]);
+        let events = kinds(&world, before);
+        assert!(events.contains(&EventKind::Praised));
+        assert!(events.contains(&EventKind::LearnedWord {
+            word: "twirl".to_owned(),
+            activity: Activity::Dance
+        }));
+        assert!(events.contains(&EventKind::Milestone(
+            "Learned my first word from you: “twirl”.".to_owned()
+        )));
+
+        run(&mut world, 10.0);
+        world.begin(Activity::Explore);
+        let heard = world.hear("Twirl for me, please!");
+        assert_eq!(
+            heard.understanding,
+            Understanding::Doing {
+                word: "twirl".to_owned(),
+                activity: Activity::Dance
+            }
+        );
+        assert_eq!(world.ghost.plan.activity, Activity::Dance);
+        assert!(world.life.today.words.contains(&"twirl".to_owned()));
+    }
+
+    #[test]
+    fn words_said_while_the_ghost_does_something_come_to_mean_it() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world.plant.thirst = 0.9;
+        for _ in 0..2 {
+            world.begin(Activity::Tend);
+            run(&mut world, 1.0);
+            world.hear("water the plant");
+        }
+        assert_eq!(
+            world.life.vocabulary.meaning(&["water".to_owned()]),
+            Some(("water".to_owned(), Activity::Tend))
+        );
+        // Floating and coming to the glass are what any words bring.
+        world.begin(Activity::Float);
+        run(&mut world, NAMED_FOR as f32 + 1.0);
+        world.hear("hmm");
+        world.hear("hmm");
+        assert!(world.life.vocabulary.words["hmm"].meanings.is_empty());
+    }
+
+    #[test]
+    fn what_the_viewer_does_right_after_speaking_shows_what_they_meant() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world.hear("catch");
+        run(&mut world, 1.0);
+        world.kick_ball(Vec3::X);
+        world.kick_ball(Vec3::Z);
+        let catch = ["catch".to_owned()];
+        let once = world.life.vocabulary.evidence(&catch, Activity::Fetch);
+        assert!(once > 1.0 && once < SHOWN, "{once}");
+        // Too late to be about the words.
+        world.hear("snack");
+        run(&mut world, 13.0);
+        world.drop_mote(Vec3::new(0.0, 1.0, 0.0));
+        assert_eq!(
+            world
+                .life
+                .vocabulary
+                .evidence(&["snack".to_owned()], Activity::Chase),
+            0.0
+        );
+        world.hear("catch");
+        run(&mut world, 0.5);
+        world.kick_ball(Vec3::X);
+        assert_eq!(
+            world.life.vocabulary.meaning(&catch),
+            Some(("catch".to_owned(), Activity::Fetch))
+        );
+    }
+
+    #[test]
+    fn being_told_no_stops_what_the_ghost_is_doing_and_unlearns_the_words() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world
+            .life
+            .vocabulary
+            .teach(&["spin".to_owned()], Activity::Dance, 2.0);
+        world.hear("spin");
+        assert_eq!(world.ghost.plan.activity, Activity::Dance);
+        run(&mut world, 1.0);
+        let heard = world.hear("no, stop");
+        assert!(heard.stopped);
+        // It leaves off and comes to the glass, a little sheepish.
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
+        assert!(kinds(&world, world.time).contains(&EventKind::Scolded));
+        assert!(
+            world
+                .life
+                .vocabulary
+                .evidence(&["spin".to_owned()], Activity::Dance)
+                < 2.0
+        );
+        assert_eq!(world.life.vocabulary.meaning(&["spin".to_owned()]), None);
+    }
+
+    #[test]
+    fn a_word_it_knows_for_something_it_cant_do_now_is_understood_but_not_done() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world
+            .life
+            .vocabulary
+            .teach(&["nap".to_owned()], Activity::Rest, 2.0);
+        world.ghost.needs.energy = 1.0;
+        let heard = world.hear("nap time");
+        assert_eq!(
+            heard.understanding,
+            Understanding::Unable {
+                word: "nap".to_owned(),
+                activity: Activity::Rest
+            }
+        );
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
+    }
+
+    #[test]
+    fn a_mind_routing_the_words_teaches_them_and_does_not_restart_the_plan() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world.hear("peekaboo");
+        world.heed(Activity::Hide);
+        assert_eq!(world.ghost.plan.activity, Activity::Hide);
+        let started = world.ghost.plan.started;
+        run(&mut world, 1.0);
+        world.heed(Activity::Hide);
+        assert_eq!(world.ghost.plan.started, started);
+        assert_eq!(
+            world.life.vocabulary.meaning(&["peekaboo".to_owned()]),
+            Some(("peekaboo".to_owned(), Activity::Hide))
+        );
+    }
+
+    #[test]
+    fn praise_cheers_the_ghost_and_warms_the_bond() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world.ghost.needs = Needs {
+            energy: 0.5,
+            fun: 0.5,
+            company: 0.5,
+        };
+        // The first words it hears are a moment to remember, which
+        // excites it.
+        world.hear("hello");
+        run(&mut world, 8.0);
+        let bond = world.life.bond;
+        world.hear("good ghost");
+        world.step(0.1);
+        assert_eq!(world.ghost.mood, Mood::Cheerful);
+        assert!(world.life.bond > bond);
+        assert_eq!(world.life.today.praises, 1);
     }
 
     #[test]

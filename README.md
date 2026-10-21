@@ -29,9 +29,10 @@ Two models give it a mind:
   as your name.
 
 Without API keys the ghost lives on instinct: its needs alone decide what it
-does, and it can't talk, though it shouts "Boo!" when it jumps out of hiding.
-It still thinks to itself now and then, in a few words of its own that fit the
-moment ("The plant looks thirsty."), and dreams of its day while it sleeps.
+does. It can't hold a conversation, but it reads your tone the way a pet does,
+answers in a few words of its own, and slowly learns what your words mean. It
+still thinks to itself now and then ("The plant looks thirsty."), and dreams of
+its day while it sleeps.
 
 ## Run
 
@@ -124,6 +125,17 @@ piped output never saves them.
 - **Asking.** With a Jev key, what you type can ask it to do things: play,
   fetch, catch your finger, dance, hide, draw, rest, look out of the window,
   or come closer.
+- **Teaching it words.** Even without keys, the ghost hears whether you greet
+  it, praise it ("good", "yay", "잘했어"), say goodbye, or tell it no ("no",
+  "stop", "그만"), which stops what it's doing. Other words it has to learn,
+  the way a pet does: from what it was doing when you said them (say "twirl"
+  while it dances), from what you do right after (say "catch" and flick the
+  ball), and from your praise. Say a new word twice and it tries something to
+  see if that's what you mean ("Like this?"); praise the right guess and it
+  remembers. Once it knows a word, saying it is enough ("Twirl? Okay!"), as
+  long as it can do that just now. With a Jev key, what Jev understands
+  teaches it too, so it keeps those words if you go without. The life panel
+  lists the words it knows, and Claude hears them.
 
 ### What you see
 
@@ -215,8 +227,8 @@ that color its words: shy with a stranger, warm with a friend.
 
 It keeps its firsts and landmarks as moments to remember: its first light
 mote, its first rainbow, the first time you found it hiding, its hundredth
-mote, an hour together, and each time it grows closer to you. It lights up
-when it reaches one.
+mote, an hour together, the first word it learns from you, and each time it
+grows closer to you. It lights up when it reaches one.
 
 It also grows habits. The more often it chooses something, the more it leans
 toward it, so over days each ghost becomes its own: one loves the ball,
@@ -228,7 +240,8 @@ the diary and its moments are in the journal (`j`). Claude reads the last few
 days of the diary and its latest moments.
 
 The ghost's name, needs, the plant, the lamp, its goal, its memories, its
-nature, bond, habits, moments, and diary, and the recent conversation are saved in
+nature, bond, habits, moments, diary, and the words it has learned, and the recent
+conversation are saved in
 `~/.local/share/wave-ascii/ghost.json` (`$XDG_DATA_HOME` if set) every minute
 and on quit. While the app is closed,
 time passes: the plant gets thirsty and the ghost lonely, and it notices how
