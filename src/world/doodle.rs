@@ -64,7 +64,7 @@ impl Sketch {
         &paths[self as usize]
     }
 
-    fn strokes(self) -> Vec<Vec<Vec2>> {
+    pub(super) fn strokes(self) -> Vec<Vec<Vec2>> {
         match self {
             Self::Heart => vec![
                 (0..=64)
@@ -176,7 +176,7 @@ impl Sketch {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Path {
     strokes: Vec<Vec<Vec2>>,
     segments: Vec<Segment>,
@@ -184,7 +184,7 @@ pub(super) struct Path {
     extent: Vec2,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Segment {
     start: Vec2,
     along: Vec2,
@@ -219,6 +219,10 @@ impl Path {
             segments,
             extent,
         }
+    }
+
+    pub(super) fn length(&self) -> f32 {
+        self.length
     }
 
     pub(super) fn point_at(&self, progress: f32) -> Vec2 {
@@ -308,12 +312,39 @@ impl Writing {
 pub enum Picture {
     Sketch(Sketch),
     Word(Writing),
+    Copy(Copying),
+}
+
+/// A viewer's picture, measured once and shared by plans and doodles.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Copying {
+    pub name: String,
+    path: Arc<Path>,
 }
 
 impl Picture {
+    /// Fits a copy to doodle space without losing corners or joining pen lifts.
+    pub(super) fn copy(name: String, strokes: &[Vec<Vec2>], mirrored: bool) -> Self {
+        let (minimum, maximum) = strokes.iter().flatten().fold(
+            (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY)),
+            |(minimum, maximum), &point| (minimum.min(point), maximum.max(point)),
+        );
+        let center = (minimum + maximum) * 0.5;
+        let scale = 1.8 / (maximum - minimum).max_element().max(1e-5);
+        let mut strokes = strokes.to_vec();
+        for point in strokes.iter_mut().flatten() {
+            *point = (*point - center) * Vec2::new(if mirrored { -scale } else { scale }, scale);
+        }
+        Self::Copy(Copying {
+            name,
+            path: Arc::new(Path::new(strokes)),
+        })
+    }
+
     pub fn name(&self) -> String {
         match self {
             Self::Sketch(sketch) => sketch.name().to_owned(),
+            Self::Copy(copy) => copy.name.clone(),
             Self::Word(writing) => format!(
                 "“{}”{}",
                 writing_words(&writing.text),
@@ -330,6 +361,7 @@ impl Picture {
         match self {
             Self::Sketch(sketch) => sketch.length(),
             Self::Word(writing) => writing.path.length,
+            Self::Copy(copy) => copy.path.length,
         }
     }
 
@@ -337,6 +369,7 @@ impl Picture {
         match self {
             Self::Sketch(sketch) => sketch.point_at(progress),
             Self::Word(writing) => writing.path.point_at(progress),
+            Self::Copy(copy) => copy.path.point_at(progress),
         }
     }
 
@@ -344,6 +377,7 @@ impl Picture {
         match self {
             Self::Sketch(sketch) => sketch.distance(point, progress),
             Self::Word(writing) => writing.path.distance(point, progress),
+            Self::Copy(copy) => copy.path.distance(point, progress),
         }
     }
 
@@ -351,19 +385,20 @@ impl Picture {
         match self {
             Self::Sketch(_) => Vec2::ONE,
             Self::Word(writing) => writing.path.extent,
+            Self::Copy(copy) => copy.path.extent,
         }
     }
 
     pub fn size(&self) -> f32 {
         match self {
-            Self::Sketch(_) => 0.3,
+            Self::Sketch(_) | Self::Copy(_) => 0.3,
             Self::Word(_) => 1.0,
         }
     }
 
     pub fn draw_time(&self) -> f64 {
         match self {
-            Self::Sketch(_) => Doodle::DRAW_TIME,
+            Self::Sketch(_) | Self::Copy(_) => Doodle::DRAW_TIME,
             Self::Word(writing) => writing.draw_time,
         }
     }
@@ -599,5 +634,35 @@ mod tests {
         assert_eq!(doodle.opacity(15.6), 1.0);
         assert_eq!(doodle.opacity(165.6), 0.0);
         assert_eq!(writing_words("2027"), "two zero two seven");
+    }
+
+    #[test]
+    fn copied_pictures_share_paths_and_mirror_without_joining_pen_lifts() {
+        let strokes = vec![
+            vec![Vec2::new(-0.4, 0.0), Vec2::new(-0.2, 0.5)],
+            vec![Vec2::new(0.2, 0.5), Vec2::new(0.4, 0.0)],
+        ];
+        let forward = Picture::copy("cat".to_owned(), &strokes, false);
+        let mirrored = Picture::copy("cat".to_owned(), &strokes, true);
+        assert_eq!(forward.name(), "cat");
+        for step in 0..=10 {
+            let progress = step as f32 / 10.0;
+            assert_eq!(
+                forward.point_at(progress) * Vec2::new(-1.0, 1.0),
+                mirrored.point_at(progress)
+            );
+        }
+        assert!(forward.distance(Vec2::Y * 0.9, 1.0) > 0.3);
+        let Picture::Copy(copy) = forward.clone() else {
+            unreachable!()
+        };
+        let Picture::Copy(original) = forward else {
+            unreachable!()
+        };
+        assert!(Arc::ptr_eq(&copy.path, &original.path));
+        assert_eq!(
+            copy.path.strokes.iter().map(Vec::len).collect::<Vec<_>>(),
+            strokes.iter().map(Vec::len).collect::<Vec<_>>()
+        );
     }
 }

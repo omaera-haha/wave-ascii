@@ -15,6 +15,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
         .iter()
         .map(|activity| match activity {
             Activity::Float => 0.45,
+            Activity::Look => {
+                if world.options().contains(&Activity::Look) {
+                    8.0
+                } else {
+                    0.0
+                }
+            }
             Activity::Explore => 0.25 + 0.9 * (1.0 - needs.fun) * needs.energy,
             Activity::Chase => {
                 let close = world.nearest_mote().map_or(0.0, |mote| {

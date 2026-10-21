@@ -10,6 +10,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
     let present = world.viewer_present();
     match activity {
         Activity::Float => Vec::new(),
+        Activity::Look => vec!["What did you draw?", "Let me have a look."],
         Activity::Explore => vec![
             "I wonder what's in that corner.",
             "Let's have a look around.",
@@ -102,6 +103,12 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if world.drawing.is_some() {
+        lines.extend([
+            "Your side of the glass has pictures too.",
+            "What will you draw next?",
+        ]);
+    }
     if !world.life.keepsakes.is_empty() {
         lines.extend(["Every little gift has a place.", "I like my little shelf."]);
     }
@@ -238,6 +245,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Hide => "Nobody hides like a ghost.",
             Activity::Game => "Another game on the glass?",
             Activity::Doodle => "I should draw on the glass again.",
+            Activity::Look => "I like seeing what you draw.",
         });
     }
     if lines.is_empty() {
@@ -275,6 +283,15 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if !world.life.pictures.is_empty() {
+        lines.extend([
+            "…the pictures you taught me climb off the glass…",
+            "…we draw a whole world, one finger each…",
+        ]);
+    }
+    if today.drawings_seen > 0 {
+        lines.push("…your finger draws a door in the mist…");
+    }
     match world.occasion() {
         Some(Occasion::Halloween) => lines.extend([
             "…a pumpkin so big I can hide inside its grin…",
@@ -401,6 +418,13 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
         ];
     }
     match &heard.understanding {
+        Understanding::Named { picture } => {
+            return vec![if heard.korean {
+                format!("{picture}! 기억할게.")
+            } else {
+                format!("A {picture}! I'll remember.")
+            }];
+        }
         Understanding::Doing { word, .. } => {
             let word = capitalized(word);
             return vec![
@@ -760,6 +784,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Game => "유리에 틱택토 하는 중",
         Activity::Wait => "유리 앞에서 너를 기다리는 중",
         Activity::Build => "블록으로 탑 쌓는 중",
+        Activity::Look => "네가 그린 그림을 보는 중",
     }
 }
 
@@ -783,6 +808,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Game => "틱택토",
         Activity::Wait => "너 기다리기",
         Activity::Build => "블록 쌓기",
+        Activity::Look => "네 그림 보기",
     }
 }
 

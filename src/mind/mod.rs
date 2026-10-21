@@ -315,7 +315,10 @@ impl Mind {
         // answer.
         if let Some(jev) = &self.jev
             && heard.tone != Some(Tone::Scolding)
-            && !matches!(heard.understanding, Understanding::Asked { .. })
+            && !matches!(
+                heard.understanding,
+                Understanding::Asked { .. } | Understanding::Named { .. }
+            )
         {
             let jev = jev.clone();
             let questions = decision::request_questions(&Activity::ALL);

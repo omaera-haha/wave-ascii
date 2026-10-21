@@ -420,6 +420,12 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
             column = write(screen, column, row, columns, &text, color, Some(BAR));
         }
     }
+    if app.drawing_mode {
+        let hint = " f fog · Esc stop ";
+        let column = columns.saturating_sub(width(hint));
+        fill(screen, row, column, columns, BAR);
+        write(screen, column, row, columns, hint, ACCENT, Some(BAR));
+    }
 }
 
 fn meter(level: f32) -> String {
@@ -550,6 +556,8 @@ fn help_panel(screen: &mut Canvas) {
         "                               click blocks  nudge or topple",
         "l          its life and bond   p             save a postcard",
         "g          noughts and crosses 1-9, click    choose a square",
+        "f          finger in the fog   right-drag    draw on glass",
+        "           f or Esc stops      left-click    still interacts",
         "arrows     turn the view       drag          turn the view",
         "+ -, wheel zoom                drag ghost    stroke it",
         "m  c       style, color        space         pause",
@@ -915,6 +923,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ("fetches", total.fetches, "dances", total.dances),
         ("found hiding", total.finds, "finger pounces", total.pounces),
         ("doodles", total.doodles, "words written", total.writings),
+        (
+            "drawings seen",
+            total.drawings_seen,
+            "pictures learned",
+            total.pictures_learned,
+        ),
         ("plant watered", total.waterings, "flowers", total.blooms),
         ("naps", total.naps, "nights slept", total.nights),
         ("messages from you", total.heard, "pokes", total.pokes),

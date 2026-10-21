@@ -220,6 +220,13 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::ExpectedArrival => Emote::Heart,
         EventKind::MissedVisit => Emote::Longing,
         EventKind::Scolded => Emote::Sigh,
+        EventKind::SawDrawing { name: Some(name) } if name == "heart" => Emote::Heart,
+        EventKind::SawDrawing { name: Some(name) } if matches!(name.as_str(), "star" | "sun") => {
+            Emote::Sparkle
+        }
+        EventKind::SawDrawing { name: None } => Emote::Question,
+        EventKind::LearnedPicture(_) => Emote::Sparkle,
+        EventKind::Copied(_) => Emote::Note,
         EventKind::Puzzled(_) => Emote::Question,
         EventKind::LearnedWord { .. } | EventKind::LearnedName(_) => Emote::Sparkle,
         EventKind::Heard(_) | EventKind::ViewerArrived if bond >= 0.3 => Emote::Heart,

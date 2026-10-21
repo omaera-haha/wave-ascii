@@ -139,6 +139,11 @@ pub fn request(
         .take(WORDS_SENT)
         .map(|(word, activity)| format!("“{word}”: {}", activity.doing()))
         .collect();
+    let pictures: Vec<&str> = life
+        .pictures
+        .iter()
+        .map(|picture| picture.name.as_str())
+        .collect();
     let days = dated(&life.diary, DAYS_SENT);
     let conversation: Vec<String> = conversation
         .iter()
@@ -172,7 +177,7 @@ pub fn request(
                  Your bond with the viewer: {}.{routine}{name}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
-                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}",
+                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}",
                 life.nature.unwrap_or_default().words(),
                 life.bond_words(),
                 life.bird_words(),
@@ -180,7 +185,8 @@ pub fn request(
                 bullets(&memories),
                 bullets(&milestones),
                 bullets(&days),
-                bullets(&words)
+                bullets(&words),
+                bullets(&pictures)
             )),
         ],
         messages: vec![Message {
@@ -276,6 +282,10 @@ mod tests {
                 crate::world::Keepsake::Acorn,
             ],
             viewer_name: Some("Mina".to_owned()),
+            pictures: vec![crate::world::LearnedPicture {
+                name: "cat".to_owned(),
+                strokes: vec![vec![glam::Vec2::ZERO, glam::Vec2::X]],
+            }],
             nature: Some(crate::world::Nature {
                 playful: 0.95,
                 shy: 0.72,
@@ -344,7 +354,12 @@ mod tests {
         assert!(
             request.system[1]
                 .text
-                .ends_with("Words it has learned:\n- “ball”: fetching the ball for the viewer")
+                .contains("Words it has learned:\n- “ball”: fetching the ball for the viewer")
+        );
+        assert!(
+            request.system[1]
+                .text
+                .ends_with("Pictures the viewer taught it to draw:\n- cat")
         );
         let content = &request.messages[0].content;
         assert!(content[0].text.contains("- ghost: Hello!"));

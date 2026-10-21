@@ -29,11 +29,12 @@ pub enum Thing {
     Bird,
     Moth,
     Shelf,
+    Drawing,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 12] = [
+    pub const NAMES: [&str; 13] = [
         "viewer",
         "window",
         "plant",
@@ -46,6 +47,7 @@ impl Thing {
         "moth",
         "shelf",
         "blocks",
+        "drawing",
     ];
 
     pub fn name(self) -> &'static str {
@@ -62,6 +64,7 @@ impl Thing {
             Self::Bird => "bird",
             Self::Moth => "moth",
             Self::Shelf => "shelf",
+            Self::Drawing => "drawing",
         }
     }
 }
@@ -129,6 +132,7 @@ impl World {
             Thing::Bird => self.visitors.bird.as_ref()?.position(self.time),
             Thing::Moth => self.visitors.moth.as_ref()?.position,
             Thing::Shelf => SHELF_POSITION,
+            Thing::Drawing => self.drawing.as_ref()?.center().extend(ROOM_MAX.z),
         })
     }
 
@@ -150,6 +154,7 @@ impl World {
             Thing::Bird,
             Thing::Moth,
             Thing::Shelf,
+            Thing::Drawing,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -211,6 +216,7 @@ impl World {
                 Thing::Bird,
                 Thing::Moth,
                 Thing::Shelf,
+                Thing::Drawing,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -544,6 +550,7 @@ mod tests {
             0.0,
             &mut super::super::Random::new(1),
         ));
+        world.draw_on_glass(Vec3::new(0.0, 1.2, ROOM_MAX.z));
         for name in Thing::NAMES {
             world.ghost.attention = None;
             world.attend(name, 5.0);

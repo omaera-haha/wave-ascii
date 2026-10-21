@@ -74,6 +74,8 @@ the next requests use them at once.
 | `l`             | Its life: age, bond with you, what it loves, today so far  |
 | `p`             | Save a postcard of the moment                             |
 | `g`             | Invite it to noughts and crosses on the glass              |
+| `f`             | Toggle finger drawing in the fog; `f` or Esc stops         |
+| Right drag      | Draw on the outside of the glass                          |
 | `1`–`9`         | Choose a square, from top left to bottom right             |
 | `?`             | Help                                                       |
 | Arrows, WASD    | Turn the view; ↑/↓ scroll the journal one line             |
@@ -92,7 +94,9 @@ grumpy), click the ball to flick it, click a loose block to nudge it or a
 tower to knock it down, and click anywhere else in the room to drop in a
 light mote. Press on the ghost and drag back and forth across it to
 stroke it. Drag anywhere else to turn the view, and scroll to zoom. The
-ghost's eyes follow the pointer.
+ghost's eyes follow the pointer. Right-drag on the glass to draw in its fog,
+or press `f` to draw with left drags on a trackpad. Left clicks still poke,
+flick, or play board moves in this mode; `f` or Esc returns to ordinary drags.
 
 The journal wraps all retained memories, its moments to remember, the diary,
 the conversation, the latest ten events, and any model errors. It opens at
@@ -164,9 +168,28 @@ piped output never saves them.
   so the letters look mirrored to you. After three words written while you
   watch, it learns to write your way round and keeps that moment as a milestone.
   Claude can also ask it to write a short word in the fog.
+- **Your drawings.** Right-drag, or press `f` and use left drags, to draw on
+  the outside of the glass. Lift your finger between strokes. After a short
+  pause an awake ghost comes to study the picture, unless it is busy resting,
+  tending, carrying something, hiding, or playing a game. It recognizes its
+  own eight sketches, plus circles, triangles, squares, crosses, ticks,
+  lightning zigzags, houses, crescent moons, and straight lines, without a
+  model. Hearts bring affection, stars sparkle, and sometimes it draws an
+  answer beside yours. It answers in Korean when your latest message was
+  Korean. The traces linger for two and a half minutes, then fade over forty
+  seconds. A stroke far away or after a six-second pause starts a new picture.
+- **Teaching pictures.** After it looks, name the picture in your next message
+  within a minute: "it's a cat", "a cat", "고양이야", or "고양이 그림이야".
+  You can correct a wrong guess this way too. Names use letters, at most two
+  words and sixteen characters. It remembers the newest eight pictures
+  between visits, recognizes them when you draw them again, and sometimes
+  draws one itself once you are friends. Teaching the same name replaces
+  its example; its first learned picture becomes a milestone. Its diary and
+  life panel remember pictures seen and learned. Copies begin mirrored,
+  following the same practice as its writing.
 - **Asking.** With a Jev key, what you type can ask it to do things: play,
   fetch, build a tower, catch your finger, play noughts and crosses, dance, hide, draw, rest,
-  look out of
+  look at your drawing, look out of
   the window, or come closer.
 - **Teaching it words.** Even without keys, the ghost hears whether you greet
   it, praise it ("good", "yay", "잘했어"), say goodbye, or tell it no ("no",

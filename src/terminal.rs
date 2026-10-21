@@ -76,6 +76,9 @@ pub enum MouseAction {
     Release,
     ScrollUp,
     ScrollDown,
+    DrawPress,
+    DrawDrag,
+    DrawRelease,
 }
 
 /// Something that arrived from the terminal.
@@ -91,7 +94,7 @@ pub enum Input {
 
 impl Input {
     /// The input an event stands for, if the app uses it. Key releases and
-    /// buttons other than the left one are left out.
+    /// unsupported buttons are left out.
     fn from_event(event: Event) -> Option<Self> {
         match event {
             Event::Key(key) if key.kind != KeyEventKind::Release => {
@@ -124,6 +127,9 @@ impl Input {
                     MouseEventKind::Down(MouseButton::Left) => MouseAction::Press,
                     MouseEventKind::Drag(MouseButton::Left) => MouseAction::Drag,
                     MouseEventKind::Up(MouseButton::Left) => MouseAction::Release,
+                    MouseEventKind::Down(MouseButton::Right) => MouseAction::DrawPress,
+                    MouseEventKind::Drag(MouseButton::Right) => MouseAction::DrawDrag,
+                    MouseEventKind::Up(MouseButton::Right) => MouseAction::DrawRelease,
                     MouseEventKind::ScrollUp => MouseAction::ScrollUp,
                     MouseEventKind::ScrollDown => MouseAction::ScrollDown,
                     _ => return None,
@@ -302,6 +308,18 @@ mod tests {
             (MouseEventKind::Down(MouseButton::Left), MouseAction::Press),
             (MouseEventKind::Drag(MouseButton::Left), MouseAction::Drag),
             (MouseEventKind::Up(MouseButton::Left), MouseAction::Release),
+            (
+                MouseEventKind::Down(MouseButton::Right),
+                MouseAction::DrawPress,
+            ),
+            (
+                MouseEventKind::Drag(MouseButton::Right),
+                MouseAction::DrawDrag,
+            ),
+            (
+                MouseEventKind::Up(MouseButton::Right),
+                MouseAction::DrawRelease,
+            ),
             (MouseEventKind::ScrollUp, MouseAction::ScrollUp),
             (MouseEventKind::ScrollDown, MouseAction::ScrollDown),
         ];
@@ -316,7 +334,7 @@ mod tests {
             );
         }
         assert_eq!(
-            Input::from_event(mouse(MouseEventKind::Down(MouseButton::Right))),
+            Input::from_event(mouse(MouseEventKind::Down(MouseButton::Middle))),
             None
         );
     }
