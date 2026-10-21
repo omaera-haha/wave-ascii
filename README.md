@@ -482,7 +482,7 @@ often in spring and less often in summer; about a third of the showers that
 end by day leave a rainbow for a few minutes. Some showers become
 thunderstorms, especially in summer: jagged lightning flashes across the
 window and lights the room, followed a moment later by thunder. The ghost
-flinches and may wake from a nap. While it barely knows you, it favors the
+flinches and may wake from a nap, though a storm wakes it only once. While it barely knows you, it favors the
 cushion and shies away from the window; once it trusts you, it comes to the
 glass to be near you when thunder rolls, unless it is resting, tending the
 plant, or fetching the ball. Winter brings soft falling snow instead,

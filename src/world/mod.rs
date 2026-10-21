@@ -654,6 +654,8 @@ pub struct World {
     viewer_gone: bool,
     /// When the viewer stopped counting as present, while they are away.
     absent_since: Option<f64>,
+    /// When the storm that last woke it began, so it wakes once a storm.
+    storm_woke: Option<f64>,
     /// When the viewer last let a game on the glass pass without a move,
     /// and how many invitations in a row they have let pass.
     invitation_ignored_at: Option<f64>,
@@ -797,6 +799,7 @@ impl World {
             viewer_present: false,
             viewer_gone: true,
             absent_since: None,
+            storm_woke: None,
             invitation_ignored_at: None,
             invitations_ignored: 0,
             pointer_interrupted_at: None,
@@ -2237,9 +2240,12 @@ impl World {
 
     fn hear_thunder(&mut self) {
         if self.ghost.asleep > 0.3 {
-            if self.random.unit() >= 1.0 / 3.0 {
+            // One storm wakes it at most once; after that it sleeps through
+            // the rumbling.
+            if self.storm_woke == Some(self.weather.since) || self.random.unit() >= 1.0 / 3.0 {
                 return;
             }
+            self.storm_woke = Some(self.weather.since);
             self.wake();
         }
         self.ghost.velocity += Vec3::new(self.random.range(-0.25, 0.25), 0.3, 0.12);
@@ -3342,6 +3348,31 @@ mod tests {
             }
         }
         assert!((30..70).contains(&awakened), "{awakened}");
+    }
+
+    #[test]
+    fn a_storm_wakes_a_sleeper_at_most_once() {
+        for seed in 0..40 {
+            let mut world = before_thunder(seed);
+            world.begin(Activity::Rest);
+            world.ghost.position = world.nook.bed(world.size());
+            world.ghost.plan.arrived = Some(world.time);
+            world.ghost.asleep = 1.0;
+            world.ghost.needs.energy = 0.3;
+            let mut wakings = 0;
+            for _ in 0..30 {
+                world.weather.thunder_at = Some(world.time + 0.05);
+                world.step(0.1);
+                wakings += usize::from(world.ghost.asleep == 0.0);
+                if world.ghost.asleep == 0.0 {
+                    world.begin(Activity::Rest);
+                    world.ghost.position = world.nook.bed(world.size());
+                    world.ghost.plan.arrived = Some(world.time);
+                    world.ghost.asleep = 1.0;
+                }
+            }
+            assert!(wakings <= 1, "seed {seed}: {wakings}");
+        }
     }
 
     #[test]
