@@ -91,6 +91,7 @@ pub fn observe(world: &World) -> Value {
         "while_the_viewer_was_away": world.away_summary(),
         "recent_events": recent(world, 8),
         "skills": Skill::ALL.map(|skill| world.life.skills.description(skill)),
+        "wish": world.wish_observation(),
     })
 }
 
@@ -1295,6 +1296,11 @@ mod tests {
     fn observations_name_the_visiting_friend_without_digits_or_a_flood_of_tags() {
         let mut world = World::new(2, 20.0);
         world.date = jiff::civil::Date::constant(2026, 10, 25);
+        world.life.wish = Some(crate::world::Wishing {
+            wish: crate::world::Wish::Tower { height: 3 },
+            day: world.date.to_string(),
+            said: None,
+        });
         for _ in 0..3000 {
             world.step(0.1);
             if world.friend.is_some() {
@@ -1388,5 +1394,25 @@ mod tests {
                 .chars()
                 .any(|character| character.is_ascii_digit())
         );
+    }
+    #[test]
+    fn observations_name_the_wish_its_age_and_wishes_granted_today() {
+        use crate::world::{Granted, Wish, Wishing};
+        let mut world = World::new(17, 12.0);
+        world.life.begin_day(&world.date.to_string());
+        world.life.wish = Some(Wishing {
+            wish: Wish::Rainbow,
+            day: "2026-06-19".to_owned(),
+            said: None,
+        });
+        world.life.granted.push(Granted {
+            wish: Wish::Tower { height: 4 },
+            day: world.date.to_string(),
+        });
+        let observation = observe(&world);
+        let wish = observation["wish"].as_str().unwrap();
+        assert!(wish.contains("to see a rainbow; it made the wish two days ago"));
+        assert!(wish.contains("came true today: to build a tower four blocks high"));
+        assert!(!wish.chars().any(|letter| letter.is_ascii_digit()));
     }
 }

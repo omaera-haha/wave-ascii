@@ -41,6 +41,7 @@ pub enum Question {
     ReadAloud,
     Music,
     Songs,
+    Wish,
 }
 
 impl Question {
@@ -92,6 +93,15 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
         &[
             &["what", "songs", "do", "you", "know"],
             &["what", "tunes", "do", "you", "know"],
+        ],
+    ),
+    (
+        Question::Wish,
+        &[
+            &["what", "do", "you", "wish", "for"],
+            &["do", "you", "have", "a", "wish"],
+            &["whats", "your", "wish"],
+            &["what", "is", "your", "wish"],
         ],
     ),
     (
@@ -311,6 +321,11 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
     (
         Question::FavoriteBook,
         &["제일좋아하는책", "가장좋아하는책"],
+        false,
+    ),
+    (
+        Question::Wish,
+        &["소원이뭐", "소원있어", "소원은뭐", "무슨소원"],
         false,
     ),
     (
@@ -591,5 +606,22 @@ mod tests {
     fn particular_questions_win_over_general_ones() {
         assert_eq!(ask("are you tired? are you okay?"), Some(Question::Tired));
         assert_eq!(ask("how are you, what's your name"), Some(Question::Name));
+    }
+    #[test]
+    fn questions_about_wishes_use_english_word_runs_and_korean_pieces() {
+        for text in [
+            "what do you wish for?",
+            "do you have a wish?",
+            "what's your wish?",
+            "What is your wish?",
+            "소원이 뭐야?",
+            "소원 있어?",
+            "소원은 뭐야?",
+        ] {
+            assert_eq!(ask(text), Some(Question::Wish), "{text}");
+        }
+        for text in ["wishful thinking", "I wish for rain", "내 소원은 무지개야"] {
+            assert_ne!(ask(text), Some(Question::Wish), "{text}");
+        }
     }
 }

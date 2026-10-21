@@ -383,6 +383,9 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             lines.push("A hat for my birthday!");
         }
     }
+    if let Some(wishing) = &world.life.wish {
+        lines.push(wishing.wish.hope());
+    }
     if world.enjoying_air() {
         lines.extend(["The air smells like rain.", "The breeze tickles my hem."]);
         if world.season() == crate::world::Season::Autumn {
@@ -641,6 +644,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if !world.life.tunes.is_empty() {
         lines.push("…the tune you taught me turns into golden stars…");
+    }
+    if let Some(wishing) = &world.life.wish {
+        lines.push(wishing.wish.dream());
     }
     if world.window_open || today.airings > 0 {
         lines.push("…the wind carries a cloud through my little room…");
@@ -1113,6 +1119,30 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
                     "I know little lullaby, turning waltz, tiny march, and mote sparkle. {extra}"
                 )]
             }
+        }
+        Question::Wish => {
+            let mut words = match (&world.life.wish, korean) {
+                (Some(wishing), true) => {
+                    format!("내 소원은 {}이야.", wishing.wish.korean(&world.life))
+                }
+                (Some(wishing), false) => format!("I wish {}.", wishing.wish.words(&world.life)),
+                (None, true) => "지금은 없어. 행복해.".to_owned(),
+                (None, false) => "Nothing right now. I'm happy.".to_owned(),
+            };
+            if let Some(granted) = world.life.granted.last() {
+                words.push_str(&if korean {
+                    format!(
+                        " 지난번 소원은 {}이었어. 이루어졌어!",
+                        granted.wish.korean(&world.life)
+                    )
+                } else {
+                    format!(
+                        " My last wish came true: {}.",
+                        granted.wish.words(&world.life)
+                    )
+                });
+            }
+            vec![words]
         }
         Question::Story => Vec::new(),
         Question::Away => {
@@ -2882,5 +2912,37 @@ mod tests {
         }
         world.hour = 12.0;
         assert!(!idle(&world).contains(&"I can see my constellation again."));
+    }
+    #[test]
+    fn wishes_answer_questions_in_both_languages_and_enter_thoughts_and_dreams() {
+        use crate::world::{Granted, Wish, Wishing};
+        let mut world = World::new(17, 12.0);
+        for korean in [false, true] {
+            let response = answer(&world, Question::Wish, None, korean);
+            assert_eq!(
+                response,
+                [if korean {
+                    "지금은 없어. 행복해."
+                } else {
+                    "Nothing right now. I'm happy."
+                }]
+            );
+        }
+        world.life.wish = Some(Wishing {
+            wish: Wish::Rainbow,
+            day: world.date.to_string(),
+            said: None,
+        });
+        world.life.granted.push(Granted {
+            wish: Wish::Petting,
+            day: world.date.to_string(),
+        });
+        assert!(answer(&world, Question::Wish, None, false)[0].contains("to see a rainbow"));
+        assert!(answer(&world, Question::Wish, None, false)[0].contains("My last wish came true"));
+        let korean = &answer(&world, Question::Wish, None, true)[0];
+        assert!(korean.contains("무지개"));
+        assert!(korean.contains("이루어졌어"));
+        assert!(idle(&world).contains(&Wish::Rainbow.hope()));
+        assert!(dreams(&world).contains(&Wish::Rainbow.dream()));
     }
 }

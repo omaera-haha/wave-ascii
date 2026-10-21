@@ -218,6 +218,21 @@ pub fn request(
             friend.closeness_words()
         )
     });
+    let wish = life.wish.as_ref().map_or_else(
+        || "No wish just now.".to_owned(),
+        |wishing| format!("Your current wish is {}.", wishing.wish.words(life)),
+    );
+    let granted = life
+        .granted
+        .iter()
+        .rev()
+        .take(3)
+        .map(|granted| granted.wish.words(life))
+        .collect::<Vec<_>>();
+    let wishes = format!(
+        "{wish}\nWishes that came true recently:\n{}",
+        bullets(&granted)
+    );
     let block = |text: String| Block { text, cache };
     Request {
         system: vec![
@@ -226,7 +241,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\n\
                  You are {stage}.{voice}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{friend}\n\n\
+                 Your bond with the viewer: {}.{routine}{name}{friend}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}",
@@ -587,5 +602,40 @@ mod tests {
             "Your ghost friend is Lumi. They have visited twenty five times and are an old friend."
         ));
         assert!(!text.chars().any(|character| character.is_ascii_digit()));
+    }
+    #[test]
+    fn reflections_keep_the_current_wish_and_only_the_latest_few_granted_ones() {
+        use crate::world::{Granted, Wish, Wishing};
+        let mut life = Life {
+            wish: Some(Wishing {
+                wish: Wish::Rainbow,
+                day: "2026-06-21".to_owned(),
+                said: None,
+            }),
+            ..Life::default()
+        };
+        life.granted = [
+            Wish::Snow,
+            Wish::Petting,
+            Wish::Story,
+            Wish::Tower { height: 4 },
+        ]
+        .into_iter()
+        .map(|wish| Granted {
+            wish,
+            day: "2026-06-21".to_owned(),
+        })
+        .collect();
+        let request = request(&json!({}), &[], &life, &[], None, None, None);
+        let prompt = &request.system[1].text;
+        assert!(prompt.contains("Your current wish is to see a rainbow."));
+        for words in [
+            "for you to pet me gently",
+            "to tell you a story",
+            "to build a tower four blocks high",
+        ] {
+            assert!(prompt.contains(words));
+        }
+        assert!(!prompt.contains("to see falling snow"));
     }
 }

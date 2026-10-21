@@ -497,7 +497,13 @@ mod tests {
             assert_eq!(world.feeling(), Mood::Excited);
             assert_eq!(world.sebae_gift_until, 0.0);
             world.begin(Activity::Chase);
-            world.step(0.1);
+            // A miss now and then only delays the catch.
+            for _ in 0..30 {
+                if world.life.total.motes > 0 {
+                    break;
+                }
+                world.step(0.1);
+            }
             assert_eq!(world.life.total.motes, 1);
             world.time += 21.0;
             world.drop_mote(world.ghost.position);

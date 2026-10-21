@@ -577,6 +577,24 @@ you didn't come, it feels a little lonely and notes that in its diary.
 Older days gradually fade from its routine, so it learns when your hours
 change. Press `l` to see when it usually expects you. This needs no model.
 
+It holds one wish at a time: a rainbow or a shooting star, a bird's gift,
+a friend's return, a garden flower, a taller tower, or something to do with
+you. Its nature helps choose, and it leans a little toward activities that
+could bring the wish about. At the glass it may tell you a wish in English
+or Korean, with a short hint on the words line: press `g` for a game,
+right-drag a picture, stroke it gently, or ask for a story. It stays quiet
+about wishes while you focus together. Ask “What do you wish for?” or
+“소원이 뭐야?” to hear its current hope and the last one that came true.
+
+Wishes appear from the morning or a shooting star after its first day;
+newborns have simpler hopes. A wish coming true brings a sparkle, a little
+celebration, and sometimes a new album moment. It remembers its newest
+twelve granted wishes, avoids the last two kinds, and lets an unfulfilled
+wish go after a week or when its season passes. It waits until the next day
+for another, unless a shooting star prompts one sooner. Press `l` to see
+its wish and how many came true. Wishes, their dates, and the daily spoken
+reminder survive restarts; stories about time away never grant them.
+
 It keeps its firsts and landmarks as moments to remember: its first light
 mote, its first rainbow, the first time you found it hiding, its hundredth
 mote, an hour together, the first word it learns from you, and each time it

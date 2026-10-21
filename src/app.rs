@@ -276,6 +276,10 @@ impl App {
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
         self.mind.think(&mut self.world);
+        self.world.celebrate_wish();
+        if let Some(notice) = self.world.share_wish() {
+            self.post(notice);
+        }
         if self.paths.is_some() {
             self.album.observe(&self.world);
         }
@@ -1485,7 +1489,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..1200 {
+        for _ in 0..3600 {
             app.advance(0.05);
         }
         assert!(
@@ -2815,5 +2819,41 @@ mod tests {
         restore(&mut winter, &winter_save, winter_save.last_seen + 300);
         assert_eq!(winter.plant.blossom, 0.0);
         assert_eq!(winter.seedlings[0].growth, 0.5);
+    }
+    #[test]
+    fn sharing_a_wish_posts_its_hint_and_saves_the_day_it_was_said() {
+        use crate::world::{Wish, Wishing};
+        let mut app = app();
+        app.world.life.wish = Some(Wishing {
+            wish: Wish::Game,
+            day: app.world.date.to_string(),
+            said: None,
+        });
+        app.world.notice_viewer();
+        app.world.begin(Activity::Visit);
+        app.world.ghost.plan.arrived = Some(app.world.time);
+        app.advance(0.0);
+        assert!(app.notice().unwrap().contains("press g"));
+        assert_eq!(
+            app.world.life.wish.as_ref().unwrap().said.as_deref(),
+            Some(app.world.date.to_string().as_str())
+        );
+        let spoken = app
+            .world
+            .events
+            .iter()
+            .filter(|event| matches!(&event.kind, EventKind::Said(text) if text.contains("I wish")))
+            .count();
+        app.advance(0.0);
+        assert_eq!(
+            app.world
+                .events
+                .iter()
+                .filter(
+                    |event| matches!(&event.kind, EventKind::Said(text) if text.contains("I wish"))
+                )
+                .count(),
+            spoken
+        );
     }
 }

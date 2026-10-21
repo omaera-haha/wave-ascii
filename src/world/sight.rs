@@ -461,7 +461,6 @@ impl World {
                 {
                     self.seen_meteor = Some(meteor.slot);
                     self.record(EventKind::ShootingStar);
-                    self.wish();
                 }
                 Thing::Bird if seen.hidden_behind.is_none() => {
                     if let Some(bird) = &mut self.visitors.bird
@@ -679,6 +678,8 @@ mod tests {
         let mut world = World::new(1, 12.0);
         // A winter day with no holiday to get excited about.
         world.date = jiff::civil::Date::constant(2026, 12, 10);
+        // Check the snow reaction without a wish also coming true.
+        world.calendar_at = Some(world.date);
         world.time = 100.0;
         world.weather.sky = Sky::Snow;
         world.weather.since = 0.0;

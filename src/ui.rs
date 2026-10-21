@@ -1033,6 +1033,17 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             })
             .collect()
     };
+    header.extend(labeled(
+        "Wish",
+        format!(
+            "{} · {} came true",
+            life.wish.as_ref().map_or_else(
+                || "nothing just now".to_owned(),
+                |wishing| wishing.wish.words(life)
+            ),
+            crate::world::friend::count_words(life.total.wishes_granted)
+        ),
+    ));
     if life.total.focus_sessions > 0 || life.total.focus_minutes > 0 {
         header.extend(labeled(
             "Focus",

@@ -25,6 +25,7 @@ pub enum Emote {
     Sneeze,
     Yawn,
     Shiver,
+    WishStar,
 }
 
 impl Emote {
@@ -43,6 +44,7 @@ impl Emote {
             Self::Sneeze => "achoo",
             Self::Yawn => "○",
             Self::Shiver => "〰",
+            Self::WishStar => "✧",
         }
     }
 
@@ -56,7 +58,7 @@ impl Emote {
             Self::Question => Vec3::new(0.45, 0.8, 1.0),
             Self::Anger => Vec3::new(1.0, 0.45, 0.3),
             Self::Sigh => Vec3::new(0.7, 0.65, 0.8),
-            Self::Sparkle => Vec3::new(1.0, 0.8, 0.35),
+            Self::Sparkle | Self::WishStar => Vec3::new(1.0, 0.8, 0.35),
             Self::Hiccup | Self::Yawn => mood_color,
             Self::Sneeze => Vec3::new(1.0, 0.85, 0.6),
             Self::Shiver => Vec3::new(0.45, 0.7, 1.0),
@@ -140,6 +142,11 @@ pub fn puffs(world: &World) -> Vec<Puff> {
         for (index, event) in world.events.iter().enumerate() {
             // A spell supplies its current pulse, including repeated hiccups.
             if matches!(event.kind, EventKind::Quirk(_)) {
+                continue;
+            }
+            if matches!(event.kind, EventKind::WishGranted(_)) {
+                add(event.time, Emote::WishStar);
+                add(event.time + 0.35, Emote::Heart);
                 continue;
             }
             if event.kind == EventKind::Tended && world.garden_recovering() {
@@ -233,6 +240,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Quirk(Quirk::Yawn) => Emote::Yawn,
         EventKind::Quirk(Quirk::Shiver) => Emote::Shiver,
         EventKind::Quirk(Quirk::Sigh) => Emote::Sigh,
+        EventKind::MadeWish(_) => Emote::WishStar,
         EventKind::SawPasserby(kind) if kind.delighted() => Emote::Sparkle,
         EventKind::SawPasserby(_) => Emote::Question,
         EventKind::Noticed(thing)

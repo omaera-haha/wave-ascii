@@ -525,6 +525,8 @@ impl World {
     /// Only the garden ages during an absence. Minute slices bound work even
     /// for an old save; nothing is watered, moved, or planted while away.
     pub fn age_garden(&mut self, seconds: f32) {
+        // A remembered absence cannot make a wish come true.
+        let wish = self.life.wish.take();
         let mut remaining = seconds.clamp(0.0, 7.0 * DAY);
         let season = self.season();
         while remaining > 0.0 {
@@ -543,6 +545,7 @@ impl World {
                 self.note_growth(index, before);
             }
         }
+        self.life.wish = wish;
     }
 }
 

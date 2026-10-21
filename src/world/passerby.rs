@@ -115,30 +115,37 @@ impl Passerby {
             .find(|passing| passing.kind == self)
     }
 
-    fn eligible(self, date: Date, hour: f32, weather: &Weather, gust: f32) -> bool {
+    /// Seasonal possibilities shared by passing schedules and wishes.
+    pub fn in_season(self, date: Date) -> bool {
         let season = Season::of(date);
+        match self {
+            Self::Geese => matches!(season, Season::Spring | Season::Autumn),
+            Self::Balloon => matches!(season, Season::Summer | Season::Autumn),
+            Self::Kite => matches!(season, Season::Spring | Season::Summer),
+            Self::Squirrel => season == Season::Autumn,
+            Self::Plane => true,
+            Self::Snowman => season == Season::Winter,
+            Self::Lanterns => matches!(
+                super::occasion::occasion(date, 23.0, None),
+                Some(Occasion::Chuseok | Occasion::Seollal)
+            ),
+        }
+    }
+
+    fn eligible(self, date: Date, hour: f32, weather: &Weather, gust: f32) -> bool {
+        if !self.in_season(date) {
+            return false;
+        }
         let day = (7.0..18.5).contains(&hour);
         let dry = matches!(weather.sky, Sky::Clear | Sky::Rainbow) && !weather.storm;
         let clear = weather.sky == Sky::Clear && !weather.storm;
         match self {
-            Self::Geese => day && dry && matches!(season, Season::Spring | Season::Autumn),
-            Self::Balloon => {
-                clear
-                    && matches!(season, Season::Summer | Season::Autumn)
-                    && ((7.0..11.0).contains(&hour) || (16.0..18.5).contains(&hour))
-            }
-            Self::Kite => {
-                day && dry && gust > 0.25 && matches!(season, Season::Spring | Season::Summer)
-            }
-            Self::Squirrel => day && dry && season == Season::Autumn,
+            Self::Geese => day && dry,
+            Self::Balloon => clear && ((7.0..11.0).contains(&hour) || (16.0..18.5).contains(&hour)),
+            Self::Kite => day && dry && gust > 0.25,
+            Self::Squirrel => day && dry,
             Self::Plane => clear && super::meteor::dark(hour),
-            Self::Lanterns => {
-                dry && super::meteor::dark(hour)
-                    && matches!(
-                        super::occasion::occasion(date, hour, None),
-                        Some(Occasion::Chuseok | Occasion::Seollal)
-                    )
-            }
+            Self::Lanterns => dry && super::meteor::dark(hour),
             Self::Snowman => false,
         }
     }
