@@ -491,6 +491,7 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
             "I stayed close to you.".to_owned(),
             Some("comfort".to_owned()),
         ),
+        EventKind::PromiseKept(kind) if kind.trip() => ("You came home.".to_owned(), None),
         EventKind::ReadLetter => ("You read my letter.".to_owned(), None),
         EventKind::ToldStory => ("I told you a whole story.".to_owned(), None),
         EventKind::FocusEnded {
@@ -503,6 +504,18 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn kept_trips_schedule_an_ordinary_album_moment_and_everyday_promises_do_not() {
+        use crate::world::promise::Return;
+        assert_eq!(
+            caption(&EventKind::PromiseKept(Return::Week)),
+            Some(("You came home.".to_owned(), None))
+        );
+        assert!(caption(&EventKind::PromiseKept(Return::Tomorrow)).is_none());
+        assert!(caption(&EventKind::Promised(Return::Week)).is_none());
+        assert!(caption(&EventKind::PromiseLate).is_none());
+    }
+
     #[test]
     fn completed_comfort_uses_one_ordinary_album_trigger_each_local_day() {
         let directory = scratch("comfort");

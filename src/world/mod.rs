@@ -29,6 +29,7 @@ pub mod occasion;
 pub mod passerby;
 pub mod penpal;
 mod pounce;
+pub mod promise;
 pub mod puzzle;
 mod question;
 pub mod quirks;
@@ -176,6 +177,9 @@ pub enum EventKind {
     /// The ghost said something.
     Said(String),
     ViewerArrived,
+    Promised(promise::Return),
+    PromiseKept(promise::Return),
+    PromiseLate,
     ViewerLeft,
     ExpectedArrival,
     MissedVisit,
@@ -389,6 +393,14 @@ impl EventKind {
                 ),
             },
             Self::Said(text) => format!("you said: {text}"),
+            Self::Promised(kind) => format!("the viewer promised to return {}", kind.words()),
+            Self::PromiseKept(kind) if kind.trip() => {
+                "the viewer came home from their trip, as promised".to_owned()
+            }
+            Self::PromiseKept(_) => "the viewer came back when they said they would".to_owned(),
+            Self::PromiseLate => {
+                "the viewer came back; you missed them and are glad they are here".to_owned()
+            }
             Self::ViewerArrived => "the viewer came to the glass".to_owned(),
             Self::ViewerLeft => "the viewer went away".to_owned(),
             Self::ExpectedArrival => {
@@ -564,6 +576,7 @@ pub enum Understanding {
         accepted: bool,
     },
     Felt(Feeling),
+    Promised(promise::Return),
     FeltBetter,
     WordGame,
     Yawning,
@@ -695,6 +708,10 @@ pub struct World {
     /// Whether the viewer has stayed away long enough to have left, so
     /// their next appearance is an arrival.
     viewer_gone: bool,
+    /// The language of a farewell promise made during this session.
+    promise_said: Option<bool>,
+    /// Whether the viewer has left since that promise (true for a restored life).
+    promise_departed: bool,
     /// When the viewer stopped counting as present, while they are away.
     absent_since: Option<f64>,
     /// When the storm that last woke it began, so it wakes once a storm.
@@ -848,6 +865,8 @@ impl World {
             next_mote_at: 8.0,
             viewer_present: false,
             viewer_gone: true,
+            promise_said: None,
+            promise_departed: true,
             absent_since: None,
             storm_woke: None,
             invitation_ignored_at: None,
@@ -1065,8 +1084,12 @@ impl World {
             self.viewer_gone = true;
             self.record(EventKind::ViewerLeft);
         }
-        if let Some(milestone) = self.life.pass(seconds, present) {
-            self.record(EventKind::Milestone(milestone));
+        if present {
+            if let Some(milestone) = self.life.pass(seconds, true) {
+                self.record(EventKind::Milestone(milestone));
+            }
+        } else {
+            self.life.miss_at(seconds, self.hour);
         }
 
         self.holiday_greeting();
@@ -1866,6 +1889,12 @@ impl World {
         {
             return heard;
         }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_promise(text, korean)
+        {
+            return heard;
+        }
         let question = naming.is_none().then(|| question::ask(text)).flatten();
         // A drawing just looked at may be what the words name.
         if introduction.is_none() && naming.is_none() && question.is_none() {
@@ -2249,6 +2278,9 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        if kind == EventKind::ViewerLeft {
+            self.promise_departed = true;
+        }
         let quirk_trigger = kind == EventKind::AteMote || quirks::delighted(&kind);
         if kind == EventKind::Thunder {
             self.cure_hiccups(false);

@@ -306,7 +306,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Doodled(_) | EventKind::Wrote { .. } if bond >= 0.3 => Emote::Heart,
         EventKind::Doodled(_) | EventKind::Wrote { .. } => Emote::Note,
         EventKind::Praised | EventKind::ReadLetter | EventKind::ReadViewerLetter => Emote::Heart,
-        EventKind::ExpectedArrival => Emote::Heart,
+        EventKind::ExpectedArrival | EventKind::PromiseKept(_) => Emote::Heart,
         EventKind::FocusEnded {
             completed: true, ..
         } => Emote::Heart,

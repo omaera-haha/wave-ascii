@@ -20,6 +20,10 @@ impl World {
 
     pub(super) fn wait_is_open(&self) -> bool {
         !self.viewer_present()
+            && !self
+                .life
+                .promise
+                .is_some_and(|promise| promise.holds(self.date))
             && self.ghost.asleep < 0.3
             && !self.bedtime()
             && self.expected_window().is_some_and(|window| {
@@ -42,6 +46,14 @@ impl World {
     // The clock, rather than simulation seconds, ends an expected hour. A seeded
     // picture's fixed hour can never turn a wait into a missed visit.
     pub(super) fn advance_routine(&mut self) {
+        if self
+            .life
+            .promise
+            .is_some_and(|promise| promise.holds(self.date))
+        {
+            self.quiet_routine();
+            return;
+        }
         if let Some((window, until)) = self.routine.waiting
             && self.local_hour() >= until as f64
         {
@@ -78,6 +90,9 @@ impl World {
             .is_some_and(|(window, _)| self.arrived_in(window))
         {
             self.routine.waiting = None;
+        }
+        if self.return_to_promise() {
+            return;
         }
         if expected {
             self.record(EventKind::ExpectedArrival);
@@ -162,6 +177,21 @@ fn day_hour(date: jiff::civil::Date) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_promised_absence_cancels_routine_disappointment_until_the_grace_day_ends() {
+        let mut world = expecting(20.0, 20.0);
+        world.begin(Activity::Wait);
+        world.life.promise =
+            super::super::promise::promised("see you next week", world.date, world.hour);
+        world.hour = 21.0;
+        world.step(0.1);
+        assert_eq!(world.life.total.missed, 0);
+        assert!(!world.wait_is_open());
+        world.date = jiff::civil::Date::constant(2026, 6, 13);
+        world.hour = 20.0;
+        assert!(world.wait_is_open());
+    }
+
     use super::*;
     use crate::world::{Mood, ROOM_MAX};
 

@@ -94,7 +94,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::GotLetter => glance(-0.2, -0.1),
         EventKind::ReadLetter => glance(0.25, -0.2),
         EventKind::MadeWish(_) => Expression::Smile,
-        EventKind::WishGranted(_) => Expression::Sparkle,
+        EventKind::WishGranted(_) | EventKind::PromiseKept(_) => Expression::Sparkle,
         EventKind::WishFaded(_) => glance(0.0, -0.3),
         EventKind::SawPasserby(kind) if kind.delighted() => Expression::Sparkle,
         EventKind::SawPasserby(_) => Expression::LookAround,
