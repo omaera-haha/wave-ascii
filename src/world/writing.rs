@@ -22,10 +22,48 @@ pub(super) fn final_consonant(text: &str) -> bool {
 }
 
 pub(super) fn particle<'a>(name: &str, consonant: &'a str, vowel: &'a str) -> &'a str {
-    if final_consonant(name) {
+    let rieul = name.trim_end().chars().last().is_some_and(|letter| {
+        ('가'..='힣').contains(&letter) && (u32::from(letter) - u32::from('가')) % 28 == 8
+    });
+    if final_consonant(name) && !(consonant == "으로" && rieul) {
         consonant
     } else {
         vowel
+    }
+}
+
+pub(super) fn count(number: u32, counter: &str) -> String {
+    let native = [
+        "", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉", "열",
+    ];
+    if (1..=10).contains(&number) {
+        // Minutes and years take Sino-Korean numbers even in a quiet diary.
+        let words = if matches!(counter, "분" | "년") {
+            korean_number(number)
+        } else {
+            native[number as usize].to_owned()
+        };
+        format!("{words} {counter}")
+    } else {
+        format!("{number}{counter}")
+    }
+}
+
+pub(super) fn learned_name(name: &str) -> String {
+    format!(
+        "네 이름이 {name}{} 걸 알게 됐어",
+        particle(name, "이라는", "라는")
+    )
+}
+
+pub(super) fn nouns(words: &[&str]) -> String {
+    match words {
+        [] => String::new(),
+        [word] => (*word).to_owned(),
+        [rest @ .., last] => {
+            let rest = rest.join(", ");
+            format!("{rest}{} {last}", particle(&rest, "과", "와"))
+        }
     }
 }
 
@@ -37,16 +75,17 @@ pub(super) fn sentence(deeds: &[String]) -> String {
     }
     let mut text = String::new();
     for (index, deed) in deeds.iter().enumerate() {
+        let deed = deed.trim_end_matches(['.', '!']);
         if index + 1 < deeds.len() {
-            if let Some(stem) = deed.strip_suffix('어') {
+            if let Some(stem) = deed.strip_suffix(['어', '아']) {
                 text.push_str(stem);
                 text.push_str("고, ");
             } else {
-                text.push_str(deed.trim_end_matches(['.', '!']));
+                text.push_str(deed);
                 text.push_str(". ");
             }
         } else {
-            text.push_str(deed.trim_end_matches(['.', '!']));
+            text.push_str(deed);
             text.push('.');
         }
     }
@@ -64,14 +103,10 @@ pub(super) fn duration(seconds: f64) -> String {
     if minutes < 5.0 {
         "잠깐".to_owned()
     } else if minutes < 60.0 {
-        format!("{}분쯤", minutes.round() as u32)
+        format!("{}쯤", count(minutes.round() as u32, "분"))
     } else {
         let hours = (seconds / 3600.0).round().max(1.0) as u32;
-        if hours <= 12 {
-            format!("{} 시간쯤", hour_words(hours))
-        } else {
-            format!("{hours}시간쯤")
-        }
+        format!("{}쯤", count(hours, "시간"))
     }
 }
 
@@ -237,26 +272,31 @@ pub(super) fn comfort(feeling: super::Feeling) -> String {
     match feeling {
         Feeling::Stressed | Feeling::Angry => "같이 천천히 숨을 쉬었어".to_owned(),
         Feeling::Tired | Feeling::Unwell => {
-            format!("‘{}’ 하고 말해서 조용히 곁에 있었어", feeling.korean())
+            format!("네가 ‘{}’라고 해서 조용히 곁에 있었어", feeling.korean())
         }
         Feeling::Sad | Feeling::Lonely => {
-            format!("‘{}’ 하고 말해서 하트를 그려 줬어", feeling.korean())
+            format!("네가 ‘{}’라고 해서 하트를 그려 줬어", feeling.korean())
         }
-        Feeling::Bored => "심심하다고 해서 같이 놀자고 했어".to_owned(),
+        Feeling::Bored => "네가 심심하다고 해서 같이 놀자고 했어".to_owned(),
         Feeling::Happy | Feeling::Proud => {
-            format!("‘{}’ 하고 말해서 같이 기뻐했어", feeling.korean())
+            format!("네가 ‘{}’라고 해서 같이 기뻐했어", feeling.korean())
         }
     }
 }
 
-pub(super) fn quirk(kind: super::Quirk, count: u32) -> String {
+pub(super) fn quirk(kind: super::Quirk, number: u32) -> String {
     use super::Quirk;
+    let times = if number == 1 {
+        String::new()
+    } else {
+        format!("{} ", count(number, "번"))
+    };
     match kind {
-        Quirk::Hiccups => format!("딸꾹질을 {count}번 했어"),
-        Quirk::Sneeze => format!("재채기를 {count}번 했어"),
-        Quirk::Yawn => format!("하품을 {count}번 했어"),
-        Quirk::Shiver => format!("추워서 {count}번 떨었어"),
-        Quirk::Sigh => format!("편안하게 한숨을 {count}번 내쉬었어"),
+        Quirk::Hiccups => format!("딸꾹질을 {times}했어"),
+        Quirk::Sneeze => format!("재채기를 {times}했어"),
+        Quirk::Yawn => format!("하품을 {times}했어"),
+        Quirk::Shiver => format!("추워서 {times}떨었어"),
+        Quirk::Sigh => format!("편안하게 한숨을 {times}내쉬었어"),
     }
 }
 
@@ -275,33 +315,59 @@ pub(super) fn passerby(kind: super::Passerby) -> &'static str {
 
 pub(super) fn friend_visit(tally: &super::life::Tally, name: &str) -> String {
     use super::friend::Game;
-    let visit = format!(
-        "{name}{} 오늘 {}번 놀러 왔어",
-        particle(name, "이", "가"),
-        tally.friend_visits
-    );
+    let visits = if tally.friend_visits == 1 {
+        String::new()
+    } else {
+        format!("{} ", count(tally.friend_visits, "번"))
+    };
+    let visit = format!("{name}{} {visits}놀러", particle(name, "이", "가"));
     if tally.friend_played.is_empty() {
-        return visit;
+        return format!("{visit} 왔어");
     }
     let games = tally
         .friend_played
         .iter()
-        .map(|game| match game {
-            Game::Tag => "같이 술래잡기를 했어".to_owned(),
-            Game::Twirl => "같이 빙글 돌며 춤췄어".to_owned(),
-            Game::MoonGazing => "같이 달을 구경했어".to_owned(),
-        })
-        .collect::<Vec<_>>();
-    format!(
-        "{}, {}",
-        visit.trim_end_matches('어').to_owned() + "고",
-        sentence(&games).trim_end_matches('.')
-    )
+        .enumerate()
+        .map(
+            |(index, game)| match (game, index + 1 == tally.friend_played.len()) {
+                (Game::Tag, false) => "술래잡기하고",
+                (Game::Tag, true) => "술래잡기했어",
+                (Game::Twirl, false) => "빙글 돌며 춤추고",
+                (Game::Twirl, true) => "빙글 돌며 춤췄어",
+                (Game::MoonGazing, false) => "달을 구경하고",
+                (Game::MoonGazing, true) => "달을 구경했어",
+            },
+        )
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("{visit} 와서 같이 {games}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn small_counts_use_native_counter_forms_and_zero_and_larger_counts_use_digits() {
+        for counter in ["번", "권", "개", "마리", "쪽", "곡", "장", "시간"] {
+            for (index, native) in [
+                "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉", "열",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                assert_eq!(
+                    count(index as u32 + 1, counter),
+                    format!("{native} {counter}")
+                );
+            }
+            for number in [0, 11, 12, 37, u32::MAX] {
+                assert_eq!(count(number, counter), format!("{number}{counter}"));
+            }
+        }
+        assert_eq!(count(5, "분"), "오 분");
+        assert_eq!(count(2, "년"), "이 년");
+    }
 
     #[test]
     fn korean_diary_sentences_join_one_two_and_many_past_deeds() {
@@ -315,8 +381,23 @@ mod tests {
         assert_eq!(sentence(&deeds[..2]), "공을 밀었고, 낮잠을 잤어.");
         assert_eq!(sentence(&deeds), "공을 밀었고, 낮잠을 잤고, 책을 읽었어.");
         assert_eq!(
+            sentence(&["친구가 왔어.".to_owned(), "참 반가웠어!".to_owned()]),
+            "친구가 왔고, 참 반가웠어."
+        );
+        assert_eq!(
             sentence(&["a future deed".to_owned(), deeds[0].clone()]),
             "a future deed. 공을 밀었어."
+        );
+        assert_eq!(
+            sentence(&[
+                "놀이를 했어".to_owned(),
+                "조용한 하루였어".to_owned(),
+                "네가 물을 줬어".to_owned(),
+                "친구가 왔어".to_owned(),
+                "장난기가 늘어난 것 같아".to_owned(),
+                "책을 읽었어".to_owned(),
+            ]),
+            "놀이를 했고, 조용한 하루였고, 네가 물을 줬고, 친구가 왔고, 장난기가 늘어난 것 같고, 책을 읽었어."
         );
     }
 
@@ -342,6 +423,43 @@ mod tests {
                 );
             }
         }
+        for (name, expected) in [("민준", "으로"), ("수아", "로"), ("하늘", "로")] {
+            assert_eq!(particle(name, "으로", "로"), expected);
+        }
+    }
+
+    #[test]
+    fn noun_lists_join_the_last_two_items_with_the_right_particle() {
+        assert_eq!(nouns(&[]), "");
+        assert_eq!(nouns(&["도토리"]), "도토리");
+        assert_eq!(nouns(&["도토리", "깃털"]), "도토리와 깃털");
+        assert_eq!(nouns(&["깃털", "도토리"]), "깃털과 도토리");
+        assert_eq!(
+            nouns(&["도토리", "깃털", "조약돌"]),
+            "도토리, 깃털과 조약돌"
+        );
+    }
+
+    #[test]
+    fn friend_visits_share_one_subject_and_join_games_without_repeating_together() {
+        use crate::world::{friend::Game, life::Tally};
+        let mut tally = Tally {
+            friend_visits: 1,
+            ..Default::default()
+        };
+        assert_eq!(friend_visit(&tally, "Wren"), "Wren이 놀러 왔어");
+        assert_eq!(friend_visit(&tally, "수아"), "수아가 놀러 왔어");
+        tally.friend_played = vec![Game::Tag, Game::Twirl];
+        assert_eq!(
+            friend_visit(&tally, "Wren"),
+            "Wren이 놀러 와서 같이 술래잡기하고 빙글 돌며 춤췄어"
+        );
+        tally.friend_visits = 2;
+        tally.friend_played.push(Game::MoonGazing);
+        assert_eq!(
+            sentence(&[friend_visit(&tally, "수아"), "공을 밀었어".to_owned()]),
+            "수아가 두 번 놀러 와서 같이 술래잡기하고 빙글 돌며 춤추고 달을 구경했고, 공을 밀었어."
+        );
     }
 
     #[test]

@@ -88,13 +88,28 @@ impl Wish {
     }
 
     pub fn korean(&self, life: &Life) -> String {
+        format!("{}는 것", self.korean_action(life))
+    }
+
+    pub(super) fn korean_wish(&self, life: &Life) -> String {
         match self {
-            Self::Rainbow => "무지개를 보는 것".to_owned(),
-            Self::Snow => "내리는 눈을 보는 것".to_owned(),
-            Self::ShootingStar => "별똥별을 보는 것".to_owned(),
-            Self::Constellation => "별자리를 찾는 것".to_owned(),
+            Self::Flower => "내 정원에 꽃이 피면 좋겠다는 소원".to_owned(),
+            Self::GivenName => "네가 내 이름을 지어 주면 좋겠다는 소원".to_owned(),
+            Self::Drawing => "네가 김 서린 유리에 그림을 그려 주면 좋겠다는 소원".to_owned(),
+            Self::Petting => "네가 나를 부드럽게 쓰다듬어 주면 좋겠다는 소원".to_owned(),
+            Self::Tune => "네가 노래를 가르쳐 주면 좋겠다는 소원".to_owned(),
+            _ => format!("{}고 싶다는 소원", self.korean_action(life)),
+        }
+    }
+
+    fn korean_action(&self, life: &Life) -> String {
+        match self {
+            Self::Rainbow => "무지개를 보".to_owned(),
+            Self::Snow => "내리는 눈을 보".to_owned(),
+            Self::ShootingStar => "별똥별을 보".to_owned(),
+            Self::Constellation => "별자리를 찾".to_owned(),
             Self::Passerby(kind) => format!(
-                "{} 보는 것",
+                "{} 보",
                 match kind {
                     Passerby::Geese => "날아가는 기러기를",
                     Passerby::Balloon => "열기구를",
@@ -105,10 +120,10 @@ impl Wish {
                     Passerby::Lanterns => "밤하늘로 떠오르는 풍등을",
                 }
             ),
-            Self::BirdGift => "새에게 선물을 받는 것".to_owned(),
-            Self::Flower => "내 정원에 꽃이 피는 것".to_owned(),
+            Self::BirdGift => "새에게 선물을 받".to_owned(),
+            Self::Flower => "내 정원에 꽃이 피".to_owned(),
             Self::Friend { name } => format!(
-                "{} 다시 만나는 것",
+                "{} 다시 만나",
                 object_name(
                     life.friend
                         .as_ref()
@@ -116,31 +131,25 @@ impl Wish {
                 )
             ),
             Self::Tower { height } => format!(
-                "블록 {} 개 높이의 탑을 쌓는 것",
-                match height {
-                    2 => "두",
-                    3 => "세",
-                    4 => "네",
-                    5 => "다섯",
-                    _ => "여섯",
-                }
+                "블록 {} 높이의 탑을 쌓",
+                super::writing::count(*height, "개")
             ),
-            Self::ViewerName => "네 이름을 배우는 것".to_owned(),
-            Self::GivenName => "네가 내 이름을 지어 주는 것".to_owned(),
-            Self::Game => "너와 유리창에서 틱택토를 하는 것".to_owned(),
-            Self::WordGame => "너와 단어 맞히기 놀이를 하는 것".to_owned(),
-            Self::Drawing => "네가 김 서린 유리에 그림을 그려 주는 것".to_owned(),
-            Self::Petting => "네가 나를 부드럽게 쓰다듬어 주는 것".to_owned(),
-            Self::Fetch => "너와 공 가져오기 놀이를 하는 것".to_owned(),
-            Self::Story => "너에게 이야기를 들려주는 것".to_owned(),
-            Self::Company => "네가 일하는 동안 곁에 있어 주는 것".to_owned(),
-            Self::Breeze => "너와 산들바람을 느끼는 것".to_owned(),
+            Self::ViewerName => "네 이름을 배우".to_owned(),
+            Self::GivenName => "네가 내 이름을 지어 주".to_owned(),
+            Self::Game => "너와 유리창에서 틱택토를 하".to_owned(),
+            Self::WordGame => "너와 단어 맞히기 놀이를 하".to_owned(),
+            Self::Drawing => "네가 김 서린 유리에 그림을 그려 주".to_owned(),
+            Self::Petting => "네가 나를 부드럽게 쓰다듬어 주".to_owned(),
+            Self::Fetch => "너와 공 가져오기 놀이를 하".to_owned(),
+            Self::Story => "너에게 이야기를 들려주".to_owned(),
+            Self::Company => "네가 일하는 동안 곁에 있어 주".to_owned(),
+            Self::Breeze => "너와 산들바람을 느끼".to_owned(),
             Self::Book { index } => {
                 let title = book_title(*index, true);
-                format!("《{title}》{} 끝까지 읽는 것", object_particle(title))
+                format!("《{title}》{} 끝까지 읽", object_particle(title))
             }
-            Self::Tune => "네가 노래를 가르쳐 주는 것".to_owned(),
-            Self::AboutYou => "너에 대해 더 알아 가는 것".to_owned(),
+            Self::Tune => "네가 노래를 가르쳐 주".to_owned(),
+            Self::AboutYou => "너에 대해 더 알아 가".to_owned(),
         }
     }
 
@@ -1497,6 +1506,17 @@ mod tests {
                     .any(|letter| letter.is_ascii_digit())
             );
             assert!(!wish.korean(&world.life).is_empty());
+            let korean = wish.korean_wish(&world.life);
+            assert!(korean.ends_with("다는 소원"), "{wish:?}: {korean}");
+            let mut life = Life::default();
+            for event in [
+                EventKind::MadeWish(wish.clone()),
+                EventKind::WishGranted(wish.clone()),
+                EventKind::WishFaded(wish.clone()),
+            ] {
+                life.note(&event);
+            }
+            assert!(!life.today.words_korean().contains(": "));
             assert_eq!(wish.with_viewer(), wish.hint().is_some());
         }
         assert!(

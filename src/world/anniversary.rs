@@ -241,7 +241,7 @@ impl World {
         let elapsed = match span {
             Span::Week => "일주일 전 오늘".to_owned(),
             Span::Month => "한 달 전 오늘".to_owned(),
-            Span::Year(years) => format!("{years}년 전 오늘"),
+            Span::Year(years) => format!("{} 전 오늘", super::writing::count(years, "년")),
         };
         let korean = format!("{elapsed}, {}", entry.in_language(true));
         self.life
@@ -742,26 +742,32 @@ mod tests {
     }
     #[test]
     fn recalled_anniversaries_keep_the_original_korean_milestone_in_the_diary() {
-        let mut world = visiting(true);
-        world.life.milestones[0].korean = Some("네 이름을 알게 됐어: Sam.".to_owned());
-        world.share_anniversary();
-        assert!(
-            world
-                .life
-                .today
-                .diary_korean()
-                .contains("한 달 전 오늘, 네 이름을 알게 됐어: Sam")
-        );
-        assert!(world.life.today.diary().contains("a month ago today"));
-        world.life.begin_day("2026-06-10");
-        assert!(
-            world
-                .life
-                .diary
-                .last()
-                .unwrap()
-                .in_language(true)
-                .contains("네 이름을 알게 됐어: Sam")
-        );
+        for korean in [
+            "네 이름이 Sam이라는 걸 알게 됐어.",
+            "네 이름을 알게 됐어: Sam.",
+        ] {
+            let mut world = visiting(true);
+            world.life.milestones[0].korean = Some(korean.to_owned());
+            world.share_anniversary();
+            let words = korean.trim_end_matches('.');
+            assert!(
+                world
+                    .life
+                    .today
+                    .diary_korean()
+                    .contains(&format!("한 달 전 오늘, {words}"))
+            );
+            assert!(world.life.today.diary().contains("a month ago today"));
+            world.life.begin_day("2026-06-10");
+            assert!(
+                world
+                    .life
+                    .diary
+                    .last()
+                    .unwrap()
+                    .in_language(true)
+                    .contains(words)
+            );
+        }
     }
 }
