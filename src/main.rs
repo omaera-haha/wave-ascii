@@ -236,6 +236,9 @@ fn run() -> io::Result<()> {
 
     let result = run_loop(&mut app, options.frames_per_second);
     let saved = app.save();
+    if result.is_ok() {
+        println!("{}", app.farewell());
+    }
     result.and(saved)
 }
 

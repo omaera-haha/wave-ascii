@@ -320,6 +320,34 @@ impl App {
         }
     }
 
+    /// A line left in the terminal after quitting: how the ghost sees the
+    /// viewer off, from its sleep, mood, and bond.
+    pub fn farewell(&self) -> String {
+        let world = &self.world;
+        let ghost = &world.ghost;
+        let name: String = ghost
+            .name
+            .chars()
+            .filter(|character| !character.is_control())
+            .collect();
+        let line = if ghost.asleep > 0.5 {
+            "is asleep on its cushion. Sweet dreams."
+        } else {
+            match ghost.mood {
+                Mood::Grumpy => "pretends not to watch you go.",
+                Mood::Lonely => "watches you go. Come back soon?",
+                Mood::Sleepy => "yawns and waves goodbye.",
+                _ if world.bedtime() => "waves goodnight from the glass.",
+                Mood::Excited | Mood::Cheerful if world.life.bond >= 0.55 => {
+                    "presses against the glass and waves until you're gone."
+                }
+                _ if world.life.bond >= 0.55 => "waves from the glass. See you soon.",
+                _ => "waves goodbye from the glass.",
+            }
+        };
+        format!("{name} {line}")
+    }
+
     /// Whether the terminal has the focus; while it is elsewhere, frames
     /// can come more slowly.
     pub fn focused(&self) -> bool {
@@ -1441,6 +1469,25 @@ mod tests {
         }));
         assert!(app.camera.zoom > 1.0);
         assert_eq!(app.input(Input::Resize), Response::Restyle);
+    }
+
+    #[test]
+    fn the_farewell_follows_sleep_mood_and_bond_and_keeps_the_name_safe() {
+        let mut app = app();
+        app.world.ghost.name = "Pip\u{1b}[2J".into();
+        app.world.ghost.mood = Mood::Content;
+        assert_eq!(app.farewell(), "Pip[2J waves goodbye from the glass.");
+        app.world.ghost.name = "Pip".into();
+        app.world.life.bond = 0.8;
+        app.world.ghost.mood = Mood::Cheerful;
+        assert!(app.farewell().contains("waves until you're gone"));
+        app.world.ghost.mood = Mood::Grumpy;
+        assert!(app.farewell().contains("pretends not to watch"));
+        app.world.ghost.asleep = 1.0;
+        assert_eq!(
+            app.farewell(),
+            "Pip is asleep on its cushion. Sweet dreams."
+        );
     }
 
     #[test]

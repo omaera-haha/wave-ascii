@@ -57,6 +57,8 @@ cargo run --release -- --fps 30         # frames per second (default 60)
 
 In terminals that report focus, it draws at most 24 frames a second while
 another window has the focus, so a ghost kept beside your work stays light.
+When you quit, it sees you off with a line left in your terminal, such as
+"Pip waves from the glass. See you soon."
 
 Press `k` in the app to open the settings and paste API keys, or set
 `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` in the environment, which take
