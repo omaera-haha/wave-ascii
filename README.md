@@ -46,25 +46,35 @@ and the Jev model while the app runs. Use ↑↓ to choose a row and ←→ to s
 through the choices, or type any model name. Enter saves the settings, and
 the next requests use them at once.
 
-| Key            | Action                                        |
-| -------------- | --------------------------------------------- |
-| `t`, Enter     | Talk to the ghost (Enter sends, Esc cancels)  |
-| `k`            | Settings: keys, models, effort, cache         |
-| `j`            | Journal: what it remembers, what was said     |
-| `?`            | Help                                          |
-| Arrows, WASD   | Turn the view                                 |
-| `+`, `-`       | Zoom                                          |
-| `r`            | Reset the view                                |
-| `m`            | Next style: ascii, blocks, braille            |
-| `c`            | Next color mode: truecolor, 256 colors, plain |
-| Space          | Pause                                         |
-| `q`, Esc       | Quit                                          |
+| Key             | Action                                                  |
+| --------------- | ------------------------------------------------------- |
+| `t`, Enter      | Talk to the ghost (Enter sends, Esc cancels)            |
+| `k`             | Settings: keys, models, effort, cache                   |
+| `j`             | Journal: memories and conversation, opens at the bottom |
+| `?`             | Help                                                    |
+| Arrows, WASD    | Turn the view; ↑/↓ scroll the journal one line          |
+| PageUp/PageDown | Scroll the journal by a page                            |
+| Home/End        | Top/bottom of the journal                               |
+| Esc, Enter, `j` | Close the journal                                       |
+| `+`, `-`        | Zoom                                                    |
+| `r`             | Reset the view                                          |
+| `m`             | Next style: ascii, blocks, braille                      |
+| `c`             | Next color mode: truecolor, 256 colors, plain           |
+| Space           | Pause                                                   |
+| `q`, Esc        | Quit (Esc closes panels or cancels typing)              |
 
 With the mouse, click the ghost to poke it (poke it a few times and it gets
 grumpy), click the ball to flick it, and click anywhere else in the room to
 drop in a light mote. Drag to turn the view and scroll to zoom. The ghost's
-eyes follow the pointer. Hold Shift (Option in iTerm2) to select text while the
-app has the mouse.
+eyes follow the pointer. While the journal or help panel is open, the terminal
+handles the mouse so you can select and copy text directly. Many terminals
+send wheel movements as arrow keys here, which scroll the journal. Elsewhere,
+hold Shift (Option in iTerm2) to select text while the app has the mouse.
+
+The journal wraps all retained memories and conversation, the latest ten events,
+and any model errors. It opens at the newest lines; arrows on its borders and
+a line range show where you are. Other keys leave it open, and `q` quits from
+either the journal or help. Any other key closes help.
 
 ### What you see
 

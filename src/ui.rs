@@ -27,7 +27,7 @@ const THOUGHT_SHOWS: f64 = 30.0;
 
 /// Draws the words around the scene: the ghost's speech bubble, the line
 /// under the scene, the status bar, and any open panel.
-pub fn draw(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) {
+pub fn draw(app: &mut App, screen: &mut Canvas, view: &View, scene_rows: usize) {
     speech_bubble(app, screen, view, scene_rows);
     words_line(app, screen, scene_rows);
     status_line(app, screen, scene_rows + 1);
@@ -389,19 +389,35 @@ fn status_mark(status: &Status) -> (String, Rgb) {
 /// A box in the middle of the screen with a title, holding `lines` of
 /// text in the given colors.
 fn panel(screen: &mut Canvas, title: &str, lines: &[(String, Rgb)]) {
-    let columns = screen.columns();
-    let rows = screen.rows();
     let inner = lines
         .iter()
         .map(|(line, _)| width(line))
         .max()
         .unwrap_or(0)
         .max(width(title) + 4)
-        .min(columns.saturating_sub(6));
+        .min(screen.columns().saturating_sub(6));
+    draw_panel(screen, title, lines, inner);
+}
+
+struct PanelBounds {
+    left: usize,
+    top: usize,
+    right: usize,
+    bottom: usize,
+}
+
+fn draw_panel(
+    screen: &mut Canvas,
+    title: &str,
+    lines: &[(String, Rgb)],
+    inner: usize,
+) -> Option<PanelBounds> {
+    let columns = screen.columns();
+    let rows = screen.rows();
     let box_width = inner + 4;
     let height = lines.len() + 2;
     if box_width > columns || height > rows {
-        return;
+        return None;
     }
     let left = (columns - box_width) / 2;
     let top = rows.saturating_sub(height) / 2;
@@ -453,6 +469,12 @@ fn panel(screen: &mut Canvas, title: &str, lines: &[(String, Rgb)]) {
             Some(PANEL),
         );
     }
+    Some(PanelBounds {
+        left,
+        top,
+        right,
+        bottom: top + height - 1,
+    })
 }
 
 fn help_panel(screen: &mut Canvas) {
@@ -464,12 +486,14 @@ fn help_panel(screen: &mut Canvas) {
         "",
         "t, Enter   talk to it          click ghost   poke it",
         "k          keys and models     click ball    flick it",
-        "j          journal             click room    drop a light mote",
+        "j          journal (arrows scroll) · click room drops a light mote",
         "arrows     turn the view       drag          turn the view",
         "+ -        zoom                wheel         zoom",
         "m  c       style, color        space         pause",
         "r          reset the view      q, Esc        quit",
         "",
+        "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
+        "While the journal or help panel is open, the mouse selects text.",
         "Any key closes this.",
     ];
     let lines: Vec<(String, Rgb)> = lines
@@ -550,49 +574,157 @@ fn settings_panel(app: &App, screen: &mut Canvas) {
     panel(screen, "Settings", &lines);
 }
 
-fn journal_panel(app: &App, screen: &mut Canvas) {
-    let ghost = &app.world.ghost;
-    let mut lines = vec![(
-        format!("{} · together since {}", ghost.name, date(app.born())),
-        TITLE,
-    )];
-    lines.push((String::new(), TEXT));
-    lines.push(("Remembers".to_owned(), ACCENT));
-    let memories = &app.mind.journal.memories;
-    if memories.is_empty() {
-        lines.push(("  nothing yet".to_owned(), DIM));
-    }
-    for memory in memories.iter().rev().take(6).rev() {
-        lines.push((format!("  {}", memory.text), TEXT));
-    }
-    lines.push((String::new(), TEXT));
-    lines.push(("Said lately".to_owned(), ACCENT));
-    let conversation = &app.mind.journal.conversation;
-    if conversation.is_empty() {
-        lines.push(("  nothing yet".to_owned(), DIM));
-    }
-    for remark in conversation.iter().rev().take(8).rev() {
-        let speaker = match remark.speaker {
-            Speaker::Viewer => "you",
-            Speaker::Ghost => ghost.name.as_str(),
+/// The wrapped journal and its viewport, shared by drawing and scroll keys.
+pub struct JournalPanel {
+    lines: Vec<(String, Rgb)>,
+    inner: usize,
+    pub height: usize,
+}
+
+impl JournalPanel {
+    pub fn new(app: &App, columns: usize, rows: usize) -> Self {
+        let inner = columns.saturating_sub(6);
+        let mut lines = Vec::new();
+        let mut append = |prefix: &str, text: &str, color: Rgb| {
+            let indentation = width(prefix);
+            let wrapped = if indentation >= inner {
+                // On narrow screens the prefix must wrap too, leaving room for text.
+                wrap(&format!("{prefix}{text}"), inner)
+            } else {
+                wrap(text, inner - indentation)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, line)| {
+                        let prefix = if index == 0 {
+                            prefix.to_owned()
+                        } else {
+                            " ".repeat(indentation)
+                        };
+                        format!("{prefix}{line}")
+                    })
+                    .collect()
+            };
+            if wrapped.is_empty() {
+                lines.push((String::new(), color));
+            } else {
+                lines.extend(wrapped.into_iter().map(|line| (line, color)));
+            }
         };
-        lines.push((format!("  {speaker}: {}", remark.text), TEXT));
+        let ghost = &app.world.ghost;
+        append(
+            "",
+            &format!("{} · together since {}", ghost.name, date(app.born())),
+            TITLE,
+        );
+        append("", "", TEXT);
+        append("", "Remembers", ACCENT);
+        let memories = &app.mind.journal.memories;
+        if memories.is_empty() {
+            append("  ", "nothing yet", DIM);
+        }
+        for memory in memories {
+            append("  ", &memory.text, TEXT);
+        }
+        append("", "", TEXT);
+        append("", "Said lately", ACCENT);
+        let conversation = &app.mind.journal.conversation;
+        if conversation.is_empty() {
+            append("  ", "nothing yet", DIM);
+        }
+        for remark in conversation {
+            let speaker = match remark.speaker {
+                Speaker::Viewer => "you",
+                Speaker::Ghost => ghost.name.as_str(),
+            };
+            append(&format!("  {speaker}: "), &remark.text, TEXT);
+        }
+        append("", "", TEXT);
+        append("", "Lately", ACCENT);
+        for event in crate::mind::recent_events(&app.world, 10) {
+            append("  ", &event, TEXT);
+        }
+        if let Status::Failed(message) = &app.mind.two {
+            append("", "", TEXT);
+            append("Claude: ", message, BAD);
+        }
+        if let Status::Failed(message) = &app.mind.one {
+            append("Jev: ", message, BAD);
+        }
+        let height = if inner == 0 {
+            0
+        } else {
+            rows.saturating_sub(4).min(lines.len())
+        };
+        Self {
+            lines,
+            inner,
+            height,
+        }
     }
-    lines.push((String::new(), TEXT));
-    lines.push(("Lately".to_owned(), ACCENT));
-    for event in crate::mind::recent_events(&app.world, 5) {
-        lines.push((format!("  {event}"), TEXT));
+
+    pub fn max_scroll(&self) -> usize {
+        if self.height == 0 {
+            0
+        } else {
+            self.lines.len().saturating_sub(self.height)
+        }
     }
-    if let Status::Failed(message) = &app.mind.two {
-        lines.push((String::new(), TEXT));
-        lines.push((format!("Claude: {message}"), BAD));
+
+    fn visible_range(&self, scroll: usize) -> std::ops::Range<usize> {
+        let end = self.lines.len() - scroll.min(self.max_scroll());
+        end.saturating_sub(self.height)..end
     }
-    if let Status::Failed(message) = &app.mind.one {
-        lines.push((format!("Jev: {message}"), BAD));
+
+    fn draw(&self, screen: &mut Canvas, scroll: usize) {
+        if self.height == 0 {
+            return;
+        }
+        let visible = self.visible_range(scroll);
+        let Some(bounds) = draw_panel(screen, "Journal", &self.lines[visible.clone()], self.inner)
+        else {
+            return;
+        };
+        if self.max_scroll() == 0 {
+            return;
+        }
+        let range = format!(
+            " {}–{} of {} ",
+            visible.start + 1,
+            visible.end,
+            self.lines.len()
+        );
+        write(
+            screen,
+            bounds.left + 2,
+            bounds.bottom,
+            bounds.right.saturating_sub(2),
+            &range,
+            DIM,
+            Some(PANEL),
+        );
+        for (row, marker, more) in [
+            (bounds.top, "▲", visible.start > 0),
+            (bounds.bottom, "▼", visible.end < self.lines.len()),
+        ] {
+            if more {
+                write(
+                    screen,
+                    bounds.right - 1,
+                    row,
+                    bounds.right,
+                    marker,
+                    ACCENT,
+                    Some(PANEL),
+                );
+            }
+        }
     }
-    let limit = screen.rows().saturating_sub(4);
-    lines.truncate(limit);
-    panel(screen, "Journal", &lines);
+}
+
+fn journal_panel(app: &mut App, screen: &mut Canvas) {
+    let journal = JournalPanel::new(app, screen.columns(), screen.rows());
+    app.journal_scroll = app.journal_scroll.min(journal.max_scroll());
+    journal.draw(screen, app.journal_scroll);
 }
 
 fn date(unix: i64) -> String {
@@ -609,6 +741,99 @@ fn date(unix: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::canvas::Style;
+    use crate::color::ColorMode;
+    use crate::mind::{Journal, Mind};
+    use crate::store::{Config, Memory, Remark};
+    use crate::world::World;
+
+    fn app() -> App {
+        App::new(
+            World::new(1, 12.0),
+            Mind::new(&Config::default(), Journal::default(), true),
+            Config::default(),
+            Style::Ascii,
+            ColorMode::Plain,
+        )
+    }
+
+    #[test]
+    fn a_long_journal_remark_wraps_without_losing_text_and_indents_continuations() {
+        let mut app = app();
+        let text = "The ghost remembers a long conversation about the light in the room";
+        app.mind.journal.conversation.push(Remark {
+            at: 0,
+            speaker: Speaker::Viewer,
+            text: text.into(),
+        });
+        let journal = JournalPanel::new(&app, 30, 12);
+        let start = journal
+            .lines
+            .iter()
+            .position(|(line, _)| line.starts_with("  you: "))
+            .unwrap();
+        let lines: Vec<&str> = journal.lines[start..]
+            .iter()
+            .take_while(|(line, _)| !line.is_empty())
+            .map(|(line, _)| line.as_str())
+            .collect();
+        let indentation = width("  you: ");
+        assert!(lines.len() > 2);
+        assert!(lines.iter().all(|line| width(line) <= journal.inner));
+        assert!(lines[1..].iter().all(|line| line.starts_with("       ")));
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| line[indentation..].trim())
+                .collect::<Vec<_>>()
+                .join(" "),
+            text
+        );
+    }
+
+    #[test]
+    fn the_journal_keeps_all_entries_ten_recent_events_and_model_errors() {
+        let mut app = app();
+        for number in 0..20 {
+            app.mind.journal.memories.push(Memory {
+                at: 0,
+                text: format!("Memory {number}"),
+            });
+            app.mind.journal.conversation.push(Remark {
+                at: 0,
+                speaker: Speaker::Ghost,
+                text: format!("Remark {number}"),
+            });
+            app.world.say(&format!("Event {number}"));
+        }
+        app.mind.one = Status::Failed("a Jev error".into());
+        app.mind.two = Status::Failed("a Claude error".into());
+        let journal = JournalPanel::new(&app, 100, 32);
+        let lines: Vec<&str> = journal
+            .lines
+            .iter()
+            .map(|(line, _)| line.as_str())
+            .collect();
+        for number in 0..20 {
+            assert!(lines.contains(&format!("  Memory {number}").as_str()));
+            assert!(
+                lines.contains(&format!("  {}: Remark {number}", app.world.ghost.name).as_str())
+            );
+        }
+        let events = crate::mind::recent_events(&app.world, 10);
+        assert_eq!(events.len(), 10);
+        for event in events {
+            assert!(lines.contains(&format!("  {event}").as_str()));
+        }
+        assert_eq!(
+            lines.iter().filter(|line| line.contains("Event ")).count(),
+            10
+        );
+        assert!(lines.contains(&"Claude: a Claude error"));
+        assert!(lines.contains(&"Jev: a Jev error"));
+        assert_eq!(journal.visible_range(0).end, journal.lines.len());
+        assert_eq!(journal.visible_range(usize::MAX).start, 0);
+    }
 
     #[test]
     fn wide_characters_take_two_cells_and_stop_at_the_end() {

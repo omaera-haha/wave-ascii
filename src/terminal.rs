@@ -142,11 +142,12 @@ impl Input {
 }
 
 /// The terminal in raw mode on the alternate screen, with the cursor hidden
-/// and the mouse reported. Dropping it puts everything back, so code must let
+/// and optional mouse capture. Dropping it puts everything back, so code must let
 /// it drop normally instead of calling `process::exit`.
 pub struct Terminal {
     previous: Option<Canvas>,
     output: String,
+    mouse_capture: bool,
 }
 
 impl Terminal {
@@ -155,6 +156,7 @@ impl Terminal {
         let terminal = Self {
             previous: None,
             output: String::new(),
+            mouse_capture: true,
         };
         execute!(
             io::stdout(),
@@ -165,6 +167,19 @@ impl Terminal {
             terminal::Clear(terminal::ClearType::All),
         )?;
         Ok(terminal)
+    }
+
+    /// Lets the terminal select text while a reading panel is open.
+    pub fn set_mouse_capture(&mut self, on: bool) -> io::Result<()> {
+        if self.mouse_capture != on {
+            if on {
+                execute!(io::stdout(), EnableMouseCapture)?;
+            } else {
+                execute!(io::stdout(), DisableMouseCapture)?;
+            }
+            self.mouse_capture = on;
+        }
+        Ok(())
     }
 
     pub fn size(&self) -> Size {
