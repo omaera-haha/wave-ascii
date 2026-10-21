@@ -18,6 +18,7 @@ pub mod friend;
 pub mod game;
 pub mod garden;
 pub mod growth;
+pub mod hunt;
 pub mod jostle;
 mod letters;
 mod life;
@@ -324,6 +325,14 @@ pub enum EventKind {
     AskedAboutPlan(agenda::Errand),
     PlanWentWell(agenda::Errand),
     PlanWentBadly(agenda::Errand),
+    FoundTreasure {
+        seconds: u32,
+        hints: u32,
+        gave_up: bool,
+    },
+    TreasureHint(hunt::Hint),
+    AskedTreasureHint,
+    SpottedTreasure,
 }
 
 impl EventKind {
@@ -550,6 +559,26 @@ impl EventKind {
             Self::PlanWentBadly(errand) => {
                 format!("the viewer's {} was hard, so I stayed close", errand.name())
             }
+            Self::FoundTreasure {
+                seconds,
+                hints,
+                gave_up,
+            } => format!(
+                "{} after {} seconds and {} hints",
+                if *gave_up {
+                    "needed help to find the viewer's treasure"
+                } else {
+                    "found the treasure the viewer hid"
+                },
+                friend::count_words(*seconds),
+                friend::count_words(*hints)
+            ),
+            Self::TreasureHint(hint) => format!(
+                "the viewer said you are {} in the treasure hunt",
+                hint.words()
+            ),
+            Self::AskedTreasureHint => "asked the viewer for a treasure hint".to_owned(),
+            Self::SpottedTreasure => "spotted the treasure the viewer hid".to_owned(),
         }
     }
 }
@@ -624,6 +653,9 @@ pub enum Understanding {
     PlanAnswered {
         errand: agenda::Errand,
         went_well: Option<bool>,
+    },
+    Hint {
+        warmer: bool,
     },
 }
 
@@ -834,6 +866,7 @@ pub struct World {
     agenda_answer: Option<(agenda::Errand, String, f64)>,
     agenda_visit_asked: bool,
     agenda_visit_question: bool,
+    pub hunt: Option<hunt::Hunt>,
 }
 
 impl World {
@@ -977,6 +1010,7 @@ impl World {
             agenda_answer: None,
             agenda_visit_asked: false,
             agenda_visit_question: false,
+            hunt: None,
         };
         world.scatter_blocks();
         world
@@ -1013,6 +1047,14 @@ impl World {
 
     fn advance(&mut self, seconds: f32) {
         self.time += f64::from(seconds);
+        if self.hunt.is_some()
+            && (self.ghost.asleep >= 0.3
+                || self.focus.is_some()
+                || self.telling.is_some()
+                || self.ghost.plan.done)
+        {
+            self.cancel_hunt();
+        }
         self.advance_focus();
         self.viewer.liveliness *= (-seconds / 0.7).exp();
         self.petting *= (-seconds / PETTING_FADES).exp();
@@ -1220,13 +1262,16 @@ impl World {
 
     /// Whether the ghost has finished its plan and waits for a decision.
     pub fn needs_decision(&self) -> bool {
-        self.telling.is_none() && self.ghost.plan.done
+        self.telling.is_none() && self.hunt.is_none() && self.ghost.plan.done
     }
 
     /// The activities that make sense right now, in a fixed order.
     pub fn options(&self) -> Vec<Activity> {
         Activity::ALL
             .into_iter()
+            .filter(|activity| {
+                self.hunt.is_none() || matches!(activity, Activity::Seek | Activity::Rest)
+            })
             .filter(|activity| self.focus.is_none() || !focus::seeks_attention(*activity))
             .filter(|activity| match activity {
                 Activity::Comfort => false,
@@ -1297,6 +1342,10 @@ impl World {
                 | Activity::Play
                 | Activity::Lamp
                 | Activity::Window => true,
+                Activity::Seek => self
+                    .hunt
+                    .as_ref()
+                    .is_some_and(|hunt| hunt.phase == hunt::Phase::Searching),
             })
             .collect()
     }
@@ -1304,6 +1353,9 @@ impl World {
     /// Whether the viewer took up its last invitation to a game on the
     /// glass, or let it pass long enough ago to ask again.
     fn invitations_welcome(&self) -> bool {
+        if self.hunt.is_some() {
+            return false;
+        }
         let pause = (IGNORED_PAUSE
             * 2f64.powi(self.invitations_ignored.saturating_sub(1).min(8) as i32))
         .min(IGNORED_PAUSE_MOST);
@@ -1416,6 +1468,8 @@ impl World {
             Activity::Dance => "Do a happy little twirl in the air. Fits when delighted, after \
                                 something good happened, or to show off for the viewer."
                 .to_owned(),
+            Activity::Seek => "Search by sight for the treasure the viewer hid, following their warmer and colder hints.".to_owned(),
+
         }
     }
 
@@ -1432,6 +1486,30 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Seek
+            && self.ghost.plan.activity == Activity::Seek
+            && !self.ghost.plan.done
+        {
+            return;
+        }
+        if activity == Activity::Seek
+            && !self
+                .hunt
+                .as_ref()
+                .is_some_and(|hunt| hunt.phase == hunt::Phase::Searching)
+        {
+            return;
+        }
+        if self.hunt.is_some() && activity != Activity::Seek {
+            if matches!(
+                activity,
+                Activity::Rest | Activity::Game | Activity::Puzzle | Activity::Company
+            ) {
+                self.cancel_hunt();
+            } else {
+                return;
+            }
+        }
         if activity == Activity::Letter && !self.letter_is_open() {
             return;
         }
@@ -1575,6 +1653,7 @@ impl World {
             | Activity::Play
             | Activity::Build
             | Activity::Friend => position,
+            Activity::Seek => position,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         if activity == Activity::Air {
@@ -1626,7 +1705,7 @@ impl World {
 
     /// Begins writing a supported word when it has the energy to draw.
     pub fn write(&mut self, text: &str) -> bool {
-        if self.telling.is_some() || self.puzzle_active() {
+        if self.telling.is_some() || self.puzzle_active() || self.hunt.is_some() {
             return false;
         }
         let text = doodle::sanitize(text);
@@ -1868,6 +1947,9 @@ impl World {
         // Only the very next message answers a wellbeing question, even if
         // another direct handler consumes that message first.
         let feeling_follow_up = self.feeling_follow_up.take();
+        if let Some(heard) = self.hear_hunt(text, korean) {
+            return heard;
+        }
         if let Some(heard) = self.answer_plan(text, korean) {
             return heard;
         }
@@ -2162,6 +2244,9 @@ impl World {
     /// leaning toward what the words already hint at and away from what it
     /// was told no to. Praise for the guess teaches it the words.
     pub fn guess(&mut self) -> Option<Activity> {
+        if self.hunt.is_some() {
+            return None;
+        }
         let listening = &self.listening;
         if listening.words.is_empty()
             || listening.acted.is_some()
@@ -2193,6 +2278,9 @@ impl World {
     /// `activity`. The ghost takes that as what the words mean, and does it
     /// if it can.
     pub fn heed(&mut self, activity: Activity) {
+        if self.hunt.is_some() {
+            return;
+        }
         let words = self.listening.latest.clone();
         if !words.is_empty() && self.time - self.listening.at < HEEDED_FOR {
             self.learn(&words, activity, ROUTED);
@@ -2314,7 +2402,7 @@ impl World {
         activity: Activity,
         amount: f32,
     ) -> Vec<(String, Activity)> {
-        if matches!(activity, Activity::Float | Activity::Visit) {
+        if matches!(activity, Activity::Float | Activity::Visit | Activity::Seek) {
             return Vec::new();
         }
         let learned = self.life.vocabulary.teach(words, activity, amount);
@@ -2343,6 +2431,12 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        if matches!(
+            kind,
+            EventKind::ViewerLeft | EventKind::Scolded | EventKind::FellAsleep
+        ) {
+            self.cancel_hunt();
+        }
         if kind == EventKind::ViewerLeft {
             self.promise_departed = true;
         }
@@ -2603,6 +2697,10 @@ impl World {
     fn carry_out(&mut self, seconds: f32) {
         let time = self.time;
         let position = self.ghost.position;
+        if self.hunt_counting() {
+            self.ghost.look = Some(position - Vec3::Z * 3.0);
+            return;
+        }
         if self.ghost.asleep >= 0.3
             && matches!(self.ghost.plan.activity, Activity::Game | Activity::Puzzle)
         {
@@ -2634,7 +2732,10 @@ impl World {
         // games have their own waits after arrival, but give up on the way
         // there.
         let waiting = self.telling.is_some()
-            || matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
+            || matches!(
+                self.ghost.plan.activity,
+                Activity::Wait | Activity::Company | Activity::Seek
+            )
             || (self.ghost.plan.activity == Activity::Visit && self.asking.is_some())
             || (matches!(
                 self.ghost.plan.activity,
@@ -2948,6 +3049,7 @@ impl World {
                 }
             }
             Activity::Doodle => look = self.carry_out_doodle(),
+            Activity::Seek => look = self.seek_treasure(),
         }
         self.ghost.look = look;
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
@@ -3010,6 +3112,9 @@ impl World {
     // Steers toward the plan's target, around obstacles and away from the
     // walls.
     fn move_ghost(&mut self, seconds: f32) {
+        if self.hunt_counting() {
+            return;
+        }
         let decoration = self.decoration();
         let tower = self.tower.filter(|_| !self.placing_block()).map(|spot| {
             (
@@ -3099,7 +3204,7 @@ impl World {
             let offset = flat(ghost.position - center);
             // Hiding tucks the ghost closer behind furniture than its
             // usual steering allows, especially beside the back wall.
-            let reach = if ghost.plan.activity == Activity::Hide {
+            let reach = if matches!(ghost.plan.activity, Activity::Hide | Activity::Seek) {
                 (radius + 0.3).min(flat(target - center).length())
             } else {
                 radius + 0.3
@@ -3170,6 +3275,7 @@ impl World {
             Activity::Window if ghost.plan.arrived.is_some() => {
                 fun += 0.004 + 0.02 * self.weather.rainbow(self.time)
             }
+            Activity::Seek if !ghost.plan.done => fun += 0.004,
             _ => {}
         }
         if present {

@@ -190,6 +190,9 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         }
         EventKind::WishedLuck(_) | EventKind::PlanWentWell(_) => Expression::Sparkle,
         EventKind::PlanWentBadly(_) => Expression::Worry,
+        EventKind::SpottedTreasure => Expression::Surprise,
+        EventKind::FoundTreasure { .. } => Expression::Sparkle,
+        EventKind::AskedTreasureHint => Expression::Prompt,
         _ => return None,
     })
 }

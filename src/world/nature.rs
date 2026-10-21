@@ -118,6 +118,7 @@ impl Nature {
             | Activity::Company
             | Activity::Air => 0.0,
             Activity::Letter => self.tender - 0.5,
+            Activity::Seek => 0.0,
         };
         let strength = if inclination > 0.0 { 0.35 } else { 0.25 };
         (1.0 + strength * inclination).clamp(0.75, 1.35)

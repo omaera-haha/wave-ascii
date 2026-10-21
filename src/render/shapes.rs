@@ -50,6 +50,7 @@ pub enum Material {
     Envelope,
     EnvelopeFlap,
     HeartSeal,
+    Treasure,
 }
 
 impl Material {
@@ -129,6 +130,7 @@ impl Material {
                 2 => Vec3::new(1.0, 0.85, 0.35),
                 _ => Vec3::new(0.6, 1.0, 0.7),
             },
+            Self::Treasure => Vec3::new(1.0, 0.75, 0.35),
         }
     }
 
@@ -178,6 +180,11 @@ pub enum Furniture<'a> {
     Mirror,
     Envelope,
     ViewerLetter(Vec3),
+    Treasure {
+        position: Vec3,
+        radius: f32,
+        brightness: f32,
+    },
 }
 
 impl Furniture<'_> {
@@ -224,6 +231,9 @@ impl Furniture<'_> {
                     (half * half + decoration.radius().powi(2)).sqrt() + 0.02,
                 )
             }
+            Self::Treasure {
+                position, radius, ..
+            } => (*position, radius + 0.01),
         }
     }
 
@@ -422,6 +432,9 @@ impl Furniture<'_> {
                 rounded_cylinder(point - nook.position, Nook::RADIUS, Nook::HEIGHT, 0.06),
                 Material::Cushion,
             ),
+            Self::Treasure {
+                position, radius, ..
+            } => ((point - *position).length() - radius, Material::Treasure),
         }
     }
 
@@ -1444,5 +1457,25 @@ mod tests {
         assert!(rounded_cylinder(Vec3::new(0.0, 0.14, 0.0), 0.42, 0.14, 0.06).abs() < 1e-5);
         assert!(ellipsoid(Vec3::new(0.1, 0.0, 0.0), Vec3::new(0.1, 0.02, 0.05)).abs() < 1e-5);
         assert!(capsule(Vec3::new(0.02, 0.5, 0.0), Vec3::ZERO, Vec3::Y, 0.02).abs() < 1e-5);
+    }
+
+    #[test]
+    fn treasure_sphere_has_finite_distances_and_normals_and_bounded_ray_hits() {
+        let position = Vec3::new(0.4, 0.06, -0.5);
+        let piece = Furniture::Treasure {
+            position,
+            radius: crate::world::hunt::RADIUS,
+            brightness: 1.0,
+        };
+        let (center, radius) = piece.bounds();
+        assert!(center.is_finite() && radius.is_finite() && radius > 0.0);
+        for direction in [Vec3::X, Vec3::Y, Vec3::Z] {
+            let point = position + direction * crate::world::hunt::RADIUS;
+            assert!(piece.distance(point).0.is_finite());
+            assert!(piece.normal(point).is_finite());
+            let (distance, _) = piece.trace(position + direction, -direction, 2.0).unwrap();
+            assert!(distance.is_finite() && (0.9..1.0).contains(&distance));
+        }
+        assert!(piece.trace(position + Vec3::X, Vec3::Z, 2.0).is_none());
     }
 }

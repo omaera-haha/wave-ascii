@@ -498,6 +498,9 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
             completed: true, ..
         } => ("We finished our work together.".to_owned(), None),
         EventKind::PlanWentWell(errand) => (format!("Your {} went well!", errand.name()), None),
+        EventKind::FoundTreasure { gave_up: false, .. } => {
+            ("I found the treasure you hid.".to_owned(), None)
+        }
         _ => return None,
     };
     Some((caption, daily))
@@ -983,5 +986,25 @@ mod tests {
         assert!(daily.is_none());
         assert!(caption(&EventKind::WishedLuck(Errand::Interview)).is_none());
         assert!(caption(&EventKind::PlanWentBadly(Errand::Interview)).is_none());
+    }
+
+    #[test]
+    fn treasure_finds_make_album_moments_but_revealed_treasures_do_not() {
+        assert!(
+            caption(&EventKind::FoundTreasure {
+                seconds: 18,
+                hints: 2,
+                gave_up: false
+            })
+            .is_some()
+        );
+        assert!(
+            caption(&EventKind::FoundTreasure {
+                seconds: 243,
+                hints: 0,
+                gave_up: true
+            })
+            .is_none()
+        );
     }
 }

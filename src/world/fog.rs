@@ -125,6 +125,9 @@ impl Drawing {
 
 impl World {
     pub fn draw_on_glass(&mut self, point: Vec3) {
+        if self.hunt.is_some() {
+            return;
+        }
         self.notice_viewer();
         if !point.is_finite()
             || point.x < ROOM_MIN.x
@@ -182,7 +185,8 @@ impl World {
     }
 
     pub(super) fn look_is_open(&self) -> bool {
-        self.ghost.asleep < 0.3
+        self.hunt.is_none()
+            && self.ghost.asleep < 0.3
             && self.ghost.fade < 0.3
             && (self.ghost.plan.done
                 || !matches!(

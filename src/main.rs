@@ -76,6 +76,7 @@ Keys:
   g            noughts and crosses    1-9      choose a square
   o            focus together for twenty-five minutes (o again ends it)
   f            draw in the fog with left drags (f or Esc stops)
+  x            hide a treasure: click the floor (x or Esc cancels)
   e            letters, or write when empty (left/right browse)
   w (letters)  write; Ctrl+S sends, Esc keeps draft; v browses sent
   q, Esc       quit

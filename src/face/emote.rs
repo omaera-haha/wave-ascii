@@ -333,6 +333,8 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Heard(_) | EventKind::ViewerArrived => Emote::Alarm,
         EventKind::WishedLuck(_) => Emote::Sparkle,
         EventKind::PlanWentWell(_) | EventKind::PlanWentBadly(_) => Emote::Heart,
+        EventKind::FoundTreasure { .. } => Emote::Sparkle,
+        EventKind::AskedTreasureHint => Emote::Question,
         _ => return None,
     })
 }

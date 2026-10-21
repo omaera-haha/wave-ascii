@@ -13,6 +13,7 @@ pub struct Telling {
 impl World {
     /// Empty lines hold its place at the glass while a mind finds a story.
     pub fn tell(&mut self, lines: Vec<String>) {
+        self.cancel_hunt();
         if self
             .telling
             .as_ref()

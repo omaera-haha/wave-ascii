@@ -85,6 +85,7 @@ pub fn observe(world: &World) -> Value {
             format!("{}, another ghost and {}, is {}", companion.name, companion.closeness_words(), friend.doing())
         }).unwrap_or_else(|| "no ghost friend visiting just now".to_owned()),
         "viewer": viewer(world),
+        "treasure_hunt": world.hunt_words(),
         "viewer_language": if world.speaks_korean() { "the viewer speaks Korean" } else { "not known yet" },
         "viewer_facts": world.life.viewer.words(),
         "viewer_feelings": world.feeling_words(),
@@ -381,6 +382,7 @@ fn thing(world: &World, thing: Thing) -> String {
             }
         }
         Thing::Moth => "a moth fluttering around the lamp".to_owned(),
+        Thing::Treasure => "a treasure the viewer hid".to_owned(),
     }
 }
 
@@ -1530,5 +1532,32 @@ mod tests {
         assert!(wish.contains("to see a rainbow; it made the wish two days ago"));
         assert!(wish.contains("came true today: to build a tower four blocks high"));
         assert!(!wish.chars().any(|letter| letter.is_ascii_digit()));
+    }
+    #[test]
+    fn observations_describe_the_hunt_without_disclosing_an_unseen_treasure() {
+        let mut world = World::new(7, 12.0);
+        world.ghost.position = Vec3::new(0.0, 0.7, 0.8);
+        world.start_hiding().unwrap();
+        world.hide_treasure(Vec3::new(0.0, 0.0, -0.8));
+        world.ghost.heading = Vec3::Z;
+        world.hear("warmer");
+        let observation = observe(&world);
+        assert_eq!(
+            observation["treasure_hunt"],
+            "you are searching for the treasure the viewer hid; they said you are getting warmer"
+        );
+        assert!(
+            !observation["sight"]["in_view"]
+                .to_string()
+                .contains("a treasure the viewer hid")
+        );
+        let spot = world.hunt.as_ref().unwrap().position;
+        world.ghost.heading = (spot - world.ghost.position - Vec3::Y * 0.1).normalize();
+        let observation = observe(&world);
+        assert!(
+            observation["sight"]["in_view"]
+                .to_string()
+                .contains("a treasure the viewer hid")
+        );
     }
 }

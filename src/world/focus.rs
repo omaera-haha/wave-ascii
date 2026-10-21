@@ -95,6 +95,7 @@ pub(crate) fn seeks_attention(activity: Activity) -> bool {
             | Activity::Fetch
             | Activity::Wait
             | Activity::Music
+            | Activity::Seek
     )
 }
 
@@ -108,6 +109,7 @@ impl World {
     }
 
     pub fn start_focus(&mut self, minutes: u32) {
+        self.cancel_hunt();
         if self.focus.is_some() {
             self.end_focus();
         }
