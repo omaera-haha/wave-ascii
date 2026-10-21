@@ -68,7 +68,10 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     .any(|event| {
                         matches!(
                             event.kind,
-                            EventKind::Bloomed | EventKind::Fetched | EventKind::AteMote
+                            EventKind::Bloomed
+                                | EventKind::Fetched
+                                | EventKind::AteMote
+                                | EventKind::Milestone(_)
                         )
                     });
                 let rainbow = if world.ghost.saw_rainbow {

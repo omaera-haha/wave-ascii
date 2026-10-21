@@ -81,6 +81,8 @@ pub enum EventKind {
     },
     /// The ghost caught sight of something new to it.
     Noticed(String),
+    /// A first or a landmark in the ghost's life, in its own words.
+    Milestone(String),
     RainStarted,
     RainStopped,
     SnowStarted,
@@ -127,6 +129,7 @@ impl EventKind {
                 format!("the viewer came back after {while_away} away")
             }
             Self::Noticed(thing) => format!("spotted {thing}"),
+            Self::Milestone(text) => format!("a moment to remember: {text}"),
             Self::RainStarted => "it started to rain outside".to_owned(),
             Self::RainStopped => "the rain stopped".to_owned(),
             Self::SnowStarted => "it started to snow outside".to_owned(),
@@ -350,7 +353,9 @@ impl World {
                 self.greet();
             }
         }
-        self.life.pass(seconds, present);
+        if let Some(milestone) = self.life.pass(seconds, present) {
+            self.record(EventKind::Milestone(milestone));
+        }
 
         self.carry_out(seconds);
         let hiding = !self.ghost.plan.done
@@ -677,11 +682,14 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
-        self.life.note(&kind);
+        let milestone = self.life.note(&kind);
         self.events.push(Event {
             time: self.time,
             kind,
         });
+        if let Some(milestone) = milestone {
+            self.record(EventKind::Milestone(milestone));
+        }
     }
 
     // Once it knows the viewer, the ghost leaves whatever it was idly doing
@@ -1185,6 +1193,7 @@ impl World {
                     | EventKind::Bloomed
                     | EventKind::Fetched
                     | EventKind::Found
+                    | EventKind::Milestone(_)
             )
         }) {
             return Mood::Excited;
@@ -1663,6 +1672,24 @@ mod tests {
     }
 
     #[test]
+    fn a_first_is_celebrated_as_a_milestone_right_after_it() {
+        let mut world = World::new(2, 12.0);
+        world.drop_mote(Vec3::new(-1.0, 1.4, -0.5));
+        world.begin(Activity::Chase);
+        run(&mut world, 6.0);
+        let eaten = world
+            .events
+            .iter()
+            .position(|event| event.kind == EventKind::AteMote)
+            .unwrap();
+        assert_eq!(
+            world.events[eaten + 1].kind,
+            EventKind::Milestone("Caught my first light mote.".into())
+        );
+        assert_eq!(world.ghost.mood, Mood::Excited);
+    }
+
+    #[test]
     fn options_follow_what_is_possible() {
         let mut world = World::new(6, 12.0);
         world.motes.clear();
@@ -1715,7 +1742,14 @@ mod tests {
             assert!(!world.needs_decision());
             let before = world.ghost.needs;
             world.poke();
-            assert_eq!(world.events.last().unwrap().kind, EventKind::Found);
+            assert!(
+                world
+                    .events
+                    .iter()
+                    .rev()
+                    .take(2)
+                    .any(|event| event.kind == EventKind::Found)
+            );
             assert!(
                 !world
                     .events

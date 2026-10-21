@@ -151,13 +151,19 @@ whatever it was idly doing to come to the glass when you arrive, and it seeks
 you out more often. Both minds hear how close it feels to you, and Claude lets
 that color its words: shy with a stranger, warm with a friend.
 
+It keeps its firsts and landmarks as moments to remember: its first light
+mote, its first rainbow, the first time you found it hiding, its hundredth
+mote, an hour together, and each time it grows closer to you. It lights up
+when it reaches one.
+
 It also grows habits. The more often it chooses something, the more it leans
 toward it, so over days each ghost becomes its own: one loves the ball,
 another the window. At the end of each day it writes a line in its diary
 ("Ate 4 light motes, watered the plant until it flowered, and saw a rainbow.
 You were here for about an hour, and we talked."). Press `l` to see its age,
 your bond, what it loves, what it has done in all its days, and today so far;
-the diary is in the journal (`j`). Claude reads the last few days of it.
+the diary and its moments are in the journal (`j`). Claude reads the last few
+days of the diary and its latest moments.
 
 The ghost's name, needs, the plant, the lamp, its goal, its memories, its
 bond, habits, and diary, and the recent conversation are saved in `~/.local/share/wave-ascii/ghost.json`
@@ -187,8 +193,8 @@ Each request describes the moment in words, for example "tired", "the plant is
 a little dry", "the viewer poked you (just now)", and what the ghost sees from
 where it faces, such as "the window, showing a rainbow: across the room,
 straight ahead", and how close it feels to you ("fond of them"). Requests to
-Claude also carry the ghost's memories, the last three days of its diary, and
-the last few lines of conversation. Nothing else leaves your machine. Claude can
+Claude also carry the ghost's memories, its latest moments to remember, the
+last three days of its diary, and the last few lines of conversation. Nothing else leaves your machine. Claude can
 answer by turning the ghost's gaze to something, so it can choose to look.
 
 Jev costs very little: each decision is a few hundred input tokens, billed per
@@ -199,7 +205,7 @@ type. With Claude Opus 5.5 a reflection costs a cent or two; with Claude Haiku
 cheaper model, to spend less.
 
 Each Claude request puts what changes least first: the ghost's persona,
-memories, and diary, then the conversation, and last the moment itself. The first two
+memories, moments, and diary, then the conversation, and last the moment itself. The first two
 are marked for Anthropic's prompt cache, so later requests read them at a
 tenth of the input price. Writing an hour-long cache entry costs twice the
 input price (five minutes: 1.25 times), so it pays off when requests come

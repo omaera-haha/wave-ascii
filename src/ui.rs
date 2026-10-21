@@ -685,6 +685,15 @@ impl JournalPanel {
             append("  ", &memory.text, TEXT);
         }
         append("", "", TEXT);
+        append("", "Moments to remember", ACCENT);
+        let milestones = &app.world.life.milestones;
+        if milestones.is_empty() {
+            append("  ", "none yet", DIM);
+        }
+        for milestone in milestones {
+            append(&format!("  {}  ", milestone.day), &milestone.text, TEXT);
+        }
+        append("", "", TEXT);
         append("", "Diary", ACCENT);
         let diary = &app.world.life.diary;
         if diary.is_empty() {
@@ -853,6 +862,11 @@ fn life_panel(app: &App, screen: &mut Canvas) {
             TEXT,
         ));
     }
+    if let Some(milestone) = life.milestones.last() {
+        lines.push((String::new(), TEXT));
+        lines.push(("Its latest moment to remember".to_owned(), ACCENT));
+        lines.push((format!("  {}", milestone.text), TEXT));
+    }
     lines.push((String::new(), TEXT));
     lines.push(("Today so far".to_owned(), ACCENT));
     let room = screen.columns().saturating_sub(10).clamp(20, 56);
@@ -861,7 +875,7 @@ fn life_panel(app: &App, screen: &mut Canvas) {
     }
     lines.push((String::new(), TEXT));
     lines.push((
-        "The diary is in the journal (j). Any key closes this.".to_owned(),
+        "Its diary and moments are in the journal (j). Any key closes this.".to_owned(),
         DIM,
     ));
     panel(screen, "Life", &lines);

@@ -6,6 +6,28 @@ use super::{Activity, EventKind};
 
 /// Days of the diary kept.
 const DAYS_KEPT: usize = 60;
+/// Bonds at which the ghost marks how close it has grown, and what it
+/// says about it.
+const CLOSER: [(f32, &str); 4] = [
+    (0.3, "We got to know each other."),
+    (0.55, "I've grown fond of you."),
+    (0.8, "We're close now, you and I."),
+    (0.95, "I'm devoted to you."),
+];
+/// Hours together the ghost marks, and what it says about them. Milestones
+/// reach the minds as events, so they are written in words, not digits.
+const HOURS_MARKED: [(f32, &str); 3] = [
+    (1.0, "We spent our first hour together."),
+    (10.0, "We've spent ten hours together."),
+    (100.0, "We've spent a hundred hours together."),
+];
+/// Light motes eaten that the ghost marks, after the first.
+const MOTES_MARKED: [(u32, &str); 4] = [
+    (50, "Ate my fiftieth light mote."),
+    (100, "Ate my hundredth light mote."),
+    (500, "Ate my five hundredth light mote."),
+    (1000, "Ate my thousandth light mote."),
+];
 /// How fast the bond grows for each second the viewer is around, while it is
 /// new. It slows as the bond deepens: about a third after an hour together,
 /// two thirds after four, and most of the way after a dozen.
@@ -195,13 +217,18 @@ pub struct Life {
     pub day: String,
     /// A line for each past day it lived, oldest first.
     pub diary: Vec<Entry>,
+    /// Its firsts and landmarks, kept for good, oldest first.
+    pub milestones: Vec<Entry>,
 }
 
 impl Life {
-    /// Counts what happened, and lets it warm or cool the bond.
-    pub fn note(&mut self, kind: &EventKind) {
+    /// Counts what happened, and lets it warm or cool the bond. Returns the
+    /// milestone this reached, if any.
+    pub fn note(&mut self, kind: &EventKind) -> Option<String> {
         self.total.note(kind);
         self.today.note(kind);
+        let bond = self.bond;
+        let milestone = self.first(kind);
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
             EventKind::Fetched => 0.01,
@@ -210,20 +237,28 @@ impl Life {
             EventKind::DroppedMote | EventKind::KickedBall => 0.002,
             EventKind::Poked { count } if *count < 3 => 0.002,
             EventKind::Poked { .. } => -0.012,
-            _ => return,
+            _ => 0.0,
         };
         self.warm(warmth);
+        milestone.or_else(|| self.closer(bond))
     }
 
     /// Lets `seconds` pass, with the viewer around or not. Time together
-    /// deepens the bond, more slowly the deeper it is.
-    pub fn pass(&mut self, seconds: f32, present: bool) {
+    /// deepens the bond, more slowly the deeper it is. Returns the milestone
+    /// this reached, if any.
+    pub fn pass(&mut self, seconds: f32, present: bool) -> Option<String> {
         if !present {
-            return;
+            return None;
         }
+        let (bond, together) = (self.bond, self.total.together);
         self.total.together += seconds;
         self.today.together += seconds;
         self.warm(GROWING * (1.0 - self.bond).powi(2) * seconds);
+        let milestone = HOURS_MARKED
+            .into_iter()
+            .find(|(hours, _)| (together..self.total.together).contains(&(hours * 3600.0)))
+            .and_then(|(_, text)| self.reach(text.to_owned()));
+        milestone.or_else(|| self.closer(bond))
     }
 
     /// The viewer stayed away for `seconds`. After the first day, the bond
@@ -311,6 +346,71 @@ impl Life {
             }
         }
         self
+    }
+
+    // The first time something happens, or a count it marks.
+    fn first(&mut self, kind: &EventKind) -> Option<String> {
+        let total = &self.total;
+        let text = match kind {
+            EventKind::AteMote if total.motes == 1 => "Caught my first light mote.".to_owned(),
+            EventKind::AteMote => MOTES_MARKED
+                .into_iter()
+                .find(|(motes, _)| *motes == total.motes)?
+                .1
+                .to_owned(),
+            EventKind::NudgedBall if total.nudges == 1 => {
+                "Played with the ball for the first time.".to_owned()
+            }
+            EventKind::Fetched if total.fetches == 1 => {
+                "Played fetch with you for the first time.".to_owned()
+            }
+            EventKind::Danced if total.dances == 1 => "Danced my first twirl.".to_owned(),
+            EventKind::Found if total.finds == 1 => "You found me hiding.".to_owned(),
+            EventKind::Doodled(_) if total.doodles == 1 => {
+                "Drew my first picture on the glass.".to_owned()
+            }
+            EventKind::Bloomed if total.blooms == 1 => {
+                "My plant flowered for the first time.".to_owned()
+            }
+            EventKind::Noticed(thing)
+                if thing.starts_with("the rainbow") && total.rainbows == 1 =>
+            {
+                "Saw my first rainbow.".to_owned()
+            }
+            EventKind::SnowStarted if total.snowfalls == 1 => {
+                "Saw snow fall for the first time.".to_owned()
+            }
+            EventKind::Heard(_) if total.heard == 1 => {
+                "You talked to me for the first time.".to_owned()
+            }
+            _ => return None,
+        };
+        self.reach(text)
+    }
+
+    // The bond grew past one of the marks since it was `before`.
+    fn closer(&mut self, before: f32) -> Option<String> {
+        let (_, text) = CLOSER
+            .into_iter()
+            .rev()
+            .find(|(mark, _)| before < *mark && self.bond >= *mark)?;
+        self.reach(text.to_owned())
+    }
+
+    // Keeps a milestone, once; returns it if it is new.
+    fn reach(&mut self, text: String) -> Option<String> {
+        if self
+            .milestones
+            .iter()
+            .any(|milestone| milestone.text == text)
+        {
+            return None;
+        }
+        self.milestones.push(Entry {
+            day: self.day.clone(),
+            text: text.clone(),
+        });
+        Some(text)
     }
 
     fn warm(&mut self, amount: f32) {
@@ -532,6 +632,50 @@ mod tests {
         assert!(life.habit(Activity::Explore) < 0.95);
         assert_eq!(life.habit(Activity::Float), 1.0);
         assert_eq!(life.favorite(), Some(Activity::Play));
+    }
+
+    #[test]
+    fn firsts_and_landmarks_are_kept_once() {
+        let mut life = Life::default();
+        life.begin_day("2026-10-21");
+        assert_eq!(
+            life.note(&EventKind::AteMote).as_deref(),
+            Some("Caught my first light mote.")
+        );
+        assert_eq!(life.note(&EventKind::AteMote), None);
+        for _ in 2..50 {
+            life.note(&EventKind::AteMote);
+        }
+        assert_eq!(
+            life.milestones.last().unwrap().text,
+            "Ate my fiftieth light mote."
+        );
+        assert_eq!(life.milestones[0].day, "2026-10-21");
+        let reached = life.milestones.len();
+        life.total.motes = 0;
+        life.note(&EventKind::AteMote);
+        assert_eq!(life.milestones.len(), reached);
+    }
+
+    #[test]
+    fn growing_closer_and_hours_together_are_milestones() {
+        let mut life = Life::default();
+        let mut reached = Vec::new();
+        for _ in 0..(11 * 3600) {
+            if let Some(text) = life.pass(1.0, true) {
+                reached.push(text);
+            }
+        }
+        assert_eq!(
+            reached,
+            [
+                "We got to know each other.",
+                "We spent our first hour together.",
+                "I've grown fond of you.",
+                "We're close now, you and I.",
+                "We've spent ten hours together.",
+            ]
+        );
     }
 
     #[test]

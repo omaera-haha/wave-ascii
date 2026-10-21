@@ -3,11 +3,12 @@ use serde_json::{Value, json};
 
 use super::claude::{Block, Cache, Effort, Message, Request, Role};
 use crate::store::{Memory, Remark, Speaker};
-use crate::world::{Entry, Mood, Thing};
+use crate::world::{Entry, Life, Mood, Thing};
 
-/// At most this many memories, diary days, and lines of conversation go into
-/// a request.
+/// At most this many memories, milestones, diary days, and lines of
+/// conversation go into a request.
 const MEMORIES_SENT: usize = 40;
+const MILESTONES_SENT: usize = 12;
 const DAYS_SENT: usize = 3;
 const REMARKS_SENT: usize = 16;
 
@@ -46,7 +47,8 @@ It sometimes rains and, after rain by day, a rainbow shines.
 The observation's `bond_with_viewer` says how close the ghost has grown to the person, from \
 barely knowing them to devoted; it grows with time spent together. Let it color how the ghost \
 speaks: a little shy with someone it barely knows, warm and familiar with a friend. At the end \
-of each day the ghost writes a line in its diary; the last few days are with its memories.
+of each day the ghost writes a line in its diary, and it keeps its firsts and landmarks as \
+moments to remember; both are with its memories.
 
 While it is fast asleep, its thought is a dream: a short, strange, gentle image woven from its \
 day. Asleep, it says nothing unless the person speaks to it, and then only a sleepy word or two.
@@ -97,7 +99,7 @@ pub fn schema() -> Value {
 pub fn request(
     observation: &Value,
     memories: &[Memory],
-    diary: &[Entry],
+    life: &Life,
     conversation: &[Remark],
     heard: Option<&str>,
     effort: Option<Effort>,
@@ -110,13 +112,17 @@ pub fn request(
         .rev()
         .map(|memory| memory.text.as_str())
         .collect();
-    let days: Vec<String> = diary
-        .iter()
-        .rev()
-        .take(DAYS_SENT)
-        .rev()
-        .map(|entry| format!("{}: {}", entry.day, entry.text))
-        .collect();
+    let dated = |entries: &[Entry], count: usize| -> Vec<String> {
+        entries
+            .iter()
+            .rev()
+            .take(count)
+            .rev()
+            .map(|entry| format!("{}: {}", entry.day, entry.text))
+            .collect()
+    };
+    let milestones = dated(&life.milestones, MILESTONES_SENT);
+    let days = dated(&life.diary, DAYS_SENT);
     let conversation: Vec<String> = conversation
         .iter()
         .rev()
@@ -139,8 +145,10 @@ pub fn request(
         system: vec![
             Block::new(SYSTEM),
             block(format!(
-                "What the ghost remembers:\n{}\n\nIts diary of the last few days:\n{}",
+                "What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
+                 Its diary of the last few days:\n{}",
                 bullets(&memories),
+                bullets(&milestones),
                 bullets(&days)
             )),
         ],
@@ -224,14 +232,21 @@ mod tests {
             speaker: Speaker::Ghost,
             text: "Hello!".to_owned(),
         }];
-        let diary = vec![Entry {
-            day: "2026-10-20".to_owned(),
-            text: "Took a nap.".to_owned(),
-        }];
+        let life = Life {
+            diary: vec![Entry {
+                day: "2026-10-20".to_owned(),
+                text: "Took a nap.".to_owned(),
+            }],
+            milestones: vec![Entry {
+                day: "2026-10-19".to_owned(),
+                text: "Saw my first rainbow.".to_owned(),
+            }],
+            ..Life::default()
+        };
         let request = request(
             &json!({"time_of_day": "night"}),
             &memories,
-            &diary,
+            &life,
             &conversation,
             Some("안녕"),
             Some(Effort::Medium),
@@ -241,6 +256,11 @@ mod tests {
             request.system[1]
                 .text
                 .contains("- The person's name is Mina.")
+        );
+        assert!(
+            request.system[1]
+                .text
+                .contains("from its life:\n- 2026-10-19: Saw my first rainbow.")
         );
         assert!(
             request.system[1]
@@ -258,12 +278,20 @@ mod tests {
 
     #[test]
     fn what_changes_least_is_cached_and_the_moment_is_not() {
-        let cached = request(&json!({}), &[], &[], &[], None, None, Some(Cache::OneHour));
+        let cached = request(
+            &json!({}),
+            &[],
+            &Life::default(),
+            &[],
+            None,
+            None,
+            Some(Cache::OneHour),
+        );
         assert_eq!(cached.system[0].cache, None);
         assert_eq!(cached.system[1].cache, Some(Cache::OneHour));
         assert_eq!(cached.messages[0].content[0].cache, Some(Cache::OneHour));
         assert_eq!(cached.messages[0].content[1].cache, None);
-        let uncached = request(&json!({}), &[], &[], &[], None, None, None);
+        let uncached = request(&json!({}), &[], &Life::default(), &[], None, None, None);
         assert!(uncached.system.iter().all(|block| block.cache.is_none()));
     }
 
