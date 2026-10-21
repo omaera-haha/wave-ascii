@@ -38,7 +38,7 @@ impl Block {
     }
 
     // The smallest turn that brings the nearest face flat, retaining yaw.
-    fn resting_orientation(&self) -> Quat {
+    pub(super) fn resting_orientation(&self) -> Quat {
         let face = [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y, Vec3::Z, -Vec3::Z]
             .into_iter()
             .map(|axis| self.orientation * axis)
@@ -178,6 +178,20 @@ fn tower_height_range(level: f32) -> (usize, usize) {
 
 fn accident_chance(level: f32) -> f32 {
     0.12 * (1.0 - level).powi(2)
+}
+
+fn place(block: &mut Block, spot: Vec3, height: usize, level: f32, random: &mut super::Random) {
+    let jitter = Vec3::new(
+        random.range(-0.018, 0.018) * placement_jitter(level),
+        0.0,
+        random.range(-0.018, 0.018) * placement_jitter(level),
+    );
+    block.position = spot + Vec3::Y * ((height as f32 + 0.5) * EDGE) + jitter;
+    block.orientation = Quat::from_rotation_y(random.range(-0.18, 0.18));
+    block.velocity = Vec3::ZERO;
+    block.spin = Vec3::ZERO;
+    block.held = false;
+    block.stacked = true;
 }
 
 impl World {
@@ -434,7 +448,7 @@ impl World {
         self.ghost.plan.count = self.tower_height() as u32;
     }
 
-    fn tower_spot(&mut self) -> Option<Vec3> {
+    fn tower_spots(&self) -> Vec<Vec3> {
         // Front spots come first, with enough space for an admiring retreat
         // and for the blocks to scatter when the tower falls.
         let mut spots = Vec::new();
@@ -454,10 +468,97 @@ impl World {
                 break;
             }
         }
-        if spots.is_empty() {
-            return None;
+        spots
+    }
+
+    fn tower_spot(&mut self) -> Option<Vec3> {
+        let spots = self.tower_spots();
+        self.random
+            .pick(&vec![1.0; spots.len()])
+            .map(|index| spots[index])
+    }
+
+    pub(super) fn away_blocks(&mut self, standing: bool, random: &mut super::Random) {
+        let spots = self.tower_spots();
+        let base = random
+            .pick(&vec![1.0; spots.len()])
+            .map(|index| spots[index]);
+        let level = self.life.skills.level(super::Skill::Stacking);
+        let (minimum, maximum) = tower_height_range(level);
+        let height = (minimum + (random.unit() * (maximum - minimum + 1) as f32) as usize)
+            .min(self.blocks.len());
+        self.tower = base.filter(|_| standing);
+        let obstacles = self.obstacles();
+        let mut blocks = Vec::new();
+        if let Some(base) = self.tower {
+            for index in 0..height {
+                let mut block = self.blocks[index];
+                place(&mut block, base, index, level, random);
+                blocks.push(block);
+            }
         }
-        Some(spots[self.random.range(0.0, spots.len() as f32) as usize])
+        for index in blocks.len()..self.blocks.len() {
+            let clear = |spot: Vec3| {
+                [0, 2].into_iter().all(|axis| {
+                    spot[axis] >= ROOM_MIN[axis] + RADIUS && spot[axis] <= ROOM_MAX[axis] - RADIUS
+                }) && obstacles
+                    .iter()
+                    .all(|(center, radius)| flat(spot - *center).length() > radius + RADIUS + 0.05)
+                    && flat(spot - self.ball.position).length() > Ball::RADIUS + RADIUS + 0.05
+                    && blocks
+                        .iter()
+                        .all(|block| flat(spot - block.position).length() > RADIUS * 2.0 + 0.02)
+                    && self
+                        .tower
+                        .is_none_or(|base| flat(spot - base).length() > EDGE + RADIUS + 0.05)
+            };
+            let spot = (0..200)
+                .map(|_| {
+                    if let Some(base) = base.filter(|_| !standing) {
+                        base + Vec3::new(random.range(-0.7, 0.7), 0.0, random.range(-0.6, 0.6))
+                    } else {
+                        Vec3::new(random.range(-1.5, 1.5), 0.0, random.range(-0.8, 0.9))
+                    }
+                })
+                .find(|spot| clear(*spot))
+                .or_else(|| {
+                    // A fixed fallback grid guarantees space even near furniture.
+                    (0..10)
+                        .flat_map(|across| {
+                            (0..7).map(move |depth| {
+                                Vec3::new(
+                                    -1.6 + across as f32 * 0.35,
+                                    0.0,
+                                    -1.05 + depth as f32 * 0.35,
+                                )
+                            })
+                        })
+                        .find(|spot| clear(*spot))
+                });
+            if let Some(spot) = spot {
+                let mut block = Block::at(spot, self.blocks[index].color);
+                block.orientation = Quat::from_rotation_y(random.range(-3.0, 3.0));
+                blocks.push(block);
+            }
+        }
+        self.blocks = blocks;
+    }
+
+    pub(super) fn away_ball(&mut self, random: &mut super::Random) {
+        let obstacles = self.obstacles();
+        for _ in 0..200 {
+            let ball = Ball::at(random.range(-1.5, 1.5), random.range(-0.8, 0.9));
+            if obstacles.iter().all(|(center, radius)| {
+                flat(ball.position - *center).length() > radius + Ball::RADIUS
+            }) && self
+                .blocks
+                .iter()
+                .all(|block| flat(ball.position - block.position).length() > RADIUS + Ball::RADIUS)
+            {
+                self.ball = ball;
+                break;
+            }
+        }
     }
 
     pub(super) fn placing_block(&self) -> bool {
@@ -518,18 +619,13 @@ impl World {
                 if let Some(index) = self.blocks.iter().position(|block| block.held) {
                     if self.ghost.position.distance(target) < ARRIVED {
                         let level = self.life.skills.level(super::Skill::Stacking);
-                        let jitter = Vec3::new(
-                            self.random.range(-0.018, 0.018) * placement_jitter(level),
-                            0.0,
-                            self.random.range(-0.018, 0.018) * placement_jitter(level),
+                        place(
+                            &mut self.blocks[index],
+                            building.spot,
+                            height,
+                            level,
+                            &mut self.random,
                         );
-                        let block = &mut self.blocks[index];
-                        block.position =
-                            building.spot + Vec3::Y * ((height as f32 + 0.5) * EDGE) + jitter;
-                        block.orientation = Quat::from_rotation_y(self.random.range(-0.18, 0.18));
-                        block.velocity = Vec3::ZERO;
-                        block.held = false;
-                        block.stacked = true;
                         self.tower = Some(building.spot);
                         self.ghost.plan.count = height as u32 + 1;
                         building.stage = Stage::Gather;

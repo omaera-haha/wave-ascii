@@ -151,8 +151,8 @@ piped output never saves them.
   block to nudge it, or any block in the tower to topple it; a playful ghost or
   a close friend laughs, while a quieter ghost may sulk over its fallen work.
   A fast ball knocks the tower over too. Loose blocks fall, tumble, bounce,
-  and settle on their faces. The blocks start scattered each session; its
-  diary remembers towers built, the tallest tower, and your demolitions.
+  and settle on their faces. Their positions and standing towers stay between
+  visits; its diary remembers towers built, the tallest tower, and your demolitions.
 - **Catch your finger.** Move the mouse quickly over the room and a playful
   ghost chases your pointer along the inside of the glass and pounces on it.
   It tires of the game after a few catches. Hold still and it lingers at the
@@ -369,6 +369,16 @@ greetings, games, and offline replies. A Korean message gets a Korean reply
 straight away; its private thoughts stay in English.
 
 ### Its life between runs
+
+The room stays as you left it, including the ball, blocks, and standing towers.
+After more than half an hour away, the ghost has a little story of its own:
+naps, weather watching, play, drawing, or familiar visitors. Skipped days go
+into its diary; long absences keep a week of detail and a note about the quieter
+days before. You may find a new tower, scattered blocks, a moved ball, or the
+last fading strokes of a picture. Nights leave it rested, and on your return
+it tells you a little about what happened, in English or Korean. You can also
+ask “What did you do while I was away?” or “뭐 하고 있었어?” These remembered
+stories do not add practice or lifetime counts.
 
 **Growing up.** A newborn is a small wisp, a young ghost after three days,
 and fully grown after its first month. Its body grows smoothly with age,

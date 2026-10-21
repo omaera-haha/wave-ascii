@@ -300,6 +300,7 @@ impl App {
             conversation: self.mind.journal.conversation.clone(),
             life: world.saved_life(),
             seedlings: world.seedlings.clone(),
+            room: Some(world.saved_room()),
         };
         crate::store::save_json(&paths.save, &save)
     }
@@ -1084,6 +1085,7 @@ fn local_time() -> (jiff::civil::Date, f32) {
 /// Saved values are kept within their ranges and the furniture stays where
 /// the room puts it, so a hand-edited or damaged save can't break the world.
 pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
+    world.away = None;
     let name: String = save
         .name
         .trim()
@@ -1115,6 +1117,33 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
         .life
         .nature
         .get_or_insert_with(|| Nature::from_birth(save.born));
+    let timezone = jiff::tz::TimeZone::system();
+    let local = jiff::Timestamp::from_second(save.last_seen)
+        .ok()
+        .zip(jiff::Timestamp::from_second(now).ok())
+        .map(|(left, now)| {
+            (
+                left.to_zoned(timezone.clone()).datetime(),
+                now.to_zoned(timezone.clone()).datetime(),
+            )
+        });
+    world.birthday = jiff::Timestamp::from_second(save.born)
+        .ok()
+        .map(|born| born.to_zoned(timezone).date());
+    let seed = (save.born as u64).rotate_left(23) ^ save.last_seen as u64;
+    let story = local.map(|(left, now)| {
+        world.date = now.date();
+        world.hour = f32::from(now.hour())
+            + f32::from(now.minute()) / 60.0
+            + f32::from(now.second()) / 3600.0;
+        let story = crate::world::away::story(left, now, seed, &world.life, world.birthday);
+        world.life.begin_day(&now.date().to_string());
+        story.write_diary(&mut world.life, left.date(), now.date());
+        story
+    });
+    if let Some(room) = &save.room {
+        world.restore_room(room);
+    }
     let away = now.saturating_sub(save.last_seen).max(0) as f32;
     world.life.miss(away);
     world.age_garden(away);
@@ -1123,6 +1152,16 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
         .needs
         .change(0.0, 0.0, -(away / 3600.0 * 0.1).min(0.5));
     if away > 1800.0 {
+        world
+            .ghost
+            .needs
+            .change(0.0, -(away / 86_400.0 * 0.15).min(0.5), 0.0);
+        if let Some(story) = story.filter(|story| !story.happenings.is_empty()) {
+            if story.rested {
+                world.ghost.needs.energy = world.ghost.needs.energy.max(0.8);
+            }
+            world.remember_away(story, seed);
+        }
         world.record_return(away);
     }
     Journal {
@@ -1794,8 +1833,9 @@ mod tests {
             version: Save::VERSION,
             name: "Pip".into(),
             born: 0,
-            last_seen: 1000,
+            last_seen: local_seconds("2026-10-20T12:00:00"),
             seedlings: Vec::new(),
+            room: None,
             needs: crate::world::Needs::default(),
             plant: crate::world::Plant {
                 position: world.plant.position,
@@ -1817,10 +1857,10 @@ mod tests {
         for _ in 0..3 {
             save.life.note(&EventKind::AteMote);
         }
-        restore(&mut world, &save, 1000 + 86_400 * 3);
+        restore(&mut world, &save, save.last_seen + 86_400 * 3);
         assert_eq!(world.life.nature, Some(Nature::from_birth(save.born)));
         let mut another = World::new(2, 12.0);
-        restore(&mut another, &save, 1000 + 86_400 * 3);
+        restore(&mut another, &save, save.last_seen + 86_400 * 3);
         assert_eq!(another.life.nature, world.life.nature);
         save.life.nature = Some(Nature {
             playful: 0.9,
@@ -1828,7 +1868,7 @@ mod tests {
             ..Nature::default()
         });
         let saved: Save = serde_json::from_str(&serde_json::to_string(&save).unwrap()).unwrap();
-        restore(&mut another, &saved, 1000);
+        restore(&mut another, &saved, saved.last_seen);
         assert_eq!(another.life.nature, save.life.nature);
         assert_eq!(world.ghost.name, "Pip");
         assert_eq!(world.plant.thirst, 1.0);
@@ -1853,6 +1893,7 @@ mod tests {
             born: 0,
             last_seen: 1000,
             seedlings: Vec::new(),
+            room: None,
             needs: crate::world::Needs {
                 energy: 99.0,
                 fun: -3.0,
@@ -2138,12 +2179,21 @@ mod tests {
         }
     }
 
+    fn local_seconds(text: &str) -> i64 {
+        text.parse::<jiff::civil::DateTime>()
+            .unwrap()
+            .to_zoned(jiff::tz::TimeZone::system())
+            .unwrap()
+            .timestamp()
+            .as_second()
+    }
+
     fn garden_save(world: &World) -> Save {
         Save {
             version: Save::VERSION,
             name: world.ghost.name.clone(),
             born: 0,
-            last_seen: 1000,
+            last_seen: local_seconds("2026-06-21T12:00:00"),
             needs: world.ghost.needs,
             plant: world.plant,
             lamp_on: world.lamp.on,
@@ -2152,6 +2202,7 @@ mod tests {
             conversation: Vec::new(),
             life: world.life.clone(),
             seedlings: world.seedlings.clone(),
+            room: Some(world.saved_room()),
         }
     }
 
@@ -2244,6 +2295,98 @@ mod tests {
     }
 
     #[test]
+    fn restore_keeps_the_saved_day_then_writes_skipped_days_in_order_and_in_words() {
+        let mut world = World::new(1, 12.0);
+        let mut save = garden_save(&world);
+        save.last_seen = local_seconds("2026-06-21T12:00:00");
+        save.life.begin_day("2026-06-21");
+        save.life.note(&EventKind::AteMote);
+        let total = save.life.total.clone();
+        let skills = save.life.skills.clone();
+        restore(&mut world, &save, local_seconds("2026-06-25T12:00:00"));
+        assert_eq!(
+            world
+                .life
+                .diary
+                .iter()
+                .map(|entry| entry.day.as_str())
+                .collect::<Vec<_>>(),
+            ["2026-06-21", "2026-06-22", "2026-06-23", "2026-06-24"]
+        );
+        assert!(world.life.diary[0].text.starts_with("Ate"));
+        for entry in &world.life.diary[1..] {
+            assert!(entry.text.starts_with("While you were away:"));
+            assert!(
+                !entry
+                    .text
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+        assert_eq!(world.life.total.motes, total.motes);
+        assert_eq!(world.life.total.towers, total.towers);
+        assert_eq!(world.life.skills, skills);
+        assert_eq!(world.life.day, "2026-06-25");
+        assert_eq!(world.date.to_string(), "2026-06-25");
+        assert_eq!(world.hour, 12.0);
+    }
+
+    #[test]
+    fn a_long_absence_keeps_the_diary_capped_and_compresses_old_quiet_days() {
+        let mut world = World::new(1, 12.0);
+        let mut save = garden_save(&world);
+        save.life.day = "2026-06-21".to_owned();
+        save.life.note(&EventKind::AteMote);
+        let start = jiff::civil::Date::constant(2026, 4, 1);
+        for offset in 0..60 {
+            save.life.diary.push(crate::world::Entry {
+                day: start
+                    .checked_add(jiff::Span::new().days(offset))
+                    .unwrap()
+                    .to_string(),
+                text: "A quiet day.".to_owned(),
+            });
+        }
+        restore(&mut world, &save, local_seconds("2027-06-21T12:00:00"));
+        assert_eq!(world.life.diary.len(), 60);
+        assert!(
+            world
+                .life
+                .diary
+                .windows(2)
+                .all(|pair| pair[0].day < pair[1].day)
+        );
+        let recent = &world.life.diary[52..];
+        assert!(recent[0].text.contains("many quiet days passed"));
+        assert_eq!(recent[0].day, "2027-06-13");
+        assert_eq!(recent[7].day, "2027-06-20");
+        assert!(recent.iter().all(|entry| {
+            !entry
+                .text
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        }));
+    }
+
+    #[test]
+    fn a_night_away_restores_energy_and_a_brief_absence_preserves_the_room() {
+        let mut world = World::new(1, 12.0);
+        world.ball = Ball::at(-0.5, 0.9);
+        let mut save = garden_save(&world);
+        save.needs.energy = 0.1;
+        save.last_seen = local_seconds("2026-06-21T21:00:00");
+        let mut brief = World::new(99, 12.0);
+        restore(&mut brief, &save, save.last_seen + 1800);
+        assert_eq!(brief.saved_room(), save.room.clone().unwrap());
+        assert!(brief.away.is_none());
+        restore(&mut world, &save, local_seconds("2026-06-22T08:00:00"));
+        assert!(world.ghost.needs.energy >= 0.8);
+        assert!(world.ghost.needs.company < save.needs.company);
+        assert!(world.ghost.needs.fun < save.needs.fun);
+        assert_eq!(world.away.as_ref().unwrap().nights, 1);
+    }
+
+    #[test]
     fn time_away_ages_the_garden_without_water_and_bounds_long_absences() {
         let mut world = World::new(1, 12.0);
         world.plant.thirst = 0.0;
@@ -2253,7 +2396,7 @@ mod tests {
         seedling.growth = 0.5;
         world.seedlings.push(seedling);
         let save = garden_save(&world);
-        restore(&mut world, &save, 1300);
+        restore(&mut world, &save, save.last_seen + 300);
         assert!(world.plant.blossom > 0.0 && world.plant.blossom < 0.1);
         assert!(world.seedlings[0].growth > 0.5 && world.seedlings[0].growth < 0.51);
         assert_eq!(world.seedlings[0].age, save.seedlings[0].age + 300.0);
@@ -2270,8 +2413,9 @@ mod tests {
         assert_eq!(old.seedlings.len(), 1);
         assert!(old.petals.is_empty());
         let mut winter = World::new(1, 12.0);
-        winter.date = jiff::civil::Date::constant(2026, 12, 10);
-        restore(&mut winter, &save, 1300);
+        let mut winter_save = save.clone();
+        winter_save.last_seen = local_seconds("2026-12-10T12:00:00");
+        restore(&mut winter, &winter_save, winter_save.last_seen + 300);
         assert_eq!(winter.plant.blossom, 0.0);
         assert_eq!(winter.seedlings[0].growth, 0.5);
     }

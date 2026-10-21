@@ -1,4 +1,5 @@
 mod activity;
+pub mod away;
 pub mod blocks;
 pub mod calendar;
 mod doodle;
@@ -17,6 +18,7 @@ mod pounce;
 mod question;
 mod random;
 mod recognizer;
+mod room;
 mod routine;
 mod sight;
 mod sleep;
@@ -42,6 +44,7 @@ pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
 pub use question::Question;
 pub use random::Random;
+pub use room::Room;
 pub use sight::{Seen, Thing};
 pub use things::{
     Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, SHELF_POSITION, SILL_POSITION,
@@ -539,6 +542,8 @@ pub struct World {
     pub seedlings: Vec<Seedling>,
     pub petals: Vec<Petal>,
     tending: Option<garden::Tending>,
+    /// The story of its time alone, kept only for this session.
+    pub away: Option<away::Away>,
 }
 
 impl World {
@@ -631,6 +636,7 @@ impl World {
             seedlings: Vec::new(),
             petals: Vec::new(),
             tending: None,
+            away: None,
         };
         world.scatter_blocks();
         world

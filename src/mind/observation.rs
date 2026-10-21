@@ -2,7 +2,8 @@ use glam::Vec3;
 use serde_json::{Value, json};
 
 use crate::world::{
-    Activity, Mark, Perch, Plant, Seen, Skill, Sky, Thing, World, calendar::moon_words, flat,
+    Activity, Mark, Perch, Plant, Question, Seen, Skill, Sky, Thing, World, calendar::moon_words,
+    flat,
 };
 
 /// What the ghost knows of its situation, in words. Both minds read it:
@@ -68,9 +69,20 @@ pub fn observe(world: &World) -> Value {
             }
             words
         }).unwrap_or_else(|| "not known yet".to_owned()),
+        "while_the_viewer_was_away": world.away_summary(),
         "recent_events": recent(world, 8),
         "skills": Skill::ALL.map(|skill| world.life.skills.description(skill)),
     })
+}
+
+pub fn for_message(world: &World, message: &str) -> Value {
+    let mut observation = observe(world);
+    if Question::ask(message) == Some(Question::Away)
+        && let Some(away) = &world.away
+    {
+        observation["while_the_viewer_was_away"] = json!(away.summary());
+    }
+    observation
 }
 
 /// The latest events, newest last, with how long ago each happened.
@@ -1156,6 +1168,33 @@ mod tests {
                 .any(|line| line.contains("floated in through the window"))
         );
         assert!(!recent.iter().any(|line| line.contains("tagged")));
+    }
+
+    #[test]
+    fn the_return_story_reaches_the_minds_only_while_the_session_is_young() {
+        let mut world = World::new(1, 12.0);
+        world.away = Some(crate::world::away::story(
+            "2026-06-21T12:00:00".parse().unwrap(),
+            "2026-06-21T16:00:00".parse().unwrap(),
+            1,
+            &world.life,
+            None,
+        ));
+        let observation = observe(&world);
+        let summary = observation["while_the_viewer_was_away"].as_str().unwrap();
+        assert!(summary.starts_with("While you were away:"));
+        assert!(!summary.chars().any(|character| character.is_ascii_digit()));
+        world.time = 900.0;
+        assert!(observe(&world)["while_the_viewer_was_away"].is_null());
+        assert!(
+            for_message(&world, "what did you do while I was away?")["while_the_viewer_was_away"]
+                .is_string()
+        );
+        assert!(for_message(&world, "hello")["while_the_viewer_was_away"].is_null());
+        world.time = 0.0;
+        world.away.as_mut().unwrap().told = true;
+        assert!(observe(&world)["while_the_viewer_was_away"].is_null());
+        assert!(for_message(&world, "뭐 하고 있었어?")["while_the_viewer_was_away"].is_string());
     }
 
     #[test]
