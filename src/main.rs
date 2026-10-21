@@ -33,12 +33,14 @@ const HELP: &str = "\
 Usage: wave-ascii [OPTIONS]
 
 A ghost lives in a glass box in your terminal. It floats about, chases light
-motes, plays fetch, tends a plant, plays hide-and-seek, draws on the glass,
-sleeps when tired, and watches you. Over days it grows close to you, forms
-habits, and keeps a diary. Jev (TypeSafe's System One model) makes its quick
-choices and Claude gives it thoughts and words; without API keys it lives on
-instinct. Press k in the app to add keys, or set ANTHROPIC_API_KEY and
-TYPESAFE_API_KEY.
+motes, plays fetch, stacks toy blocks, tends a plant and its garden, watches
+the bird and the sky from the window, plays hide-and-seek and noughts and
+crosses, draws and writes in the fog on the glass, sleeps at night, and
+watches you. Over days it grows up, grows close to you, learns your words and
+your name, forms habits, and keeps a diary. Jev (TypeSafe's System One model)
+makes its quick choices and Claude gives it thoughts and words; without API
+keys it lives on instinct. Press k in the app to add keys, or set
+ANTHROPIC_API_KEY and TYPESAFE_API_KEY.
 
 Its life is saved between runs in ~/.local/share/wave-ascii/ghost.json, and
 its settings, keys included, in ~/.config/wave-ascii/config.json.
@@ -60,16 +62,20 @@ Options:
 Keys:
   t, Enter     talk to the ghost      k        API keys and models
   arrows/WASD  turn the view          j        journal (arrows scroll)
-  + / -        zoom                   l        its life and bond
+  + / -        zoom                   l        its life and growth
   m, c         style, color mode      ?        help
   r            reset the view         space    pause
   p            save a postcard        q, Esc   quit
+  g            noughts and crosses    1-9      choose a square
+  f            draw in the fog with left drags (f or Esc stops)
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
-flick it, and anywhere else in the room to drop in a light mote. Drag to turn
-the view and scroll to zoom. In the journal, help, or life panel, the mouse
-selects text. In the journal, PageUp/PageDown and Home/End also scroll; Esc,
-Enter, or j closes it.
+flick it, a block to nudge it or a tower to topple it, and anywhere else in
+the room to drop in a light mote. Press on the ghost and drag across it to
+stroke it; drag elsewhere to turn the view, and scroll to zoom. Right-drag
+draws in the fog on the glass. In the journal, help, or life panel, the
+mouse selects text. In the journal, PageUp/PageDown and Home/End also
+scroll; Esc, Enter, or j closes it.
 
 Piped output prints one frame of a fresh ghost, sized by COLUMNS and LINES.";
 
