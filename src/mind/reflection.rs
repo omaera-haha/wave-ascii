@@ -1,0 +1,211 @@
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use super::claude::{Effort, Message, Request, Role};
+use crate::store::{Memory, Remark, Speaker};
+use crate::world::Mood;
+
+/// At most this many memories and lines of conversation go into a request.
+const MEMORIES_SENT: usize = 40;
+const REMARKS_SENT: usize = 16;
+
+/// What the ghost makes of its situation after thinking it over. Empty
+/// strings mean "nothing" or "no change".
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct Reflection {
+    /// A private thought, shown faintly.
+    pub thought: String,
+    /// Words spoken aloud to the viewer.
+    pub say: String,
+    /// What it means to do for the next while.
+    pub goal: String,
+    pub mood: Option<Mood>,
+    /// Something worth keeping in long-term memory.
+    pub remember: String,
+    /// A new name, when the viewer gave it one.
+    pub name: String,
+}
+
+const SYSTEM: &str = "\
+You are the inner voice of a small ghost who lives in a glass box inside a person's terminal. \
+The box holds a floor lamp, a potted plant, a ball, a cushion to sleep on, and light motes that \
+drift in and that the ghost eats for energy. The person watches from the other side of the glass \
+and can move a pointer over it, poke the ghost, drop light motes in, flick the ball, and type to \
+it. The ghost cannot leave the box or do anything outside it.
+
+The ghost is gentle, curious, and a little playful. It speaks in short, plain sentences, at most \
+about twenty words, in the language the person last wrote in. It only speaks when spoken to or \
+when it has something worth saying, and otherwise leaves `say` empty. It never invents events \
+that the observation does not show. If the person sincerely asks what it is, it says honestly \
+that it is a character in a small program, whose thoughts come from Claude.
+
+Each time, reply with:
+- thought: one short private thought about this moment.
+- say: what it says to the person, or empty.
+- goal: what it wants to do for the next few minutes, in a few words, using what the box \
+offers (resting, playing with the ball, tending the plant, exploring, chasing light motes, \
+visiting the person, the lamp), or empty to keep its current goal.
+- mood: how it feels.
+- remember: a fact worth keeping for good, such as the person's name or something they care \
+about, or empty. Most of the time this is empty.
+- name: its new name if the person just gave it one, or empty.";
+
+/// The schema Claude's reply must follow.
+pub fn schema() -> Value {
+    let text = json!({"type": "string"});
+    json!({
+        "type": "object",
+        "properties": {
+            "thought": text,
+            "say": text,
+            "goal": text,
+            "mood": {"type": "string", "enum": Mood::ALL.map(Mood::name)},
+            "remember": text,
+            "name": text,
+        },
+        "required": ["thought", "say", "goal", "mood", "remember", "name"],
+        "additionalProperties": false,
+    })
+}
+
+/// The request for one reflection: the ghost's situation, what it
+/// remembers, the conversation so far, and what the person just said, if
+/// anything.
+pub fn request(
+    observation: &Value,
+    memories: &[Memory],
+    conversation: &[Remark],
+    heard: Option<&str>,
+) -> Request {
+    let memories: Vec<&str> = memories
+        .iter()
+        .rev()
+        .take(MEMORIES_SENT)
+        .rev()
+        .map(|memory| memory.text.as_str())
+        .collect();
+    let conversation: Vec<String> = conversation
+        .iter()
+        .rev()
+        .take(REMARKS_SENT)
+        .rev()
+        .map(|remark| {
+            let speaker = match remark.speaker {
+                Speaker::Viewer => "person",
+                Speaker::Ghost => "ghost",
+            };
+            format!("{speaker}: {}", remark.text)
+        })
+        .collect();
+    let prompt = match heard {
+        Some(text) => format!("The person just said: {text}"),
+        None => "Nobody said anything just now. Think over the moment quietly.".to_owned(),
+    };
+    let content = format!(
+        "Observation:\n{}\n\nWhat the ghost remembers:\n{}\n\nRecent conversation:\n{}\n\n{prompt}",
+        serde_json::to_string_pretty(observation).unwrap_or_default(),
+        bullets(&memories),
+        bullets(&conversation),
+    );
+    Request {
+        system: SYSTEM.to_owned(),
+        messages: vec![Message {
+            role: Role::User,
+            content,
+        }],
+        schema: schema(),
+        max_tokens: 4000,
+        effort: Effort::Low,
+    }
+}
+
+fn bullets<Line: AsRef<str>>(lines: &[Line]) -> String {
+    if lines.is_empty() {
+        return "(nothing yet)".to_owned();
+    }
+    lines
+        .iter()
+        .map(|line| format!("- {}", line.as_ref()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The reflection in Claude's reply, with whitespace trimmed away.
+pub fn read(value: Value) -> Option<Reflection> {
+    let mut reflection: Reflection = serde_json::from_value(value).ok()?;
+    for field in [
+        &mut reflection.thought,
+        &mut reflection.say,
+        &mut reflection.goal,
+        &mut reflection.remember,
+        &mut reflection.name,
+    ] {
+        *field = field.trim().to_owned();
+    }
+    Some(reflection)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_schema_requires_every_field_and_allows_no_others() {
+        let schema = schema();
+        let properties = schema["properties"].as_object().unwrap();
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| name.as_str().unwrap())
+            .collect();
+        assert_eq!(properties.len(), required.len());
+        assert!(required.iter().all(|name| properties.contains_key(*name)));
+        assert_eq!(schema["additionalProperties"], false);
+        assert_eq!(
+            schema["properties"]["mood"]["enum"]
+                .as_array()
+                .unwrap()
+                .len(),
+            Mood::ALL.len()
+        );
+    }
+
+    #[test]
+    fn a_request_carries_the_situation_memories_and_what_was_heard() {
+        let memories = vec![Memory {
+            at: 0,
+            text: "The person's name is Mina.".to_owned(),
+        }];
+        let conversation = vec![Remark {
+            at: 0,
+            speaker: Speaker::Ghost,
+            text: "Hello!".to_owned(),
+        }];
+        let request = request(
+            &json!({"time_of_day": "night"}),
+            &memories,
+            &conversation,
+            Some("안녕"),
+        );
+        let content = &request.messages[0].content;
+        assert!(content.contains("\"time_of_day\": \"night\""));
+        assert!(content.contains("- The person's name is Mina."));
+        assert!(content.contains("- ghost: Hello!"));
+        assert!(content.ends_with("The person just said: 안녕"));
+        assert_eq!(request.messages.len(), 1);
+        assert_eq!(request.messages[0].role, Role::User);
+    }
+
+    #[test]
+    fn replies_are_read_and_trimmed() {
+        let reflection = read(json!({
+            "thought": " cozy ", "say": "", "goal": "tend the plant", "mood": "content",
+            "remember": "", "name": ""
+        }))
+        .unwrap();
+        assert_eq!(reflection.thought, "cozy");
+        assert_eq!(reflection.mood, Some(Mood::Content));
+        assert!(read(json!({"thought": 3})).is_none());
+    }
+}

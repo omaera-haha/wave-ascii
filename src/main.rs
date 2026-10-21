@@ -1,76 +1,72 @@
-mod animation;
 mod app;
-mod aurora;
 mod canvas;
 mod color;
-mod drawing;
+mod face;
 mod frame;
-mod ghost;
-mod lava;
-mod menu;
-mod mesh;
-mod model;
-mod ocean;
-mod scene;
+mod mind;
+mod render;
+mod sdf;
+mod store;
 mod terminal;
+mod ui;
+mod world;
 
 use std::env;
 use std::io::{self, IsTerminal, Write};
-use std::path::Path;
 use std::process::ExitCode;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use app::{App, Response};
 use canvas::Style;
 use color::ColorMode;
-use menu::{Entry, Menu};
-use scene::{Scene, View, Viewer};
-use terminal::{Input, Size, Terminal};
+use mind::{Journal, Mind};
+use store::{Config, Paths, Save};
+use terminal::{Size, Terminal};
+use world::World;
 
 const HELP: &str = "\
-Usage: wave-ascii [OPTIONS] [SCENE | FILE]...
+Usage: wave-ascii [OPTIONS]
 
-{scenes}
-Files:  .svg .svgz drawings; .glb .gltf .obj .stl models
-The first scene or file named is shown first; files join the scene list.
-With none named, the scene menu opens at the start.
+A ghost lives in a glass box in your terminal. It floats about, chases light
+motes, plays with a ball, tends a plant, sleeps when tired, and watches you.
+Jev (TypeSafe's System One model) makes its quick choices and Claude gives it
+thoughts and words; without API keys it lives on instinct. Press k in the app
+to add keys, or set ANTHROPIC_API_KEY and TYPESAFE_API_KEY.
+
+Its life is saved between runs in ~/.local/share/wave-ascii/ghost.json, and
+its settings, keys included, in ~/.config/wave-ascii/config.json.
 
 Options:
-  --style ascii|blocks|braille   how pixels become characters (default ascii)
+  --style ascii|blocks|braille   how pixels become characters (default braille)
   --color auto|truecolor|256|never
                                  auto follows NO_COLOR and COLORTERM, and is
                                  plain when output is piped
-  --time SECONDS                 moment of the frame printed when piped
-                                 (default 0)
-  --fps N                        frames per second; set it to the display's
-                                 refresh rate, such as 120 (default 60)
+  --fps N                        frames per second (default 60)
+  --offline                      don't call any model, even with keys
+  --time SECONDS                 when piped: how long the world runs before
+                                 the frame is printed (default 0)
+  --hour HOUR                    when piped: the hour of day (default 12)
   -h, --help                     show this help
 
 Keys:
-  Enter        scene menu            m   next style
-  Tab, S-Tab   next, previous scene  c   next color mode
-  1-9          scene by number       r   reset view
-  arrows/WASD  turn                  space   pause
-  + / -        zoom                  q, Esc, Ctrl+C   quit
+  t, Enter     talk to the ghost      k        API keys
+  arrows/WASD  turn the view          j        journal
+  + / -        zoom                   ?        help
+  m, c         style, color mode      space    pause
+  r            reset the view         q, Esc   quit
 
-In the scene menu, arrows, Home, End, and Page Up and Down move through the
-list while the highlighted scene plays beside it. Enter shows it, and Esc goes
-back to the scene the menu opened on.
+Mouse: click the ghost to poke it, the ball to flick it, and anywhere else in
+the room to drop in a light mote. Drag to turn the view and scroll to zoom.
 
-Mouse: the wheel works like the up and down arrows, and a click picks a scene
-in the menu. The ghost watches the pointer and reacts to clicks.
-
-Piped output produces one frame, sized by COLUMNS and LINES.";
+Piped output prints one frame of a fresh ghost, sized by COLUMNS and LINES.";
 
 struct Options {
-    scenes: Vec<Scene>,
-    /// The first scene named on the command line, if any.
-    first: Option<usize>,
     style: Style,
     color: Option<ColorMode>,
-    time: f32,
     frames_per_second: f64,
+    offline: bool,
+    time: f32,
+    hour: f32,
 }
 
 fn main() -> ExitCode {
@@ -89,14 +85,15 @@ fn invalid_input(message: String) -> io::Error {
 
 /// Returns `None` when help was requested.
 fn parse_options() -> io::Result<Option<Options>> {
-    let mut scenes = Scene::builtins();
-    let mut first = None;
-    let mut style = Style::Ascii;
-    let mut color = None;
-    let mut time = 0.0;
-    let mut frames_per_second = 60.0;
+    let mut options = Options {
+        style: Style::Braille,
+        color: None,
+        frames_per_second: 60.0,
+        offline: false,
+        time: 0.0,
+        hour: 12.0,
+    };
     let mut arguments = env::args().skip(1);
-
     while let Some(argument) = arguments.next() {
         let (name, inline_value) = match argument.split_once('=') {
             Some((name, value)) if name.starts_with("--") => {
@@ -110,11 +107,18 @@ fn parse_options() -> io::Result<Option<Options>> {
                 .or_else(|| arguments.next())
                 .ok_or_else(|| invalid_input(format!("{name} needs a value")))
         };
+        let number = |value: String, low: f64, high: f64, what: &str| {
+            value
+                .parse::<f64>()
+                .ok()
+                .filter(|number| (low..=high).contains(number))
+                .ok_or_else(|| invalid_input(format!("{name} needs {what}, not {value:?}")))
+        };
         match name.as_str() {
             "-h" | "--help" => return Ok(None),
             "--style" => {
                 let value = value()?;
-                style = Style::parse(&value).ok_or_else(|| {
+                options.style = Style::parse(&value).ok_or_else(|| {
                     invalid_input(format!(
                         "unknown style {value:?}; use ascii, blocks, or braille"
                     ))
@@ -122,7 +126,7 @@ fn parse_options() -> io::Result<Option<Options>> {
             }
             "--color" => {
                 let value = value()?;
-                color = match value.as_str() {
+                options.color = match value.as_str() {
                     "auto" => None,
                     other => Some(ColorMode::parse(other).ok_or_else(|| {
                         invalid_input(format!(
@@ -131,206 +135,127 @@ fn parse_options() -> io::Result<Option<Options>> {
                     })?),
                 };
             }
-            "--time" => {
-                let value = value()?;
-                time = value
-                    .parse::<f32>()
-                    .ok()
-                    .filter(|seconds| seconds.is_finite())
-                    .ok_or_else(|| {
-                        invalid_input(format!("--time needs a number of seconds, not {value:?}"))
-                    })?;
-            }
             "--fps" => {
-                let value = value()?;
-                frames_per_second = value
-                    .parse::<f64>()
-                    .ok()
-                    .filter(|rate| (1.0..=1000.0).contains(rate))
-                    .ok_or_else(|| {
-                        invalid_input(format!(
-                            "--fps needs a number from 1 to 1000, not {value:?}"
-                        ))
-                    })?;
+                options.frames_per_second =
+                    number(value()?, 1.0, 1000.0, "a number from 1 to 1000")?;
             }
-            flag if flag.starts_with('-') => {
+            "--time" => {
+                options.time = number(value()?, 0.0, 86_400.0, "a number of seconds")? as f32
+            }
+            "--hour" => options.hour = number(value()?, 0.0, 24.0, "an hour from 0 to 24")? as f32,
+            "--offline" => options.offline = true,
+            other => {
                 return Err(invalid_input(format!(
-                    "unknown option {flag:?}; see --help"
+                    "unknown argument {other:?}; see --help"
                 )));
             }
-            scene_name => {
-                let index = match Scene::names().position(|known| known == scene_name) {
-                    Some(index) => index,
-                    None if Scene::is_loadable(Path::new(scene_name)) => {
-                        scenes.push(Scene::load(Path::new(scene_name))?);
-                        scenes.len() - 1
-                    }
-                    None => {
-                        return Err(invalid_input(format!(
-                            "unknown scene {scene_name:?}; see --help for the scenes, or use a supported file"
-                        )));
-                    }
-                };
-                first.get_or_insert(index);
-            }
         }
     }
-
-    Ok(Some(Options {
-        scenes,
-        first,
-        style,
-        color,
-        time,
-        frames_per_second,
-    }))
-}
-
-// The built-in scene names for the help, by group, wrapped to 80 columns.
-fn scene_list() -> String {
-    const INDENT: usize = 13;
-    let mut list = String::from("Scenes:\n");
-    for (group, names) in Scene::groups() {
-        let mut line = format!("  {:<width$}", format!("{group}:"), width = INDENT - 2);
-        for (index, name) in names.iter().enumerate() {
-            let separator = if index + 1 < names.len() { "," } else { "" };
-            if line.len() > INDENT && line.len() + 1 + name.len() + separator.len() > 79 {
-                list.push_str(line.trim_end());
-                list.push('\n');
-                line = " ".repeat(INDENT);
-            } else if index > 0 {
-                line.push(' ');
-            }
-            line.push_str(name);
-            line.push_str(separator);
-        }
-        list.push_str(&line);
-        list.push('\n');
-    }
-    list.trim_end().to_owned()
+    Ok(Some(options))
 }
 
 fn run() -> io::Result<()> {
-    let Some(Options {
-        scenes,
-        first,
-        style,
-        color,
-        time,
-        frames_per_second,
-    }) = parse_options()?
-    else {
-        println!("{}", HELP.replace("{scenes}", &scene_list()));
+    let Some(options) = parse_options()? else {
+        println!("{HELP}");
         return Ok(());
     };
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-        let size = Size::from_environment();
-        let color = color.unwrap_or(ColorMode::Plain);
-        let frame = scenes[first.unwrap_or(0)].render(
-            style.grid(size.columns, size.rows),
-            time,
-            View::default(),
-            &Viewer::default(),
-        );
-        io::stdout()
-            .lock()
-            .write_all(style.canvas(&frame, color).ansi(color).as_bytes())?;
-        return Ok(());
+        return print_frame(&options);
     }
 
-    // Files named on the command line follow the built-in scenes.
-    let builtin_count = Scene::names().count();
-    let entries = scenes
-        .iter()
-        .enumerate()
-        .map(|(index, scene)| Entry {
-            label: scene.label().to_owned(),
-            group: if index < builtin_count {
-                scene.group()
-            } else {
-                "Files"
-            },
-        })
-        .collect();
-    let mut app = App::new(
-        Menu::new(entries),
-        first.unwrap_or(0),
-        style,
-        color.unwrap_or_else(ColorMode::detect),
-        time,
-    );
-    // Without a scene to start on, start by showing what there is.
-    if first.is_none() {
-        app.menu.open(0);
-    }
+    let paths = Paths::from_environment();
+    let config = match &paths {
+        Some(paths) => Config::load(&paths.config)?,
+        None => Config::default(),
+    };
+    let save: Option<Save> = match &paths {
+        Some(paths) => store::load_json(&paths.save).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "couldn't read the ghost's life from {}: {error}",
+                    paths.save.display()
+                ),
+            )
+        })?,
+        None => None,
+    };
+    let mut world = World::new(seed(), app::local_hour());
+    let now = mind::now();
+    let (journal, born) = match &save {
+        Some(save) => (app::restore(&mut world, save, now), save.born),
+        None => (Journal::default(), now),
+    };
+    let mind = Mind::new(&config, journal, options.offline);
+    let color = options.color.unwrap_or_else(ColorMode::detect);
+    let mut app = App::new(world, mind, config, options.style, color).live(paths, born);
 
+    let result = run_loop(&mut app, options.frames_per_second);
+    let saved = app.save();
+    result.and(saved)
+}
+
+fn run_loop(app: &mut App, frames_per_second: f64) -> io::Result<()> {
     let mut terminal = Terminal::open()?;
-    let mut size = terminal.size();
-    let mut last_frame = Instant::now();
-    let mut last_size_check = last_frame;
     let frame_duration = Duration::from_secs_f64(1.0 / frames_per_second);
+    let mut last_frame = Instant::now();
     let mut next_frame = last_frame;
+    // Whether the next draw must be complete; it waits for the next frame.
+    let mut restyled = false;
 
     loop {
-        let mut restyled = false;
-        for input in terminal.inputs()? {
-            let response = match input {
-                Input::Key(key) => app.press(key),
-                Input::Mouse(mouse) => app.mouse(mouse),
-            };
-            match response {
+        let wait = next_frame.saturating_duration_since(Instant::now());
+        for input in terminal.inputs(wait)? {
+            match app.input(input) {
                 Response::Quit => return Ok(()),
                 Response::Restyle => restyled = true,
                 Response::Continue => {}
             }
         }
-
-        if last_size_check.elapsed() >= Duration::from_millis(250) {
-            let current = terminal.size();
-            if current != size {
-                size = current;
-                restyled = true;
-            }
-            last_size_check = Instant::now();
+        if Instant::now() < next_frame {
+            continue;
         }
         if restyled {
             terminal.clear()?;
+            restyled = false;
         }
 
         let now = Instant::now();
-        if !app.paused {
-            app.time += (now - last_frame).as_secs_f32();
-        }
+        app.advance((now - last_frame).as_secs_f32());
         last_frame = now;
-
-        // Leave a column for wrapping and a row for the status line.
-        let (columns, rows) = (size.columns.saturating_sub(1), size.rows.saturating_sub(1));
-        app.resize(columns, rows);
-        let (style, color, time, view, viewer) =
-            (app.style, app.color, app.time, app.view, app.viewer);
-        let scene = &scenes[app.scene];
-        let draw = |columns, rows| {
-            style.canvas(
-                &scene.render(style.grid(columns, rows), time, view, &viewer),
-                color,
-            )
-        };
-        let canvas = if app.menu.is_open() {
-            app.menu.draw(columns, rows, draw)
-        } else {
-            draw(columns, rows)
-        };
-        terminal.draw(&canvas, color, &app.status(scene.label()))?;
+        let size = terminal.size();
+        let canvas = app.frame(size.columns, size.rows);
+        terminal.draw(&canvas, app.color)?;
 
         // Frames start on a fixed beat. When drawing falls behind, the beat
         // starts over rather than rushing to catch up.
         next_frame += frame_duration;
-        let now = Instant::now();
-        if next_frame > now {
-            thread::sleep(next_frame - now);
-        } else {
-            next_frame = now;
+        if next_frame < Instant::now() {
+            next_frame = Instant::now();
         }
     }
+}
+
+// One frame of a fresh ghost after `--time` seconds, for pipes and files.
+fn print_frame(options: &Options) -> io::Result<()> {
+    let size = Size::from_environment();
+    let color = options.color.unwrap_or(ColorMode::Plain);
+    let world = World::new(1, options.hour);
+    let mind = Mind::new(&Config::default(), Journal::default(), true);
+    let mut app = App::new(world, mind, Config::default(), options.style, color);
+    let mut remaining = options.time;
+    while remaining > 0.0 {
+        let step = remaining.min(0.05);
+        app.advance(step);
+        remaining -= step;
+    }
+    let canvas = app.frame(size.columns, size.rows);
+    io::stdout().lock().write_all(canvas.ansi(color).as_bytes())
+}
+
+fn seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |duration| duration.as_nanos() as u64)
 }

@@ -103,6 +103,15 @@ impl Cell {
         background: None,
     };
 
+    /// The right half of a wide character, such as a Hangul syllable, in the
+    /// cell before it. It writes nothing, since the wide character already
+    /// covers it.
+    pub const CONTINUATION: Self = Self {
+        glyph: '\0',
+        foreground: None,
+        background: None,
+    };
+
     fn ink(glyph: char, color: Vec3) -> Self {
         Self {
             glyph,
@@ -246,7 +255,11 @@ impl Canvas {
     pub fn text(&self) -> String {
         let mut output = String::with_capacity(self.cells.len() * 3 + self.rows);
         for row in self.cells.chunks(self.columns.max(1)) {
-            output.extend(row.iter().map(|cell| cell.glyph));
+            output.extend(
+                row.iter()
+                    .map(|cell| cell.glyph)
+                    .filter(|glyph| *glyph != Cell::CONTINUATION.glyph),
+            );
             output.push('\n');
         }
         output
@@ -306,6 +319,9 @@ struct Pen {
 
 impl Pen {
     fn write(&mut self, cell: &Cell, color: ColorMode, output: &mut String) {
+        if *cell == Cell::CONTINUATION {
+            return;
+        }
         let background = color.paint(cell.background);
         if background != self.background {
             Paint::write_sgr(background, Ground::Background, output);

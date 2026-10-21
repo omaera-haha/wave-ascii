@@ -1,35 +1,60 @@
-# Repository Guidelines
+# AGENTS.md
 
-## Project Structure & Module Organization
+This file provides guidance to coding agents such as Codex when working with code in this repository. It mirrors CLAUDE.md; keep the two in step.
 
-This repository is currently a minimal scaffold for `wave-ascii`. The only tracked project document is `README.md`; no source code, tests, assets, or dependency manifests exist yet.
+## Overview
 
-As implementation begins, group related code into clearly named modules. Introduce directories such as `src/`, `tests/`, or `assets/` only when there is content to organize, and update the README to explain their purpose.
+`wave-ascii` is a Rust (edition 2024) terminal app in which a ghost lives in a glass box. The box is a 3D room drawn as text (dots, dashed edges, a lamp, a plant, a ball, a cushion, drifting light motes). The ghost is a point with a body, needs, a mood, and a plan, drawn as an abstract shape of dots whose glow and face show its state. Two models give it a mind: Jev (TypeSafe's System One model) picks what it does next, and Claude (System Two) reflects, sets goals, remembers, and talks. Without keys it runs on instinct. Dependencies: `crossterm` (terminal), `glam` (math), `tokio` and `reqwest` (API calls), `serde`/`serde_json`, `jiff` (local time), `unicode-width` (wide characters).
 
-## Build, Test, and Development Commands
+## Commands
 
-No build system, development server, or automated test commands are configured. Do not assume commands such as `npm test` or `make build` are available.
+The Rust toolchain lives in the dev container (`.devcontainer/`, based on `rust:latest`, which adds rustfmt and clippy). The host may not have `cargo` installed.
 
-Useful repository checks include:
+```bash
+cargo check
+cargo test
+cargo test world::tests::      # one module's tests
+cargo fmt --check
+cargo clippy --all-targets
+cargo run --release            # interactive; --style, --color, --fps, --offline, --help
+```
 
-- `git status --short`: inspect pending changes.
-- `git diff --check`: catch whitespace errors in tracked changes.
-- `git diff`: review the patch before committing.
+When stdin or stdout isn't a terminal, the app prints one frame of a fresh, seeded ghost and exits. It never touches saved files or models. The frame size comes from `COLUMNS`/`LINES`. `--time` runs the world that long first (instinct decides) and `--hour` sets the time of day (default 12), so a given `--time`/`--hour` always gives the same frame:
 
-When adding tooling, document its installation requirements and exact build, run, and test commands in `README.md`.
+```bash
+COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
+```
 
-## Coding Style & Naming Conventions
+To exercise the interactive loop, run it under `script` with a pty and feed input on stdin. Point `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `HOME` at a scratch directory so the real save isn't touched, for example `(sleep 1; printf q) | XDG_DATA_HOME=/tmp/x XDG_CONFIG_HOME=/tmp/x HOME=/tmp/x script -qfec "stty rows 34 cols 110; ./target/release/wave-ascii" /dev/null`. Feed mouse input as SGR reports with 1-based cells: `printf '\033[<35;50;12M'` moves the pointer to column 50, row 12; `'\033[<0;50;12M'` and `'\033[<0;50;12m'` press and release the left button; `'\033[<32;55;12M'` drags; `'\033[<64;50;12M'` scrolls.
 
-No language-specific style, formatter, or linter has been established. Match the conventions of surrounding files and use consistent indentation within each file. Keep Markdown headings descriptive and examples executable.
+No API keys are available in the dev container; the clients and the mind are tested against local mock servers.
 
-Choose descriptive filenames and identifiers. When introducing a language or framework, add an appropriate formatting configuration rather than relying on undocumented personal preferences.
+## Architecture
 
-## Testing Guidelines
+Each frame: `App::advance` steps the `World` and lets the `Mind` act on it, then `App::frame` builds the face, aura, and pose, calls `render::render` (a `Frame`), turns it into a `Canvas` with `Style::canvas`, and `ui::draw` adds words and panels. `Terminal::draw` writes the changed cells.
 
-There is no testing framework or coverage threshold yet. When adding executable behavior, include relevant tests and document how to run them. Use descriptive test names that state the behavior being checked, and keep fixtures close to the tests that use them.
+- **`world/`** is the simulation, deterministic for a seed (`Random`, SplitMix64). The room is the box `ROOM_MIN`..`ROOM_MAX`, floor at y = 0, glass front facing +z. `World::step` moves in slices of at most 0.1 s: motes drift, spawn, and expire; the ball rolls and bounces; the plant gets thirsty; the ghost carries out its `Plan` (`carry_out`), steers toward the plan's target around obstacles and away from walls (`move_ghost`), and its `Needs` (energy, fun, company, 0 to 1) change. Its `Mood` comes from a mind's suggestion while it holds, otherwise from needs and recent events (`feeling`). `Activity` is what a plan does (float, explore, chase, rest, play, tend, lamp, visit); minds only choose one through `begin`, from `options()` (what makes sense now), and `describe` words each option. Viewer actions are methods: `poke`, `drop_mote`, `kick_ball`, `hear`. Everything notable becomes an `Event`, which the face reacts to and the minds read.
+- **`mind/`** runs the models on a background tokio runtime; answers come back over an mpsc channel and `Mind::think` applies them each frame, so the world never waits. When a plan ends, Jev gets the observation and two Choice questions (`decision.rs`); its activity probabilities are blended with `instinct::weigh` (code keeps control) and sampled with the world's random source. After 2.5 s without an answer, or without a key, instinct decides alone, and late answers are dropped by id. A viewer's message goes to Jev as a request-routing Choice (`play`, `rest`, ... or `none`) and to Claude for a reflection (`reflection.rs`: system prompt, JSON schema, one user message with the observation, memories, and conversation). Reflections also run on a timer (`reflect_every`, five times slower while the viewer is away). `observation.rs` describes the world in words, never numbers, because Jev judges words far better. `jev.rs` and `claude.rs` are raw-HTTP clients (Rust has no official SDKs) with retries, `retry-after`, and keys redacted from errors and `Debug`. Claude requests use `claude-opus-5-5` by default with low effort, structured output (`output_config.format`), and `fallbacks: "default"` with beta header `server-side-fallback-2026-07-01`; no `thinking`, `temperature`, or prefill (all 400 on that model).
+- **`face/`** is the face rig and what drives it. `Face` holds the controls (gaze, per-eye shut and lid, slant, widen, smile, sparkle, prompt, cursor), `Face::distance` is its signed distance (eyes cut out of the head; each feature morphs by moving its own points), `lerp` blends faces and `layer` adds one's departures from rest to another. `expression.rs` has the expressions (Blink, Glance, Smile, Sparkle, Prompt, Doze, Glare, ...), each a function of the time since it started that begins and ends at `Face::REST`. `mood.rs` gives each `Mood` a held base face and a repertoire it picks from per time slot by a hash of the slot (irregular but stateless), then lays on the gaze, sleep, blinks, and reactions to recent events (`reaction`).
+- **`render/`** ray casts each pixel (`Frame::sample`, parallel). `Camera` orbits the room's center; `View` gives rays (`ray`), projects points (`project`), and finds where a screen point meets the floor, the glass, or the ghost (`on_plane`, `on_glass`, `touches_ghost`). Rays pass through the near walls and show the far ones (`room_exit`, `room_color`: dot lattices with dashed edges, glass showing only edges). The ball is a sphere; furniture (`shapes.rs`) is signed distance fields marched inside bounding spheres. The ghost is a camera-facing billboard (`ghost.rs`): `Pose` leans and trails its hem with its screen-space velocity, `shade` draws the body as a lattice of dots when there is room and the ring in the aura's color, pulsing with its beat. Lights: daylight by hour, the lamp, the ghost's glow, and the motes. Styles other than braille supersample 2x.
+- **`app.rs`** holds the UI state and turns input into actions: commands while watching, a `Line` editor while talking or entering keys, clicks (ghost pokes, ball flicks, elsewhere drops a mote), drags (orbit), and the wheel (zoom). It builds the face cues (gaze to the pointer while it moves, else to what the ghost looks at), the aura (mood color eased over time), and the pose. `restore` starts the world from a save, aging it by the time away. `live` makes it a running life that saves every minute.
+- **`ui.rs`** draws the speech bubble above the ghost, the words line (typing, notices, speech, thought, goal), the status bar, and the help, keys, and journal panels. `write` handles wide characters (Hangul and others take two cells; the second is `Cell::CONTINUATION`, which writes nothing).
+- **`store.rs`** keeps `Config` (keys, models, `reflect_every`, base URLs) in `$XDG_CONFIG_HOME/wave-ascii/config.json` and the `Save` in `$XDG_DATA_HOME/wave-ascii/ghost.json`, written atomically with mode 0600 in a 0700 directory. `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` override saved keys without being saved. Keys never appear in `Debug` output (`mask`).
+- **`terminal.rs`** uses crossterm: raw mode, the alternate screen, mouse capture, and bracketed paste, all undone on drop, so code must let `Terminal` drop normally instead of calling `process::exit`. `Input::from_event` maps events to `Key`, `Paste`, `Mouse`, and `Resize`. Frames are wrapped in synchronized-output markers (`?2026`).
+- **`frame.rs`**, **`canvas.rs`**, **`color.rs`**, and **`sdf.rs`** are the drawing basics: `Grid` (pixel lattice; y from -1 to 1, `CELL_ASPECT = 0.5`), `Shade` and `Frame`, the three styles (ascii ramp, `▀` blocks, 2x4 braille), color modes and their detection, and 2D signed distance helpers (`coverage`, `capsule`, `trapezoid`, `star`, ...).
+- **`main.rs`** parses options, prints the piped frame, or loads the config and save, builds the `App`, runs the loop at `--fps` (inputs wait until the next frame; a redraw request is kept until that frame), and saves on quit.
 
-## Commit & Pull Request Guidelines
+### Notes
 
-The Git history contains only `Initial commit`, so no recurring commit convention is established. Use concise, imperative commit subjects, such as `Add wave rendering module`.
+- The world and minds must keep code in control: Jev answers narrow typed questions about words (Jev's own docs: keep numbers, distances, and dates in code; options in a fixed order matter), and its choices are blended with instinct. Claude only adds thoughts, words, goals, a mood suggestion, memories, and a name.
+- When adding an activity: the `Activity` variant, `name`/`doing`, `World::begin` (target and length), `carry_out` (what happens and when it's done), `options`/`describe`, `instinct::weigh`, `decision::request` (what asking for it sounds like), and the README.
+- When adding an event: `EventKind` and its `words`, where the world records it, and `face::mood::reaction` if the face answers it.
+- Art direction: everything is drawn from code; colors stay mid to bright so plain styles keep contrast. The user checks visuals; don't write tests that assert how things look.
 
-Keep pull requests focused. Describe the change, its motivation, and validation performed; link related issues when available. Include screenshots or sample terminal output when a change affects visible output. Explicitly state when tests could not be run and why.
+## Conventions
+
+- Tests are inline `#[cfg(test)] mod tests` blocks. Test names are descriptive sentences in snake_case, for example `a_rolling_ball_stays_in_the_room_and_comes_to_rest`. Test behavior and computation (input, the world's rules, the minds' requests and answers, math), not appearance.
+- Identifiers are full words (`columns`, `rows`, `distance`), not abbreviations.
+- Commit subjects are concise and imperative, for example `Add wave rendering module`. For changes that affect visible output, include sample terminal output in PRs. If tests could not be run, say so explicitly.
+- When adding tooling or commands, document them in `README.md`.

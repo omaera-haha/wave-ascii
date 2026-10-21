@@ -1,20 +1,30 @@
-use glam::Vec2;
+use std::io;
 
-use crate::canvas::Style;
+use glam::{Vec2, Vec3};
+
+use crate::canvas::{Canvas, Style};
 use crate::color::ColorMode;
+use crate::face::{self, mood::Cues};
 use crate::frame::{CELL_ASPECT, Grid};
-use crate::menu::{Action, Menu};
-use crate::scene::{Click, Pointer, View, Viewer};
-use crate::terminal::{Key, Mouse, MouseAction};
+use crate::mind::{self, Journal, Mind};
+use crate::render::ghost::{Aura, Pose};
+use crate::render::{self, Camera, GHOST_SCALE, Scene, View};
+use crate::store::{Config, Paths, Save};
+use crate::terminal::{Input, Key, Mouse, MouseAction};
+use crate::ui;
+use crate::world::{Ball, Mood, ROOM_MAX, ROOM_MIN, World};
 
-// Radians per arrow key press.
+// Radians per arrow key press, and per cell dragged.
 const TURN: f32 = 0.12;
-// Clicks this many seconds apart or less come in a row.
-const CLICK_GAP: f32 = 1.0;
-// The pointer is still once it has rested this many seconds.
-const STILL_AFTER: f32 = 1.0;
+const DRAG_TURN: f32 = 0.03;
+/// Seconds the eyes keep following the pointer after it stops.
+const WATCH_POINTER: f64 = 4.0;
+/// Seconds of events the face reacts to.
+const REACTION_WINDOW: f64 = 6.0;
+/// Seconds between saves while the app runs.
+const SAVE_EVERY: f64 = 60.0;
 
-/// What the main loop should do after a key.
+/// What the main loop should do after an input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Response {
     Continue,
@@ -23,428 +33,821 @@ pub enum Response {
     Quit,
 }
 
-/// Everything the keys and mouse control.
+/// What the keyboard is doing: watching the ghost, or typing into a line or
+/// a panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Watching,
+    /// Typing a message to the ghost.
+    Talking,
+    /// Entering API keys.
+    Keys,
+    Help,
+    /// Reading what the ghost remembers and what was said.
+    Journal,
+}
+
+/// A line of text being edited, with a cursor between characters.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Line {
+    text: String,
+    /// The cursor's position, in characters.
+    cursor: usize,
+}
+
+impl Line {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    /// Inserts `text` at the cursor, with line breaks and other control
+    /// characters turned into spaces.
+    pub fn insert(&mut self, text: &str) {
+        let index = self.byte_index();
+        let clean: String = text
+            .chars()
+            .map(|character| {
+                if character.is_control() {
+                    ' '
+                } else {
+                    character
+                }
+            })
+            .collect();
+        self.text.insert_str(index, &clean);
+        self.cursor += clean.chars().count();
+    }
+
+    /// Applies an editing key, returning whether it was one.
+    pub fn edit(&mut self, key: &Key) -> bool {
+        let length = self.text.chars().count();
+        match key {
+            Key::Character(character) => self.insert(&character.to_string()),
+            Key::Backspace if self.cursor > 0 => {
+                self.cursor -= 1;
+                let index = self.byte_index();
+                self.text.remove(index);
+            }
+            Key::Delete if self.cursor < length => {
+                let index = self.byte_index();
+                self.text.remove(index);
+            }
+            Key::Left => self.cursor = self.cursor.saturating_sub(1),
+            Key::Right => self.cursor = (self.cursor + 1).min(length),
+            Key::Home | Key::Control('a') => self.cursor = 0,
+            Key::End | Key::Control('e') => self.cursor = length,
+            Key::Control('u') => *self = Self::default(),
+            Key::Backspace | Key::Delete => {}
+            _ => return false,
+        }
+        true
+    }
+
+    /// The text, trimmed, leaving the line empty.
+    pub fn take(&mut self) -> String {
+        let text = self.text.trim().to_owned();
+        *self = Self::default();
+        text
+    }
+
+    fn byte_index(&self) -> usize {
+        self.text
+            .char_indices()
+            .nth(self.cursor)
+            .map_or(self.text.len(), |(index, _)| index)
+    }
+}
+
+/// The app: the world and the ghost's mind, how the viewer looks at them,
+/// and what the keys and mouse are doing.
 pub struct App {
-    pub scene: usize,
-    pub view: View,
-    pub paused: bool,
+    pub world: World,
+    pub mind: Mind,
+    pub camera: Camera,
     pub style: Style,
     pub color: ColorMode,
-    pub menu: Menu,
-    /// Seconds on the scene clock, which stops while paused.
-    pub time: f32,
-    pub viewer: Viewer,
-    // The size of the area the scene and menu are drawn in, as of the last
-    // draw.
-    columns: usize,
-    rows: usize,
+    pub paused: bool,
+    pub mode: Mode,
+    pub talk: Line,
+    /// The key fields: Claude's, then Jev's.
+    pub keys: [Line; 2],
+    pub key_focus: usize,
+    pub config: Config,
+    paths: Option<Paths>,
+    /// Unix seconds when the ghost first appeared.
+    born: i64,
+    /// Whether the world's hour follows the clock.
+    live_clock: bool,
+    /// A short message for the viewer, and when it was posted.
+    notice: Option<(String, f64)>,
+    /// The size in cells of the area the scene is drawn in, and the view
+    /// it was drawn with, for placing the mouse.
+    area: (usize, usize),
+    view: Option<View>,
+    /// Where the pointer is on screen, in scene space, and when it moved.
+    pointer: Option<(Vec2, f64)>,
+    /// Where the left button went down, and whether it has dragged since.
+    press: Option<(usize, usize)>,
+    dragged: bool,
+    /// The aura's color, eased toward the color of the ghost's mood.
+    aura: Vec3,
+    last_save: f64,
 }
 
 impl App {
-    pub fn new(menu: Menu, scene: usize, style: Style, color: ColorMode, time: f32) -> Self {
+    pub fn new(world: World, mind: Mind, config: Config, style: Style, color: ColorMode) -> Self {
+        let aura = mood_color(world.ghost.mood);
         Self {
-            scene,
-            view: View::default(),
-            paused: false,
+            world,
+            mind,
+            camera: Camera::default(),
             style,
             color,
-            menu,
-            time,
-            viewer: Viewer {
-                active_at: time,
-                shown_at: time,
-                ..Viewer::default()
-            },
-            columns: 0,
-            rows: 0,
+            paused: false,
+            mode: Mode::Watching,
+            talk: Line::default(),
+            keys: [Line::default(), Line::default()],
+            key_focus: 0,
+            config,
+            paths: None,
+            born: mind::now(),
+            live_clock: false,
+            notice: None,
+            area: (0, 0),
+            view: None,
+            pointer: None,
+            press: None,
+            dragged: false,
+            aura,
+            last_save: 0.0,
         }
     }
 
-    /// Sets the size of the area the scene and menu are drawn in, which
-    /// places the mouse.
-    pub fn resize(&mut self, columns: usize, rows: usize) {
-        self.columns = columns;
-        self.rows = rows;
+    /// Keeps the ghost's life in `paths` and follows the clock: a living
+    /// ghost rather than a picture of one.
+    pub fn live(mut self, paths: Option<Paths>, born: i64) -> Self {
+        self.paths = paths;
+        self.born = born;
+        self.live_clock = true;
+        self.world.hour = local_hour();
+        self
     }
 
-    /// Applies a key. An open menu sees it first and keeps the keys it uses.
-    pub fn press(&mut self, key: Key) -> Response {
-        self.notice();
-        match self.menu.handle(key) {
-            Action::Highlighted(index) | Action::Chosen(index) | Action::Dismissed(index) => {
-                self.show(index);
-                return Response::Continue;
+    /// Moves the world and the mind forward by `seconds`.
+    pub fn advance(&mut self, seconds: f32) {
+        if self.paused {
+            return;
+        }
+        if self.live_clock {
+            self.world.hour = local_hour();
+        }
+        self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
+        self.world.step(seconds);
+        self.mind.think(&mut self.world);
+        let ease = 1.0 - (-1.5 * seconds).exp();
+        self.aura = self.aura.lerp(mood_color(self.world.ghost.mood), ease);
+        if self.live_clock && self.world.time - self.last_save > SAVE_EVERY {
+            self.last_save = self.world.time;
+            if let Err(error) = self.save() {
+                self.post(format!("Couldn't save the ghost: {error}"));
             }
-            Action::Ignored => {}
         }
+    }
 
-        let count = self.menu.len();
+    /// Writes the ghost's life to disk, if it has a place there.
+    pub fn save(&self) -> io::Result<()> {
+        let Some(paths) = &self.paths else {
+            return Ok(());
+        };
+        let world = &self.world;
+        let save = Save {
+            version: Save::VERSION,
+            name: world.ghost.name.clone(),
+            born: self.born,
+            last_seen: mind::now(),
+            needs: world.ghost.needs,
+            plant: world.plant,
+            lamp_on: world.lamp.on,
+            goal: world.ghost.goal.clone(),
+            memories: self.mind.journal.memories.clone(),
+            conversation: self.mind.journal.conversation.clone(),
+        };
+        crate::store::save_json(&paths.save, &save)
+    }
+
+    pub fn input(&mut self, input: Input) -> Response {
+        match input {
+            Input::Key(key) => self.press_key(key),
+            Input::Paste(text) => {
+                match self.mode {
+                    Mode::Talking => self.talk.insert(&text),
+                    Mode::Keys => self.keys[self.key_focus].insert(text.trim()),
+                    _ => {}
+                }
+                Response::Continue
+            }
+            Input::Mouse(mouse) => self.mouse(mouse),
+            Input::Resize => Response::Restyle,
+        }
+    }
+
+    fn press_key(&mut self, key: Key) -> Response {
+        self.world.notice_viewer();
+        if key == Key::Control('c') {
+            return Response::Quit;
+        }
+        match self.mode {
+            Mode::Talking => {
+                match key {
+                    Key::Enter => {
+                        let text = self.talk.take();
+                        self.mode = Mode::Watching;
+                        if !text.is_empty() {
+                            self.mind.hear(&mut self.world, &text);
+                            if !self.mind.can_talk() {
+                                self.post("The ghost listens, but can't answer in words without a Claude key (press k).");
+                            }
+                        }
+                    }
+                    Key::Escape => self.mode = Mode::Watching,
+                    key => {
+                        self.talk.edit(&key);
+                    }
+                }
+                Response::Continue
+            }
+            Mode::Keys => {
+                match key {
+                    Key::Enter => self.save_keys(),
+                    Key::Escape => {
+                        self.keys = [Line::default(), Line::default()];
+                        self.mode = Mode::Watching;
+                    }
+                    Key::Tab | Key::BackTab | Key::Up | Key::Down => {
+                        self.key_focus = 1 - self.key_focus
+                    }
+                    key => {
+                        self.keys[self.key_focus].edit(&key);
+                    }
+                }
+                Response::Continue
+            }
+            Mode::Help | Mode::Journal => {
+                if matches!(key, Key::Character('q')) {
+                    return Response::Quit;
+                }
+                self.mode = Mode::Watching;
+                Response::Continue
+            }
+            Mode::Watching => self.command(key),
+        }
+    }
+
+    fn command(&mut self, key: Key) -> Response {
         match key {
-            Key::Character(b'q' | b'Q' | 3) | Key::Escape => return Response::Quit,
-            Key::Enter => self.menu.open(self.scene),
-            Key::Character(digit @ b'1'..=b'9') if usize::from(digit - b'1') < count => {
-                self.show(usize::from(digit - b'1'));
+            Key::Character('q') | Key::Escape => return Response::Quit,
+            Key::Enter | Key::Character('t') => self.mode = Mode::Talking,
+            Key::Character('k') => {
+                self.keys = [Line::default(), Line::default()];
+                self.key_focus = 0;
+                self.mode = Mode::Keys;
             }
-            Key::Character(b'\t' | b'n') => self.show((self.scene + 1) % count),
-            Key::BackTab | Key::Character(b'p') => self.show((self.scene + count - 1) % count),
-            Key::Character(b'm') => {
+            Key::Character('?' | 'h') => self.mode = Mode::Help,
+            Key::Character('j') => self.mode = Mode::Journal,
+            Key::Character('m') => {
                 self.style = self.style.next();
+                self.post(format!("Style: {}", self.style.label()));
                 return Response::Restyle;
             }
-            Key::Character(b'c') => {
+            Key::Character('c') => {
                 self.color = self.color.next();
+                self.post(format!("Color: {}", self.color.label()));
                 return Response::Restyle;
             }
-            Key::Left | Key::Character(b'a') => self.view.yaw -= TURN,
-            Key::Right | Key::Character(b'd') => self.view.yaw += TURN,
-            Key::Up | Key::Character(b'w') => self.view.pitch += TURN,
-            Key::Down | Key::Character(b's') => self.view.pitch -= TURN,
-            Key::Character(b'+' | b'=') => self.view.zoom = (self.view.zoom * 1.1).min(8.0),
-            Key::Character(b'-' | b'_') => self.view.zoom = (self.view.zoom / 1.1).max(0.25),
-            Key::Character(b'r') => self.view = View::default(),
-            Key::Character(b' ') => self.paused = !self.paused,
+            Key::Left | Key::Character('a') => self.camera.turn(-TURN, 0.0),
+            Key::Right | Key::Character('d') => self.camera.turn(TURN, 0.0),
+            Key::Up | Key::Character('w') => self.camera.turn(0.0, TURN),
+            Key::Down | Key::Character('s') => self.camera.turn(0.0, -TURN),
+            Key::Character('+' | '=') => self.camera.zoom_by(1.1),
+            Key::Character('-' | '_') => self.camera.zoom_by(1.0 / 1.1),
+            Key::Character('r') => self.camera = Camera::default(),
+            Key::Character(' ') => self.paused = !self.paused,
             _ => {}
         }
         Response::Continue
     }
 
-    /// Applies a mouse event. The wheel works like the up and down arrows.
-    /// Over the open menu, a click picks a scene; over the scene, the pointer
-    /// and clicks are passed on to it.
-    pub fn mouse(&mut self, mouse: Mouse) -> Response {
-        self.notice();
-        let panel = if self.menu.is_open() {
-            self.menu.width(self.columns)
-        } else {
-            0
+    // Saves the keys typed into the panel: a field left empty keeps its key,
+    // and a lone "-" removes it.
+    fn save_keys(&mut self) {
+        let [claude, jev] = &mut self.keys;
+        for (field, key) in [
+            (claude, &mut self.config.anthropic_api_key),
+            (jev, &mut self.config.typesafe_api_key),
+        ] {
+            match field.take().as_str() {
+                "" => {}
+                "-" => *key = None,
+                text => *key = Some(text.to_owned()),
+            }
+        }
+        self.mode = Mode::Watching;
+        self.mind.reconfigure(&self.config);
+        let saved = match &self.paths {
+            Some(paths) => self.config.save(&paths.config),
+            None => Ok(()),
         };
-        let on_scene = (panel..self.columns).contains(&mouse.column) && mouse.row < self.rows;
-        let position = on_scene.then(|| {
-            Grid::new(self.columns - panel, self.rows, CELL_ASPECT).point(Vec2::new(
-                (mouse.column - panel) as f32 + 0.5,
-                mouse.row as f32 + 0.5,
-            ))
-        });
+        let message = match saved {
+            Ok(()) => format!(
+                "Keys saved. Claude: {}. Jev: {}.",
+                if self.mind.can_talk() { "on" } else { "off" },
+                if self.config.typesafe_key().is_some() {
+                    "on"
+                } else {
+                    "off"
+                },
+            ),
+            Err(error) => format!("Couldn't save the keys: {error}"),
+        };
+        self.post(message);
+    }
 
+    /// Applies a mouse event. Dragging turns the view and the wheel zooms.
+    /// A click on the ghost pokes it, on the ball flicks it, and anywhere
+    /// else in the room drops in a light mote.
+    pub fn mouse(&mut self, mouse: Mouse) -> Response {
+        self.world.notice_viewer();
+        let point = self.scene_point(mouse.column, mouse.row);
         match mouse.action {
-            MouseAction::ScrollUp => return self.press(Key::Up),
-            MouseAction::ScrollDown => return self.press(Key::Down),
+            MouseAction::ScrollUp => self.camera.zoom_by(1.1),
+            MouseAction::ScrollDown => self.camera.zoom_by(1.0 / 1.1),
             MouseAction::Move => {}
             MouseAction::Press => {
-                if let Some(position) = position {
-                    let count = match self.viewer.click {
-                        Some(click) if self.time - click.time <= CLICK_GAP => click.count + 1,
-                        _ => 1,
-                    };
-                    self.viewer.click = Some(Click {
-                        position,
-                        time: self.time,
-                        count,
-                    });
-                } else if mouse.column < panel
-                    && let Some(index) = self.menu.entry_at(mouse.row)
+                self.press = Some((mouse.column, mouse.row));
+                self.dragged = false;
+            }
+            MouseAction::Drag => {
+                if let Some((column, row)) = self.press {
+                    let across = mouse.column as f32 - column as f32;
+                    let down = mouse.row as f32 - row as f32;
+                    if across != 0.0 || down != 0.0 {
+                        self.camera
+                            .turn(-across * DRAG_TURN, down * DRAG_TURN * 2.0);
+                        self.press = Some((mouse.column, mouse.row));
+                        self.dragged = true;
+                    }
+                }
+            }
+            MouseAction::Release => {
+                if self.press.take().is_some()
+                    && !self.dragged
+                    && let Some(point) = point
                 {
-                    self.menu.choose(index);
-                    self.show(index);
+                    self.click(point);
                 }
             }
         }
 
-        self.viewer.pointer = position.map(|position| {
-            let since = match self.viewer.pointer {
-                Some(pointer) if self.time - pointer.moved_at < STILL_AFTER => pointer.since,
-                _ => self.time,
-            };
-            Pointer {
-                position,
-                moved_at: self.time,
-                since,
-            }
-        });
+        self.pointer = point.map(|point| (point, self.world.time));
+        self.world.viewer.pointer = point
+            .zip(self.view)
+            .and_then(|(point, view)| view.on_glass(point));
         Response::Continue
     }
 
-    // Records that the viewer did something now, and how long it had been
-    // since they last did.
-    fn notice(&mut self) {
-        if self.time > self.viewer.active_at {
-            self.viewer.quiet = self.time - self.viewer.active_at;
+    fn click(&mut self, point: Vec2) {
+        let Some(view) = self.view else {
+            return;
+        };
+        if view.touches_ghost(point, self.world.ghost.position) {
+            self.world.poke();
+            return;
         }
-        self.viewer.active_at = self.time;
+        let direction = view.ray(point);
+        let offset = view.eye - self.world.ball.position;
+        let along = -offset.dot(direction);
+        let miss = (offset + direction * along).length();
+        if along > 0.0 && miss < Ball::RADIUS * 1.6 {
+            self.world.kick_ball(direction);
+            return;
+        }
+        // A mote appears where the ray meets the floor, a little above it,
+        // or behind the glass if the ray misses the floor.
+        let floor = view
+            .on_plane(point, 0.0)
+            .filter(|spot| spot.cmpge(ROOM_MIN).all() && spot.cmple(ROOM_MAX).all());
+        let spot = floor
+            .map(|spot| spot + Vec3::Y * 0.9)
+            .or_else(|| view.on_glass(point).map(|spot| spot - Vec3::Z * 0.5));
+        if let Some(spot) = spot {
+            self.world.drop_mote(spot);
+        }
     }
 
-    // A different scene starts from the default view, without the clicks
-    // made on the last one.
-    fn show(&mut self, index: usize) {
-        if index != self.scene {
-            self.scene = index;
-            self.view = View::default();
-            self.viewer.click = None;
-            self.viewer.shown_at = self.time;
-        }
+    // The scene-space point under a cell of the scene area.
+    fn scene_point(&self, column: usize, row: usize) -> Option<Vec2> {
+        let (columns, rows) = self.area;
+        (column < columns && row < rows).then(|| {
+            Grid::new(columns, rows, CELL_ASPECT)
+                .point(Vec2::new(column as f32 + 0.5, row as f32 + 0.5))
+        })
     }
 
-    /// The status line, led by the keys for finding scenes.
-    pub fn status(&self, label: &str) -> String {
-        let pause = if self.paused { "play" } else { "pause" };
-        if self.menu.is_open() {
-            format!(
-                "{label} · ↑↓ browse · enter show · esc back · m {} · c {} · space {pause} · q quit",
-                self.style.label(),
-                self.color.label(),
-            )
-        } else {
-            format!(
-                "{label} · enter scenes · tab next · m {} · c {} · arrows turn · +/- zoom · space {pause} · q quit",
-                self.style.label(),
-                self.color.label(),
-            )
+    /// Posts a short message for the viewer under the scene.
+    pub fn post(&mut self, message: impl Into<String>) {
+        self.notice = Some((message.into(), self.world.time));
+    }
+
+    pub fn notice(&self) -> Option<&str> {
+        self.notice
+            .as_ref()
+            .filter(|(_, time)| self.world.time - time < 8.0)
+            .map(|(message, _)| message.as_str())
+    }
+
+    /// Draws the whole screen, `columns` by `rows`: the scene above two
+    /// lines of words, and any open panel over it.
+    pub fn frame(&mut self, columns: usize, rows: usize) -> Canvas {
+        let scene_rows = rows.saturating_sub(2).max(1);
+        self.area = (columns, scene_rows);
+        let grid = self.style.grid(columns, scene_rows);
+        let view = self.camera.view(grid);
+        self.view = Some(view);
+
+        let world = &self.world;
+        let ghost = &world.ghost;
+        let center = view.project(ghost.position);
+        let gaze = self.gaze(&view, center);
+        let reactions = world
+            .events
+            .iter()
+            .filter(|event| world.time - event.time < REACTION_WINDOW)
+            .filter_map(|event| {
+                face::mood::reaction(&event.kind).map(|reaction| (event.time, reaction))
+            })
+            .collect();
+        let face = face::mood::face(
+            world.time,
+            &Cues {
+                mood: ghost.mood,
+                asleep: ghost.asleep,
+                gaze,
+                reactions,
+            },
+        );
+        let energy = ghost.needs.energy;
+        let aura = Aura {
+            color: self.aura,
+            brightness: 0.25 + 0.75 * energy,
+            beat: beat(ghost.mood) * (0.6 + 0.4 * energy),
+        };
+        let pose = Pose::new(
+            world.time,
+            ghost.velocity.dot(view.right) / GHOST_SCALE,
+            ghost.velocity.y / GHOST_SCALE,
+            ghost.asleep,
+        );
+        let samples = if self.style == Style::Braille { 1 } else { 2 };
+        let frame = render::render(
+            &Scene {
+                world,
+                view,
+                face,
+                aura,
+                pose,
+            },
+            grid,
+            samples,
+        );
+
+        let mut screen = Canvas::blank(columns, rows);
+        screen.paste(&self.style.canvas(&frame, self.color), 0, 0);
+        ui::draw(self, &mut screen, &view, scene_rows);
+        screen
+    }
+
+    // Where the eyes go: to the pointer while it moves, else to what the
+    // ghost is busy with.
+    fn gaze(&self, view: &View, center: Option<Vec2>) -> Option<(Vec2, f32)> {
+        let center = center?;
+        let ghost = &self.world.ghost;
+        if ghost.asleep > 0.5 {
+            return None;
         }
+        if let Some((pointer, moved)) = self.pointer
+            && self.world.time - moved < WATCH_POINTER
+        {
+            return Some(((pointer - center) / 0.5, 0.85));
+        }
+        let look = view.project(ghost.look?)?;
+        Some(((look - center) / 0.5, 0.6))
+    }
+
+    pub fn born(&self) -> i64 {
+        self.born
+    }
+
+    pub fn config_path(&self) -> Option<&std::path::Path> {
+        self.paths.as_ref().map(|paths| paths.config.as_path())
+    }
+
+    /// The color the ghost glows right now.
+    pub fn aura(&self) -> Vec3 {
+        self.aura
+    }
+}
+
+/// The color of the ghost's glow in each mood.
+pub fn mood_color(mood: Mood) -> Vec3 {
+    match mood {
+        Mood::Content => Vec3::new(0.35, 0.86, 0.8),
+        Mood::Cheerful => Vec3::new(1.0, 0.82, 0.35),
+        Mood::Excited => Vec3::new(1.0, 0.45, 0.8),
+        Mood::Curious => Vec3::new(0.35, 0.8, 1.0),
+        Mood::Sleepy => Vec3::new(0.45, 0.45, 1.0),
+        Mood::Lonely => Vec3::new(0.55, 0.66, 0.95),
+        Mood::Bored => Vec3::new(0.66, 0.62, 0.82),
+        Mood::Grumpy => Vec3::new(1.0, 0.4, 0.25),
+    }
+}
+
+// Beats per second of the aura in each mood, before energy.
+fn beat(mood: Mood) -> f32 {
+    match mood {
+        Mood::Excited => 2.2,
+        Mood::Grumpy => 1.8,
+        Mood::Cheerful => 1.4,
+        Mood::Sleepy => 0.5,
+        _ => 1.0,
+    }
+}
+
+/// The local hour of the day, from 0 to 24.
+pub fn local_hour() -> f32 {
+    let now = jiff::Zoned::now();
+    f32::from(now.hour()) + f32::from(now.minute()) / 60.0
+}
+
+/// Starts the world from a saved life, catching up on the time the app was
+/// closed: the plant grew thirsty and the ghost lonely while nobody came.
+pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
+    world.ghost.name = save.name.clone();
+    world.ghost.needs = save.needs;
+    world.plant = save.plant;
+    world.lamp.on = save.lamp_on;
+    world.ghost.goal = save.goal.clone();
+    let away = (now - save.last_seen).max(0) as f32;
+    world.plant.thirst = (world.plant.thirst + away / crate::world::Plant::THIRST_TIME).min(1.0);
+    world
+        .ghost
+        .needs
+        .change(0.0, 0.0, -(away / 3600.0 * 0.1).min(0.5));
+    if away > 1800.0 {
+        world.record_return(away);
+    }
+    Journal {
+        memories: save.memories.clone(),
+        conversation: save.conversation.clone(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::menu::Entry;
+    use crate::store::Config;
+    use crate::world::{Activity, EventKind};
 
-    fn app(count: usize) -> App {
-        let entries = (0..count)
-            .map(|index| Entry {
-                label: format!("Scene {}", index + 1),
-                group: "Scenes",
-            })
-            .collect();
+    fn app() -> App {
+        let world = World::new(1, 12.0);
+        let mind = Mind::new(&Config::default(), Journal::default(), true);
         let mut app = App::new(
-            Menu::new(entries),
-            0,
+            world,
+            mind,
+            Config::default(),
             Style::Ascii,
-            ColorMode::TrueColor,
-            0.0,
+            ColorMode::Plain,
         );
-        app.resize(81, 21);
+        app.frame(100, 32);
         app
     }
 
-    fn mouse(column: usize, row: usize, action: MouseAction) -> Mouse {
-        Mouse {
+    fn type_text(app: &mut App, text: &str) {
+        for character in text.chars() {
+            app.input(Input::Key(Key::Character(character)));
+        }
+    }
+
+    fn click(app: &mut App, column: usize, row: usize) {
+        for action in [MouseAction::Press, MouseAction::Release] {
+            app.input(Input::Mouse(Mouse {
+                column,
+                row,
+                action,
+            }));
+        }
+    }
+
+    // The cell where a world point appears.
+    fn cell_of(app: &App, position: Vec3) -> (usize, usize) {
+        let (columns, rows) = app.area;
+        let point = app.view.unwrap().project(position).unwrap();
+        let pixel = Grid::new(columns, rows, CELL_ASPECT)
+            .to_pixels()
+            .transform_point2(point);
+        (pixel.x as usize, pixel.y as usize)
+    }
+
+    #[test]
+    fn lines_edit_unicode_text_at_the_cursor() {
+        let mut line = Line::default();
+        line.insert("안녕 boo");
+        line.edit(&Key::Home);
+        line.edit(&Key::Delete);
+        line.edit(&Key::End);
+        line.edit(&Key::Backspace);
+        line.insert("!\n");
+        assert_eq!(line.text(), "녕 bo! ");
+        assert_eq!(line.cursor(), 6);
+        assert_eq!(line.take(), "녕 bo!");
+        assert_eq!(line.text(), "");
+    }
+
+    #[test]
+    fn talking_sends_the_message_to_the_ghost() {
+        let mut app = app();
+        app.input(Input::Key(Key::Enter));
+        assert_eq!(app.mode, Mode::Talking);
+        type_text(&mut app, "go play");
+        app.input(Input::Key(Key::Enter));
+        assert_eq!(app.mode, Mode::Watching);
+        assert!(matches!(
+            app.world.events.iter().rev().find(|event| matches!(event.kind, EventKind::Heard(_))),
+            Some(event) if event.kind == EventKind::Heard("go play".into())
+        ));
+        assert!(app.notice().unwrap().contains("Claude key"));
+    }
+
+    #[test]
+    fn typed_letters_are_text_while_talking_not_commands() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('t')));
+        type_text(&mut app, "quit");
+        assert_eq!(app.mode, Mode::Talking);
+        assert_eq!(app.talk.text(), "quit");
+        assert_eq!(app.input(Input::Key(Key::Escape)), Response::Continue);
+        assert_eq!(app.mode, Mode::Watching);
+        assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+    }
+
+    #[test]
+    fn keys_are_entered_by_typing_or_pasting_and_kept_in_the_settings() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('k')));
+        app.input(Input::Paste("  sk-ant-test-key-12345\n".into()));
+        app.input(Input::Key(Key::Tab));
+        type_text(&mut app, "ts-key-67890-abcdef");
+        app.input(Input::Key(Key::Enter));
+        assert_eq!(app.mode, Mode::Watching);
+        assert_eq!(
+            app.config.anthropic_api_key.as_deref(),
+            Some("sk-ant-test-key-12345")
+        );
+        assert_eq!(
+            app.config.typesafe_api_key.as_deref(),
+            Some("ts-key-67890-abcdef")
+        );
+
+        app.input(Input::Key(Key::Character('k')));
+        type_text(&mut app, "-");
+        app.input(Input::Key(Key::Enter));
+        assert_eq!(app.config.anthropic_api_key, None);
+        assert!(app.config.typesafe_api_key.is_some());
+    }
+
+    #[test]
+    fn clicking_the_ghost_pokes_it_and_clicking_the_floor_drops_a_mote() {
+        let mut app = app();
+        let (column, row) = cell_of(&app, app.world.ghost.position);
+        click(&mut app, column, row);
+        assert!(matches!(
+            app.world.events.last().unwrap().kind,
+            EventKind::Poked { count: 1 }
+        ));
+
+        let motes = app.world.motes.len();
+        let (column, row) = cell_of(&app, Vec3::new(-0.3, 0.0, 0.9));
+        click(&mut app, column, row);
+        assert_eq!(app.world.motes.len(), motes + 1);
+        assert_eq!(
+            app.world.events.last().unwrap().kind,
+            EventKind::DroppedMote
+        );
+    }
+
+    #[test]
+    fn clicking_the_ball_flicks_it() {
+        let mut app = app();
+        let (column, row) = cell_of(&app, app.world.ball.position);
+        click(&mut app, column, row);
+        assert_eq!(app.world.events.last().unwrap().kind, EventKind::KickedBall);
+        assert!(app.world.ball.velocity.length() > 1.0);
+    }
+
+    #[test]
+    fn dragging_turns_the_view_instead_of_clicking() {
+        let mut app = app();
+        let yaw = app.camera.yaw;
+        let events = app.world.events.len();
+        for (column, action) in [
+            (50, MouseAction::Press),
+            (55, MouseAction::Drag),
+            (60, MouseAction::Drag),
+            (60, MouseAction::Release),
+        ] {
+            app.input(Input::Mouse(Mouse {
+                column,
+                row: 10,
+                action,
+            }));
+        }
+        assert!(app.camera.yaw < yaw);
+        assert_eq!(app.world.events.len(), events);
+    }
+
+    #[test]
+    fn the_pointer_over_the_room_touches_the_glass_and_the_eyes_follow_it() {
+        let mut app = app();
+        let (column, row) = cell_of(&app, Vec3::new(1.2, 1.9, ROOM_MAX.z));
+        app.input(Input::Mouse(Mouse {
             column,
             row,
-            action,
-        }
-    }
-
-    fn press(app: &mut App, keys: &[Key]) -> Vec<Response> {
-        keys.iter().map(|key| app.press(*key)).collect()
-    }
-
-    #[test]
-    fn enter_opens_the_menu_on_the_current_scene() {
-        let mut app = app(12);
-        app.press(Key::Character(b'4'));
-        assert_eq!(app.press(Key::Enter), Response::Continue);
-        assert!(app.menu.is_open());
-        assert!(app.status("Scene 4").contains("enter show"));
-        app.press(Key::Down);
-        assert_eq!(app.scene, 4);
+            action: MouseAction::Move,
+        }));
+        let pointer = app.world.viewer.pointer.unwrap();
+        assert!((pointer.z - ROOM_MAX.z).abs() < 1e-3);
+        let view = app.view.unwrap();
+        let center = view.project(app.world.ghost.position);
+        let (gaze, firmness) = app.gaze(&view, center).unwrap();
+        assert!(gaze.x > 0.0 && gaze.y > 0.0 && firmness > 0.5);
     }
 
     #[test]
-    fn browsing_previews_each_scene_and_enter_keeps_it() {
-        let mut app = app(12);
-        press(&mut app, &[Key::Enter, Key::Down, Key::Down]);
-        assert_eq!(app.scene, 2);
-        assert!(app.menu.is_open());
-        press(&mut app, &[Key::End]);
-        assert_eq!(app.scene, 11);
-        press(&mut app, &[Key::Enter]);
-        assert_eq!(app.scene, 11);
-        assert!(!app.menu.is_open());
+    fn the_wheel_zooms_and_resizing_asks_for_a_full_redraw() {
+        let mut app = app();
+        app.input(Input::Mouse(Mouse {
+            column: 10,
+            row: 10,
+            action: MouseAction::ScrollUp,
+        }));
+        assert!(app.camera.zoom > 1.0);
+        assert_eq!(app.input(Input::Resize), Response::Restyle);
     }
 
     #[test]
-    fn escape_closes_the_menu_and_restores_the_scene_before_quitting() {
-        let mut app = app(12);
-        app.press(Key::Character(b'3'));
-        let responses = press(&mut app, &[Key::Enter, Key::Down, Key::Down, Key::Escape]);
-        assert!(
-            responses
-                .iter()
-                .all(|response| *response == Response::Continue)
-        );
-        assert_eq!(app.scene, 2);
-        assert!(!app.menu.is_open());
-        assert_eq!(app.press(Key::Escape), Response::Quit);
+    fn a_saved_life_comes_back_older_after_time_away() {
+        let mut world = World::new(1, 12.0);
+        let save = Save {
+            version: Save::VERSION,
+            name: "Pip".into(),
+            born: 0,
+            last_seen: 1000,
+            needs: crate::world::Needs::default(),
+            plant: crate::world::Plant {
+                position: world.plant.position,
+                growth: 0.5,
+                thirst: 0.0,
+            },
+            lamp_on: false,
+            goal: Some("tend the plant".into()),
+            memories: Vec::new(),
+            conversation: Vec::new(),
+        };
+        restore(&mut world, &save, 1000 + 86_400);
+        assert_eq!(world.ghost.name, "Pip");
+        assert_eq!(world.plant.thirst, 1.0);
+        assert!(world.ghost.needs.company < save.needs.company);
+        assert!(!world.lamp.on);
+        assert!(matches!(
+            world.events.last().unwrap().kind,
+            EventKind::Returned { .. }
+        ));
     }
 
     #[test]
-    fn quit_keys_work_while_the_menu_is_open() {
-        for key in [Key::Character(b'q'), Key::Character(3)] {
-            let mut app = app(3);
-            app.press(Key::Enter);
-            assert_eq!(app.press(key), Response::Quit, "{key:?}");
-        }
-    }
-
-    #[test]
-    fn arrows_browse_in_the_menu_and_turn_the_view_outside_it() {
-        let mut app = app(5);
-        app.press(Key::Up);
-        assert_eq!(app.scene, 0);
-        assert!(app.view.pitch > 0.0);
-
-        app.press(Key::Enter);
-        app.press(Key::Up);
-        assert_eq!(app.scene, 4);
-        assert_eq!(app.view, View::default());
-        // Left and right still turn the preview.
-        app.press(Key::Right);
-        assert!(app.view.yaw > 0.0);
-        assert!(app.menu.is_open());
-    }
-
-    #[test]
-    fn digits_in_the_menu_choose_and_close_it() {
-        let mut app = app(12);
-        press(&mut app, &[Key::Enter, Key::Character(b'9')]);
-        assert_eq!(app.scene, 8);
-        assert!(!app.menu.is_open());
-    }
-
-    #[test]
-    fn tab_and_shift_tab_cycle_through_every_scene() {
-        let mut app = app(12);
-        press(&mut app, &[Key::BackTab]);
-        assert_eq!(app.scene, 11);
-        press(&mut app, &[Key::Character(b'\t'), Key::Character(b'\t')]);
-        assert_eq!(app.scene, 1);
-        press(&mut app, &[Key::Character(b'p'), Key::Character(b'n')]);
-        assert_eq!(app.scene, 1);
-    }
-
-    #[test]
-    fn changing_scenes_resets_the_view() {
-        let mut app = app(3);
-        press(&mut app, &[Key::Left, Key::Character(b'+')]);
-        assert_ne!(app.view, View::default());
-        app.press(Key::Character(b'2'));
-        assert_eq!(app.view, View::default());
-    }
-
-    #[test]
-    fn style_and_color_keys_ask_for_a_complete_redraw_even_in_the_menu() {
-        let mut app = app(3);
-        app.press(Key::Enter);
-        assert_eq!(app.press(Key::Character(b'm')), Response::Restyle);
-        assert_eq!(app.style, Style::Blocks);
-        assert_eq!(app.press(Key::Character(b'c')), Response::Restyle);
-        assert_eq!(app.color, ColorMode::Palette);
-        assert!(app.menu.is_open());
-    }
-
-    #[test]
-    fn the_status_line_names_the_menu_key_first() {
-        let app = app(3);
-        let status = app.status("Ocean");
-        assert!(status.starts_with("Ocean · enter scenes"));
-    }
-
-    #[test]
-    fn clicking_a_menu_entry_shows_it_and_closes_the_menu() {
-        let mut app = app(12);
-        app.press(Key::Enter);
-        // Row 1 holds the group heading and row 2 the first entry.
-        app.mouse(mouse(3, 1, MouseAction::Press));
-        assert!(app.menu.is_open());
-        app.mouse(mouse(3, 4, MouseAction::Press));
-        assert_eq!(app.scene, 2);
-        assert!(!app.menu.is_open());
-        assert_eq!(app.viewer.click, None);
-    }
-
-    #[test]
-    fn the_wheel_browses_the_menu_and_turns_the_view_like_the_arrows() {
-        let mut app = app(12);
-        app.mouse(mouse(40, 10, MouseAction::ScrollUp));
-        assert!(app.view.pitch > 0.0);
-        app.press(Key::Enter);
-        app.mouse(mouse(40, 10, MouseAction::ScrollDown));
-        assert_eq!(app.scene, 1);
-        assert!(app.menu.is_open());
-    }
-
-    #[test]
-    fn the_pointer_is_placed_in_the_space_of_the_scene_beside_the_menu() {
-        let mut app = app(12);
-        app.mouse(mouse(40, 10, MouseAction::Move));
-        assert_eq!(app.viewer.pointer.unwrap().position, Vec2::ZERO);
-        app.mouse(mouse(80, 0, MouseAction::Move));
-        let corner = app.viewer.pointer.unwrap().position;
-        assert!(corner.x > 1.0 && corner.y > 0.9, "{corner}");
-
-        app.press(Key::Enter);
-        let panel = app.menu.width(81);
-        app.mouse(mouse(panel + (81 - panel) / 2, 10, MouseAction::Move));
-        assert_eq!(app.viewer.pointer.unwrap().position, Vec2::ZERO);
-        // Over the menu or the status line, the pointer is off the scene.
-        app.mouse(mouse(2, 10, MouseAction::Move));
-        assert_eq!(app.viewer.pointer, None);
-        app.mouse(mouse(40, 21, MouseAction::Move));
-        assert_eq!(app.viewer.pointer, None);
-    }
-
-    #[test]
-    fn a_moving_pointer_keeps_the_time_it_started_until_it_rests() {
-        let mut app = app(3);
-        for time in [1.0, 1.5, 2.2] {
-            app.time = time;
-            app.mouse(mouse(10, 10, MouseAction::Move));
-        }
-        let pointer = app.viewer.pointer.unwrap();
-        assert_eq!((pointer.since, pointer.moved_at), (1.0, 2.2));
-        app.time = 5.0;
-        app.mouse(mouse(11, 10, MouseAction::Move));
-        assert_eq!(app.viewer.pointer.unwrap().since, 5.0);
-    }
-
-    #[test]
-    fn quick_clicks_on_the_scene_count_up_and_a_pause_starts_over() {
-        let mut app = app(3);
-        for time in [1.0, 1.4, 2.1] {
-            app.time = time;
-            app.mouse(mouse(40, 10, MouseAction::Press));
-        }
-        let click = app.viewer.click.unwrap();
-        assert_eq!(
-            (click.count, click.time, click.position),
-            (3, 2.1, Vec2::ZERO)
-        );
-        app.time = 4.0;
-        app.mouse(mouse(40, 10, MouseAction::Press));
-        assert_eq!(app.viewer.click.unwrap().count, 1);
-    }
-
-    #[test]
-    fn any_input_records_how_long_the_viewer_was_quiet() {
-        let mut app = app(3);
-        app.time = 50.0;
-        app.press(Key::Character(b'x'));
-        app.mouse(mouse(40, 10, MouseAction::Move));
-        assert_eq!((app.viewer.active_at, app.viewer.quiet), (50.0, 50.0));
-        app.time = 51.5;
-        app.mouse(mouse(41, 10, MouseAction::Move));
-        assert_eq!((app.viewer.active_at, app.viewer.quiet), (51.5, 1.5));
-    }
-
-    #[test]
-    fn showing_another_scene_forgets_its_clicks_and_notes_when_it_was_shown() {
-        let mut app = app(3);
-        app.time = 7.0;
-        app.mouse(mouse(40, 10, MouseAction::Press));
-        app.press(Key::Character(b'r'));
-        assert!(app.viewer.click.is_some());
-        app.press(Key::Character(b'2'));
-        assert_eq!(app.viewer.click, None);
-        assert_eq!(app.viewer.shown_at, 7.0);
+    fn panels_close_on_any_key_and_space_pauses() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('?')));
+        assert_eq!(app.mode, Mode::Help);
+        app.input(Input::Key(Key::Character('x')));
+        assert_eq!(app.mode, Mode::Watching);
+        app.input(Input::Key(Key::Character(' ')));
+        let time = app.world.time;
+        app.advance(1.0);
+        assert_eq!(app.world.time, time);
+        assert!(app.world.ghost.plan.activity == Activity::Float || app.paused);
     }
 }

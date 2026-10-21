@@ -1,213 +1,131 @@
 # wave-ascii
 
-A Rust terminal app that renders animated scenes as text, in truecolor, 256
-colors, or plain ASCII.
+A ghost lives in a glass box in your terminal.
 
-It has 34 built-in scenes in four groups:
+The box is a small room drawn in dots: a floor lamp, a potted plant, a ball, a
+cushion to sleep on, and specks of light that drift in. The ghost is a point in
+that room with a body, needs, and a mood. You see it as an abstract shape made
+of dots, and its glow shows how it is. It floats about, chases and eats light
+motes, plays with the ball, waters the plant, switches the lamp, naps when
+tired, and comes to the glass to look at you.
 
-- **Generated** in code: a rotating square with a moving, pulsing circle
-  (`2d`); a shaded 3D cube (`3d`); a ray-marched sunset `ocean`; a rainbow
-  torus `knot`; three `lava` lamps on a shelf; the northern lights over a
-  lake (`aurora`); and a floating `ghost`, after the one on Ghostty's home
-  page, inside a ring of flowing light, which watches the mouse pointer and
-  makes faces of its own (see [Ghost](#ghost)).
-- **Drawings** from SVG: the `wave` logo, a `koi` pond, Mount `fuji`, a
-  `synthwave` sunset, a monarch `butterfly`, a low-poly `fox`, a scarlet
-  `macaw`, a `mandala`, and pixel-art `invaders`.
-- **Animations** from animated SVG: planets passing behind and in front of
-  the sun (`orbits`); desert `dunes` through a day and night; a `bauhaus`
-  poster whose tiles turn and slide on one beat; flowing silk `ribbons`; a
-  pendulum wave (`pendulums`); comets chasing around an `infinity` loop; and a
-  `breathe` guide that opens on the in-breath.
-- **Models** from glTF: a textured `duck`, a `lighthouse`, a retro `rocket`, a
-  ringed `planet`, a hot-air `balloon`, a flying saucer (`ufo`), a `bonsai`,
-  fly-agaric `mushrooms`, gem `crystals`, a glazed `donut`, and a `chess`
-  set.
+Two models give it a mind:
 
-It also plays vector art and 3D models made in other tools: SVG drawings and
-SVG animations from Figma, Illustrator, Inkscape, or a text editor, and glTF,
-OBJ, or STL models from Blender or any CAD or sculpting app.
+- **Jev**, TypeSafe's System One model, makes its quick choices. Each time
+  the ghost finishes something, it asks Jev which of the things it could do
+  next fits the moment, and how it feels. Jev answers with calibrated probabilities, and the ghost picks among
+  them weighted by its own needs.
+- **Claude** is its slower System Two. Every few minutes, and whenever you type
+  to it, Claude thinks the moment over in the ghost's voice. It sets a goal,
+  says something if there's something to say, and remembers what matters, such
+  as your name.
+
+Without API keys the ghost lives on instinct: its needs alone decide what it
+does, and it can't talk.
 
 ## Run
 
-Requires a stable Rust toolchain and a Unix terminal with `stty` available.
+Requires a stable Rust toolchain and a Unix terminal. Mouse input needs a
+terminal that reports the mouse; most do.
 
 ```bash
 cargo run --release
-cargo run --release -- ocean
-cargo run --release -- wave --style braille
-cargo run --release -- duck --style blocks
-cargo run --release -- path/to/model.glb path/to/logo.svg
+cargo run --release -- --style blocks
+cargo run --release -- --offline        # never call a model
 ```
 
-Without a scene name, the app starts with the scene menu open. Otherwise the
-first scene or file named is shown first. Files join the end of the scene list.
+Press `k` in the app to enter API keys, or set `ANTHROPIC_API_KEY` and
+`TYPESAFE_API_KEY` in the environment, which take precedence over saved keys.
+Get a Claude key from the [Claude Console](https://console.anthropic.com) and
+a Jev key from the [TypeSafe console](https://console.typesafe.ai).
 
-The app draws 60 frames per second. On a faster display, set `--fps` to its
-refresh rate for the smoothest motion, for example `--fps 120` or `--fps 144`.
-A terminal program can't see the display's rate itself, since it talks to the
-terminal through a pty, often over SSH or from a container. Animation speed
-follows the clock, so it is the same at any rate; scenes that take longer to
-draw than a frame allows run as fast as they can.
+| Key            | Action                                        |
+| -------------- | --------------------------------------------- |
+| `t`, Enter     | Talk to the ghost (Enter sends, Esc cancels)  |
+| `k`            | Enter API keys                                |
+| `j`            | Journal: what it remembers, what was said     |
+| `?`            | Help                                          |
+| Arrows, WASD   | Turn the view                                 |
+| `+`, `-`       | Zoom                                          |
+| `r`            | Reset the view                                |
+| `m`            | Next style: ascii, blocks, braille            |
+| `c`            | Next color mode: truecolor, 256 colors, plain |
+| Space          | Pause                                         |
+| `q`, Esc       | Quit                                          |
 
-| Key                | Action                                        |
-| ------------------ | --------------------------------------------- |
-| Enter              | Open the scene menu                           |
-| Tab, Shift+Tab     | Next or previous scene                        |
-| `1`-`9`            | One of the first nine scenes                  |
-| `m`                | Next style: ascii, blocks, braille            |
-| `c`                | Next color mode: truecolor, 256 colors, plain |
-| Arrows, WASD       | Turn the model, camera, or drawing            |
-| `+`, `-`           | Zoom                                          |
-| Space              | Pause                                         |
-| `r`                | Reset the view                                |
-| `q`, Esc, Ctrl+C   | Quit                                          |
+With the mouse, click the ghost to poke it (poke it a few times and it gets
+grumpy), click the ball to flick it, and click anywhere else in the room to
+drop in a light mote. Drag to turn the view and scroll to zoom. The ghost's
+eyes follow the pointer. Hold Shift (Option in iTerm2) to select text while the
+app has the mouse.
 
-The mouse works too. The wheel acts like Up and Down, and a click on a scene
-in the menu shows it. Terminals hand mouse input to the app while it runs, so
-select text by holding Shift (Option in iTerm2) as you drag.
+### What you see
 
-### Scene menu
+- **The glow around the ghost** takes the color of its mood: teal when
+  content, gold when cheerful, pink when excited, blue when curious, indigo
+  when sleepy, pale blue when lonely, lilac when bored, and red when grumpy.
+  It shines and beats faster with more energy.
+- **Its face** shows the mood too. It makes its own expressions at irregular
+  moments, reacts to what happens, and shuts its eyes in sleep.
+- **The status bar** shows its name, mood, and needs (energy, fun, company),
+  what it's doing, and the state of each mind: `●` ready, `◐` thinking,
+  `✕` failed (the journal says why), and `○` off.
+- **The line above the status bar** shows what it said, a thought, or its
+  goal. What it says also appears in a bubble over its head.
 
-The scene menu lists every scene in a panel at the left, grouped under
-Generated, Drawings, Animations, Models, and Files, with no search box to
-type into. The
-highlighted scene plays beside the panel, so you can look through the scenes
-as you move.
+The room follows your local time: daylight by day, warm at dawn and dusk, and
+dark at night unless the lamp is on.
 
-| Key in the menu       | Action                                           |
-| --------------------- | ------------------------------------------------ |
-| Up, Down (`k`, `j`)   | Highlight the previous or next scene             |
-| Tab, Shift+Tab        | Same as Down and Up                              |
-| Home, End, PgUp, PgDn | Jump to the start, end, or by a page             |
-| Enter                 | Show the highlighted scene and close the menu    |
-| `1`-`9`               | Show that scene and close the menu               |
-| Esc                   | Close the menu and go back to the previous scene |
-| `q`, Ctrl+C           | Quit                                             |
+### Its life between runs
 
-Left and Right still turn the preview, and `m`, `c`, and Space work as usual.
+The ghost's name, needs, the plant, the lamp, its goal, its memories, and the
+recent conversation are saved in `~/.local/share/wave-ascii/ghost.json`
+(`$XDG_DATA_HOME` if set) every minute and on quit. While the app is closed,
+time passes: the plant gets thirsty and the ghost lonely, and it notices how
+long you were away. Delete the file to start a new ghost.
 
-The view adapts to terminal resizing and assumes characters are approximately
-twice as tall as they are wide.
+Settings live in `~/.config/wave-ascii/config.json` (`$XDG_CONFIG_HOME` if set),
+readable only by you since it may hold keys. Besides the keys it accepts:
 
-### Ghost
+| Setting           | Default           | Meaning                                         |
+| ----------------- | ----------------- | ----------------------------------------------- |
+| `claude_model`    | `claude-opus-5-5` | The Claude model                                |
+| `jev_model`       | `jev-latest`      | The Jev model or alias                          |
+| `reflect_every`   | `180`             | Seconds between reflections while you're around |
+| `claude_base_url` | none              | Another address for the Anthropic API           |
+| `jev_base_url`    | none              | Another address for the TypeSafe API            |
 
-The ghost's face follows what you do, picking expressions at random so it
-never repeats on a loop:
+### What is sent, and what it costs
 
-- **Left alone**, it glances around, smiles, sparkles with wonder, eyes
-  something with suspicion or doubt, worries, winks, nods off for a moment,
-  or turns its eyes into a `>_` prompt with a blinking cursor.
-- **While the pointer moves** over the scene, its eyes follow it, now and then
-  sparkling, narrowing, or smiling. It looks away once the pointer rests.
-- **With the pointer on it**, it only watches the pointer and blinks.
-- **After 40 seconds without input**, it falls asleep, and any key or mouse
-  movement wakes it with a start.
+Each request describes the moment in words, for example "tired", "the plant is
+a little dry", "the viewer poked you (just now)". Requests to Claude also carry
+the ghost's memories and the last few lines of conversation. Nothing else
+leaves your machine.
 
-It also reacts to events: it winks when its scene is shown, and a click on it
-is a poke that surprises it, then makes it giggle, then annoys it.
+Jev costs very little: each decision is a few hundred input tokens, billed per
+million, and output is free. Claude reflects every three minutes while you're
+around and every fifteen while you're away, and once for each message you
+type. With Claude Opus 5.5, a reflection costs a cent or two.
+Raise `reflect_every`, or set `claude_model`, to spend less.
 
-## Styles
-
-`--style` (or `m` while running) picks how pixels become characters:
-
-- `ascii` draws one pixel per cell with the ramp ` .:-=+*#%@`.
-- `blocks` draws two square pixels per cell with `▀`, using the foreground and
-  background colors. Without color, it dithers to `▀▄█`.
-- `braille` draws eight dithered dots per cell with braille patterns, for the
-  finest detail.
-
-Block and braille styles need a font with those characters. Terminals that
-draw East Asian ambiguous-width characters as wide should be set to narrow.
-
-## Color
-
-`--color auto` (the default) uses plain text when `NO_COLOR` is set or
-`TERM=dumb`, truecolor when `COLORTERM` is `truecolor` or `24bit` or the
-terminal is known to support it, and 256 colors otherwise. Use
-`--color truecolor`, `--color 256`, or `--color never` to choose, or press `c`.
-
-Frames are drawn inside synchronized-output markers, and only cells that
-changed since the previous frame are rewritten.
-
-## Bring your own art
-
-| Format                | Made with                               | Notes                                                                                     |
-| --------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `.svg`, `.svgz`       | Figma, Illustrator, Inkscape, Affinity  | Rendered with resvg: gradients, clipping, masks, filters, text in system fonts, and SMIL animation |
-| `.glb`, `.gltf`       | Blender, Maya, 3ds Max, Sketchfab       | glTF 2.0 node hierarchy, base color textures and factors, and vertex colors              |
-| `.obj` with `.mtl`    | Nearly every 3D tool                    | Polygons, normals, texture coordinates, vertex colors, and material diffuse colors         |
-| `.stl`                | CAD and 3D-printing tools               | Binary or ASCII; turned from Z-up to Y-up                                                 |
-
-Drawings are framed by their visible bounds, sway gently, and catch a passing
-highlight. Very dark ink is lifted so black artwork stays visible on dark
-terminals. Models are centered, scaled to fit, and shown on a turntable.
-Missing normals are smoothed except across sharp edges.
-
-SVG files with animation play as they would in a browser, framed and clipped
-by their canvas instead of swaying. The app reads SMIL animation:
-
-- `<animate>`, `<set>`, and `<animateTransform>` on any attribute, including
-  colors, path data, gradient stops, and `stroke-dashoffset`, with `values`
-  or `from`, `to`, and `by`
-- `<animateMotion>` along a `path`, an `<mpath>`, or `values`, with
-  `rotate="auto"` and `keyPoints`
-- `begin` offsets (negative ones start partway through), `dur`, `end`,
-  `repeatCount`, `repeatDur`, and `fill="freeze"`
-- `calcMode` `linear`, `discrete`, and `spline` with `keyTimes` and
-  `keySplines`; `paced` moves evenly along a motion path and is linear
-  otherwise
-- `additive="sum"`, and targets named with `href`
-
-Animations that begin on an event, such as a click or another animation
-ending, never start. CSS animations are not supported, and an animated
-attribute doesn't override the same property in a `style` attribute.
-
-glTF meshes compressed with Draco or meshopt are not supported. If a texture
-can't be decoded, for example because it isn't PNG or JPEG, the model is drawn
-without textures.
-
-## Bundled art
-
-The drawings, animations, and models are compiled into the program from
-`assets/`, so the built app needs no asset files. The duck is the Khronos glTF sample model,
-© 2006 Sony, under the SCEA Shared Source License (see
-`assets/duck.LICENSE.txt`). More sample models are in the
-[Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets);
-check each model's license. The other art was made for this project.
-
-The drawings and animations are plain SVG files, written to be edited by hand.
-A web browser plays the animations too, which helps when timing them.
-
-The other models are generated by Python scripts in `tools/models/`, one per
-model, using the small mesh kit in `tools/models/meshkit.py`. They need only
-the Python 3 standard library. To change a model, edit its script and run it
-from anywhere to rewrite the `.glb`:
-
-```bash
-python3 tools/models/rocket.py
-```
-
-To see how art looks before adding it, render one frame of the file in blocks
-with color, using `--time` to turn a model to other sides or to pick a moment
-of an animation:
-
-```bash
-COLUMNS=100 LINES=32 cargo run -q -- assets/rocket.glb --style blocks --color truecolor --time 2.6 < /dev/null | cat
-```
+Claude requests turn on Anthropic's server-side fallbacks
+(`fallbacks: "default"`), so a request the model's safety classifiers decline
+is retried on another model. A declined reply leaves the ghost as it was.
 
 ## Piped output
 
-When stdin or stdout isn't a terminal, the app prints one frame and exits. The
-frame is at time 0 unless `--time SECONDS` picks another moment, which also
-turns a model to a different side. Its size defaults to 80 columns by 24 rows,
-or uses `COLUMNS` and `LINES` if set. Output is plain unless a color mode is
-given:
+When stdout or stdin isn't a terminal, the app prints one frame of a fresh
+ghost and exits. It never reads or writes the saved life or calls a model. The
+frame size comes from `COLUMNS` and `LINES` (default 80x24), and output is
+plain unless `--color` is given. `--time` runs the world that many seconds
+first, deciding on instinct, and `--hour` sets the time of day:
 
 ```bash
-COLUMNS=100 LINES=30 cargo run -q -- ocean --style blocks --color truecolor < /dev/null | cat
-COLUMNS=100 LINES=30 cargo run -q -- duck --time 2.5 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 ```
+
+The same `--time` and `--hour` give the same frame.
 
 ## Development
 
@@ -215,14 +133,16 @@ COLUMNS=100 LINES=30 cargo run -q -- duck --time 2.5 < /dev/null | cat
 cargo check
 cargo test
 cargo fmt --check
-cargo clippy
+cargo clippy --all-targets
 ```
 
-Dependencies: `glam` for vector math, `resvg` for SVG, `svgtypes` for colors
-and paths in SVG animation, and `gltf` for glTF.
+The API clients are tested against local mock servers, so the tests need no
+keys or network.
+
+Dependencies: `crossterm` for the terminal, `glam` for vector math, `tokio`
+and `reqwest` for the API calls, `serde` and `serde_json`, `jiff` for the local
+time, and `unicode-width` for wide characters such as Hangul.
 
 ## License
 
-MIT; see `LICENSE`. That covers the bundled art except `assets/duck.glb`,
-which is © 2006 Sony under the SCEA Shared Source License, in
-`assets/duck.LICENSE.txt`.
+MIT; see `LICENSE`.

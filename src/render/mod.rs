@@ -1,0 +1,504 @@
+pub mod ghost;
+mod shapes;
+
+use std::f32::consts::PI;
+
+use glam::{Vec2, Vec3};
+
+use crate::face::Face;
+use crate::frame::{Frame, Grid, Shade};
+use crate::sdf::{coverage, mix, smoothstep};
+use crate::world::{Ball, ROOM_MAX, ROOM_MIN, World};
+use ghost::{Aura, BOUNDS, Pose};
+use shapes::{Furniture, Material, sphere_span};
+
+/// World units per unit of the ghost's own space.
+pub const GHOST_SCALE: f32 = 0.45;
+/// The point the camera circles and looks at.
+const TARGET: Vec3 = Vec3::new(0.0, 1.05, 0.0);
+/// One over the tangent of half the vertical field of view, about 50 degrees.
+const FOCAL: f32 = 2.1;
+const EDGE_COLOR: Vec3 = Vec3::new(0.62, 0.72, 1.0);
+const WALL_COLOR: Vec3 = Vec3::new(0.78, 0.82, 0.96);
+const MOTE_COLOR: Vec3 = Vec3::new(1.0, 0.9, 0.58);
+const LAMP_LIGHT: Vec3 = Vec3::new(1.0, 0.78, 0.5);
+
+/// Where the viewer looks from: turned around the room by `yaw`, raised by
+/// `pitch`, and moved in by `zoom`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Camera {
+    pub yaw: f32,
+    pub pitch: f32,
+    pub zoom: f32,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            yaw: 0.0,
+            pitch: 0.3,
+            zoom: 1.0,
+        }
+    }
+}
+
+impl Camera {
+    pub fn turn(&mut self, yaw: f32, pitch: f32) {
+        self.yaw += yaw;
+        self.pitch = (self.pitch + pitch).clamp(-0.15, 1.3);
+    }
+
+    pub fn zoom_by(&mut self, factor: f32) {
+        self.zoom = (self.zoom * factor).clamp(0.5, 3.0);
+    }
+
+    /// The view on a screen sampled by `grid`. Narrow screens move the
+    /// camera back so the whole room still fits across.
+    pub fn view(&self, grid: Grid) -> View {
+        let fit = (1.75 / grid.half_width().max(0.1)).max(1.0);
+        let distance = 5.2 * fit / self.zoom;
+        let around = Vec3::new(
+            self.yaw.sin() * self.pitch.cos(),
+            self.pitch.sin(),
+            self.yaw.cos() * self.pitch.cos(),
+        );
+        let eye = TARGET + around * distance;
+        let forward = (TARGET - eye).normalize();
+        let right = forward.cross(Vec3::Y).normalize();
+        View {
+            eye,
+            forward,
+            right,
+            up: right.cross(forward),
+        }
+    }
+}
+
+/// A camera placed in the room: where it is and which ways are forward,
+/// right, and up.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct View {
+    pub eye: Vec3,
+    pub forward: Vec3,
+    pub right: Vec3,
+    pub up: Vec3,
+}
+
+impl View {
+    /// The direction of the ray through `point` of the screen, in the
+    /// grid's scene space.
+    pub fn ray(&self, point: Vec2) -> Vec3 {
+        (self.forward * FOCAL + self.right * point.x + self.up * point.y).normalize()
+    }
+
+    /// Where `position` appears on the screen, in the grid's scene space, or
+    /// `None` when it is behind the camera.
+    pub fn project(&self, position: Vec3) -> Option<Vec2> {
+        let offset = position - self.eye;
+        let depth = offset.dot(self.forward);
+        (depth > 0.05)
+            .then(|| Vec2::new(offset.dot(self.right), offset.dot(self.up)) * FOCAL / depth)
+    }
+
+    /// Where the ray through `point` of the screen meets the plane at
+    /// height `height`, if it does in front of the camera.
+    pub fn on_plane(&self, point: Vec2, height: f32) -> Option<Vec3> {
+        let direction = self.ray(point);
+        let distance = (height - self.eye.y) / direction.y;
+        (distance.is_finite() && distance > 0.0).then(|| self.eye + direction * distance)
+    }
+
+    /// Where the ray through `point` of the screen meets the glass front of
+    /// the room, if it does.
+    pub fn on_glass(&self, point: Vec2) -> Option<Vec3> {
+        let direction = self.ray(point);
+        let distance = (ROOM_MAX.z - self.eye.z) / direction.z;
+        let hit = self.eye + direction * distance;
+        let inside = (ROOM_MIN.x..=ROOM_MAX.x).contains(&hit.x)
+            && (ROOM_MIN.y..=ROOM_MAX.y).contains(&hit.y);
+        (distance.is_finite() && distance > 0.0 && inside).then_some(hit)
+    }
+
+    /// Whether the ray through `point` of the screen meets the ghost's
+    /// billboard inside its outline's bounds.
+    pub fn touches_ghost(&self, point: Vec2, ghost: Vec3) -> bool {
+        self.billboard(self.ray(point), ghost)
+            .is_some_and(|(_, local)| local.abs().cmple(Vec2::new(0.6, 0.75)).all())
+    }
+
+    /// Where a ray meets the ghost's billboard: the distance along the ray
+    /// and the point in the ghost's own space.
+    fn billboard(&self, direction: Vec3, ghost: Vec3) -> Option<(f32, Vec2)> {
+        let along = direction.dot(self.forward);
+        let distance = (ghost - self.eye).dot(self.forward) / along;
+        if along <= 0.0 || distance <= 0.0 {
+            return None;
+        }
+        let offset = self.eye + direction * distance - ghost;
+        Some((
+            distance,
+            Vec2::new(offset.dot(self.right), offset.dot(self.up)) / GHOST_SCALE,
+        ))
+    }
+}
+
+/// Everything one frame shows.
+pub struct Scene<'a> {
+    pub world: &'a World,
+    pub view: View,
+    pub face: Face,
+    pub aura: Aura,
+    pub pose: Pose,
+}
+
+/// Renders the scene, averaging `samples` by `samples` rays a pixel or so
+/// for smooth edges.
+pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
+    if samples > 1 {
+        let (fine, across, down) = grid.refine(samples);
+        return render(scene, fine, 1).downsample(across, down);
+    }
+    let lights = Lights::of(scene);
+    let world = scene.world;
+    let furniture = [
+        Furniture::Lamp(world.lamp),
+        Furniture::Plant(world.plant),
+        Furniture::Nook(world.nook),
+    ];
+    // How wide one pixel is, in radians.
+    let spread = grid.scale() / FOCAL;
+    Frame::sample(grid, |point| {
+        let direction = scene.view.ray(point);
+        let color = trace(scene, &lights, &furniture, direction, spread);
+        Shade::from_rgb(color.min(Vec3::ONE))
+    })
+}
+
+fn trace(
+    scene: &Scene,
+    lights: &Lights,
+    furniture: &[Furniture; 3],
+    direction: Vec3,
+    spread: f32,
+) -> Vec3 {
+    let world = scene.world;
+    let eye = scene.view.eye;
+    let room = room_exit(eye, direction);
+    let mut limit = room.map_or(f32::INFINITY, |hit| hit.distance);
+    let mut color = room.map_or(Vec3::ZERO, |hit| room_color(&hit, lights, spread));
+
+    if let Some((enter, _)) = sphere_span(eye, direction, world.ball.position, Ball::RADIUS)
+        && enter > 0.0
+        && enter < limit
+    {
+        limit = enter;
+        let point = eye + direction * enter;
+        let normal = (point - world.ball.position) / Ball::RADIUS;
+        color = Material::Ball.albedo(&world.plant) * lights.at(point, normal);
+    }
+    for piece in furniture {
+        if let Some((distance, material)) = piece.trace(eye, direction, limit) {
+            limit = distance;
+            let point = eye + direction * distance;
+            let normal = piece.normal(point);
+            let albedo = material.albedo(&world.plant);
+            color = albedo * lights.at(point, normal)
+                + match material {
+                    Material::Bulb if world.lamp.on => albedo * 1.4,
+                    Material::Lampshade if world.lamp.on => LAMP_LIGHT * 0.35,
+                    _ => Vec3::ZERO,
+                };
+        }
+    }
+
+    if let Some((distance, local)) = scene.view.billboard(direction, world.ghost.position)
+        && distance < limit
+        && local.cmpge(BOUNDS[0]).all()
+        && local.cmple(BOUNDS[1]).all()
+    {
+        let pixel = distance * spread / GHOST_SCALE;
+        let glow = ghost::shade(
+            local,
+            pixel,
+            world.time,
+            &scene.pose,
+            &scene.face,
+            &scene.aura,
+        );
+        color = glow.over(color);
+    }
+
+    // Light motes and the lamp's bulb glow in front of whatever is behind.
+    for mote in &world.motes {
+        color += MOTE_COLOR
+            * sprite(eye, direction, mote.position, limit, spread, 0.035)
+            * mote.glow(world.time);
+    }
+    if world.lamp.on {
+        color +=
+            LAMP_LIGHT * sprite(eye, direction, world.lamp.bulb(), limit + 0.3, spread, 0.12) * 0.3;
+    }
+    color
+}
+
+// How brightly a glowing point lights the ray, falling off with how far the
+// ray passes from it.
+fn sprite(eye: Vec3, direction: Vec3, center: Vec3, limit: f32, spread: f32, size: f32) -> f32 {
+    let along = (center - eye).dot(direction);
+    if along <= 0.0 || along > limit + 0.05 {
+        return 0.0;
+    }
+    let miss = (eye + direction * along).distance_squared(center);
+    let width = size.max(along * spread * 1.2);
+    (-miss / (width * width)).exp()
+}
+
+/// Where a ray leaves the room: rays pass through the near walls as through
+/// glass and show the inside of the far ones.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RoomHit {
+    distance: f32,
+    point: Vec3,
+    /// The axis the wall faces along: 0 for the sides, 1 for the floor and
+    /// ceiling, 2 for the back and the glass front.
+    axis: usize,
+    /// Whether the wall is at the high end of its axis.
+    high: bool,
+}
+
+fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
+    let inverse = direction.recip();
+    let first = (ROOM_MIN - origin) * inverse;
+    let second = (ROOM_MAX - origin) * inverse;
+    let enter = first.min(second).max_element().max(0.0);
+    let exits = first.max(second);
+    let distance = exits.min_element();
+    // A ray along a wall's plane gives no number; it misses.
+    if distance.is_nan() || distance <= enter {
+        return None;
+    }
+    let axis = (0..3)
+        .min_by(|first, second| exits[*first].total_cmp(&exits[*second]))
+        .unwrap_or(0);
+    Some(RoomHit {
+        distance,
+        point: origin + direction * distance,
+        axis,
+        high: direction[axis] > 0.0,
+    })
+}
+
+// The inside of a wall: a lattice of dots, densest on the floor, edged by
+// dashed lines along the box's corners. The glass shows only its edges.
+fn room_color(hit: &RoomHit, lights: &Lights, spread: f32) -> Vec3 {
+    let footprint = hit.distance * spread;
+    let (first, second) = match hit.axis {
+        0 => (1, 2),
+        1 => (0, 2),
+        _ => (0, 1),
+    };
+    let position = Vec2::new(hit.point[first], hit.point[second]);
+    let low = Vec2::new(ROOM_MIN[first], ROOM_MIN[second]);
+    let high = Vec2::new(ROOM_MAX[first], ROOM_MAX[second]);
+    let mut normal = Vec3::ZERO;
+    normal[hit.axis] = if hit.high { -1.0 } else { 1.0 };
+
+    let floor = hit.axis == 1 && !hit.high;
+    let glass = hit.axis == 2 && hit.high;
+    let (spacing, strength) = match (floor, glass, hit.axis == 1) {
+        (true, _, _) => (0.2, 1.0),
+        (_, true, _) => (1.0, 0.0),
+        (_, _, true) => (0.3, 0.3),
+        _ => (0.3, 0.55),
+    };
+    let radius = 0.018;
+    let nearest = (position / spacing).round() * spacing;
+    let sharp = coverage(position.distance(nearest) - radius, footprint * 0.6);
+    // Far away the dots blur into their average brightness.
+    let average = PI * radius * radius / (spacing * spacing) * 2.5;
+    let dots = mix(
+        sharp,
+        average,
+        smoothstep(spacing * 0.15, spacing * 0.5, footprint),
+    );
+    let light = lights.at(hit.point, normal);
+    let mut color = WALL_COLOR * light * (0.03 + 0.9 * dots * strength);
+
+    // The wall's own border is an edge of the box.
+    let border = (position - low).min(high - position);
+    let edge = border.min_element();
+    let width = 0.008_f32.max(footprint * 0.5);
+    let line = coverage(edge - width, footprint * 0.5);
+    if line > 0.0 {
+        let along = if border.x < border.y {
+            position.y
+        } else {
+            position.x
+        };
+        let dash = coverage(
+            ((along / 0.09).fract() - 0.5).abs() * 0.09 - 0.022,
+            footprint * 0.5,
+        );
+        let dash = mix(dash, 1.0, smoothstep(0.02, 0.05, footprint));
+        let brightness = 0.3 + 0.5 * light.max_element().min(1.0);
+        color = color.lerp(EDGE_COLOR * brightness, line * dash);
+    }
+    color
+}
+
+/// The light in the room: daylight from outside by the hour, the lamp, and
+/// the glow of the ghost and the motes.
+struct Lights {
+    ambient: Vec3,
+    points: Vec<Light>,
+}
+
+struct Light {
+    position: Vec3,
+    color: Vec3,
+    /// How fast the light fades with the square of distance.
+    falloff: f32,
+}
+
+impl Lights {
+    fn of(scene: &Scene) -> Self {
+        let world = scene.world;
+        let mut points = Vec::new();
+        if world.lamp.on {
+            points.push(Light {
+                position: world.lamp.bulb() - Vec3::Y * 0.1,
+                color: LAMP_LIGHT * 1.1,
+                falloff: 0.6,
+            });
+        }
+        points.push(Light {
+            position: world.ghost.position,
+            color: scene.aura.color * (0.2 + 0.25 * scene.aura.brightness),
+            falloff: 5.0,
+        });
+        for mote in &world.motes {
+            points.push(Light {
+                position: mote.position,
+                color: MOTE_COLOR * 0.25 * mote.glow(world.time),
+                falloff: 10.0,
+            });
+        }
+        Self {
+            ambient: daylight(world.hour),
+            points,
+        }
+    }
+
+    fn at(&self, point: Vec3, normal: Vec3) -> Vec3 {
+        self.points.iter().fold(self.ambient, |total, light| {
+            let offset = light.position - point;
+            let distance_squared = offset.length_squared();
+            let facing = normal
+                .dot(offset / distance_squared.sqrt().max(1e-4))
+                .max(0.0);
+            total + light.color * (0.25 + 0.75 * facing) / (1.0 + light.falloff * distance_squared)
+        })
+    }
+}
+
+/// The light from outside at `hour`: bright by day, warm at dawn and dusk,
+/// and dim blue at night.
+fn daylight(hour: f32) -> Vec3 {
+    let sun = smoothstep(5.5, 8.0, hour) * (1.0 - smoothstep(18.0, 20.5, hour));
+    let dusk =
+        (1.0 - (hour - 7.0).abs() / 1.5).max(0.0) + (1.0 - (hour - 19.2).abs() / 1.5).max(0.0);
+    Vec3::new(0.05, 0.06, 0.12).lerp(Vec3::new(0.5, 0.53, 0.58), sun)
+        + Vec3::new(0.22, 0.1, 0.02) * dusk.min(1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::canvas::Style;
+
+    fn grid() -> Grid {
+        Style::Ascii.grid(100, 30)
+    }
+
+    #[test]
+    fn a_projected_point_lies_on_the_ray_through_its_pixel() {
+        let view = Camera::default().view(grid());
+        let point = Vec3::new(0.7, 1.4, -0.3);
+        let screen = view.project(point).unwrap();
+        let direction = view.ray(screen);
+        let toward = (point - view.eye).normalize();
+        assert!(direction.dot(toward) > 0.99999);
+    }
+
+    #[test]
+    fn the_whole_room_fits_on_screen_from_the_default_camera() {
+        for (columns, rows) in [(100, 30), (80, 24), (60, 30), (200, 50)] {
+            let grid = Style::Ascii.grid(columns, rows);
+            let view = Camera::default().view(grid);
+            for corner in 0..8 {
+                let point = Vec3::new(
+                    if corner & 1 == 0 {
+                        ROOM_MIN.x
+                    } else {
+                        ROOM_MAX.x
+                    },
+                    if corner & 2 == 0 {
+                        ROOM_MIN.y
+                    } else {
+                        ROOM_MAX.y
+                    },
+                    if corner & 4 == 0 {
+                        ROOM_MIN.z
+                    } else {
+                        ROOM_MAX.z
+                    },
+                );
+                let screen = view.project(point).unwrap();
+                assert!(
+                    screen.x.abs() < grid.half_width(),
+                    "{columns}x{rows} {point}"
+                );
+                assert!(screen.y.abs() < 1.0, "{columns}x{rows} {point}");
+            }
+        }
+    }
+
+    #[test]
+    fn rays_from_the_front_leave_through_the_far_walls_not_the_glass() {
+        let view = Camera::default().view(grid());
+        for column in -10..=10 {
+            for row in -10..=10 {
+                let point = Vec2::new(column as f32 * 0.08, row as f32 * 0.06);
+                if let Some(hit) = room_exit(view.eye, view.ray(point)) {
+                    assert!(!(hit.axis == 2 && hit.high), "{point}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pointing_at_the_floor_and_the_glass_finds_points_on_them() {
+        let view = Camera::default().view(grid());
+        let floor = view.on_plane(Vec2::new(0.0, -0.5), 0.0).unwrap();
+        assert!(floor.y.abs() < 1e-4);
+        let glass = view.on_glass(Vec2::new(0.1, 0.1)).unwrap();
+        assert!((glass.z - ROOM_MAX.z).abs() < 1e-4);
+        assert!(view.on_glass(Vec2::new(5.0, 0.0)).is_none());
+    }
+
+    #[test]
+    fn the_ghost_is_touched_where_it_appears_on_screen() {
+        let view = Camera::default().view(grid());
+        let ghost = Vec3::new(0.4, 1.1, 0.2);
+        let screen = view.project(ghost).unwrap();
+        assert!(view.touches_ghost(screen, ghost));
+        assert!(!view.touches_ghost(screen + Vec2::new(0.6, 0.0), ghost));
+    }
+
+    #[test]
+    fn night_is_darker_than_noon_and_dusk_is_warmer() {
+        assert!(daylight(2.0).max_element() < daylight(12.0).max_element() * 0.3);
+        let dusk = daylight(19.2);
+        assert!(dusk.x > dusk.z);
+    }
+}
