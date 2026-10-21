@@ -230,6 +230,18 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             "Another year in my glass box.",
             "I made a wish. It's a secret.",
         ]),
+        Some(Occasion::Seollal) => lines.extend([
+            "A little bow for a whole new year.",
+            "The lucky pouch is full of possibilities.",
+        ]),
+        Some(Occasion::Chuseok) => lines.extend([
+            "The harvest moon looks close enough to touch.",
+            "Shall we share a little moonlight?",
+        ]),
+        Some(Occasion::HangulDay) => lines.extend([
+            "Letters can be little pictures too.",
+            "A word in the fog, just for you.",
+        ]),
         None => {}
     }
     if needs.energy < 0.3 {
@@ -370,6 +382,18 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
             "…a cake as big as the room, and a wish for every candle…",
             "…everyone sings, even the plant…",
         ]),
+        Some(Occasion::Seollal) => lines.extend([
+            "…a lucky pouch spilling little stars…",
+            "…bowing to a new year made of light…",
+        ]),
+        Some(Occasion::Chuseok) => lines.extend([
+            "…half-moon rice cakes floating around the harvest moon…",
+            "…watching the moon together, year after year…",
+        ]),
+        Some(Occasion::HangulDay) => lines.extend([
+            "…Hangul letters drifting through the fog…",
+            "…a whole sky spelling hello…",
+        ]),
         None => {}
     }
     if today.friend_visits > 0 {
@@ -377,6 +401,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
             "…two ghosts chasing each other past the moon…",
             "…my ghost friend and I twirl among the stars…",
         ]);
+    }
+    if today.moon_wishes > 0 {
+        lines.push("…the moon keeps my little wish safe…");
     }
     if today.motes > 0 {
         lines.extend([
@@ -465,9 +492,15 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
 }
 
 fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
-    let lines = |items: &[&str]| items.iter().map(|line| (*line).to_owned()).collect();
+    let korean = heard.korean || world.speaks_korean();
+    let lines = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|&(english, hangul)| if korean { hangul } else { english }.to_owned())
+            .collect()
+    };
     if let Some(name) = &heard.learned_name {
-        return if heard.korean {
+        return if korean {
             vec![format!("반가워, {name}!"), format!("{name}! 기억할게.")]
         } else {
             vec![
@@ -490,33 +523,56 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
         };
     }
     if let Some((word, _)) = heard.learned.last() {
-        return vec![
-            format!("So “{word}” means this!"),
-            format!("Oh! “{word}”! I get it now."),
-        ];
+        return if korean {
+            vec![
+                format!("“{word}”가 이거구나!"),
+                format!("아! “{word}”! 이제 알겠어."),
+            ]
+        } else {
+            vec![
+                format!("So “{word}” means this!"),
+                format!("Oh! “{word}”! I get it now."),
+            ]
+        };
     }
     if guessed.is_some()
         && let Understanding::Puzzled { word, .. } = &heard.understanding
     {
-        return vec![
-            "Like this?".to_owned(),
-            format!("Is this “{word}”?"),
-            format!("{}… this?", capitalized(word)),
-        ];
+        return if korean {
+            vec![
+                "이렇게?".to_owned(),
+                format!("이게 “{word}”야?"),
+                format!("{word}… 이거?"),
+            ]
+        } else {
+            vec![
+                "Like this?".to_owned(),
+                format!("Is this “{word}”?"),
+                format!("{}… this?", capitalized(word)),
+            ]
+        };
     }
     match &heard.understanding {
         Understanding::Doing { word, .. } => {
             let word = capitalized(word);
-            return vec![
-                format!("{word}? Okay!"),
-                format!("{word}! I know that one."),
-                format!("{word}! Watch me."),
-            ];
+            return if korean {
+                vec![
+                    format!("{word}? 좋아!"),
+                    format!("{word}! 그건 알아."),
+                    format!("{word}! 잘 봐."),
+                ]
+            } else {
+                vec![
+                    format!("{word}? Okay!"),
+                    format!("{word}! I know that one."),
+                    format!("{word}! Watch me."),
+                ]
+            };
         }
-        Understanding::Unable { activity, .. } => return unable(world, *activity),
+        Understanding::Unable { activity, .. } => return unable(world, *activity, korean),
         Understanding::Asked { question, doing } => {
-            let answers = answer(world, *question, *doing, heard.korean);
-            let hello = if heard.korean { "안녕! " } else { "Hi! " };
+            let answers = answer(world, *question, *doing, korean);
+            let hello = if korean { "안녕! " } else { "Hi! " };
             return if heard.tone == Some(Tone::Greeting) {
                 answers
                     .iter()
@@ -530,38 +586,80 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
     }
     let bond = world.life.bond;
     match heard.tone {
-        Some(Tone::Scolding) if heard.stopped => return lines(&["Oh… okay, I'll stop.", "Sorry…"]),
-        Some(Tone::Scolding) => return lines(&["Oh… sorry.", "Okay, okay…"]),
-        Some(Tone::Praise) if bond < 0.12 => return lines(&["Oh! Thank you.", "Hehe."]),
-        Some(Tone::Praise) => return lines(&["Hehe!", "Yay!", "You think so?"]),
+        Some(Tone::Scolding) if heard.stopped => {
+            return lines(&[
+                ("Oh… okay, I'll stop.", "아… 알겠어, 그만할게."),
+                ("Sorry…", "미안…"),
+            ]);
+        }
+        Some(Tone::Scolding) => {
+            return lines(&[
+                ("Oh… sorry.", "아… 미안."),
+                ("Okay, okay…", "알겠어, 알겠어…"),
+            ]);
+        }
+        Some(Tone::Praise) if bond < 0.12 => {
+            return lines(&[("Oh! Thank you.", "아! 고마워."), ("Hehe.", "히히.")]);
+        }
+        Some(Tone::Praise) => {
+            return lines(&[
+                ("Hehe!", "히히!"),
+                ("Yay!", "야호!"),
+                ("You think so?", "정말?"),
+            ]);
+        }
         _ => {}
     }
     if let Understanding::Puzzled { word, again } = &heard.understanding {
-        return if *again {
-            vec![
+        return match (*again, korean) {
+            (true, true) => vec![
+                format!("또 “{word}”… 무슨 뜻일까?"),
+                format!("음, “{word}”… 보여줄래?"),
+            ],
+            (true, false) => vec![
                 format!("“{word}” again… what does it mean?"),
                 format!("Hm, “{word}”… show me?"),
-            ]
-        } else {
-            vec![
+            ],
+            (false, true) => vec![
+                format!("“{word}”?"),
+                format!("“{word}”가 뭐야?"),
+                format!("응? {word}?"),
+            ],
+            (false, false) => vec![
                 format!("“{word}”?"),
                 format!("What's “{word}”?"),
                 format!("Hm? {}?", capitalized(word)),
-            ]
+            ],
         };
     }
     if heard.tone == Some(Tone::Greeting)
         && let Some(name) = &world.life.viewer_name
     {
-        return vec![format!("Hi, {name}!"), "Hello! You're here!".to_owned()];
+        return if korean {
+            vec![format!("안녕, {name}!"), "안녕! 왔구나!".to_owned()]
+        } else {
+            vec![format!("Hi, {name}!"), "Hello! You're here!".to_owned()]
+        };
     }
     match heard.tone {
-        Some(Tone::Farewell) if world.is_night() => lines(&["Goodnight!", "Sleep well."]),
-        Some(Tone::Farewell) => lines(&["Bye… come back soon.", "See you!"]),
-        Some(Tone::Greeting) if bond < 0.12 => lines(&["Oh! Hello…", "Hi there."]),
-        Some(Tone::Greeting) if bond < 0.55 => lines(&["Hello!", "Hi! It's you."]),
-        Some(Tone::Greeting) => lines(&["Hi! You're here!", "Hello, you!"]),
-        _ if heard.named => lines(&["Yes? That's me!", "You called?"]),
+        Some(Tone::Farewell) if world.is_night() => {
+            lines(&[("Goodnight!", "잘 자!"), ("Sleep well.", "푹 자.")])
+        }
+        Some(Tone::Farewell) => lines(&[
+            ("Bye… come back soon.", "잘 가… 또 와."),
+            ("See you!", "또 보자!"),
+        ]),
+        Some(Tone::Greeting) if bond < 0.12 => {
+            lines(&[("Oh! Hello…", "아! 안녕…"), ("Hi there.", "안녕.")])
+        }
+        Some(Tone::Greeting) if bond < 0.55 => {
+            lines(&[("Hello!", "안녕!"), ("Hi! It's you.", "안녕! 너구나.")])
+        }
+        Some(Tone::Greeting) => lines(&[
+            ("Hi! You're here!", "안녕! 왔구나!"),
+            ("Hello, you!", "안녕, 반가워!"),
+        ]),
+        _ if heard.named => lines(&[("Yes? That's me!", "응? 나야!"), ("You called?", "불렀어?")]),
         _ => Vec::new(),
     }
 }
@@ -961,17 +1059,24 @@ fn age_words(days: i32, korean: bool) -> String {
 }
 
 // Why it can't do what the viewer asked for just now.
-fn unable(world: &World, activity: Activity) -> Vec<String> {
-    let line = match activity {
-        Activity::Rest => "I'm not sleepy!",
-        Activity::Chase if world.motes.is_empty() => "I don't see any light motes.",
-        Activity::Chase => "I don't know where a light mote is.",
-        Activity::Tend => "The plant doesn't need water yet.",
-        Activity::Hide if !world.viewer_present() => "Nobody's here to find me.",
-        _ if world.ghost.needs.energy < 0.4 => "I'm too tired for that.",
-        _ => "Not right now.",
+fn unable(world: &World, activity: Activity, korean: bool) -> Vec<String> {
+    let (english, hangul) = match activity {
+        Activity::Rest => ("I'm not sleepy!", "안 졸려!"),
+        Activity::Chase if world.motes.is_empty() => {
+            ("I don't see any light motes.", "빛 알갱이가 안 보여.")
+        }
+        Activity::Chase => (
+            "I don't know where a light mote is.",
+            "빛 알갱이가 어디 있는지 모르겠어.",
+        ),
+        Activity::Tend => ("The plant doesn't need water yet.", "아직 물 안 줘도 돼."),
+        Activity::Hide if !world.viewer_present() => {
+            ("Nobody's here to find me.", "찾아줄 사람이 없잖아.")
+        }
+        _ if world.ghost.needs.energy < 0.4 => ("I'm too tired for that.", "너무 피곤해."),
+        _ => ("Not right now.", "지금은 안 돼."),
     };
-    vec![line.to_owned()]
+    vec![if korean { hangul } else { english }.to_owned()]
 }
 
 fn capitalized(text: &str) -> String {
@@ -1016,6 +1121,36 @@ mod tests {
         assert!(setting_out(&world, Activity::Build).contains(&"I'm getting better at this!"));
         world.life.skills.stacking = 100.0;
         assert!(!dreams(&world).contains(&"…my wobbly tower stands as tall as the stars…"));
+    }
+
+    #[test]
+    fn offline_replies_follow_korean_speech_and_remember_it_between_messages() {
+        let mut world = World::new(1, 12.0);
+        let introduction = world.hear("내 이름은 민수야");
+        assert!(reply(&world, &introduction, None).contains(&"반가워, 민수!".to_owned()));
+        let greeting = world.hear("안녕");
+        assert!(reply(&world, &greeting, None).contains(&"안녕, 민수!".to_owned()));
+        let mut heard = world.hear("?");
+        heard.tone = Some(Tone::Praise);
+        assert!(reply(&world, &heard, None).contains(&"아! 고마워.".to_owned()));
+        heard.tone = None;
+        heard.understanding = Understanding::Puzzled {
+            word: "반짝".to_owned(),
+            again: true,
+        };
+        assert!(reply(&world, &heard, Some(Activity::Chase)).contains(&"이렇게?".to_owned()));
+        heard.understanding = Understanding::Unable {
+            word: "쉬어".to_owned(),
+            activity: Activity::Rest,
+        };
+        assert_eq!(reply(&world, &heard, None), ["안 졸려!"]);
+        heard.understanding = Understanding::Doing {
+            word: "놀자".to_owned(),
+            activity: Activity::Play,
+        };
+        assert!(reply(&world, &heard, None).contains(&"놀자! 잘 봐.".to_owned()));
+        heard.learned.push(("놀자".to_owned(), Activity::Play));
+        assert!(reply(&world, &heard, None).contains(&"“놀자”가 이거구나!".to_owned()));
     }
 
     #[test]

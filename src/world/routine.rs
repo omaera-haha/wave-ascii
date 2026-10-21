@@ -74,15 +74,20 @@ impl World {
             self.record(EventKind::ExpectedArrival);
             self.ghost.needs.change(0.0, 0.0, 0.15);
             let lines = match &self.life.viewer_name {
+                Some(name) if self.speaks_korean() => vec![
+                    format!("안녕, {name}!"),
+                    "딱 맞춰 왔네!".to_owned(),
+                    format!("{name}, 기다렸어."),
+                ],
                 Some(name) => vec![
                     format!("There you are, {name}!"),
                     "Right on time!".to_owned(),
                     format!("I hoped you'd come, {name}."),
                 ],
                 None => vec![
-                    "There you are!".to_owned(),
-                    "Right on time!".to_owned(),
-                    "I hoped you'd come.".to_owned(),
+                    self.spoken("There you are!", "왔구나!").to_owned(),
+                    self.spoken("Right on time!", "딱 맞춰 왔네!").to_owned(),
+                    self.spoken("I hoped you'd come.", "기다렸어.").to_owned(),
                 ],
             };
             if let Some(index) = self.pick(&[1.0; 3]) {

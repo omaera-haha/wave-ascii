@@ -148,6 +148,8 @@ pub struct Tally {
     pub friend_name: Option<String>,
     #[serde(default)]
     pub friend_played: Vec<super::friend::Game>,
+    #[serde(default)]
+    pub moon_wishes: u32,
 }
 
 impl Tally {
@@ -169,6 +171,7 @@ impl Tally {
             EventKind::Fetched => self.fetches += 1,
             EventKind::Pounced => self.pounces += 1,
             EventKind::Danced => self.dances += 1,
+            EventKind::MoonWish => self.moon_wishes += 1,
             EventKind::Built { height } => {
                 self.towers += 1;
                 self.tallest = self.tallest.max(*height);
@@ -318,6 +321,9 @@ impl Tally {
             deeds.push(tower);
         } else if self.toppled > 0 {
             deeds.push("watched you knock my tower down".to_owned());
+        }
+        if self.moon_wishes > 0 {
+            deeds.push("made a wish on the Chuseok moon".to_owned());
         }
         match self.dances {
             0 => {}
@@ -539,6 +545,9 @@ pub struct Life {
     pub skills: super::Skills,
     #[serde(default)]
     pub friend: Option<super::Companion>,
+    /// The share of the viewer's speech that is Korean, eased with each message.
+    #[serde(default)]
+    pub korean: f32,
 }
 
 impl Life {
@@ -892,6 +901,7 @@ impl Life {
         }
         self.closest = unit(self.closest);
         self.bird_trust = unit(self.bird_trust);
+        self.korean = unit(self.korean);
         if self.keepsakes.len() > 8 {
             self.keepsakes.drain(..self.keepsakes.len() - 8);
         }
@@ -915,6 +925,7 @@ impl Life {
                     .filter(|character| {
                         character.is_ascii_uppercase()
                             || character.is_ascii_digit()
+                            || super::letters::decompose(*character).is_some()
                             || matches!(character, '!' | '?' | '♥')
                     })
                     .take(17)
@@ -1066,6 +1077,9 @@ impl Life {
                 Occasion::NewYear => "Saw in my first new year.",
                 Occasion::Valentine => "My first Valentine's Day.",
                 Occasion::Birthday => "My first birthday!",
+                Occasion::Seollal => "Celebrated my first Seollal.",
+                Occasion::Chuseok => "Celebrated my first Chuseok under the harvest moon.",
+                Occasion::HangulDay => "My first Hangul Day, drawing letters in the fog.",
             }
             .to_owned(),
             EventKind::Petted if total.pets == 1 => "You stroked me for the first time.".to_owned(),
@@ -1160,6 +1174,41 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_viewers_language_round_trips_defaults_and_clamps_saved_values() {
+        let mut life = Life {
+            korean: 0.8,
+            ..Life::default()
+        };
+        life.note(&EventKind::Wrote {
+            text: "한글".to_owned(),
+            mirrored: false,
+            watched: true,
+        });
+        let encoded = serde_json::to_value(&life).unwrap();
+        let restored: Life = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(restored.sanitized(), life);
+        let mut old = encoded;
+        old.as_object_mut().unwrap().remove("korean");
+        assert_eq!(serde_json::from_value::<Life>(old).unwrap().korean, 0.0);
+        for (value, expected) in [
+            (-1.0, 0.0),
+            (2.0, 1.0),
+            (f32::NAN, 0.0),
+            (f32::INFINITY, 0.0),
+        ] {
+            assert_eq!(
+                Life {
+                    korean: value,
+                    ..Life::default()
+                }
+                .sanitized()
+                .korean,
+                expected
+            );
+        }
+    }
 
     fn visits(life: &mut Life, hour: f32, days: std::ops::RangeInclusive<i8>) {
         for day in days {
@@ -1957,23 +2006,39 @@ mod tests {
             Occasion::NewYear,
             Occasion::Valentine,
             Occasion::Birthday,
+            Occasion::Seollal,
+            Occasion::Chuseok,
+            Occasion::HangulDay,
         ] {
             life.note(&EventKind::Celebrated(occasion));
         }
         life.note(&EventKind::Celebrated(Occasion::NewYear));
-        assert_eq!(life.total.celebrations, 6);
-        assert_eq!(life.today.celebrations, 6);
+        assert_eq!(life.total.celebrations, 9);
+        assert_eq!(life.today.celebrations, 9);
         let words = life.today.words();
         assert!(words.contains("Celebrated Halloween"));
         assert!(words.contains("celebrated the winter holidays"));
         assert!(words.contains("celebrated Valentine's Day"));
         assert!(words.contains("had a birthday"));
+        assert!(words.contains("celebrated Seollal"));
+        assert!(words.contains("celebrated Chuseok"));
+        assert!(words.contains("celebrated Hangul Day"));
+        for occasion in [Occasion::Seollal, Occasion::Chuseok] {
+            assert!(life.note(&EventKind::Celebrated(occasion)).is_none());
+            assert_eq!(
+                life.milestones
+                    .iter()
+                    .filter(|entry| entry.text.contains(occasion.name()))
+                    .count(),
+                1
+            );
+        }
         assert_eq!(words.matches("celebrated the new year").count(), 1);
         let restored: Life = serde_json::from_str(&serde_json::to_string(&life).unwrap()).unwrap();
         assert_eq!(life, restored);
         life.begin_day("2026-11-01");
         assert_eq!(life.today.celebrations, 0);
-        assert_eq!(life.total.celebrations, 6);
+        assert_eq!(life.total.celebrations, 11);
         assert_eq!(life.diary[0].text, words);
         assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().celebrations, 0);
     }

@@ -355,9 +355,17 @@ impl World {
             let delighted =
                 self.life.nature.unwrap_or_default().playful >= 0.5 || self.life.bond >= 0.55;
             let lines = if delighted {
-                ["Again!", "Whoosh! Again!", "Hee hee!"]
+                [
+                    ("Again!", "또 하자!"),
+                    ("Whoosh! Again!", "와르르! 또 하자!"),
+                    ("Hee hee!", "히히!"),
+                ]
             } else {
-                ["My tower!", "Oh… my tower.", "I made that!"]
+                [
+                    ("My tower!", "내 탑!"),
+                    ("Oh… my tower.", "아… 내 탑."),
+                    ("I made that!", "내가 만든 건데!"),
+                ]
             };
             let index = self.random.range(0.0, lines.len() as f32) as usize;
             self.suggest_mood(
@@ -368,7 +376,7 @@ impl World {
                 },
                 if delighted { 5.0 } else { 8.0 },
             );
-            self.say(lines[index]);
+            self.say(self.spoken(lines[index].0, lines[index].1));
         } else if !block.held {
             let along = Vec3::new(direction.x, 0.0, direction.z).normalize_or(Vec3::Z);
             let block = &mut self.blocks[index];

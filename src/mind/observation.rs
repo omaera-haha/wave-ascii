@@ -54,6 +54,7 @@ pub fn observe(world: &World) -> Value {
             format!("{}, another ghost and {}, is {}", companion.name, companion.closeness_words(), friend.doing())
         }).unwrap_or_else(|| "no ghost friend visiting just now".to_owned()),
         "viewer": viewer(world),
+        "viewer_language": if world.speaks_korean() { "the viewer speaks Korean" } else { "not known yet" },
         "viewer_name": world.life.viewer_name.as_ref().map_or_else(|| "not known yet".to_owned(), |name| format!("The viewer's name is {name}.")),
         "bond_with_viewer": world.life.bond_words(),
         "visiting_routine": world.life.usual_time().map(|usual| {
@@ -411,6 +412,17 @@ fn viewer(world: &World) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_observation_remembers_that_the_viewer_speaks_korean() {
+        let mut world = World::new(1, 12.0);
+        world.hear("안녕");
+        world.hear("반가워");
+        assert_eq!(
+            observe(&world)["viewer_language"],
+            "the viewer speaks Korean"
+        );
+    }
     use crate::world::EventKind;
     use glam::Vec3;
 

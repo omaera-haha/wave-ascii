@@ -79,7 +79,8 @@ about, or empty. Most of the time this is empty.
 - look_at: what it turns to look at next, if it wants to look at something it doesn't see \
 now or to keep its eyes on something, or empty to let its eyes wander.
 - write: a short word to write in the fog on the glass for the viewer, such as their name or HI, \
-or empty; use rarely. Use Latin letters and digits only, at most eight.";
+or empty; use rarely. Use Latin letters, digits, or Hangul syllables, at most eight characters \
+with at most five Hangul syllables.";
 
 /// The schema Claude's reply must follow.
 pub fn schema() -> Value {
@@ -93,7 +94,7 @@ pub fn schema() -> Value {
             "mood": {"type": "string", "enum": Mood::ALL.map(Mood::name)},
             "remember": text,
             "name": text,
-            "write": {"type": "string", "pattern": "^[A-Za-z0-9]{0,8}$"},
+            "write": {"type": "string", "pattern": "^[A-Za-z0-9가-힣]{0,8}$", "description": "A short word in Latin letters, digits, or Hangul syllables; at most eight characters with at most five Hangul syllables."},
             "look_at": {"type": "string", "enum": std::iter::once("").chain(Thing::NAMES).collect::<Vec<_>>()},
         },
         "required": ["thought", "say", "goal", "mood", "remember", "name", "look_at", "write"],
@@ -292,7 +293,7 @@ mod tests {
         assert!(required.contains(&"write"));
         assert_eq!(
             schema["properties"]["write"]["pattern"],
-            "^[A-Za-z0-9]{0,8}$"
+            "^[A-Za-z0-9가-힣]{0,8}$"
         );
         assert_eq!(
             schema["properties"]["mood"]["enum"]
