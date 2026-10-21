@@ -406,6 +406,11 @@ across restarts. No extra keys are needed.
 - **Stories.** Ask "tell me a story" or "이야기 들려줘" and it tells a little tale
   from its life, a sentence at a time; at bedtime it says goodnight and
   floats to its cushion to sleep. Poking it or saying no stops the tale.
+  Without Claude, it weaves three to six lines from memories such as folded
+  cranes, gallery pictures, bubbles, found treasures, your care, and shared
+  good news. Openings fit the weather and hour, friends sometimes get a
+  mention, and successive tales choose different memories and endings when
+  possible. Newborns keep their three simple lines.
 - **Constellations.** After watching a clear, dark sky for twenty seconds, it
   may find a picture among the stars, using familiar shapes and pictures you
   taught it. It searches once a night, remembers its newest twelve finds, and

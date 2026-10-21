@@ -975,6 +975,9 @@ pub struct World {
     pending_tidy: bool,
     tidy_rest: bool,
     chill: cold::Chill,
+    /// The previous offline tale, remembered only for this session.
+    pub(crate) last_story_thread: Option<&'static str>,
+    pub(crate) last_story_ending: Option<&'static str>,
 }
 
 impl World {
@@ -1133,6 +1136,8 @@ impl World {
             pending_tidy: false,
             tidy_rest: false,
             chill: cold::Chill::default(),
+            last_story_thread: None,
+            last_story_ending: None,
         };
         world.scatter_blocks();
         world
