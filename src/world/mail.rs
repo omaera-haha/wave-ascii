@@ -31,6 +31,16 @@ impl Letter {
             && self.reply_to.as_ref().is_none_or(|letter| letter.valid())
     }
 
+    /// The letter as saved: the viewer's letter it answers is kept only as
+    /// words, with no reply still pending, so nothing in it can break a save.
+    pub fn sanitize(&mut self) {
+        if let Some(letter) = &mut self.reply_to {
+            letter.reply = None;
+            letter.answered = true;
+            letter.read = true;
+        }
+    }
+
     pub fn valid_lines(lines: &[String]) -> bool {
         (2..=6).contains(&lines.len())
             && lines.iter().all(|line| {

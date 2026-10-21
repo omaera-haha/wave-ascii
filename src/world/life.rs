@@ -1613,6 +1613,16 @@ impl Life {
         if self.day == day {
             return;
         }
+        // A clock that went back keeps the later day: beginning an earlier
+        // one would throw away today's tally and warmth, and make what was
+        // kept today look like it came from the future.
+        if let (Ok(current), Ok(next)) = (
+            self.day.parse::<jiff::civil::Date>(),
+            day.parse::<jiff::civil::Date>(),
+        ) && next < current
+        {
+            return;
+        }
         let days = self
             .day
             .parse::<jiff::civil::Date>()
@@ -1725,6 +1735,11 @@ impl Life {
             .landmark_greeted
             .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
         for tally in [&mut self.today, &mut self.total] {
+            tally.anniversary_words.retain(|line| {
+                !line.trim().is_empty()
+                    && line.chars().count() <= 256
+                    && !line.chars().any(char::is_control)
+            });
             tally.anniversary_words.truncate(12);
             tally
                 .temperament_changes
@@ -1746,6 +1761,9 @@ impl Life {
         if self.received.len() > super::mail::KEPT {
             self.received
                 .drain(..self.received.len() - super::mail::KEPT);
+        }
+        for letter in &mut self.letters {
+            letter.sanitize();
         }
         self.letters.retain(super::mail::Letter::valid);
         if self.letters.len() > super::mail::KEPT {
@@ -2860,6 +2878,52 @@ mod tests {
             day.words(),
             "A quiet day. You were here for a few minutes. You poked me a lot."
         );
+    }
+
+    #[test]
+    fn a_damaged_archived_letter_or_long_anniversary_line_cannot_break_the_next_save() {
+        let json = r#"{
+            "day": "2026-10-21",
+            "letters": [{
+                "day": "2026-10-21",
+                "lines": ["Dear you,", "Thank you for your letter."],
+                "korean": false,
+                "read": false,
+                "reply_to": {
+                    "day": "2026-10-20",
+                    "lines": ["Hello"],
+                    "korean": false,
+                    "answered": false,
+                    "read": true,
+                    "reply": {"arrival": "2026-10-20T10:00:00", "morning": "2026-10-21T07:00:00",
+                              "due": "2026-10-20T10:30:00", "remaining": 1e100}
+                }
+            }],
+            "today": {"anniversary_words": ["A week ago today, I saw my first bird.", "", "x\u0007"]}
+        }"#;
+        let life: Life = serde_json::from_str(json).unwrap();
+        let life = life.sanitized();
+        assert_eq!(life.letters.len(), 1);
+        let saved = serde_json::to_string(&life).unwrap();
+        let again: Life = serde_json::from_str(&saved).unwrap();
+        assert_eq!(again.letters, life.letters);
+        assert_eq!(life.today.anniversary_words.len(), 1);
+    }
+
+    #[test]
+    fn a_clock_that_goes_back_keeps_the_later_day_and_its_tally() {
+        let mut life = Life::default();
+        life.begin_day("2026-10-21");
+        life.note(&EventKind::AteMote);
+        life.pass(600.0, true);
+        let warmed = life.warmed;
+        life.begin_day("2026-10-20");
+        assert_eq!(life.day, "2026-10-21");
+        assert_eq!(life.today.motes, 1);
+        assert_eq!(life.warmed, warmed);
+        assert!(life.diary.is_empty());
+        life.begin_day("2026-10-22");
+        assert_eq!(life.diary.len(), 1);
     }
 
     #[test]

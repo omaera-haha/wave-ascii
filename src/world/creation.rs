@@ -138,7 +138,8 @@ pub fn sanitize(life: &mut Life) {
 fn abandon_old_drafts(life: &mut Life, today: Date) {
     life.written.retain(|book| {
         book.finished
-            || elapsed_days(Some(&book.day), today).is_some_and(|days| (0..7).contains(&days))
+            // A clock that went back leaves a negative age; that's no lapse.
+            || elapsed_days(Some(&book.day), today).is_none_or(|days| days < 7)
     });
 }
 
@@ -779,6 +780,23 @@ pub(super) mod tests {
         assert!(restored.life.written[0].finished);
         assert_eq!(restored.life.written[0].pages[0], before.pages[0]);
         assert_eq!(restored.life.total.books_written, 1);
+    }
+
+    #[test]
+    fn a_draft_from_a_day_ahead_of_a_clock_that_went_back_is_kept() {
+        let mut life = Life {
+            day: "2026-10-20".to_owned(),
+            ..Life::default()
+        };
+        life.written.push(WrittenBook {
+            title: ("A Draft".to_owned(), "초안".to_owned()),
+            day: "2026-10-21".to_owned(),
+            ..WrittenBook::default()
+        });
+        abandon_old_drafts(&mut life, Date::constant(2026, 10, 20));
+        assert_eq!(life.written.len(), 1);
+        abandon_old_drafts(&mut life, Date::constant(2026, 10, 28));
+        assert!(life.written.is_empty());
     }
 
     #[test]

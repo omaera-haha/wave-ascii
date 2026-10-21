@@ -57,9 +57,16 @@ impl ViewerLetter {
                             .is_ok_and(|time| time.date().to_string() >= self.day)
                     })
         });
-        // A damaged schedule should retry reading, rather than lose the reply.
+        // A damaged schedule keeps the letter read, its reply due at once,
+        // so nothing that reading does happens twice.
         if self.read && !self.answered && self.reply.is_none() {
-            self.read = false;
+            let now = format!("{}T00:00:00", self.day);
+            self.reply = Some(PendingReply {
+                arrival: now.clone(),
+                morning: now.clone(),
+                due: now,
+                remaining: 0.0,
+            });
         }
     }
 
