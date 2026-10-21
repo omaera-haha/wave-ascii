@@ -10,6 +10,7 @@ use crate::mind::Status;
 use crate::render::{GHOST_SCALE, View};
 use crate::settings::{Field, cache_name, effort_name};
 use crate::store::{Speaker, mask};
+use crate::world::Skill;
 
 const PANEL: Rgb = Rgb([17, 19, 27]);
 const BORDER: Rgb = Rgb([74, 82, 108]);
@@ -162,7 +163,7 @@ fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize)
     if world.time - speech.time > SPEECH_SHOWS {
         return None;
     }
-    let head = world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE;
+    let head = world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE * world.size();
     let point = view.project(head)?;
     let columns = screen.columns();
     let scene_rows = scene_rows.min(screen.rows());
@@ -232,7 +233,7 @@ fn emote_puffs(
     if columns == 0 || scene_rows == 0 {
         return;
     }
-    let head = app.world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE;
+    let head = app.world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE * app.world.size();
     let Some(point) = view.project(head) else {
         return;
     };
@@ -548,7 +549,7 @@ fn help_panel(screen: &mut Canvas) {
         "k          keys and models     click ball    flick it",
         "j          journal and diary   click room    drop a light mote",
         "                               click blocks  nudge or topple",
-        "l          its life and bond   p             save a postcard",
+        "l          life, growth, skills p             save a postcard",
         "g          noughts and crosses 1-9, click    choose a square",
         "arrows     turn the view       drag          turn the view",
         "+ -, wheel zoom                drag ghost    stroke it",
@@ -803,7 +804,7 @@ impl JournalPanel {
     }
 }
 
-// The ghost's life at a glance: its age, its bond with the viewer, what it
+// The ghost's life at a glance: its age and stage, its skills, its bond, what it
 // loves doing, what it has done in all its days, its latest milestone, and
 // today so far.
 fn life_panel(app: &App, screen: &mut Canvas) {
@@ -853,7 +854,12 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     };
     let mut header = vec![
         (
-            format!("{} · {age} · born {}", ghost.name, date(app.born())),
+            format!(
+                "{} · {age} · {} · born {}",
+                ghost.name,
+                app.world.stage().words(),
+                date(app.born())
+            ),
             TITLE,
         ),
         (String::new(), TEXT),
@@ -894,6 +900,19 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     }
     if let Some(name) = &life.viewer_name {
         header.push((format!("You: {name}"), TEXT));
+    }
+    let practiced: Vec<String> = Skill::ALL
+        .into_iter()
+        .filter(|skill| life.skills.practice(*skill) > 0.0)
+        .map(|skill| format!("{}: {}", skill.words(), life.skills.words(skill)))
+        .collect();
+    if !practiced.is_empty() {
+        let words = format!("Getting good at: {}", practiced.join(", "));
+        header.extend(
+            wrap(&words, columns.saturating_sub(10).clamp(20, 56))
+                .into_iter()
+                .map(|line| (line, TEXT)),
+        );
     }
     let total = &life.total;
     let mut bird = vec![(format!("The bird: {}", life.bird_words()), TEXT)];

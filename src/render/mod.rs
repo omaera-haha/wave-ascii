@@ -122,14 +122,14 @@ impl View {
 
     /// Whether the ray through `point` of the screen meets the ghost's
     /// billboard inside its outline's bounds.
-    pub fn touches_ghost(&self, point: Vec2, ghost: Vec3) -> bool {
-        self.billboard(self.ray(point), ghost)
+    pub fn touches_ghost(&self, point: Vec2, ghost: Vec3, size: f32) -> bool {
+        self.billboard(self.ray(point), ghost, GHOST_SCALE * size)
             .is_some_and(|(_, local)| local.abs().cmple(Vec2::new(0.6, 0.75)).all())
     }
 
     /// Where a ray meets the ghost's billboard: the distance along the ray
     /// and the point in the ghost's own space.
-    fn billboard(&self, direction: Vec3, ghost: Vec3) -> Option<(f32, Vec2)> {
+    fn billboard(&self, direction: Vec3, ghost: Vec3, scale: f32) -> Option<(f32, Vec2)> {
         let along = direction.dot(self.forward);
         let distance = (ghost - self.eye).dot(self.forward) / along;
         if along <= 0.0 || distance <= 0.0 {
@@ -138,7 +138,7 @@ impl View {
         let offset = self.eye + direction * distance - ghost;
         Some((
             distance,
-            Vec2::new(offset.dot(self.right), offset.dot(self.up)) / GHOST_SCALE,
+            Vec2::new(offset.dot(self.right), offset.dot(self.up)) / scale,
         ))
     }
 }
@@ -227,7 +227,7 @@ fn trace(
         }
     }
     if let Some(moth) = &world.visitors.moth
-        && let Some((distance, local)) = scene.view.billboard(direction, moth.position)
+        && let Some((distance, local)) = scene.view.billboard(direction, moth.position, GHOST_SCALE)
         && distance < limit
     {
         let point = local * GHOST_SCALE;
@@ -259,7 +259,10 @@ fn trace(
     // and under the ghost when the ghost is nearer.
     let glass = glass_distance(eye, direction).filter(|distance| *distance <= limit + 1e-3);
     let mut glazed = false;
-    if let Some((distance, local)) = scene.view.billboard(direction, world.ghost.position)
+    if let Some((distance, local)) =
+        scene
+            .view
+            .billboard(direction, world.ghost.position, lights.ghost_scale)
         && distance < limit
         && local.cmpge(BOUNDS[0]).all()
         && local.cmple(BOUNDS[1]).all()
@@ -270,7 +273,7 @@ fn trace(
             color = glass_color(scene, direction, spread, glass, color);
             glazed = true;
         }
-        let pixel = distance * spread / GHOST_SCALE;
+        let pixel = distance * spread / lights.ghost_scale;
         let glow = ghost::shade(
             local,
             pixel,
@@ -504,6 +507,7 @@ fn room_color(hit: &RoomHit, lights: &Lights, spread: f32, outside: &window::Out
 struct Lights {
     ambient: Vec3,
     points: Vec<Light>,
+    ghost_scale: f32,
 }
 
 struct Light {
@@ -516,6 +520,7 @@ struct Light {
 impl Lights {
     fn of(scene: &Scene) -> Self {
         let world = scene.world;
+        let size = world.size();
         let mut points = Vec::new();
         let window_center = (window::WINDOW_LOW + window::WINDOW_HIGH) * 0.5;
         points.push(Light {
@@ -534,7 +539,8 @@ impl Lights {
             position: world.ghost.position,
             color: scene.aura.color
                 * (0.2 + 0.25 * scene.aura.brightness)
-                * scene.aura.visibility.clamp(0.0, 1.0),
+                * scene.aura.visibility.clamp(0.0, 1.0)
+                * size,
             falloff: 5.0,
         });
         if let Some(decoration) = world.decoration() {
@@ -554,6 +560,7 @@ impl Lights {
         Self {
             ambient: daylight(world.hour) * (1.0 - scene.outside.rain.clamp(0.0, 1.0) / 3.0),
             points,
+            ghost_scale: GHOST_SCALE * size,
         }
     }
 
@@ -586,6 +593,25 @@ mod tests {
 
     fn grid() -> Grid {
         Style::Ascii.grid(100, 30)
+    }
+
+    #[test]
+    fn hit_testing_uses_the_same_body_scale_as_the_billboard() {
+        let view = Camera::default().view(grid());
+        let mut world = World::new(1, 0.0);
+        world.birthday = Some(world.date);
+        let ghost = world.ghost.position;
+        let center = view.project(ghost).unwrap();
+        let edge = view
+            .project(ghost + view.right * GHOST_SCALE * 0.52)
+            .unwrap();
+        assert!(view.touches_ghost(center, ghost, world.size()));
+        assert!(!view.touches_ghost(edge, ghost, world.size()));
+        assert!(view.touches_ghost(edge, ghost, 1.0));
+        let (_, local) = view
+            .billboard(view.ray(edge), ghost, GHOST_SCALE * world.size())
+            .unwrap();
+        assert!((local.x - 0.52 / world.size()).abs() < 1e-4);
     }
 
     #[test]
@@ -692,8 +718,8 @@ mod tests {
         let view = Camera::default().view(grid());
         let ghost = Vec3::new(0.4, 1.1, 0.2);
         let screen = view.project(ghost).unwrap();
-        assert!(view.touches_ghost(screen, ghost));
-        assert!(!view.touches_ghost(screen + Vec2::new(0.6, 0.0), ghost));
+        assert!(view.touches_ghost(screen, ghost, 1.0));
+        assert!(!view.touches_ghost(screen + Vec2::new(0.6, 0.0), ghost, 1.0));
     }
 
     #[test]

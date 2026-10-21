@@ -1,4 +1,6 @@
-use crate::world::{Activity, Heard, Mood, Occasion, Question, Sky, Tone, Understanding, World};
+use crate::world::{
+    Activity, Heard, Mood, Occasion, Question, Skill, Sky, Stage, Tone, Understanding, World,
+};
 
 // Thoughts the ghost has on its own while it has no System Two to think
 // with: a few words that fit the moment, so a ghost without keys still has
@@ -8,7 +10,7 @@ use crate::world::{Activity, Heard, Mood, Occasion, Question, Sky, Tone, Underst
 /// What crosses its mind as it sets out to do `activity`.
 pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
     let present = world.viewer_present();
-    match activity {
+    let mut lines = match activity {
         Activity::Float => Vec::new(),
         Activity::Explore => vec![
             "I wonder what's in that corner.",
@@ -93,6 +95,35 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             }
             Sky::Clear => vec!["I like watching the clouds.", "The hills look soft today."],
         },
+    };
+    if let Some(skill) = Skill::for_activity(activity)
+        && world.life.skills.practice(skill) > 0.0
+    {
+        if world.life.skills.level(skill) >= 0.4 {
+            lines.push("I'm getting better at this!");
+        } else {
+            lines.push("A little more practice.");
+        }
+        if skill == Skill::Stacking || skill == Skill::Writing {
+            lines.push("Steady… steady…");
+        }
+    }
+    babble(world, &mut lines, false);
+    lines
+}
+
+// The caller samples these lines with the world's random source. About
+// one in three choices is a babble, with the usual words still alongside.
+fn babble<Line: From<&'static str>>(world: &World, lines: &mut Vec<Line>, korean: bool) {
+    if world.stage() == Stage::Newborn {
+        let sounds = if korean {
+            ["응!", "오!", "음?"]
+        } else {
+            ["Ba!", "Ooh!", "Mm?"]
+        };
+        for index in 0..lines.len().div_ceil(2) {
+            lines.push(sounds[index % sounds.len()].into());
+        }
     }
 }
 
@@ -248,6 +279,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             "The glass is cool.",
         ]);
     }
+    babble(world, &mut lines, false);
     lines
 }
 
@@ -275,6 +307,18 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    for skill in Skill::ALL {
+        if world.life.skills.practice(skill) > 0.0 && world.life.skills.level(skill) < 0.65 {
+            lines.push(match skill {
+                Skill::Stacking => "…my wobbly tower stands as tall as the stars…",
+                Skill::Catching => "…every little light turns back into my arms…",
+                Skill::Fetching => "…bringing the moon back like a ball…",
+                Skill::Games => "…the noughts show me where to draw next…",
+                Skill::Writing => "…my shaky letters learn to fly straight…",
+                Skill::Dancing => "…one twirl becomes a sky full of loops…",
+            });
+        }
+    }
     match world.occasion() {
         Some(Occasion::Halloween) => lines.extend([
             "…a pumpkin so big I can hide inside its grin…",
@@ -377,6 +421,14 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
 /// few words about what it made of their message. It names the word it
 /// understood or wonders about, so the viewer can see it learning.
 pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
+    let mut lines = reply_in_words(world, heard, guessed);
+    if !matches!(heard.understanding, Understanding::Asked { .. }) && heard.learned_name.is_none() {
+        babble(world, &mut lines, heard.korean);
+    }
+    lines
+}
+
+fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<String> {
     let lines = |items: &[&str]| items.iter().map(|line| (*line).to_owned()).collect();
     if let Some(name) = &heard.learned_name {
         return if heard.korean {
@@ -871,6 +923,38 @@ fn capitalized(text: &str) -> String {
 mod tests {
     use super::*;
     use crate::world::EventKind;
+
+    #[test]
+    fn newborns_babble_beside_their_usual_words_including_korean() {
+        let mut world = World::new(1, 12.0);
+        world.birthday = Some(world.date);
+        assert!(setting_out(&world, Activity::Dance).contains(&"Ba!"));
+        assert!(idle(&world).contains(&"Ba!"));
+        let heard = world.hear("hello");
+        let replies = reply(&world, &heard, None);
+        assert!(replies.contains(&"Ba!".to_owned()));
+        assert!(
+            replies
+                .iter()
+                .any(|line| line.contains("Hello") || line.contains("Hi"))
+        );
+        let heard = world.hear("안녕");
+        let replies = reply(&world, &heard, None);
+        assert!(replies.contains(&"응!".to_owned()));
+        assert!(!replies.contains(&"Ba!".to_owned()));
+    }
+
+    #[test]
+    fn practice_brings_setting_out_thoughts_and_learning_dreams() {
+        let mut world = World::new(1, 12.0);
+        world.life.skills.stacking = 1.0;
+        assert!(setting_out(&world, Activity::Build).contains(&"Steady… steady…"));
+        assert!(dreams(&world).contains(&"…my wobbly tower stands as tall as the stars…"));
+        world.life.skills.stacking = 25.0;
+        assert!(setting_out(&world, Activity::Build).contains(&"I'm getting better at this!"));
+        world.life.skills.stacking = 100.0;
+        assert!(!dreams(&world).contains(&"…my wobbly tower stands as tall as the stars…"));
+    }
 
     #[test]
     fn every_activity_but_floating_comes_with_a_thought() {

@@ -293,14 +293,16 @@ fn search(cells: &mut [Option<Mark>; 9], turn: Mark, depth: i32) -> i32 {
     best.unwrap_or(0)
 }
 
-pub fn mistake_chance(nature: Nature, energy: f32, bond: f32) -> f32 {
+pub fn mistake_chance(nature: Nature, energy: f32, bond: f32, level: f32) -> f32 {
     let gentle = if bond >= 0.55 {
         0.25 * nature.tender * bond
     } else {
         0.0
     };
-    (0.22 - 0.12 * nature.curious + 0.10 * nature.playful + 0.20 * (1.0 - energy) + gentle)
-        .clamp(0.05, 0.6)
+    let chance =
+        (0.22 - 0.12 * nature.curious + 0.10 * nature.playful + 0.20 * (1.0 - energy) + gentle)
+            .clamp(0.05, 0.6);
+    (chance - 0.1 * level).clamp(0.05, 0.6)
 }
 
 impl World {
@@ -435,6 +437,7 @@ impl World {
                                     self.life.nature.unwrap_or_default(),
                                     self.ghost.needs.energy,
                                     self.life.bond,
+                                    self.life.skills.level(super::Skill::Games),
                                 ) {
                             &other
                         } else {
@@ -515,6 +518,29 @@ mod tests {
     }
 
     #[test]
+    fn practice_reduces_mistakes_while_preserving_gentleness_and_the_limits() {
+        let nature = Nature::default();
+        let beginner = mistake_chance(nature, 1.0, 0.0, 0.0);
+        let practiced = mistake_chance(nature, 1.0, 0.0, 1.0);
+        assert!((beginner - practiced - 0.1).abs() < 1e-6);
+        assert!(mistake_chance(nature, 1.0, 1.0, 1.0) > practiced);
+        let gentle = Nature {
+            curious: 0.0,
+            playful: 1.0,
+            tender: 1.0,
+            ..nature
+        };
+        assert_eq!(mistake_chance(gentle, 0.0, 1.0, 1.0), 0.5);
+        for level in [0.0, 0.5, 1.0] {
+            for energy in [0.0, 0.5, 1.0] {
+                for bond in [0.0, 0.55, 1.0] {
+                    assert!((0.05..=0.6).contains(&mistake_chance(nature, energy, bond, level)));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn every_line_has_a_winner_and_empty_or_incomplete_lines_do_not() {
         assert_eq!(Game::winner(&[None; 9]), None);
         for mark in [Mark::Cross, Mark::Nought] {
@@ -573,7 +599,7 @@ mod tests {
     #[test]
     fn mistakes_follow_curiosity_playfulness_tiredness_and_a_close_tender_bond() {
         let nature = Nature::default();
-        let usual = mistake_chance(nature, 1.0, 0.0);
+        let usual = mistake_chance(nature, 1.0, 0.0, 0.0);
         assert!((usual - 0.21).abs() < 1e-5);
         assert!(
             mistake_chance(
@@ -582,6 +608,7 @@ mod tests {
                     ..nature
                 },
                 1.0,
+                0.0,
                 0.0
             ) < usual
         );
@@ -592,17 +619,18 @@ mod tests {
                     ..nature
                 },
                 1.0,
+                0.0,
                 0.0
             ) > usual
         );
-        assert!(mistake_chance(nature, 0.0, 0.0) > usual);
-        assert_eq!(mistake_chance(nature, 1.0, 0.54), usual);
-        assert!(mistake_chance(nature, 1.0, 0.55) > usual);
+        assert!(mistake_chance(nature, 0.0, 0.0, 0.0) > usual);
+        assert_eq!(mistake_chance(nature, 1.0, 0.54, 0.0), usual);
+        assert!(mistake_chance(nature, 1.0, 0.55, 0.0) > usual);
         let independent = Nature {
             tender: 0.0,
             ..nature
         };
-        assert_eq!(mistake_chance(independent, 1.0, 1.0), usual);
+        assert_eq!(mistake_chance(independent, 1.0, 1.0, 0.0), usual);
         for curious in [0.0, 0.5, 1.0] {
             for playful in [0.0, 0.5, 1.0] {
                 for tender in [0.0, 0.5, 1.0] {
@@ -617,6 +645,7 @@ mod tests {
                                 },
                                 energy,
                                 bond,
+                                0.0,
                             );
                             assert!((0.05..=0.6).contains(&chance));
                         }
@@ -820,7 +849,12 @@ mod tests {
         };
         // A long word centered off the board still writes across it.
         let word = Doodle {
-            picture: Picture::Word(Writing::new("GOODNESS".to_owned(), false)),
+            picture: Picture::Word(Writing::new(
+                "GOODNESS".to_owned(),
+                false,
+                1.0,
+                &mut super::super::Random::new(1),
+            )),
             center: Vec2::new(-0.5, 1.25),
             size: 1.0,
             started: 0.0,

@@ -273,11 +273,11 @@ pub struct Writing {
 }
 
 impl Writing {
-    pub fn new(text: String, mirrored: bool) -> Self {
+    pub fn new(text: String, mirrored: bool, level: f32, random: &mut super::Random) -> Self {
         let characters = text.chars().count();
         let width = (characters as f32 * 0.8 - 0.2).max(0.6);
         let scale = 0.2_f32.min(1.6 / width);
-        let strokes = text
+        let mut strokes: Vec<Vec<Vec2>> = text
             .chars()
             .enumerate()
             .flat_map(|(index, character)| {
@@ -295,6 +295,12 @@ impl Writing {
                 })
             })
             .collect();
+        if level < 1.0 {
+            for point in strokes.iter_mut().flatten() {
+                let noise = Vec2::new(random.range(-1.0, 1.0), random.range(-1.0, 1.0));
+                *point += writing_wobble(level, noise) * scale;
+            }
+        }
         Self {
             text,
             mirrored,
@@ -302,6 +308,10 @@ impl Writing {
             draw_time: (characters as f64 * 0.7).max(Doodle::DRAW_TIME),
         }
     }
+}
+
+fn writing_wobble(level: f32, noise: Vec2) -> Vec2 {
+    noise.clamp_length_max(1.0) * (0.04 * (1.0 - level))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -433,6 +443,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn writing_wobble_is_bounded_and_vanishes_with_practice() {
+        for noise in [Vec2::ZERO, Vec2::X, Vec2::Y, Vec2::ONE, -Vec2::ONE] {
+            assert_eq!(writing_wobble(1.0, noise), Vec2::ZERO);
+            assert!(writing_wobble(0.0, noise).length() <= 0.040001);
+            assert!(writing_wobble(0.5, noise).length() <= 0.020001);
+        }
+        let mut first = super::super::Random::new(7);
+        let mut second = super::super::Random::new(7);
+        let clumsy = Writing::new("HELLO".to_owned(), false, 0.0, &mut first);
+        assert_eq!(
+            clumsy,
+            Writing::new("HELLO".to_owned(), false, 0.0, &mut second)
+        );
+        let steady = Writing::new("HELLO".to_owned(), false, 1.0, &mut second);
+        assert_ne!(clumsy, steady);
+        for (shaky, straight) in clumsy
+            .path
+            .strokes
+            .iter()
+            .flatten()
+            .zip(steady.path.strokes.iter().flatten())
+        {
+            assert!(shaky.distance(*straight) <= 0.008001);
+        }
+    }
+
+    #[test]
     fn every_sketch_measures_its_path_and_keeps_it_within_its_own_space() {
         for sketch in Sketch::ALL {
             let path = sketch.path();
@@ -510,8 +547,18 @@ mod tests {
     #[test]
     fn words_fit_the_glass_and_mirroring_reflects_every_stroke() {
         for text in ["HI", "MINA♥", "2027", "ABCDEFGHIJKLMNOP"] {
-            let forward = Writing::new(text.to_owned(), false);
-            let mirrored = Writing::new(text.to_owned(), true);
+            let forward = Writing::new(
+                text.to_owned(),
+                false,
+                1.0,
+                &mut super::super::Random::new(1),
+            );
+            let mirrored = Writing::new(
+                text.to_owned(),
+                true,
+                1.0,
+                &mut super::super::Random::new(1),
+            );
             assert!(forward.path.extent.x * 2.0 <= 1.6 + 1e-5);
             assert!(forward.path.extent.y * 2.0 <= 0.2 + 1e-5);
             assert_eq!(forward.path.strokes.len(), mirrored.path.strokes.len());
@@ -531,7 +578,12 @@ mod tests {
 
     #[test]
     fn a_words_pen_walks_each_segment_in_order_without_drawing_the_lifts() {
-        let picture = Picture::Word(Writing::new("HI!?".to_owned(), false));
+        let picture = Picture::Word(Writing::new(
+            "HI!?".to_owned(),
+            false,
+            1.0,
+            &mut super::super::Random::new(1),
+        ));
         let Picture::Word(writing) = &picture else {
             unreachable!()
         };
@@ -550,7 +602,12 @@ mod tests {
 
     #[test]
     fn word_distances_match_sampling_only_the_strokes_drawn_so_far() {
-        let picture = Picture::Word(Writing::new("BOO!".to_owned(), true));
+        let picture = Picture::Word(Writing::new(
+            "BOO!".to_owned(),
+            true,
+            1.0,
+            &mut super::super::Random::new(1),
+        ));
         let Picture::Word(writing) = &picture else {
             unreachable!()
         };
@@ -585,8 +642,18 @@ mod tests {
 
     #[test]
     fn long_words_take_longer_to_draw_and_keep_their_fog_afterwards() {
-        let short = Picture::Word(Writing::new("HI".to_owned(), true));
-        let long = Picture::Word(Writing::new("ABCDEFGH".to_owned(), false));
+        let short = Picture::Word(Writing::new(
+            "HI".to_owned(),
+            true,
+            1.0,
+            &mut super::super::Random::new(1),
+        ));
+        let long = Picture::Word(Writing::new(
+            "ABCDEFGH".to_owned(),
+            false,
+            1.0,
+            &mut super::super::Random::new(1),
+        ));
         assert_eq!(short.draw_time(), Doodle::DRAW_TIME);
         assert!((long.draw_time() - 5.6).abs() < 1e-5);
         let doodle = Doodle {

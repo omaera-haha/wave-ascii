@@ -170,8 +170,8 @@ impl Nook {
     pub const HEIGHT: f32 = 0.14;
 
     /// Where the ghost floats while it sleeps.
-    pub fn bed(&self) -> Vec3 {
-        self.position + Vec3::Y * (Self::HEIGHT + 0.38)
+    pub fn bed(&self, size: f32) -> Vec3 {
+        self.position + Vec3::Y * (Self::HEIGHT + 0.38 * size)
     }
 }
 

@@ -3,6 +3,7 @@ pub mod blocks;
 pub mod calendar;
 mod doodle;
 pub mod game;
+pub mod growth;
 mod letters;
 mod life;
 pub mod meteor;
@@ -27,6 +28,7 @@ pub use blocks::Block;
 pub use calendar::Season;
 pub use doodle::{Doodle, Picture, Sketch, Writing};
 pub use game::{Game, Mark, Outcome};
+pub use growth::{Skill, Skills, Stage};
 pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
@@ -554,7 +556,13 @@ impl World {
     /// a time.
     pub fn step(&mut self, seconds: f32) {
         self.advance_routine();
-        self.life.begin_day(&self.date.to_string());
+        let day = self.date.to_string();
+        if self.life.day != day {
+            self.life.begin_day(&day);
+        }
+        if self.calendar_at != Some(self.date) {
+            self.mark_growth();
+        }
         self.celebrate();
         let mut remaining = seconds.max(0.0);
         while remaining > 0.0 {
@@ -879,14 +887,17 @@ impl World {
             Activity::Wait => self.random.range(60.0, 120.0),
             Activity::Window => self.random.range(10.0, 18.0),
             Activity::Fetch => 6.0,
-            Activity::Dance => self.random.range(5.0, 7.0),
+            Activity::Dance => growth::dance_length(
+                self.random.range(5.0, 7.0),
+                self.life.skills.level(Skill::Dancing),
+            ),
             Activity::Hide => self.random.range(25.0, 45.0),
             Activity::Pounce => 25.0,
             _ => 0.0,
         };
         let target = match activity {
             Activity::Explore => self.random_spot(),
-            Activity::Rest => self.nook.bed(),
+            Activity::Rest => self.nook.bed(self.size()),
             Activity::Tend => self.plant.top() + Vec3::new(0.0, 0.25, 0.3),
             Activity::Lamp => self.lamp.bulb() + Vec3::new(0.35, -0.15, 0.25),
             Activity::Visit => self.glass_spot(),
@@ -943,8 +954,13 @@ impl World {
         true
     }
 
-    fn writing(&self, text: String) -> Picture {
-        Picture::Word(Writing::new(text, self.life.total.watched_writings < 3))
+    fn writing(&mut self, text: String) -> Picture {
+        Picture::Word(Writing::new(
+            text,
+            self.life.total.watched_writings < 3,
+            self.life.skills.level(Skill::Writing),
+            &mut self.random,
+        ))
     }
 
     fn choose_picture(&mut self) -> Picture {
@@ -1717,7 +1733,29 @@ impl World {
                         let mote = self.motes[index].position;
                         self.ghost.plan.target = mote;
                         look = Some(mote);
-                        if position.distance(mote) < 0.22 {
+                        if self.ghost.plan.count == 1 {
+                            if position.distance(self.ghost.plan.anchor) < ARRIVED
+                                || self.ghost.plan.stayed(time) > 1.5
+                            {
+                                self.ghost.plan.count = 2;
+                            } else {
+                                self.ghost.plan.target = self.ghost.plan.anchor;
+                            }
+                        } else if position.distance(mote) < 0.22 {
+                            if self.ghost.plan.count == 0
+                                && self.random.unit()
+                                    < growth::miss_chance(self.life.skills.level(Skill::Catching))
+                            {
+                                self.ghost.plan.count = 1;
+                                self.ghost.plan.arrived = Some(time);
+                                let direction = self.ghost.velocity.normalize_or(Vec3::X);
+                                self.ghost.plan.anchor = (mote + direction * 0.6).clamp(
+                                    ROOM_MIN + Vec3::splat(0.5),
+                                    ROOM_MAX - Vec3::splat(0.5),
+                                );
+                                self.ghost.plan.target = self.ghost.plan.anchor;
+                                return;
+                            }
                             self.motes.remove(index);
                             self.ghost.needs.change(0.25, 0.1, 0.0);
                             self.record(EventKind::AteMote);
@@ -1867,13 +1905,7 @@ impl World {
             }
             Activity::Dance => {
                 let progress = self.ghost.plan.elapsed(time) / self.ghost.plan.length;
-                let offset = if progress < 0.8 {
-                    let phase = progress / 0.8 * std::f32::consts::TAU * 2.0;
-                    Vec3::new(phase.sin(), -phase.cos(), 0.0) * 0.3
-                } else {
-                    let bounce = ((progress - 0.8) / 0.2).min(1.0);
-                    Vec3::Y * (-0.3 * (1.0 - bounce) + 0.15 * (bounce * std::f32::consts::PI).sin())
-                };
+                let offset = growth::dance_offset(progress, self.life.skills.level(Skill::Dancing));
                 self.ghost.plan.target = self.ghost.plan.anchor + offset;
                 look = Some(if self.viewer_present() {
                     self.glass_spot() + Vec3::Z * 3.0
@@ -1963,6 +1995,7 @@ impl World {
                 self.tower_height() as f32 * blocks::EDGE + 0.36,
             )
         });
+        let size = self.size();
         let ghost = &mut self.ghost;
         let mut target = ghost.plan.target;
         if ghost.plan.activity == Activity::Float {
@@ -1974,7 +2007,10 @@ impl World {
             );
         }
         let speed = match ghost.plan.activity {
-            Activity::Chase => 1.3,
+            Activity::Chase => 1.3 * growth::chase_speed(self.life.skills.level(Skill::Catching)),
+            Activity::Fetch if self.ball.held => {
+                0.8 * growth::carrying_speed(self.life.skills.level(Skill::Fetching))
+            }
             Activity::Float => 0.35,
             Activity::Wait => 0.3,
             Activity::Rest => 0.5,
@@ -2000,7 +2036,7 @@ impl World {
         // The hem hangs about 0.36 below the ghost's center.
         let reaching =
             ghost.plan.activity == Activity::Window && !ghost.plan.done && ghost.plan.count == 1;
-        let mut low = ROOM_MIN + Vec3::new(0.3, 0.45, 0.3);
+        let mut low = ROOM_MIN + Vec3::new(0.3, 0.45 * size, 0.3);
         if reaching {
             low.z = ROOM_MIN.z - 0.04;
         }
@@ -2051,7 +2087,7 @@ impl World {
         let steer = steer.clamp_length_max(3.0);
         ghost.velocity += steer * seconds;
         ghost.position += ghost.velocity * seconds;
-        let mut minimum = ROOM_MIN + Vec3::new(0.12, 0.38, 0.12);
+        let mut minimum = ROOM_MIN + Vec3::new(0.12, 0.38 * size, 0.12);
         if reaching {
             minimum.z = ROOM_MIN.z - 0.04;
         }
@@ -2063,11 +2099,14 @@ impl World {
         let night = if self.is_night() { 1.4 } else { 1.0 };
         let nature = self.life.nature.unwrap_or_default();
         let tiring = 0.85 + 0.3 * nature.sleepy;
+        let newborn = self.stage() == Stage::Newborn;
         let ghost = &mut self.ghost;
         if ghost.asleep > 0.5 {
-            ghost
-                .needs
-                .change(0.012 * seconds / tiring, 0.0, 0.03 * self.petting * seconds);
+            ghost.needs.change(
+                0.012 * seconds / tiring * if newborn { 1.2 } else { 1.0 },
+                0.0,
+                0.03 * self.petting * seconds,
+            );
             return;
         }
         let effort = (ghost.velocity.length() / 1.3).min(1.0);
@@ -2089,7 +2128,11 @@ impl World {
         company += 0.03 * self.petting;
         fun += 0.01 * self.petting;
         ghost.needs.change(
-            -(0.0012 + 0.0025 * effort) * night * tiring * seconds,
+            -(0.0012 + 0.0025 * effort)
+                * night
+                * tiring
+                * if newborn { 1.3 } else { 1.0 }
+                * seconds,
             fun * seconds,
             company * seconds,
         );
@@ -2202,6 +2245,89 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_activity_finishes_on_its_own_for_a_newborn_too() {
+        for activity in Activity::ALL {
+            let mut world = World::new(9, 12.0);
+            world.birthday = Some(world.date);
+            world.drop_mote(Vec3::new(1.0, 1.0, 0.0));
+            world.ghost.needs.energy = 0.5;
+            world.begin(activity);
+            let duration = world.ghost.plan.length.max(60.0) + 10.0;
+            run(&mut world, duration);
+            assert!(
+                world.needs_decision(),
+                "{activity:?} never finished for a newborn"
+            );
+        }
+    }
+
+    #[test]
+    fn a_newborn_tires_faster_and_recovers_faster_in_sleep() {
+        for asleep in [0.0, 1.0] {
+            let mut grown = World::new(1, 12.0);
+            grown.ghost.needs.energy = 0.5;
+            grown.ghost.asleep = asleep;
+            let mut newborn = grown.clone();
+            newborn.birthday = Some(newborn.date);
+            grown.update_needs(1.0);
+            newborn.update_needs(1.0);
+            let ratio = (newborn.ghost.needs.energy - 0.5) / (grown.ghost.needs.energy - 0.5);
+            assert!((ratio - if asleep > 0.5 { 1.2 } else { 1.3 }).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn a_missed_first_pass_circles_back_and_still_catches_the_mote() {
+        let mut missed = false;
+        for seed in 0..40 {
+            let mut world = World::new(seed, 12.0);
+            world.drop_mote(world.ghost.position);
+            world.begin(Activity::Chase);
+            world.carry_out(0.05);
+            if world.ghost.plan.count == 1 {
+                let position = world.ghost.position;
+                world.step(0.5);
+                assert!(world.ghost.position.distance(position) > 0.01);
+                assert_eq!(world.life.total.motes, 0);
+                world.step(20.0);
+                assert_eq!(world.life.total.motes, 1);
+                assert!(world.needs_decision());
+                missed = true;
+                break;
+            }
+        }
+        assert!(missed);
+    }
+
+    #[test]
+    fn growing_ghosts_and_their_practice_repeat_for_a_seed() {
+        let mut first = World::new(31, 12.0);
+        first.birthday = Some(first.date);
+        let mut second = first.clone();
+        for activity in [
+            Activity::Build,
+            Activity::Chase,
+            Activity::Dance,
+            Activity::Doodle,
+        ] {
+            for world in [&mut first, &mut second] {
+                world.ghost.needs.energy = 1.0;
+                world.drop_mote(Vec3::new(0.0, 1.2, 0.0));
+                world.begin(activity);
+                if activity == Activity::Doodle {
+                    world.write("HI");
+                }
+                world.step(50.0);
+            }
+            assert_eq!(first.ghost.position, second.ghost.position);
+            assert_eq!(first.ghost.plan, second.ghost.plan);
+            assert_eq!(first.life, second.life);
+            assert_eq!(first.doodles, second.doodles);
+            assert_eq!(first.events, second.events);
+        }
+    }
 
     #[test]
     fn seeded_natures_are_repeatable_and_a_begun_life_keeps_its_nature() {
@@ -2342,7 +2468,7 @@ mod tests {
         for seed in 0..150 {
             let mut world = before_thunder(seed);
             world.begin(Activity::Rest);
-            world.ghost.position = world.nook.bed();
+            world.ghost.position = world.nook.bed(world.size());
             world.ghost.plan.arrived = Some(world.time);
             world.ghost.asleep = 1.0;
             world.ghost.needs.energy = 0.5;

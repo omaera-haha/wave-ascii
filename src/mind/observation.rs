@@ -2,7 +2,7 @@ use glam::Vec3;
 use serde_json::{Value, json};
 
 use crate::world::{
-    Activity, Mark, Perch, Plant, Seen, Sky, Thing, World, calendar::moon_words, flat,
+    Activity, Mark, Perch, Plant, Seen, Skill, Sky, Thing, World, calendar::moon_words, flat,
 };
 
 /// What the ghost knows of its situation, in words. Both minds read it:
@@ -24,6 +24,10 @@ pub fn observe(world: &World) -> Value {
         "ghost": {
             "name": ghost.name,
             "nature": world.life.nature.unwrap_or_default().words(),
+            "stage": world.stage().words(),
+            "practice": Skill::for_activity(plan.activity)
+                .map(|skill| format!("you are {}", world.life.skills.description(skill)))
+                .unwrap_or_else(|| "nothing to practice just now".to_owned()),
             "energy": ghost.needs.energy_words(),
             "fun": ghost.needs.fun_words(),
             "company": ghost.needs.company_words(),
@@ -57,6 +61,7 @@ pub fn observe(world: &World) -> Value {
             words
         }).unwrap_or_else(|| "not known yet".to_owned()),
         "recent_events": recent(world, 8),
+        "skills": Skill::ALL.map(|skill| world.life.skills.description(skill)),
     })
 }
 
@@ -400,6 +405,29 @@ mod tests {
     use super::*;
     use crate::world::EventKind;
     use glam::Vec3;
+
+    #[test]
+    fn stage_and_relevant_practice_reach_both_minds_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.birthday = Some(world.date);
+        world.life.skills.stacking = 20.0;
+        world.begin(Activity::Build);
+        let observation = observe(&world);
+        assert_eq!(observation["ghost"]["stage"], "a newborn wisp");
+        assert_eq!(
+            observation["ghost"]["practice"],
+            "you are getting the hang of stacking blocks"
+        );
+        for description in observation["skills"].as_array().unwrap() {
+            assert!(
+                !description
+                    .as_str()
+                    .unwrap()
+                    .chars()
+                    .any(|letter| letter.is_ascii_digit())
+            );
+        }
+    }
 
     #[test]
     fn a_game_describes_turns_and_threats_without_digits() {
@@ -766,7 +794,7 @@ mod tests {
             "{text}"
         );
         world.hour = 14.0;
-        world.ghost.position = world.nook.bed();
+        world.ghost.position = world.nook.bed(world.size());
         world.ghost.needs.energy = 0.4;
         world.begin(Activity::Rest);
         world.step(4.0);
