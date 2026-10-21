@@ -2,7 +2,10 @@
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
-use super::{Life, Nature, Stage, life::Tally};
+use super::{
+    Life, Nature, Stage,
+    life::{Entry, Tally},
+};
 
 /// Traits always follow Nature's order: playful, curious, shy, sleepy, tender.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -168,12 +171,10 @@ impl Upbringing {
                 0.0
             }
         });
-        self.day = self.day.take().filter(|day| {
-            day.parse::<Date>()
-                .ok()
-                .zip(today.parse::<Date>().ok())
-                .is_some_and(|(day, today)| day < today)
-        });
+        // A marker ahead of today (after the clock went back) still holds:
+        // dropping it would let a day already lived shape the ghost twice.
+        let _ = today;
+        self.day = self.day.take().filter(|day| day.parse::<Date>().is_ok());
     }
 
     fn strongest(&self) -> Option<(usize, usize)> {
@@ -240,7 +241,7 @@ impl Life {
         if last.is_none_or(|last| finished > last) {
             self.upbringing
                 .apply(finished, birthday, influences(&self.today));
-            self.mark_temperament_changes();
+            self.mark_temperament_changes(finished, true);
         }
         // Away stories invent no practice or care. Only the latest week of
         // wholly skipped days contributes absence, once per local day.
@@ -256,12 +257,15 @@ impl Life {
             {
                 self.upbringing
                     .apply(day, birthday, influences(&Tally::default()));
-                self.mark_temperament_changes();
+                self.mark_temperament_changes(day, false);
             }
         }
     }
 
-    fn mark_temperament_changes(&mut self) {
+    // Marks a trait that has grown far enough, dated the day it grew. Only
+    // a day with its own tally (`lived`) keeps the change for its diary; a
+    // day skipped while the app was closed has no entry of its own here.
+    fn mark_temperament_changes(&mut self, day: Date, lived: bool) {
         for (index, pair) in MILESTONES.iter().enumerate() {
             let drift = self.upbringing.drift[index];
             if drift.abs() >= 0.1
@@ -271,8 +275,12 @@ impl Life {
                     .any(|entry| pair.contains(&entry.text.as_str()))
             {
                 let text = pair[usize::from(drift > 0.0)].to_owned();
-                if let Some(text) = self.reach(text) {
-                    self.total.temperament_changes.push(text.clone());
+                self.milestones.push(Entry {
+                    day: day.to_string(),
+                    text: text.clone(),
+                });
+                self.total.temperament_changes.push(text.clone());
+                if lived {
                     self.today.temperament_changes.push(text);
                 }
             }
@@ -526,6 +534,35 @@ mod tests {
     }
 
     #[test]
+    fn a_change_during_skipped_days_is_dated_the_day_it_came() {
+        let mut life = Life {
+            day: "2026-06-21".to_owned(),
+            upbringing: Upbringing {
+                drift: [0.0, 0.0, 0.0995, 0.0, 0.0],
+                ..Upbringing::default()
+            },
+            // The viewer came by on the saved day, so only the days skipped
+            // after it count as days alone.
+            today: Tally {
+                pets: 1,
+                ..Tally::default()
+            },
+            ..Life::default()
+        };
+        life.begin_day_with_birth("2026-07-22", Some(Date::constant(2026, 6, 1)));
+        let change = life
+            .milestones
+            .iter()
+            .find(|entry| MILESTONES[2].contains(&entry.text.as_str()))
+            .unwrap();
+        assert!(change.day.as_str() > "2026-06-21", "{}", change.day);
+        assert!(change.day.as_str() < "2026-07-22", "{}", change.day);
+        // The skipped day had no diary of its own here, so the finished day
+        // doesn't claim the change.
+        assert!(life.diary.iter().all(|entry| !entry.text.contains("shy")));
+    }
+
+    #[test]
     fn saved_days_are_not_reapplied_and_old_saves_start_without_drift() {
         let old: Life = serde_json::from_str("{}").unwrap();
         assert_eq!(old.upbringing, Upbringing::default());
@@ -567,10 +604,15 @@ mod tests {
         assert_eq!(life.upbringing.day, None);
         assert_eq!(life.temperament().playful, 1.0);
         assert_eq!(life.temperament().curious, 0.0);
-        for day in ["2026-06-22", "2027-01-01", "2026-02-30"] {
+        life.upbringing.day = Some("2026-02-30".to_owned());
+        life = life.sanitized();
+        assert_eq!(life.upbringing.day, None);
+        // A marker at or past today, after the clock went back, holds, so
+        // the day it marks is never lived through twice.
+        for day in ["2026-06-22", "2027-01-01"] {
             life.upbringing.day = Some(day.to_owned());
             life = life.sanitized();
-            assert_eq!(life.upbringing.day, None);
+            assert_eq!(life.upbringing.day.as_deref(), Some(day));
         }
     }
 

@@ -400,7 +400,11 @@ impl World {
             let tone = vocabulary::read(text, &self.ghost.name).tone;
             let negative = feeling.is_some_and(Feeling::negative);
             // "Not any better" carries a praise word, but it is no recovery.
-            if feeling.is_none() && denies(text) {
+            // "I won't be here this weekend" is a promise, not an answer.
+            if feeling.is_none()
+                && denies(text)
+                && super::promise::promised(text, self.date, self.hour).is_none()
+            {
                 return Some(self.receive_feeling(text, earlier, korean));
             }
             if !negative
@@ -1376,6 +1380,21 @@ mod tests {
         world.follow_up_feeling();
         assert!(world.feeling_follow_up.is_some());
         world
+    }
+
+    #[test]
+    fn a_promise_while_the_ghost_asks_after_the_viewer_is_still_a_promise() {
+        for text in ["I will not be here this weekend", "주말에 못 와"] {
+            let mut world = following_up();
+            let heard = world.hear(text);
+            assert!(
+                matches!(heard.understanding, Understanding::Promised(_)),
+                "{text}: {:?}",
+                heard.understanding
+            );
+            assert!(world.life.promise.is_some(), "{text}");
+            assert_eq!(world.life.today.feelings_heard, 0, "{text}");
+        }
     }
 
     #[test]

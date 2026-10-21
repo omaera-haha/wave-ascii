@@ -1219,6 +1219,10 @@ pub struct Life {
     /// leave a gift, and whether one is still to come that day.
     #[serde(default)]
     pub gift_decision: Option<(String, bool)>,
+    /// The day a gift was last left, as saves briefly kept it before
+    /// `gift_decision`; read once and folded into it.
+    #[serde(default, skip_serializing)]
+    pub gift_day: Option<String>,
     /// The local evening the friend last decided whether to come, and
     /// whether it would.
     #[serde(default)]
@@ -1959,6 +1963,11 @@ impl Life {
         }
         if !self.alone.is_finite() || self.alone < 0.0 {
             self.alone = 0.0;
+        }
+        if let Some(day) = self.gift_day.take()
+            && self.gift_decision.is_none()
+        {
+            self.gift_decision = Some((day, false));
         }
         for decision in [&mut self.gift_decision, &mut self.friend_decision] {
             *decision = decision
@@ -2851,6 +2860,14 @@ mod tests {
             day.words(),
             "A quiet day. You were here for a few minutes. You poked me a lot."
         );
+    }
+
+    #[test]
+    fn a_save_from_before_gift_decisions_still_keeps_todays_gift_given() {
+        let life: Life = serde_json::from_str(r#"{"gift_day": "2026-10-21"}"#).unwrap();
+        let life = life.sanitized();
+        assert_eq!(life.gift_decision, Some(("2026-10-21".to_owned(), false)));
+        assert!(!serde_json::to_string(&life).unwrap().contains("gift_day"));
     }
 
     #[test]

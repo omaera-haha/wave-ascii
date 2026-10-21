@@ -89,8 +89,9 @@ impl World {
         }
     }
 
-    /// When rain or snow begins, a feeling that foretold it comes true.
-    pub(super) fn weather_came(&mut self) {
+    /// When rain or snow begins, a feeling that foretold it comes true;
+    /// rain felt coming that falls as snow proves nothing.
+    pub(super) fn weather_came(&mut self, snow: bool) {
         let Some(forecast) = self.forecast else {
             return;
         };
@@ -101,6 +102,9 @@ impl World {
             until: f64::INFINITY,
             ..forecast
         });
+        if forecast.snow != snow {
+            return;
+        }
         if self.ghost.asleep < 0.3 {
             self.think("I knew it!");
         }
@@ -180,7 +184,7 @@ mod tests {
         assert!(world.ghost.thought.is_none());
         world.time = world.weather.until;
         world.weather.sky = Sky::Rain;
-        world.weather_came();
+        world.weather_came(false);
         assert_eq!(world.sensed_weather(), None);
         assert_eq!(world.ghost.thought.as_ref().unwrap().text, "I knew it!");
         assert_eq!(world.life.today.forecasts, 1);
@@ -189,8 +193,20 @@ mod tests {
             "I felt the rain coming before it fell."
         );
         let before = world.life.today.forecasts;
-        world.weather_came();
+        world.weather_came(false);
         assert_eq!(world.life.today.forecasts, before);
+    }
+
+    #[test]
+    fn rain_felt_coming_that_falls_as_snow_proves_nothing() {
+        let mut world = clear_with_rain_due(60.0);
+        world.sense_weather();
+        assert_eq!(world.sensed_weather(), Some(false));
+        world.time = world.weather.until;
+        world.weather_came(true);
+        assert_eq!(world.life.today.forecasts, 0);
+        assert_eq!(world.life.today.snow_forecasts, 0);
+        assert_eq!(world.sensed_weather(), None);
     }
 
     #[test]
@@ -208,7 +224,7 @@ mod tests {
         assert_eq!(world.sensed_weather(), None);
         // Rain that falls without a feeling proves nothing.
         let mut world = clear_with_rain_due(60.0);
-        world.weather_came();
+        world.weather_came(false);
         assert_eq!(world.life.today.forecasts, 0);
     }
 

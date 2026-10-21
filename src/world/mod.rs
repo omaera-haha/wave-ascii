@@ -1024,10 +1024,11 @@ impl World {
             if change == Change::SnowStopped {
                 self.ghost.saw_snow = false;
             }
-            let falling = matches!(
-                change,
-                Change::RainStarted | Change::StormStarted | Change::SnowStarted
-            );
+            let falling = match change {
+                Change::RainStarted | Change::StormStarted => Some(false),
+                Change::SnowStarted => Some(true),
+                _ => None,
+            };
             self.record(match change {
                 Change::RainStarted => EventKind::RainStarted,
                 Change::StormStarted => EventKind::StormStarted,
@@ -1038,8 +1039,8 @@ impl World {
                 Change::RainbowAppeared => EventKind::RainbowAppeared,
                 Change::RainbowFaded => EventKind::RainbowFaded,
             });
-            if falling {
-                self.weather_came();
+            if let Some(snow) = falling {
+                self.weather_came(snow);
             }
         }
         self.sense_weather();
