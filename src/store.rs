@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::mind::claude::{Cache, Effort};
-use crate::world::{Needs, Plant};
+use crate::world::{Life, Needs, Plant};
 
 const APP: &str = "wave-ascii";
 
@@ -174,6 +174,10 @@ pub struct Save {
     pub goal: Option<String>,
     pub memories: Vec<Memory>,
     pub conversation: Vec<Remark>,
+    /// Its bond with the viewer, what it has done, and its diary. Saves
+    /// from before there was a life start a fresh one.
+    #[serde(default)]
+    pub life: Life,
 }
 
 impl Save {
@@ -330,6 +334,25 @@ mod tests {
         save_json(&path, &2).unwrap();
         assert_eq!(load_json::<i32>(&path).unwrap(), Some(2));
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_save_from_before_the_ghost_had_a_life_still_loads() {
+        let directory = scratch("old-save");
+        let path = directory.join("ghost.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            &path,
+            r#"{"version": 1, "name": "Pip", "born": 0, "last_seen": 10,
+                "needs": {"energy": 0.5, "fun": 0.5, "company": 0.5},
+                "plant": {"position": [1.5, 0.0, -0.9], "growth": 0.3, "thirst": 0.2},
+                "lamp_on": true, "goal": null, "memories": [], "conversation": []}"#,
+        )
+        .unwrap();
+        let save = load_json::<Save>(&path).unwrap().unwrap();
+        assert_eq!(save.name, "Pip");
+        assert_eq!(save.life, Life::default());
         fs::remove_dir_all(directory).unwrap();
     }
 

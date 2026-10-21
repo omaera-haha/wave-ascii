@@ -1,7 +1,7 @@
 use crate::world::{Activity, World, flat};
 
-/// How much the ghost's needs and surroundings pull it toward each of the
-/// activities open to it, as chances that add up to 1. This is the mind it
+/// How much the ghost's needs, surroundings, and habits pull it toward each
+/// of the activities open to it, as chances that add up to 1. This is the mind it
 /// has without any model, and the weight it gives its own needs when a model
 /// does choose.
 pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
@@ -33,7 +33,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 _ => 0.04,
             },
             Activity::Visit => {
-                let present = if world.viewer_present() { 0.6 } else { 0.0 };
+                let present = if world.viewer_present() {
+                    0.6 + 0.8 * world.life.bond
+                } else {
+                    0.0
+                };
                 present + 1.3 * (1.0 - needs.company)
             }
             Activity::Window => {
@@ -43,6 +47,8 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + 2.5 * outside.rainbow(world.time)
             }
         })
+        .zip(options)
+        .map(|(weight, activity)| weight * world.life.habit(*activity))
         .collect();
     let total: f32 = weights.iter().sum::<f32>().max(f32::MIN_POSITIVE);
     options
@@ -69,6 +75,7 @@ pub fn blend(model: &[(Activity, f32)], own: &[(Activity, f32)]) -> Vec<(Activit
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::EventKind;
     use glam::Vec3;
 
     fn chance(weights: &[(Activity, f32)], activity: Activity) -> f32 {
@@ -108,6 +115,27 @@ mod tests {
             .max_by(|first, second| first.1.total_cmp(&second.1))
             .unwrap();
         assert_eq!(top.0, Activity::Tend);
+    }
+
+    #[test]
+    fn habits_tip_the_balance_toward_what_the_ghost_often_does() {
+        let mut world = World::new(1, 12.0);
+        let fresh = weigh(&world, &world.options());
+        for _ in 0..50 {
+            world.life.note(&EventKind::Began(Activity::Window));
+        }
+        let habitual = weigh(&world, &world.options());
+        assert!(chance(&habitual, Activity::Window) > chance(&fresh, Activity::Window) * 1.15);
+    }
+
+    #[test]
+    fn a_close_bond_draws_the_ghost_to_the_viewer() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        let stranger = weigh(&world, &world.options());
+        world.life.bond = 0.9;
+        let friend = weigh(&world, &world.options());
+        assert!(chance(&friend, Activity::Visit) > chance(&stranger, Activity::Visit));
     }
 
     #[test]

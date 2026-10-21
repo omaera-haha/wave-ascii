@@ -3,10 +3,12 @@ use serde_json::{Value, json};
 
 use super::claude::{Block, Cache, Effort, Message, Request, Role};
 use crate::store::{Memory, Remark, Speaker};
-use crate::world::{Mood, Thing};
+use crate::world::{Entry, Mood, Thing};
 
-/// At most this many memories and lines of conversation go into a request.
+/// At most this many memories, diary days, and lines of conversation go into
+/// a request.
 const MEMORIES_SENT: usize = 40;
+const DAYS_SENT: usize = 3;
 const REMARKS_SENT: usize = 16;
 
 /// What the ghost makes of its situation after thinking it over. Empty
@@ -39,6 +41,14 @@ it. The ghost cannot leave the box or do anything outside it.
 The observation's `sight` is what the ghost sees right now from where it faces; it knows of \
 everything else only from memory. A window in the back wall looks out on hills and the sky, \
 where it sometimes rains and, after rain by day, a rainbow shines.
+
+The observation's `bond_with_viewer` says how close the ghost has grown to the person, from \
+barely knowing them to devoted; it grows with time spent together. Let it color how the ghost \
+speaks: a little shy with someone it barely knows, warm and familiar with a friend. At the end \
+of each day the ghost writes a line in its diary; the last few days are with its memories.
+
+While it is fast asleep, its thought is a dream: a short, strange, gentle image woven from its \
+day. Asleep, it says nothing unless the person speaks to it, and then only a sleepy word or two.
 
 The ghost is gentle, curious, and a little playful. It speaks in short, plain sentences, at most \
 about twenty words, in the language the person last wrote in. It only speaks when spoken to or \
@@ -86,6 +96,7 @@ pub fn schema() -> Value {
 pub fn request(
     observation: &Value,
     memories: &[Memory],
+    diary: &[Entry],
     conversation: &[Remark],
     heard: Option<&str>,
     effort: Option<Effort>,
@@ -97,6 +108,13 @@ pub fn request(
         .take(MEMORIES_SENT)
         .rev()
         .map(|memory| memory.text.as_str())
+        .collect();
+    let days: Vec<String> = diary
+        .iter()
+        .rev()
+        .take(DAYS_SENT)
+        .rev()
+        .map(|entry| format!("{}: {}", entry.day, entry.text))
         .collect();
     let conversation: Vec<String> = conversation
         .iter()
@@ -119,7 +137,11 @@ pub fn request(
     Request {
         system: vec![
             Block::new(SYSTEM),
-            block(format!("What the ghost remembers:\n{}", bullets(&memories))),
+            block(format!(
+                "What the ghost remembers:\n{}\n\nIts diary of the last few days:\n{}",
+                bullets(&memories),
+                bullets(&days)
+            )),
         ],
         messages: vec![Message {
             role: Role::User,
@@ -201,9 +223,14 @@ mod tests {
             speaker: Speaker::Ghost,
             text: "Hello!".to_owned(),
         }];
+        let diary = vec![Entry {
+            day: "2026-10-20".to_owned(),
+            text: "Took a nap.".to_owned(),
+        }];
         let request = request(
             &json!({"time_of_day": "night"}),
             &memories,
+            &diary,
             &conversation,
             Some("안녕"),
             Some(Effort::Medium),
@@ -213,6 +240,11 @@ mod tests {
             request.system[1]
                 .text
                 .contains("- The person's name is Mina.")
+        );
+        assert!(
+            request.system[1]
+                .text
+                .ends_with("diary of the last few days:\n- 2026-10-20: Took a nap.")
         );
         let content = &request.messages[0].content;
         assert!(content[0].text.contains("- ghost: Hello!"));
@@ -225,12 +257,12 @@ mod tests {
 
     #[test]
     fn what_changes_least_is_cached_and_the_moment_is_not() {
-        let cached = request(&json!({}), &[], &[], None, None, Some(Cache::OneHour));
+        let cached = request(&json!({}), &[], &[], &[], None, None, Some(Cache::OneHour));
         assert_eq!(cached.system[0].cache, None);
         assert_eq!(cached.system[1].cache, Some(Cache::OneHour));
         assert_eq!(cached.messages[0].content[0].cache, Some(Cache::OneHour));
         assert_eq!(cached.messages[0].content[1].cache, None);
-        let uncached = request(&json!({}), &[], &[], None, None, None);
+        let uncached = request(&json!({}), &[], &[], &[], None, None, None);
         assert!(uncached.system.iter().all(|block| block.cache.is_none()));
     }
 

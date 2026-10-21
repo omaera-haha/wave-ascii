@@ -47,6 +47,8 @@ pub enum Mode {
     Help,
     /// Reading what the ghost remembers and what was said.
     Journal,
+    /// The ghost's life at a glance: its bond, habits, and days.
+    Life,
 }
 
 /// The most characters a line holds; more is cut off as it is typed or
@@ -226,6 +228,7 @@ impl App {
         }
         if self.live_clock {
             self.world.hour = local_hour();
+            self.world.life.begin_day(&local_day());
         }
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
@@ -257,6 +260,7 @@ impl App {
             goal: world.ghost.goal.clone(),
             memories: self.mind.journal.memories.clone(),
             conversation: self.mind.journal.conversation.clone(),
+            life: world.life.clone(),
         };
         crate::store::save_json(&paths.save, &save)
     }
@@ -279,7 +283,7 @@ impl App {
 
     /// Reading panels leave mouse selection and the wheel to the terminal.
     pub fn wants_mouse(&self) -> bool {
-        !matches!(self.mode, Mode::Journal | Mode::Help)
+        !matches!(self.mode, Mode::Journal | Mode::Help | Mode::Life)
     }
 
     fn press_key(&mut self, key: Key) -> Response {
@@ -317,7 +321,7 @@ impl App {
                 }
                 Response::Continue
             }
-            Mode::Help => {
+            Mode::Help | Mode::Life => {
                 if matches!(key, Key::Character('q')) {
                     return Response::Quit;
                 }
@@ -342,6 +346,7 @@ impl App {
                 self.journal_scroll = 0;
                 self.mode = Mode::Journal;
             }
+            Key::Character('l') => self.mode = Mode::Life,
             Key::Character('m') => {
                 self.style = self.style.next();
                 self.post(format!("Style: {}", self.style.label()));
@@ -642,6 +647,11 @@ pub fn local_hour() -> f32 {
     f32::from(now.hour()) + f32::from(now.minute()) / 60.0
 }
 
+/// Today's local date, as YYYY-MM-DD.
+pub fn local_day() -> String {
+    jiff::Zoned::now().date().to_string()
+}
+
 /// Starts the world from a saved life, catching up on the time the app was
 /// closed: the plant grew thirsty and the ghost lonely while nobody came.
 ///
@@ -662,7 +672,9 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
     world.plant.thirst = save.plant.thirst.clamp(0.0, 1.0);
     world.lamp.on = save.lamp_on;
     world.ghost.goal = save.goal.clone();
+    world.life = save.life.clone().sanitized();
     let away = (now - save.last_seen).max(0) as f32;
+    world.life.miss(away);
     world.plant.thirst = (world.plant.thirst + away / crate::world::Plant::THIRST_TIME).min(1.0);
     world
         .ghost
@@ -934,7 +946,7 @@ mod tests {
     #[test]
     fn a_saved_life_comes_back_older_after_time_away() {
         let mut world = World::new(1, 12.0);
-        let save = Save {
+        let mut save = Save {
             version: Save::VERSION,
             name: "Pip".into(),
             born: 0,
@@ -949,8 +961,17 @@ mod tests {
             goal: Some("tend the plant".into()),
             memories: Vec::new(),
             conversation: Vec::new(),
+            life: crate::world::Life {
+                bond: 0.6,
+                closest: 0.6,
+                day: "2026-10-20".into(),
+                ..Default::default()
+            },
         };
-        restore(&mut world, &save, 1000 + 86_400);
+        for _ in 0..3 {
+            save.life.note(&EventKind::AteMote);
+        }
+        restore(&mut world, &save, 1000 + 86_400 * 3);
         assert_eq!(world.ghost.name, "Pip");
         assert_eq!(world.plant.thirst, 1.0);
         assert!(world.ghost.needs.company < save.needs.company);
@@ -959,6 +980,9 @@ mod tests {
             world.events.last().unwrap().kind,
             EventKind::Returned { .. }
         ));
+        assert!(world.life.bond < 0.6 && world.life.bond >= 0.3);
+        world.life.begin_day("2026-10-23");
+        assert!(world.life.diary[0].text.starts_with("Ate 3 light motes"));
     }
 
     #[test]
@@ -984,6 +1008,11 @@ mod tests {
             goal: None,
             memories: Vec::new(),
             conversation: Vec::new(),
+            life: crate::world::Life {
+                bond: -2.0,
+                closest: f32::INFINITY,
+                ..Default::default()
+            },
         };
         restore(&mut world, &save, 1000);
         assert_eq!(world.ghost.name, "Boo");
@@ -993,6 +1022,7 @@ mod tests {
         );
         assert_eq!(world.plant.position, layout);
         assert_eq!((world.plant.growth, world.plant.thirst), (1.0, 0.0));
+        assert!((0.0..=1.0).contains(&world.life.bond));
     }
 
     #[test]
@@ -1004,6 +1034,7 @@ mod tests {
             (Mode::Settings, true),
             (Mode::Journal, false),
             (Mode::Help, false),
+            (Mode::Life, false),
         ] {
             app.mode = mode;
             assert_eq!(app.wants_mouse(), wants_mouse, "{mode:?}");
@@ -1125,6 +1156,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_life_panel_opens_with_l_and_closes_on_any_key_or_quits_with_q() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('l')));
+        assert_eq!(app.mode, Mode::Life);
+        assert!(!app.wants_mouse());
+        for (columns, rows) in [(100, 32), (20, 6), (1, 1)] {
+            app.frame(columns, rows);
+        }
+        app.input(Input::Key(Key::Down));
+        assert_eq!(app.mode, Mode::Watching);
+        app.input(Input::Key(Key::Character('l')));
+        assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
     }
 
     #[test]

@@ -21,8 +21,10 @@ pub fn observe(world: &World) -> Value {
             "fun": ghost.needs.fun_words(),
             "company": ghost.needs.company_words(),
             "feeling": ghost.mood.name(),
+            "awake": awake(ghost.asleep),
             "doing": doing,
             "goal": ghost.goal.as_deref().unwrap_or("none yet"),
+            "loves": world.life.favorite().map_or("nothing in particular yet", Activity::doing),
         },
         "time_of_day": time_of_day(world.hour),
         "outside_the_window": world.weather.words(world.time, world.is_night()),
@@ -35,6 +37,7 @@ pub fn observe(world: &World) -> Value {
             "light_motes": motes(world),
         },
         "viewer": viewer(world),
+        "bond_with_viewer": world.life.bond_words(),
         "recent_events": recent(world, 8),
     })
 }
@@ -69,6 +72,14 @@ fn ago(seconds: f64) -> &'static str {
         seconds if seconds < 90.0 => "a minute ago",
         seconds if seconds < 600.0 => "a few minutes ago",
         _ => "a while ago",
+    }
+}
+
+fn awake(asleep: f32) -> &'static str {
+    match asleep {
+        asleep if asleep < 0.3 => "awake",
+        asleep if asleep < 0.9 => "drifting off to sleep",
+        _ => "fast asleep and dreaming",
     }
 }
 
@@ -280,6 +291,26 @@ mod tests {
             "{in_view:?}"
         );
         assert!(sight["out_of_view"].as_str().unwrap().contains("viewer"));
+    }
+
+    #[test]
+    fn the_ghost_tells_how_close_it_is_to_the_viewer_and_what_it_loves() {
+        let mut world = World::new(1, 12.0);
+        let observation = observe(&world);
+        assert_eq!(observation["bond_with_viewer"], "barely knows them");
+        assert_eq!(observation["ghost"]["loves"], "nothing in particular yet");
+        assert_eq!(observation["ghost"]["awake"], "awake");
+        world.life.bond = 0.6;
+        for _ in 0..8 {
+            world
+                .life
+                .note(&crate::world::EventKind::Began(Activity::Tend));
+        }
+        world.ghost.asleep = 1.0;
+        let observation = observe(&world);
+        assert_eq!(observation["bond_with_viewer"], "close to them");
+        assert_eq!(observation["ghost"]["loves"], "tending the plant");
+        assert_eq!(observation["ghost"]["awake"], "fast asleep and dreaming");
     }
 
     #[test]

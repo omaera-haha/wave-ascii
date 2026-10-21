@@ -20,8 +20,9 @@ pub fn questions(options: &[(Activity, String)]) -> Questions {
         .with(
             "activity",
             Choice::new(
-                "Which should the ghost do next? Weigh its needs, its goal, the time of day, \
-                 and what is happening around it.",
+                "Which should the ghost do next? Weigh its needs, its goal, what it loves \
+                 doing, how close it feels to the viewer, the time of day, and what is \
+                 happening around it.",
                 options
                     .iter()
                     .map(|(activity, description)| (activity.name(), description.clone())),

@@ -10,7 +10,8 @@ lies within sixty degrees of where it faces, and furniture hides what's behind
 it. You see it as an abstract shape made of dots, and its glow shows how it
 is. It floats about, chases and eats the light motes it has spotted, plays with
 the ball, waters the plant, switches the lamp, gazes out of the window, naps
-when tired, and comes to the glass to look at you.
+when tired, and comes to the glass to look at you. Over days it grows close to
+you, forms habits, and keeps a diary.
 
 Two models give it a mind:
 
@@ -53,7 +54,8 @@ the next requests use them at once.
 | --------------- | ------------------------------------------------------- |
 | `t`, Enter      | Talk to the ghost (Enter sends, Esc cancels)            |
 | `k`             | Settings: keys, models, effort, cache                   |
-| `j`             | Journal: memories and conversation, opens at the bottom |
+| `j`             | Journal: memories, diary, and conversation, opens at the bottom |
+| `l`             | Its life: age, bond with you, what it loves, its days   |
 | `?`             | Help                                                    |
 | Arrows, WASD    | Turn the view; ↑/↓ scroll the journal one line          |
 | PageUp/PageDown | Scroll the journal by a page                            |
@@ -105,8 +107,27 @@ couple of minutes. The ghost lights up if it catches sight of it.
 
 ### Its life between runs
 
-The ghost's name, needs, the plant, the lamp, its goal, its memories, and the
-recent conversation are saved in `~/.local/share/wave-ascii/ghost.json`
+The ghost grows close to you over time. Each minute you spend with it (it
+knows you're there while you use the keys or the mouse) deepens its bond with
+you, quickly at first and then more slowly: about a third of the way after an
+hour together, most of the way after a dozen. Talking to it, dropping it light
+motes, and flicking it the ball warm it a little; poking it again and again
+cools it. If you stay away for days the bond fades a little each day, but
+never below half the closest it has been. Once it knows you, it leaves
+whatever it was idly doing to come to the glass when you arrive, and it seeks
+you out more often. Both minds hear how close it feels to you, and Claude lets
+that color its words: shy with a stranger, warm with a friend.
+
+It also grows habits. The more often it chooses something, the more it leans
+toward it, so over days each ghost becomes its own: one loves the ball,
+another the window. At the end of each day it writes a line in its diary
+("Ate 4 light motes, watered the plant until it flowered, and saw a rainbow.
+You were here for about an hour, and we talked."). Press `l` to see its age,
+your bond, what it loves, what it has done in all its days, and today so far;
+the diary is in the journal (`j`). Claude reads the last few days of it.
+
+The ghost's name, needs, the plant, the lamp, its goal, its memories, its
+bond, habits, and diary, and the recent conversation are saved in `~/.local/share/wave-ascii/ghost.json`
 (`$XDG_DATA_HOME` if set) every minute and on quit. While the app is closed,
 time passes: the plant gets thirsty and the ghost lonely, and it notices how
 long you were away. Delete the file to start a new ghost.
@@ -132,8 +153,9 @@ All but the last three can be changed in the app with `k`.
 Each request describes the moment in words, for example "tired", "the plant is
 a little dry", "the viewer poked you (just now)", and what the ghost sees from
 where it faces, such as "the window, showing a rainbow: across the room,
-straight ahead". Requests to Claude also carry the ghost's memories and the
-last few lines of conversation. Nothing else leaves your machine. Claude can
+straight ahead", and how close it feels to you ("fond of them"). Requests to
+Claude also carry the ghost's memories, the last three days of its diary, and
+the last few lines of conversation. Nothing else leaves your machine. Claude can
 answer by turning the ghost's gaze to something, so it can choose to look.
 
 Jev costs very little: each decision is a few hundred input tokens, billed per
@@ -143,8 +165,8 @@ type. With Claude Opus 5.5 a reflection costs a cent or two; with Claude Haiku
 5.5 it costs a few hundredths of a cent. Raise `reflect_every`, or pick a
 cheaper model, to spend less.
 
-Each Claude request puts what changes least first: the ghost's persona and
-memories, then the conversation, and last the moment itself. The first two
+Each Claude request puts what changes least first: the ghost's persona,
+memories, and diary, then the conversation, and last the moment itself. The first two
 are marked for Anthropic's prompt cache, so later requests read them at a
 tenth of the input price. Writing an hour-long cache entry costs twice the
 input price (five minutes: 1.25 times), so it pays off when requests come

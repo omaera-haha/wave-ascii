@@ -1,4 +1,5 @@
 mod activity;
+mod life;
 mod needs;
 mod random;
 mod sight;
@@ -8,6 +9,7 @@ mod weather;
 use glam::Vec3;
 
 pub use activity::{Activity, Plan};
+pub use life::{Entry, Life};
 pub use needs::{Mood, Needs};
 pub use random::Random;
 pub use sight::{Seen, Thing};
@@ -27,6 +29,8 @@ const PRESENT_FOR: f64 = 90.0;
 const POKE_STREAK: f64 = 1.5;
 /// Recent events kept for the face and the minds.
 const EVENTS_KEPT: usize = 80;
+/// How close the ghost must feel to the viewer to come and greet them.
+const GREETS_FROM: f32 = 0.3;
 
 /// Something that happened, which the ghost's face reacts to and its minds
 /// hear about.
@@ -179,6 +183,8 @@ pub struct World {
     pub events: Vec<Event>,
     pub viewer: Viewer,
     pub weather: Weather,
+    /// Its life over days: its bond with the viewer, habits, and diary.
+    pub life: Life,
     random: Random,
     next_mote: u32,
     next_mote_at: f64,
@@ -230,6 +236,7 @@ impl World {
             events: Vec::new(),
             viewer: Viewer::default(),
             weather,
+            life: Life::default(),
             random,
             next_mote: 0,
             next_mote_at: 8.0,
@@ -294,7 +301,11 @@ impl World {
             } else {
                 EventKind::ViewerLeft
             });
+            if present {
+                self.greet();
+            }
         }
+        self.life.pass(seconds, present);
 
         self.carry_out(seconds);
         self.move_ghost(seconds);
@@ -526,10 +537,26 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        self.life.note(&kind);
         self.events.push(Event {
             time: self.time,
             kind,
         });
+    }
+
+    // Once it knows the viewer, the ghost leaves whatever it was idly doing
+    // to come to the glass when they arrive.
+    fn greet(&mut self) {
+        let idle = matches!(
+            self.ghost.plan.activity,
+            Activity::Float | Activity::Explore | Activity::Window
+        );
+        if self.life.bond >= GREETS_FROM
+            && self.ghost.asleep < 0.3
+            && (idle || self.ghost.plan.done)
+        {
+            self.begin(Activity::Visit);
+        }
     }
 
     fn wake(&mut self) {
@@ -1025,6 +1052,35 @@ mod tests {
         assert_eq!(world.ghost.plan.activity, Activity::Visit);
         run(&mut world, 8.0);
         assert!(world.ghost.position.z > ROOM_MAX.z - 0.8);
+    }
+
+    #[test]
+    fn a_ghost_that_knows_the_viewer_comes_to_greet_them() {
+        for (bond, greets) in [(0.0, false), (0.5, true)] {
+            let mut world = World::new(6, 12.0);
+            world.life.bond = bond;
+            world.begin(Activity::Window);
+            run(&mut world, 1.0);
+            world.notice_viewer();
+            world.step(0.05);
+            assert_eq!(
+                world.ghost.plan.activity == Activity::Visit,
+                greets,
+                "{bond}"
+            );
+        }
+    }
+
+    #[test]
+    fn what_happens_is_counted_in_the_ghosts_life() {
+        let mut world = World::new(6, 12.0);
+        world.notice_viewer();
+        world.hear("hello");
+        run(&mut world, 2.0);
+        assert_eq!(world.life.total.heard, 1);
+        assert_eq!(world.life.total.times(Activity::Visit), 1);
+        assert!(world.life.total.together > 1.5);
+        assert!(world.life.bond > 0.0);
     }
 
     #[test]

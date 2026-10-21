@@ -235,6 +235,7 @@ impl Mind {
                 let request = reflection::request(
                     &observation::observe(world),
                     &self.journal.memories,
+                    &world.life.diary,
                     &self.journal.conversation,
                     heard.as_deref(),
                     self.effort,

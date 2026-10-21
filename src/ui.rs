@@ -35,6 +35,7 @@ pub fn draw(app: &mut App, screen: &mut Canvas, view: &View, scene_rows: usize) 
         Mode::Help => help_panel(screen),
         Mode::Settings => settings_panel(app, screen),
         Mode::Journal => journal_panel(app, screen),
+        Mode::Life => life_panel(app, screen),
         Mode::Watching | Mode::Talking => {}
     }
 }
@@ -486,14 +487,15 @@ fn help_panel(screen: &mut Canvas) {
         "",
         "t, Enter   talk to it          click ghost   poke it",
         "k          keys and models     click ball    flick it",
-        "j          journal (arrows scroll) · click room drops a light mote",
+        "j          journal and diary   click room    drop a light mote",
+        "l          its life and bond",
         "arrows     turn the view       drag          turn the view",
         "+ -        zoom                wheel         zoom",
         "m  c       style, color        space         pause",
         "r          reset the view      q, Esc        quit",
         "",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
-        "While the journal or help panel is open, the mouse selects text.",
+        "While a reading panel is open, the mouse selects text.",
         "Any key closes this.",
     ];
     let lines: Vec<(String, Rgb)> = lines
@@ -627,6 +629,15 @@ impl JournalPanel {
             append("  ", &memory.text, TEXT);
         }
         append("", "", TEXT);
+        append("", "Diary", ACCENT);
+        let diary = &app.world.life.diary;
+        if diary.is_empty() {
+            append("  ", "no days written yet", DIM);
+        }
+        for entry in diary {
+            append(&format!("  {}  ", entry.day), &entry.text, TEXT);
+        }
+        append("", "", TEXT);
         append("", "Said lately", ACCENT);
         let conversation = &app.mind.journal.conversation;
         if conversation.is_empty() {
@@ -719,6 +730,91 @@ impl JournalPanel {
                 );
             }
         }
+    }
+}
+
+// The ghost's life at a glance: its age, its bond with the viewer, what it
+// loves doing, what it has done in all its days, and today so far.
+fn life_panel(app: &App, screen: &mut Canvas) {
+    let life = &app.world.life;
+    let ghost = &app.world.ghost;
+    let days = (crate::mind::now() - app.born()).max(0) / 86_400;
+    let age = match days {
+        0 => "born today".to_owned(),
+        1 => "one day old".to_owned(),
+        days => format!("{days} days old"),
+    };
+    let mut lines = vec![
+        (
+            format!("{} · {age} · born {}", ghost.name, date(app.born())),
+            TITLE,
+        ),
+        (String::new(), TEXT),
+        (
+            format!(
+                "Bond      {}  {}",
+                meter(life.bond),
+                life.bond_words().replace("them", "you")
+            ),
+            TEXT,
+        ),
+        (
+            format!(
+                "Together  {} in all, {} today",
+                hours_and_minutes(life.total.together),
+                hours_and_minutes(life.today.together)
+            ),
+            TEXT,
+        ),
+        (
+            format!(
+                "Loves     {}",
+                life.favorite()
+                    .map_or("nothing in particular yet", |activity| activity.doing())
+            ),
+            TEXT,
+        ),
+        (String::new(), TEXT),
+        ("In all its days".to_owned(), ACCENT),
+    ];
+    let total = &life.total;
+    let counts = [
+        (
+            "light motes eaten",
+            total.motes,
+            "ball nudges",
+            total.nudges,
+        ),
+        ("plant watered", total.waterings, "flowers", total.blooms),
+        ("naps", total.naps, "rainbows seen", total.rainbows),
+        ("messages from you", total.heard, "pokes", total.pokes),
+    ];
+    for (first, first_count, second, second_count) in counts {
+        lines.push((
+            format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),
+            TEXT,
+        ));
+    }
+    lines.push((String::new(), TEXT));
+    lines.push(("Today so far".to_owned(), ACCENT));
+    let room = screen.columns().saturating_sub(10).clamp(20, 56);
+    for line in wrap(&life.today.words(), room) {
+        lines.push((format!("  {line}"), TEXT));
+    }
+    lines.push((String::new(), TEXT));
+    lines.push((
+        "The diary is in the journal (j). Any key closes this.".to_owned(),
+        DIM,
+    ));
+    panel(screen, "Life", &lines);
+}
+
+fn hours_and_minutes(seconds: f32) -> String {
+    let minutes = (seconds / 60.0) as u32;
+    match (minutes / 60, minutes % 60) {
+        (0, minutes) => format!("{minutes} min"),
+        (hours, 0) => format!("{hours} h"),
+        (hours, minutes) => format!("{hours} h {minutes} min"),
     }
 }
 
@@ -883,6 +979,14 @@ mod tests {
         assert_eq!(visible_start(&text, text.len(), 11), 6);
         assert_eq!(visible_start(&text, text.len(), 10), 7);
         assert_eq!(visible_start(&text, 0, 5), 0);
+    }
+
+    #[test]
+    fn time_together_reads_in_hours_and_minutes() {
+        assert_eq!(hours_and_minutes(59.0), "0 min");
+        assert_eq!(hours_and_minutes(25.0 * 60.0), "25 min");
+        assert_eq!(hours_and_minutes(2.0 * 3600.0), "2 h");
+        assert_eq!(hours_and_minutes(4.0 * 3600.0 + 600.0), "4 h 10 min");
     }
 
     #[test]
