@@ -197,6 +197,232 @@ pub fn built_in(index: usize) -> Tune {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Composition {
+    pub tune: Tune,
+    pub title: String,
+    pub korean_title: String,
+    pub day: String,
+}
+
+/// Two related phrases: a repeated opening, a wandering answer, and a tonic.
+pub fn compose(random: &mut super::Random, mood: super::Mood, nature: super::Nature) -> Vec<Note> {
+    let bright = matches!(mood, super::Mood::Cheerful | super::Mood::Excited);
+    let quiet = matches!(
+        mood,
+        super::Mood::Content | super::Mood::Sleepy | super::Mood::Lonely
+    );
+    let length = random.range(4.0, 9.0) as usize;
+    let center = if bright {
+        5
+    } else if quiet {
+        2
+    } else {
+        3
+    };
+    let mut pitch = center;
+    let mut notes: Vec<Note> = Vec::with_capacity(length * 2);
+    for index in 0..length * 2 {
+        if index == length * 2 - 1 {
+            pitch = 0;
+        } else if (length..length + 2).contains(&index) {
+            pitch = notes[index - length].pitch;
+        } else if index > 0 {
+            let interval = match random.unit() {
+                value if value < 0.8 => 1,
+                value if value < 0.96 => 2,
+                _ => 4,
+            };
+            let rising = random.unit() < if pitch < center { 0.7 } else { 0.3 };
+            pitch = (pitch + if rising { interval } else { -interval }).clamp(0, 6);
+        }
+        let held = random.unit()
+            < if quiet {
+                0.55 + nature.tender * 0.15
+            } else {
+                0.18
+            };
+        let beats = if index == length * 2 - 1 {
+            2.0
+        } else if held {
+            if quiet && random.unit() < 0.3 {
+                4.0
+            } else {
+                2.0
+            }
+        } else if bright && random.unit() < 0.5 + nature.playful * 0.2 {
+            0.5
+        } else {
+            1.0
+        };
+        notes.push(Note { pitch, beats });
+    }
+    notes
+}
+
+pub fn composition_title(world: &World) -> (String, String) {
+    let life = &world.life;
+    let (english, korean) = if let Some(name) = &life.viewer_name
+        && life.bond >= 0.3
+    {
+        (
+            format!("Song for {name}"),
+            format!("{name}에게 바치는 노래"),
+        )
+    } else if world.weather.sky == super::Sky::Rain {
+        ("Rain Song".to_owned(), "비의 노래".to_owned())
+    } else if world.weather.sky == super::Sky::Snow {
+        ("Snow Song".to_owned(), "눈의 노래".to_owned())
+    } else if let Some(friend) = &life.friend
+        && super::creation::elapsed_days(life.last_friend_visit.as_deref(), world.date)
+            .is_some_and(|days| (0..=1).contains(&days))
+    {
+        (
+            format!("{}'s Waltz", friend.name),
+            format!("{}의 왈츠", friend.name),
+        )
+    } else if world.is_night() {
+        ("Moon Song".to_owned(), "달의 노래".to_owned())
+    } else if life.bird_trust >= 0.5 {
+        ("Bird Song".to_owned(), "새의 노래".to_owned())
+    } else if world.hour < 10.0 {
+        ("Morning Song".to_owned(), "아침의 노래".to_owned())
+    } else {
+        match world.season() {
+            super::Season::Spring => ("Blossom Song".to_owned(), "봄꽃의 노래".to_owned()),
+            super::Season::Autumn => ("Autumn Song".to_owned(), "가을의 노래".to_owned()),
+            super::Season::Winter => ("Winter Song".to_owned(), "겨울의 노래".to_owned()),
+            super::Season::Summer => ("Little Song".to_owned(), "작은 노래".to_owned()),
+        }
+    };
+    let mut title = (english.clone(), korean.clone());
+    let mut repeats = 0;
+    while life
+        .compositions
+        .iter()
+        .any(|known| known.title == title.0 || known.korean_title == title.1)
+    {
+        repeats += 1;
+        title = if repeats == 1 {
+            (format!("{english} Again"), format!("{korean} 또"))
+        } else {
+            (
+                format!("{english} Again {}", super::friend::count_words(repeats)),
+                format!("{korean} {}", "또".repeat(repeats as usize)),
+            )
+        };
+    }
+    title
+}
+
+pub fn own_song_requested(text: &str) -> bool {
+    matches!(
+        text.trim()
+            .trim_end_matches(['?', '!', '.'])
+            .to_lowercase()
+            .as_str(),
+        "sing me your song"
+            | "play your song"
+            | "do you have your own song"
+            | "네 노래 불러줘"
+            | "네가 만든 노래"
+            | "네 노래 들려줘"
+    )
+}
+
+impl World {
+    pub fn composition_words(&self, korean: bool) -> String {
+        self.life
+            .compositions
+            .iter()
+            .map(|composition| {
+                if korean {
+                    composition.korean_title.as_str()
+                } else {
+                    composition.title.as_str()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn hum(&mut self, tune: &Tune, korean: bool) {
+        let syllables = if korean {
+            ["도", "레", "미", "파", "솔", "라", "시", "도"]
+        } else {
+            SOLFEGE
+        };
+        let notes = tune
+            .notes
+            .iter()
+            .take(6)
+            .map(|note| syllables[note.pitch as usize])
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.say(&format!("♪ {notes}… ♪"));
+    }
+
+    fn queue_music_request(&mut self, tune: Tune) {
+        if self.focus.is_none() && self.ghost.asleep < 0.3 && self.telling.is_none() {
+            self.music = None;
+            self.begin(Activity::Music);
+            self.compose_on_arrival = false;
+            self.queued_tune = Some(tune);
+            self.pending_tune = None;
+        } else {
+            self.pending_tune = Some(tune);
+        }
+    }
+
+    pub fn can_compose(&self) -> bool {
+        self.stage() != super::Stage::Newborn
+            && self.life.total.tunes_played >= 20
+            && self.focus.is_none()
+            && self.ghost.asleep < 0.3
+            && self.telling.is_none()
+            && super::creation::elapsed_days(self.life.composition_day.as_deref(), self.date)
+                .is_none_or(|days| days >= 3)
+    }
+
+    fn try_compose(&mut self) -> bool {
+        if !self.can_compose() {
+            return false;
+        }
+        let nature = self.life.nature.unwrap_or_default();
+        if self.random.unit() >= 0.25 + 0.15 * (nature.playful + nature.tender - 1.0) {
+            return false;
+        }
+        let notes = compose(&mut self.random, self.ghost.mood, nature);
+        if self
+            .life
+            .compositions
+            .iter()
+            .any(|composition| composition.tune.notes == notes)
+        {
+            return false;
+        }
+        let (title, korean_title) = composition_title(self);
+        let tune = Tune {
+            name: title.clone(),
+            notes,
+        };
+        self.life.composition_day = Some(self.date.to_string());
+        self.life.compositions.push(Composition {
+            tune: tune.clone(),
+            title: title.clone(),
+            korean_title,
+            day: self.date.to_string(),
+        });
+        if self.life.compositions.len() > 8 {
+            self.life.compositions.remove(0);
+        }
+        self.record(EventKind::Composed(title));
+        self.hum(&tune, self.speaks_korean());
+        self.queued_tune = Some(tune);
+        true
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Playing {
     pub tune: Tune,
@@ -302,13 +528,63 @@ impl World {
     pub(super) fn hear_music(&mut self, text: &str, korean: bool) -> Option<Heard> {
         let tune = lesson(text);
         let lullaby = lullaby_requested(text);
-        if tune.is_none() && !lullaby {
+        let own = own_song_requested(text);
+        if tune.is_none() && !lullaby && !own {
             return None;
         }
         self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
-        if let Some(tune) = tune {
+        if own {
+            if let Some(composition) = self.life.compositions.last().cloned() {
+                if self.focus.is_none() && self.ghost.asleep < 0.3 && self.telling.is_none() {
+                    self.hum(&composition.tune, korean);
+                }
+                self.queue_music_request(composition.tune);
+            } else if self.ghost.asleep < 0.3 {
+                self.say(if korean {
+                    "아직 내 노래를 만들지 못했어."
+                } else {
+                    "I haven't made a song of my own yet."
+                });
+            }
+        } else if let Some(tune) = tune {
+            if let Some(composition) = self
+                .life
+                .compositions
+                .iter()
+                .find(|composition| {
+                    composition
+                        .tune
+                        .notes
+                        .iter()
+                        .map(|note| note.pitch)
+                        .eq(tune.notes.iter().map(|note| note.pitch))
+                })
+                .cloned()
+            {
+                let mut tune = tune;
+                tune.name = composition.title.clone();
+                self.record(EventKind::SangMySong(composition.title));
+                if self.ghost.asleep < 0.3 {
+                    self.say(if korean {
+                        "내 노래다! 불러줬구나!"
+                    } else {
+                        "That's my song! You sang it!"
+                    });
+                }
+                self.queue_music_request(tune);
+                return Some(Heard {
+                    tone: None,
+                    understanding: Understanding::OwnSong,
+                    named: false,
+                    learned: Vec::new(),
+                    stopped: false,
+                    learned_name: None,
+                    given_name: None,
+                    korean,
+                });
+            }
             if !self
                 .life
                 .tunes
@@ -321,20 +597,17 @@ impl World {
                 }
                 self.record(EventKind::LearnedTune(tune.name.clone()));
             }
-            if self.focus.is_none() && self.ghost.asleep < 0.3 && self.telling.is_none() {
-                self.music = None;
-                self.begin(Activity::Music);
-                self.queued_tune = Some(tune);
-                self.pending_tune = None;
-            } else {
-                self.pending_tune = Some(tune);
-            }
+            self.queue_music_request(tune);
         } else {
             self.ask_lullaby();
         }
         Some(Heard {
             tone: None,
-            understanding: Understanding::Music { lullaby },
+            understanding: if own {
+                Understanding::OwnSong
+            } else {
+                Understanding::Music { lullaby }
+            },
             named: false,
             learned: Vec::new(),
             stopped: false,
@@ -367,6 +640,7 @@ impl World {
         } else {
             self.begin(Activity::Music);
         }
+        self.compose_on_arrival = false;
         let tune = if lullaby {
             built_in(0)
         } else {
@@ -391,12 +665,19 @@ impl World {
     }
 
     pub(super) fn prepare_music(&mut self) {
-        let choices = 4 + self.life.tunes.len();
+        self.compose_on_arrival = true;
+        let own_weight = if self.life.bond >= 0.3 { 2 } else { 1 };
+        let choices = 4 + self.life.tunes.len() + self.life.compositions.len() * own_weight;
         let index = (self.random_unit() * choices as f32) as usize;
         self.queued_tune = Some(if index < 4 {
             built_in(index)
+        } else if index < 4 + self.life.tunes.len() {
+            self.life.tunes[index - 4].clone()
         } else {
-            self.life.tunes[index.min(choices - 1) - 4].clone()
+            self.life.compositions
+                [(index.min(choices - 1) - 4 - self.life.tunes.len()) / own_weight]
+                .tune
+                .clone()
         });
     }
 
@@ -420,6 +701,7 @@ impl World {
             self.music = None;
             self.begin(Activity::Music);
             self.queued_tune = tune;
+            self.compose_on_arrival = false;
         }
         self.music_notes
             .retain(|note| self.time - note.born < RisingNote::LIFETIME);
@@ -455,6 +737,10 @@ impl World {
         if self.ghost.plan.arrived.is_some() {
             if self.ghost.plan.count == 0 && self.ghost.plan.stayed(self.time) >= 1.2 {
                 if self.music.is_none() {
+                    if std::mem::take(&mut self.compose_on_arrival) && self.try_compose() {
+                        self.ghost.plan.arrived = Some(self.time);
+                        return Some(POSITION + Vec3::Y * 0.3);
+                    }
                     let tune = self.queued_tune.take().unwrap_or_else(|| built_in(0));
                     let repeats = if self.random_unit() < 0.3 { 2 } else { 1 };
                     let lullaby = tune.name == "little lullaby";
@@ -535,7 +821,240 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{Life, Nature, Thing};
+    use crate::world::{Life, Mood, Nature, Random, Thing};
+
+    #[test]
+    fn compositions_have_related_phrases_valid_notes_and_a_tonic_ending() {
+        for seed in 0..128 {
+            for mood in Mood::ALL {
+                let notes = compose(&mut Random::new(seed), mood, Nature::default());
+                assert_eq!(
+                    notes,
+                    compose(&mut Random::new(seed), mood, Nature::default())
+                );
+                assert!((8..=16).contains(&notes.len()));
+                assert_eq!(notes.last().unwrap().pitch, 0);
+                assert_eq!(notes[0].pitch, notes[notes.len() / 2].pitch);
+                assert_eq!(notes[1].pitch, notes[notes.len() / 2 + 1].pitch);
+                assert!(
+                    notes
+                        .iter()
+                        .all(|note| (0..=7).contains(&note.pitch)
+                            && (0.5..=4.0).contains(&note.beats))
+                );
+                let ordinary = notes
+                    .windows(2)
+                    .filter(|notes| (notes[0].pitch - notes[1].pitch).abs() <= 1)
+                    .count();
+                assert!(ordinary > 0);
+                let playing = Playing::new(Tune::named(notes), 0.0, false, 1);
+                assert!(playing.duration().is_finite() && playing.duration() > 0.0);
+            }
+        }
+    }
+
+    #[test]
+    fn cheerful_compositions_average_higher_and_quicker_than_sleepy_ones() {
+        let average = |mood| {
+            let notes: Vec<Note> = (0..256)
+                .flat_map(|seed| compose(&mut Random::new(seed), mood, Nature::default()))
+                .collect();
+            (
+                notes.iter().map(|note| f32::from(note.pitch)).sum::<f32>() / notes.len() as f32,
+                notes.iter().map(|note| note.beats).sum::<f32>() / notes.len() as f32,
+            )
+        };
+        let cheerful = average(Mood::Cheerful);
+        let sleepy = average(Mood::Sleepy);
+        assert!(cheerful.0 > sleepy.0 + 1.0, "{cheerful:?} {sleepy:?}");
+        assert!(cheerful.1 < sleepy.1);
+    }
+
+    fn my_song() -> Composition {
+        let mut tune = lesson("mi sol la sol mi re do").unwrap();
+        for note in &mut tune.notes {
+            note.beats = 2.0;
+        }
+        Composition {
+            tune,
+            title: "Rain Song".to_owned(),
+            korean_title: "비의 노래".to_owned(),
+            day: "2026-06-21".to_owned(),
+        }
+    }
+
+    #[test]
+    fn titles_follow_present_memories_and_stay_unique_in_both_languages() {
+        let mut world = World::new(7, 12.0);
+        assert_eq!(composition_title(&world).0, "Little Song");
+        world.hour = 8.0;
+        assert_eq!(composition_title(&world).0, "Morning Song");
+        world.life.bird_trust = 0.7;
+        assert_eq!(composition_title(&world).0, "Bird Song");
+        world.hour = 23.0;
+        assert_eq!(composition_title(&world).0, "Moon Song");
+        world.life.friend = Some(crate::world::Companion {
+            name: "Pell".to_owned(),
+            visits: 1,
+            ..Default::default()
+        });
+        world.life.last_friend_visit = Some(world.date.to_string());
+        assert_eq!(composition_title(&world).0, "Pell's Waltz");
+        world.weather.sky = crate::world::Sky::Snow;
+        assert_eq!(composition_title(&world).0, "Snow Song");
+        world.weather.sky = crate::world::Sky::Rain;
+        world.life.compositions.push(my_song());
+        assert_eq!(
+            composition_title(&world),
+            ("Rain Song Again".to_owned(), "비의 노래 또".to_owned())
+        );
+        world.life.viewer_name = Some("Mina".to_owned());
+        world.life.bond = 0.3;
+        assert_eq!(
+            composition_title(&world),
+            (
+                "Song for Mina".to_owned(),
+                "Mina에게 바치는 노래".to_owned()
+            )
+        );
+        world.life.viewer_name = None;
+        world.weather.sky = crate::world::Sky::Clear;
+        world.date = world.date.checked_add(jiff::Span::new().days(2)).unwrap();
+        assert_eq!(composition_title(&world).0, "Moon Song");
+    }
+
+    #[test]
+    fn singing_its_notes_back_ignores_holds_and_marks_the_first_time_once() {
+        for (text, expected) in [
+            ("mi sol la sol mi re do", "That's my song! You sang it!"),
+            ("미 솔 라 솔 미 레 도", "내 노래다! 불러줬구나!"),
+        ] {
+            let mut world = World::new(9, 12.0);
+            world.life.compositions.push(my_song());
+            let heard = world.hear(text);
+            assert_eq!(heard.understanding, Understanding::OwnSong);
+            assert!(world.life.tunes.is_empty());
+            assert_eq!(world.life.total.songs_sung_back, 1);
+            assert!(world.life.bond > 0.0);
+            assert_eq!(world.ghost.speech.as_ref().unwrap().text, expected);
+            assert_eq!(world.queued_tune.as_ref().unwrap().name, "Rain Song");
+            world.hear(text);
+            assert_eq!(world.life.total.songs_sung_back, 2);
+            assert_eq!(
+                world
+                    .life
+                    .milestones
+                    .iter()
+                    .filter(|entry| entry.text == "You sang my song back to me.")
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn own_song_requests_hum_the_newest_or_explain_that_none_exists() {
+        for text in [
+            "sing me your song",
+            "play your song",
+            "do you have your own song?",
+            "네 노래 불러줘",
+            "네가 만든 노래",
+        ] {
+            let mut world = World::new(9, 12.0);
+            assert_eq!(world.hear(text).understanding, Understanding::OwnSong);
+            assert!(
+                world.ghost.speech.as_ref().unwrap().text.contains("yet")
+                    || world.ghost.speech.as_ref().unwrap().text.contains("아직")
+            );
+            world.life.compositions.push(my_song());
+            world.hear(text);
+            assert!(world.ghost.speech.as_ref().unwrap().text.starts_with('♪'));
+            assert_eq!(
+                world.queued_tune.as_ref().unwrap().notes,
+                my_song().tune.notes
+            );
+            assert!(world.life.vocabulary.known().is_empty());
+            assert!(!world.compose_on_arrival);
+            world.start_focus(25);
+            world.hear(text);
+            assert!(world.pending_tune.is_some());
+            assert!(world.music.is_none());
+        }
+    }
+
+    #[test]
+    fn composition_checks_do_not_draw_randomness_until_eligible() {
+        let mut world = World::new(2, 12.0);
+        let mut expected = world.random.clone();
+        assert!(!world.try_compose());
+        assert_eq!(world.random.next_u64(), expected.next_u64());
+        world.life.total.tunes_played = 20;
+        assert!(world.can_compose());
+        world.life.composition_day = Some(world.date.to_string());
+        assert!(!world.can_compose());
+        world.date = world.date.checked_add(jiff::Span::new().days(2)).unwrap();
+        assert!(!world.can_compose());
+        world.date = world.date.checked_add(jiff::Span::new().days(1)).unwrap();
+        assert!(world.can_compose());
+        world.birthday = Some(world.date);
+        assert!(!world.can_compose());
+        world.birthday = None;
+        world.start_focus(25);
+        assert!(!world.can_compose());
+    }
+
+    #[test]
+    fn an_eligible_month_keeps_at_most_eight_songs_and_spaces_creation_by_local_days() {
+        let mut world = World::new(42, 12.0);
+        world.life.total.tunes_played = 20;
+        let mut days = Vec::new();
+        for day in 0..30 {
+            for _ in 0..10 {
+                if world.try_compose() {
+                    days.push(day);
+                }
+            }
+            world.date = world.date.checked_add(jiff::Span::new().days(1)).unwrap();
+        }
+        assert!(days.len() >= 8 && days.len() <= 10, "{days:?}");
+        assert!(days.windows(2).all(|days| days[1] - days[0] >= 3));
+        assert_eq!(world.life.compositions.len(), 8);
+        assert_eq!(world.life.total.compositions as usize, days.len());
+    }
+
+    #[test]
+    fn an_eligible_music_sitting_hums_before_winding_and_completes_playback() {
+        let mut world = World::new(42, 12.0);
+        world.life.total.tunes_played = 20;
+        let seed = (0..100)
+            .find(|seed| Random::new(*seed).unit() < 0.1)
+            .unwrap();
+        world.begin(Activity::Music);
+        world.random = Random::new(seed);
+        world.ghost.plan.arrived = Some(world.time - 2.0);
+        world.carry_out_music();
+        assert_eq!(world.life.total.compositions, 1);
+        assert!(world.music.is_none());
+        assert!(world.ghost.speech.as_ref().unwrap().text.starts_with('♪'));
+        world.time += 2.0;
+        world.carry_out_music();
+        assert_eq!(
+            world.music.as_ref().unwrap().tune.name,
+            world.life.compositions[0].title
+        );
+        world.time += 100.0;
+        world.advance_music();
+        assert_eq!(world.life.total.tunes_played, 21);
+        assert!(
+            world
+                .life
+                .today
+                .diary()
+                .to_lowercase()
+                .contains("made up a tune called")
+        );
+    }
 
     #[test]
     fn lessons_read_english_aliases_and_korean_with_or_without_spaces() {

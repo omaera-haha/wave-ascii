@@ -479,10 +479,12 @@ pub struct Reading {
     pub remaining: u32,
     pub turned_at: Option<f64>,
     pub lighting: bool,
+    pub writing: bool,
 }
 
 impl World {
     pub(super) fn deliver_books(&mut self) {
+        self.expire_drafts();
         let due = self
             .age_days()
             .map_or(0, |days| days as u32 / DELIVERY_DAYS)
@@ -527,7 +529,7 @@ impl World {
             .as_ref()
             .map(|reading| reading.index)
             .or_else(|| self.telling.as_ref().and_then(|telling| telling.book))
-            .or(self.last_read)
+            .or(self.last_read.filter(|index| self.book_exists(*index)))
             .or_else(|| {
                 self.life
                     .books
@@ -536,6 +538,62 @@ impl World {
                     .find(|owned| owned.page < LIBRARY[owned.index].pages.len())
                     .map(|owned| owned.index)
             })
+            .or_else(|| self.life.books.favorite())
+    }
+
+    pub fn book_exists(&self, index: usize) -> bool {
+        if index < LIBRARY.len() {
+            self.life
+                .books
+                .owned
+                .iter()
+                .any(|owned| owned.index == index)
+        } else {
+            self.life
+                .written
+                .get(index - LIBRARY.len())
+                .is_some_and(|book| book.finished)
+        }
+    }
+
+    pub fn book_title(&self, index: usize, korean: bool) -> &str {
+        if index < LIBRARY.len() {
+            LIBRARY[index].title(korean)
+        } else {
+            let title = &self.life.written[index - LIBRARY.len()].title;
+            if korean { &title.1 } else { &title.0 }
+        }
+    }
+
+    fn book_page(&self, index: usize) -> usize {
+        if index < LIBRARY.len() {
+            self.life
+                .books
+                .owned
+                .iter()
+                .find(|owned| owned.index == index)
+                .map_or(0, |owned| owned.page)
+        } else {
+            self.life.written[index - LIBRARY.len()].page
+        }
+    }
+
+    fn book_length(&self, index: usize) -> usize {
+        if index < LIBRARY.len() {
+            LIBRARY[index].pages.len()
+        } else {
+            self.life.written[index - LIBRARY.len()].pages.len()
+        }
+    }
+
+    pub fn favorite_book(&self) -> Option<usize> {
+        self.life
+            .written
+            .iter()
+            .enumerate()
+            .filter(|(_, book)| book.finished)
+            .max_by_key(|(_, book)| book.read)
+            .map(|(index, _)| LIBRARY.len() + index)
             .or_else(|| self.life.books.favorite())
     }
 
@@ -548,22 +606,25 @@ impl World {
         else {
             return "no book open just now".to_owned();
         };
-        let owned = self
-            .life
-            .books
-            .owned
-            .iter()
-            .find(|owned| owned.index == index)
-            .unwrap();
+        if self.reading.as_ref().is_some_and(|reading| reading.writing) {
+            let book = &self.life.written[index - LIBRARY.len()];
+            return format!(
+                "writing {}; {} pages written",
+                book.title.0,
+                super::friend::count_words(book.pages.len() as u32)
+            );
+        }
         format!(
             "reading {}; {} of {} pages read",
-            LIBRARY[index].title.0,
-            super::friend::count_words(owned.page as u32),
-            super::friend::count_words(LIBRARY[index].pages.len() as u32)
+            self.book_title(index, false),
+            super::friend::count_words(self.book_page(index) as u32),
+            super::friend::count_words(self.book_length(index) as u32)
         )
     }
 
     pub(super) fn begin_reading(&mut self, bedtime: bool) {
+        self.expire_drafts();
+        let writing = if bedtime { None } else { self.writing_choice() };
         let unfinished: Vec<usize> = self
             .life
             .books
@@ -572,19 +633,45 @@ impl World {
             .filter(|owned| owned.page < LIBRARY[owned.index].pages.len())
             .map(|owned| owned.index)
             .collect();
-        let index = self
-            .pick(&vec![1.0; unfinished.len()])
-            .map(|chosen| unfinished[chosen])
-            .or_else(|| self.life.books.favorite());
+        let own: Vec<usize> = self
+            .life
+            .written
+            .iter()
+            .enumerate()
+            .filter(|(_, book)| book.finished)
+            .map(|(index, _)| LIBRARY.len() + index)
+            .collect();
+        let index = if let Some(index) = writing {
+            Some(index)
+        } else if !own.is_empty() && (unfinished.is_empty() || self.random.unit() < 0.3) {
+            let mut choices = own;
+            let own_length = choices.len();
+            if unfinished.is_empty() {
+                choices.extend(self.life.books.owned.iter().map(|owned| owned.index));
+            }
+            let weights: Vec<f32> = (0..choices.len())
+                .map(|index| if index < own_length { 1.3 } else { 1.0 })
+                .collect();
+            self.pick(&weights).map(|chosen| choices[chosen])
+        } else {
+            self.pick(&vec![1.0; unfinished.len()])
+                .map(|chosen| unfinished[chosen])
+                .or_else(|| self.life.books.favorite())
+        };
         let Some(index) = index else {
             self.ghost.plan.done = true;
             return;
         };
-        self.prepare_book(index);
+        if writing.is_none() {
+            self.prepare_book(index);
+        }
         self.reading = Some(Reading {
             index,
             next_at: None,
-            remaining: if bedtime {
+            writing: writing.is_some(),
+            remaining: if writing.is_some() {
+                5
+            } else if bedtime {
                 1
             } else {
                 self.random.range(2.0, 5.0) as u32
@@ -600,6 +687,13 @@ impl World {
 
     fn prepare_book(&mut self, index: usize) {
         self.last_read = Some(index);
+        if index >= LIBRARY.len() {
+            let book = &mut self.life.written[index - LIBRARY.len()];
+            if book.page >= book.pages.len() {
+                book.page = 0;
+            }
+            return;
+        }
         if let Some(owned) = self
             .life
             .books
@@ -613,6 +707,37 @@ impl World {
     }
 
     pub(super) fn read_page(&mut self, index: usize, thought: bool) -> bool {
+        if index >= LIBRARY.len() {
+            let Some(book) = self.life.written.get_mut(index - LIBRARY.len()) else {
+                return true;
+            };
+            if !book.finished {
+                return true;
+            }
+            let Some(page) = book.pages.get(book.page) else {
+                return true;
+            };
+            let text = page.0.clone();
+            book.page += 1;
+            let finished = book.page == book.pages.len();
+            if finished {
+                book.read = book.read.saturating_add(1);
+            }
+            let first_read = finished && book.read == 1;
+            let title = book.title.0.clone();
+            if thought {
+                self.think(&format!("\"{text}\""));
+            }
+            self.record(EventKind::ReadPage);
+            if first_read {
+                self.record(EventKind::FinishedBook(title));
+            }
+            if finished {
+                self.suggest_mood(Mood::Content, 10.0);
+            }
+            self.ghost.needs.change(0.0, 0.025, 0.0);
+            return finished;
+        }
         let Some(owned) = self
             .life
             .books
@@ -668,7 +793,11 @@ impl World {
         }
         let reading = self.reading.as_ref().unwrap();
         if self.time >= reading.next_at.unwrap() {
-            let finished = self.read_page(reading.index, true);
+            let finished = if reading.writing {
+                self.write_page(reading.index)
+            } else {
+                self.read_page(reading.index, true)
+            };
             let reading = self.reading.as_mut().unwrap();
             reading.remaining -= 1;
             reading.turned_at = Some(self.time);
@@ -736,22 +865,47 @@ impl World {
         if self.telling.is_some() {
             return;
         }
-        let Some(index) = self.current_book() else {
+        let Some(index) = self
+            .current_book()
+            .filter(|index| self.book_exists(*index))
+            .or_else(|| self.life.books.favorite())
+        else {
             return;
         };
         self.prepare_book(index);
-        let page = self
-            .life
-            .books
-            .owned
-            .iter()
-            .find(|owned| owned.index == index)
-            .unwrap()
-            .page;
-        let lines = LIBRARY[index].pages[page..]
-            .iter()
-            .map(|line| if korean { line.1 } else { line.0 }.to_owned())
-            .collect();
+        self.tell_book(index, korean);
+    }
+
+    pub(super) fn read_own_book_aloud(&mut self, korean: bool) {
+        if self.telling.is_some() {
+            return;
+        }
+        if let Some(index) = self.life.written.iter().rposition(|book| book.finished) {
+            let index = LIBRARY.len() + index;
+            self.prepare_book(index);
+            self.tell_book(index, korean);
+        } else {
+            self.say(if korean {
+                "아직 내 책을 다 쓰지 못했어."
+            } else {
+                "I haven't finished a book of my own yet."
+            });
+        }
+    }
+
+    fn tell_book(&mut self, index: usize, korean: bool) {
+        let page = self.book_page(index);
+        let lines = if index < LIBRARY.len() {
+            LIBRARY[index].pages[page..]
+                .iter()
+                .map(|line| if korean { line.1 } else { line.0 }.to_owned())
+                .collect()
+        } else {
+            self.life.written[index - LIBRARY.len()].pages[page..]
+                .iter()
+                .map(|line| if korean { &line.1 } else { &line.0 }.clone())
+                .collect()
+        };
         self.tell(lines);
         let lighting = self.is_night() && !self.lamp.on;
         let telling = self.telling.as_mut().unwrap();

@@ -73,9 +73,11 @@ pub fn observe(world: &World) -> Value {
             "music_box": world.music_words(),
             "mirror": thing(world, Thing::Mirror),
             "learned_tunes": world.learned_tune_words(),
+            "own_songs": world.composition_words(false),
+            "own_books": world.written_words(false),
             "light_motes": motes(world),
             "glass": glass(world),
-            "books": world.life.books.words(),
+            "books": world.books_words(),
             "reading": world.reading_words(),
         },
         "friend": world.friend.as_ref().zip(world.life.friend.as_ref()).map(|(friend, companion)| {
@@ -332,7 +334,7 @@ fn thing(world: &World, thing: Thing) -> String {
         Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
         Thing::Ball => "the ball".to_owned(),
         Thing::Cushion => "the cushion".to_owned(),
-        Thing::Books => format!("the picture book pile; {}", world.life.books.words()),
+        Thing::Books => format!("the picture book pile; {}", world.books_words()),
         Thing::Shelf => world.life.keepsake_words(),
         Thing::Friend => world.life.friend.as_ref().map_or_else(
             || "another ghost".to_owned(),

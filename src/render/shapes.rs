@@ -45,6 +45,7 @@ pub enum Material {
     Water,
     BookCover(u8),
     BookPages,
+    BookInk,
     MusicNote(u8),
     Envelope,
     EnvelopeFlap,
@@ -66,6 +67,7 @@ impl Material {
                 3 => Vec3::new(0.86, 0.73, 0.95),
                 _ => Vec3::new(0.98, 0.82, 0.56),
             },
+            Self::BookInk => Vec3::new(0.48, 0.52, 0.65),
             Self::BookPages => Vec3::new(1.0, 0.96, 0.84),
             Self::MusicNote(fade) => Vec3::new(1.0, 0.78, 0.3) * (f32::from(fade) / 255.0),
             Self::Curtain => Vec3::new(0.95, 0.9, 0.8),
@@ -169,6 +171,7 @@ pub enum Furniture<'a> {
         size: f32,
         rotation: Quat,
         turning: f32,
+        ink: Option<f32>,
     },
     MusicBox(bool, f32),
     MusicNote(Vec3, bool, u8),
@@ -293,9 +296,10 @@ impl Furniture<'_> {
                 size,
                 rotation,
                 turning,
+                ink,
             } => {
                 let local = rotation.conjugate() * (point - *position) / *size;
-                let (distance, material) = open_book_distance(local, *index, *turning);
+                let (distance, material) = open_book_distance(local, *index, *turning, *ink);
                 (distance * size, material)
             }
             Self::MusicBox(open, crank) => {
@@ -499,14 +503,34 @@ fn box_distance(point: Vec3, half: Vec3) -> f32 {
     corner.max(Vec3::ZERO).length() + corner.max_element().min(0.0)
 }
 
-fn open_book_distance(point: Vec3, index: usize, turning: f32) -> (f32, Material) {
+fn open_book_distance(
+    point: Vec3,
+    index: usize,
+    turning: f32,
+    ink: Option<f32>,
+) -> (f32, Material) {
     let mut nearest = (f32::MAX, Material::BookPages);
     for side in [-1.0, 1.0] {
         let local = Quat::from_rotation_z(-side * 0.15) * point - Vec3::X * side * 0.105;
         let cover = box_distance(local, Vec3::new(0.108, 0.018, 0.135));
         let pages = box_distance(local - Vec3::Y * 0.013, Vec3::new(0.101, 0.014, 0.128));
         let surface = if pages < cover {
-            (pages, Material::BookPages)
+            let written = ink.is_some_and(|progress| {
+                let line = ((local.z + 0.09) / 0.035).floor();
+                local.y > 0.02
+                    && local.x.abs() < 0.07
+                    && (0.0..5.0).contains(&line)
+                    && line < progress * 5.0
+                    && ((local.z + 0.09).rem_euclid(0.035) - 0.016).abs() < 0.003
+            });
+            (
+                pages,
+                if written {
+                    Material::BookInk
+                } else {
+                    Material::BookPages
+                },
+            )
         } else {
             (cover, Material::BookCover(index as u8))
         };
@@ -1350,6 +1374,7 @@ mod tests {
                     size,
                     rotation: Quat::from_rotation_y(0.7),
                     turning,
+                    ink: None,
                 });
             }
         }
