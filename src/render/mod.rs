@@ -253,6 +253,9 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
                 .map_or(0.0, |playing| playing.beat(world.time) * PI),
         ),
     ];
+    if let Some(position) = world.viewer_paper() {
+        furniture.push(Furniture::ViewerLetter(position));
+    }
     if world.unread_letter().is_some() {
         furniture.push(Furniture::Envelope);
     }

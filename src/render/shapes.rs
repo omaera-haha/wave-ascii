@@ -174,6 +174,7 @@ pub enum Furniture<'a> {
     MusicNote(Vec3, bool, u8),
     Mirror,
     Envelope,
+    ViewerLetter(Vec3),
 }
 
 impl Furniture<'_> {
@@ -183,6 +184,7 @@ impl Furniture<'_> {
                 crate::world::mirror::CENTER - Vec3::X * crate::world::mirror::STANDOFF,
                 0.8,
             ),
+            Self::ViewerLetter(position) => (*position, 0.21),
             Self::Envelope => (crate::world::mail::POSITION + Vec3::Y * 0.012, 0.24),
             Self::Books(_, _) => (crate::world::books::POSITION + Vec3::Y * 0.09, 0.29),
             Self::OpenBook { position, size, .. } => (*position, 0.29 * size),
@@ -242,6 +244,19 @@ impl Furniture<'_> {
                 let opening =
                     box_distance(local, Vec3::new(FRAME_DEPTH, HEIGHT * 0.5, WIDTH * 0.5));
                 (outer.max(-opening), Material::Wood)
+            }
+            Self::ViewerLetter(position) => {
+                let point = point - *position;
+                let distance = box_distance(point, Vec3::new(0.16, 0.10, 0.008));
+                let fold = (point.y - point.x.abs() * 0.5 + 0.03).abs();
+                (
+                    distance,
+                    if fold < 0.006 {
+                        Material::EnvelopeFlap
+                    } else {
+                        Material::Envelope
+                    },
+                )
             }
             Self::Envelope => envelope(point),
             Self::Books(owned, held) => {

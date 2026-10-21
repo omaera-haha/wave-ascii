@@ -98,6 +98,9 @@ pub fn observe(world: &World) -> Value {
         "recent_events": recent(world, 8),
         "skills": Skill::ALL.map(|skill| world.life.skills.description(skill)),
         "wish": world.wish_observation(),
+        "viewer_letter": if world.waiting_letter().is_some() { "a letter from the viewer waits on the inside of the front glass" }
+            else if world.life.received.iter().any(|letter| letter.reply.is_some()) { "It is thinking about how to answer the viewer's letter." }
+            else { "the viewer's letters are kept safely" },
         "letter": if world.unread_letter().is_some() { "a letter for the viewer waits unread by the front glass" } else { "no unread letter waiting" },
     })
 }
@@ -305,6 +308,9 @@ fn sight(world: &World) -> Value {
 
 fn thing(world: &World, thing: Thing) -> String {
     match thing {
+        Thing::ViewerLetter => {
+            "a letter written by the viewer, waiting on the inside of the glass".to_owned()
+        }
         Thing::Viewer if world.viewer.typing => "the viewer, typing to you".to_owned(),
         Thing::Viewer if world.viewer_present() => {
             "the viewer, watching through the glass".to_owned()

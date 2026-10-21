@@ -138,6 +138,9 @@ pub fn puffs(world: &World) -> Vec<Puff> {
         }
     }
 
+    if let Some(time) = world.letter_heart() {
+        add(time, Emote::Heart);
+    }
     if ghost.asleep <= 0.5 {
         for (index, event) in world.events.iter().enumerate() {
             // A spell supplies its current pulse, including repeated hiccups.
@@ -293,7 +296,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::LearnedTune(_) => Emote::Note,
         EventKind::Doodled(_) | EventKind::Wrote { .. } if bond >= 0.3 => Emote::Heart,
         EventKind::Doodled(_) | EventKind::Wrote { .. } => Emote::Note,
-        EventKind::Praised | EventKind::ReadLetter => Emote::Heart,
+        EventKind::Praised | EventKind::ReadLetter | EventKind::ReadViewerLetter => Emote::Heart,
         EventKind::ExpectedArrival => Emote::Heart,
         EventKind::FocusEnded {
             completed: true, ..

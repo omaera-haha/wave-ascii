@@ -242,6 +242,10 @@ pub struct Tally {
     pub letters_written: u32,
     #[serde(default)]
     pub letters_read: u32,
+    #[serde(default)]
+    pub letters_received: u32,
+    #[serde(default)]
+    pub viewer_letters_read: u32,
     pub learned_about: u32,
 }
 
@@ -256,6 +260,10 @@ impl Tally {
             EventKind::VisitedMirror => self.mirror_visits = self.mirror_visits.saturating_add(1),
             EventKind::MetReflection => self.met_reflection = true,
             EventKind::RecognizedSelf => self.recognized_self = true,
+            EventKind::GotLetter => self.letters_received = self.letters_received.saturating_add(1),
+            EventKind::ReadViewerLetter => {
+                self.viewer_letters_read = self.viewer_letters_read.saturating_add(1)
+            }
             EventKind::WroteLetter => self.letters_written = self.letters_written.saturating_add(1),
             EventKind::ReadLetter => self.letters_read = self.letters_read.saturating_add(1),
             EventKind::LearnedAboutViewer(_) => {
@@ -501,6 +509,12 @@ impl Tally {
                 .filter(|count| **count > 0)
                 .map(|count| (Salience::Small, kind.diary(*count)))
         }));
+        if self.letters_received > 0 {
+            deeds.push((Salience::Special, "received your letter".to_owned()));
+        }
+        if self.viewer_letters_read > 0 {
+            deeds.push((Salience::Special, "read your letter".to_owned()));
+        }
         if self.letters_written > 0 {
             deeds.push((Salience::Special, "wrote you a letter".to_owned()));
         }
@@ -1096,6 +1110,8 @@ pub struct Life {
     #[serde(default)]
     pub mirror: super::mirror::MirrorLife,
     pub letters: Vec<super::mail::Letter>,
+    #[serde(default)]
+    pub received: Vec<super::penpal::ViewerLetter>,
     pub viewer: super::acquaintance::Acquaintance,
 }
 
@@ -1248,6 +1264,7 @@ impl Life {
             EventKind::FocusEnded {
                 completed: true, ..
             } => 0.01,
+            EventKind::GotLetter => 0.008,
             EventKind::ToldStory | EventKind::ReadLetter => 0.005,
             EventKind::LearnedAboutViewer(_) => 0.005,
             EventKind::LearnedTune(_) => 0.005,
@@ -1497,6 +1514,14 @@ impl Life {
         self.mirror.sanitize(&self.day);
         self.total.met_reflection |= self.mirror.sessions > 0 || self.mirror.recognizes_self();
         self.total.recognized_self |= self.mirror.recognizes_self();
+        self.received.retain(super::penpal::ViewerLetter::valid);
+        for letter in &mut self.received {
+            letter.sanitize();
+        }
+        if self.received.len() > super::mail::KEPT {
+            self.received
+                .drain(..self.received.len() - super::mail::KEPT);
+        }
         self.letters.retain(super::mail::Letter::valid);
         if self.letters.len() > super::mail::KEPT {
             self.letters.drain(..self.letters.len() - super::mail::KEPT);
@@ -1607,6 +1632,8 @@ impl Life {
                 *count > 0
             });
             tally.letters_written = tally.letters_written.min(100_000_000);
+            tally.letters_received = tally.letters_received.min(100_000_000);
+            tally.viewer_letters_read = tally.viewer_letters_read.min(100_000_000);
             tally.letters_read = tally.letters_read.min(100_000_000);
             tally.outfits = tally.outfits.min(100_000_000);
             tally.pages = tally.pages.min(100_000_000);
@@ -1807,6 +1834,9 @@ impl Life {
             }
             EventKind::FinishedBook(_) if total.books_finished == 1 => {
                 "I finished my first picture book.".to_owned()
+            }
+            EventKind::GotLetter if total.letters_received == 1 => {
+                "You wrote me my first letter.".to_owned()
             }
             EventKind::WroteLetter if total.letters_written == 1 => {
                 "I wrote you my first letter.".to_owned()

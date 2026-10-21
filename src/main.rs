@@ -4,6 +4,7 @@ mod app;
 mod audit;
 mod canvas;
 mod color;
+mod draft;
 mod face;
 mod frame;
 mod mind;
@@ -72,7 +73,8 @@ Keys:
   g            noughts and crosses    1-9      choose a square
   o            focus together for twenty-five minutes (o again ends it)
   f            draw in the fog with left drags (f or Esc stops)
-  e            read letters (left/right for older/newer)
+  e            letters, or write when empty (left/right browse)
+  w (letters)  write; Ctrl+S sends, Esc keeps draft; v browses sent
   q, Esc       quit
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
