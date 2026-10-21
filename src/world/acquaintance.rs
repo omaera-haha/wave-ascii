@@ -399,7 +399,23 @@ fn unrelated(text: &str) -> bool {
         .any(|part| lower.starts_with(part) || (!part.is_ascii() && lower.contains(part)))
         || matches!(
             lower.as_str(),
-            "hello" | "hi" | "bye" | "no" | "stop" | "안녕" | "아니" | "싫어"
+            "hello"
+                | "hi"
+                | "bye"
+                | "no"
+                | "stop"
+                | "yes"
+                | "yeah"
+                | "yep"
+                | "ok"
+                | "okay"
+                | "sure"
+                | "안녕"
+                | "아니"
+                | "싫어"
+                | "응"
+                | "네"
+                | "좋아"
         )
 }
 
@@ -679,6 +695,12 @@ impl World {
         self.life.viewer.asked_today.push(topic);
         self.asking = Some((topic, self.time + 180.0));
         self.last_question_at = Some(self.time);
+        // It stays at the glass a minute for the answer.
+        self.ghost.plan.length = self
+            .ghost
+            .plan
+            .length
+            .max(self.ghost.plan.stayed(self.time) + 60.0);
         self.say(topic.question(self.speaks_korean()));
         self.record(EventKind::AskedViewer(topic));
     }
@@ -692,7 +714,24 @@ impl World {
             _ => answer_text(text)
                 .is_some_and(|answer| answer != text.trim().trim_end_matches(['.', '!'])),
         };
+        // Farewells, greetings, and scolding keep their usual meaning, and a
+        // guess in a game on the glass belongs to the game.
+        let tone = super::vocabulary::read(text, &self.ghost.name).tone;
         if self.time > until
+            || self.ghost.asleep >= 0.3
+            || self.puzzle_active()
+            || self
+                .game
+                .as_ref()
+                .is_some_and(|game| game.outcome.is_none())
+            || matches!(
+                tone,
+                Some(
+                    super::vocabulary::Tone::Farewell
+                        | super::vocabulary::Tone::Greeting
+                        | super::vocabulary::Tone::Scolding
+                )
+            )
             || unrelated(text)
             || (!definite_answer
                 && self
@@ -817,6 +856,42 @@ mod tests {
         world.begin(Activity::Visit);
         world.ghost.plan.arrived = Some(10.0);
         world
+    }
+
+    #[test]
+    fn farewells_scolding_yes_and_game_guesses_keep_their_meaning_while_a_question_waits() {
+        for text in ["goodnight", "no!", "yes", "okay", "잘자"] {
+            let mut world = visiting(5);
+            world.asking = Some((Topic::Food, world.time + 180.0));
+            let heard = world.hear(text);
+            assert_ne!(
+                heard.understanding,
+                Understanding::Answered(Topic::Food),
+                "{text}"
+            );
+            assert_eq!(world.life.viewer.food, None, "{text}");
+        }
+        let mut world = visiting(5);
+        world.asking = Some((Topic::Food, world.time + 180.0));
+        world.begin(Activity::Puzzle);
+        assert!(world.asking.is_none(), "a game ends the wait for an answer");
+        assert_eq!(world.life.viewer.food, None);
+    }
+
+    #[test]
+    fn it_waits_at_the_glass_a_minute_for_an_answer() {
+        let mut world = visiting(5);
+        world.ghost.plan.length = 1.0;
+        world.ghost.plan.arrived = Some(world.time - 6.0);
+        world.ask_viewer();
+        let (_, until) = world.asking.unwrap();
+        world.asking = Some((Topic::Food, until));
+        world.step(50.0);
+        assert_eq!(world.ghost.plan.activity, Activity::Visit);
+        assert!(!world.ghost.plan.done);
+        let heard = world.hear("pizza");
+        assert_eq!(heard.understanding, Understanding::Answered(Topic::Food));
+        assert_eq!(world.life.viewer.food.as_deref(), Some("pizza"));
     }
 
     #[test]

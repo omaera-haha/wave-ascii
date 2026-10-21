@@ -219,7 +219,8 @@ skipped. Without a saved life, including piped previews, no pictures are kept.
 
 After at least six hours away, a ghost past its first day leaves a letter
 by the front glass. Click the little envelope or press `e` to read it.
-Left/Right browse older/newer letters; Esc, Enter, or `e` closes the paper,
+Left/Right browse older/newer letters, ↑/↓ scroll a long one on a small
+screen; Esc, Enter, or `e` closes the paper,
 and `q` quits. The status bar shows `✉ e` while a letter waits unread.
 The newest twenty letters stay with its saved life, and the journal lists
 their dates and opening lines after the diary.

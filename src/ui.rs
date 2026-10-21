@@ -488,12 +488,15 @@ fn letter_panel(app: &App, screen: &mut Canvas) {
     for line in &letter.lines {
         lines.extend(wrap(line, inner));
     }
-    let hint = if app.world.life.letters.len() > 1 {
-        "older ←  → newer · Esc, Enter, e close"
-    } else {
-        "Esc, Enter, e close"
-    };
     let height = (lines.len() + 4).min(screen.rows());
+    let visible = height.saturating_sub(3);
+    let scroll = app.letter_scroll.min(lines.len().saturating_sub(visible));
+    let hint = match (app.world.life.letters.len() > 1, lines.len() > visible) {
+        (true, true) => "↑↓ · older ←  → newer · Esc close",
+        (true, false) => "older ←  → newer · Esc, Enter, e close",
+        (false, true) => "↑↓ more · Esc, Enter, e close",
+        (false, false) => "Esc, Enter, e close",
+    };
     let box_width = (inner + 4).min(screen.columns());
     let left = (screen.columns() - box_width) / 2;
     let top = (screen.rows() - height) / 2;
@@ -501,7 +504,7 @@ fn letter_panel(app: &App, screen: &mut Canvas) {
     for row in top..top + height {
         fill(screen, row, left, left + box_width, paper);
     }
-    for (offset, line) in lines.iter().take(height.saturating_sub(3)).enumerate() {
+    for (offset, line) in lines.iter().skip(scroll).take(visible).enumerate() {
         write(
             screen,
             left + 2,

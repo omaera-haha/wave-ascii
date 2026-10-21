@@ -153,7 +153,10 @@ impl View {
         Self {
             eye: mirror::reflect_point(self.eye),
             forward: mirror::reflect_direction(self.forward),
-            right: mirror::reflect_direction(self.right),
+            // Reflecting every axis would flip the basis's handedness and
+            // cancel the mirror's left-right reversal on billboards, so the
+            // right axis turns back to keep it.
+            right: -mirror::reflect_direction(self.right),
             up: mirror::reflect_direction(self.up),
         }
     }
@@ -926,12 +929,20 @@ mod tests {
         assert_eq!(mirrored.eye, mirror::reflect_point(view.eye));
         for (basis, reflected) in [
             (view.forward, mirrored.forward),
-            (view.right, mirrored.right),
+            (-view.right, mirrored.right),
             (view.up, mirrored.up),
         ] {
             assert_eq!(reflected, mirror::reflect_direction(basis));
             assert!((reflected.length() - 1.0).abs() < 1e-6);
         }
+        // The basis keeps its handedness, so a billboard seen in the mirror
+        // shows its left and right swapped, as a reflection should.
+        let handedness = |right: Vec3, up: Vec3, forward: Vec3| right.cross(up).dot(forward);
+        assert!(
+            handedness(view.right, view.up, view.forward)
+                * handedness(mirrored.right, mirrored.up, mirrored.forward)
+                > 0.0
+        );
         assert!(mirrored.right.dot(mirrored.up).abs() < 1e-6);
         let direction = (mirror::CENTER - view.eye).normalize();
         let reflected = mirror::reflect_direction(direction);

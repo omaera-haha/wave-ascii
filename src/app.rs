@@ -205,6 +205,8 @@ pub struct App {
     drawing_right: bool,
     pub album: Album,
     pub letter_index: usize,
+    /// Lines scrolled past in an open letter taller than the screen.
+    pub letter_scroll: usize,
     letter_read: bool,
     letter_reply_at: Option<f64>,
 }
@@ -247,6 +249,7 @@ impl App {
             drawing_right: false,
             album: Album::default(),
             letter_index: 0,
+            letter_scroll: 0,
             letter_read: false,
             letter_reply_at: None,
         }
@@ -290,9 +293,11 @@ impl App {
                 .is_some_and(|time| self.world.time >= time)
         {
             self.letter_reply_at = None;
+            // A question still waiting for its answer keeps the floor.
             if self.world.ghost.asleep < 0.3
                 && self.world.focus.is_none()
                 && self.world.telling.is_none()
+                && self.world.asking.is_none()
             {
                 self.world.attend("viewer", 8.0);
                 self.world.say(if self.world.speaks_korean() {
@@ -534,8 +539,12 @@ impl App {
                         } else {
                             (self.letter_index + 1).min(newest)
                         };
+                        self.letter_scroll = 0;
                         self.letter_read |= self.world.read_letter(self.letter_index);
                     }
+                    // Drawing clamps the scroll to what the screen can show.
+                    Key::Up => self.letter_scroll = self.letter_scroll.saturating_sub(1),
+                    Key::Down => self.letter_scroll = self.letter_scroll.saturating_add(1).min(64),
                     _ => {}
                 }
                 Response::Continue
@@ -614,6 +623,7 @@ impl App {
             return;
         };
         self.letter_index = index;
+        self.letter_scroll = 0;
         self.letter_read = self.world.read_letter(index);
         self.mode = Mode::Letter;
         self.world.lift_finger();
@@ -1473,6 +1483,26 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    #[test]
+    fn up_and_down_scroll_a_letter_and_paging_starts_the_next_at_its_top() {
+        let mut app = app();
+        app.world.life.letters = vec![letter("2026-06-20", false), letter("2026-06-21", false)];
+        app.input(Input::Key(Key::Character('e')));
+        assert_eq!(app.letter_scroll, 0);
+        app.input(Input::Key(Key::Up));
+        assert_eq!(app.letter_scroll, 0);
+        app.input(Input::Key(Key::Down));
+        app.input(Input::Key(Key::Down));
+        assert_eq!(app.letter_scroll, 2);
+        assert_eq!(app.mode, Mode::Letter);
+        app.input(Input::Key(Key::Left));
+        assert_eq!(app.letter_scroll, 0);
+        // A tiny screen still draws without trouble at any scroll.
+        app.letter_scroll = 40;
+        app.frame(12, 6);
+        app.frame(60, 8);
     }
 
     #[test]

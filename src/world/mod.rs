@@ -984,8 +984,10 @@ impl World {
                 }
             } else {
                 self.absent_since = Some(self.time);
-                // A word game needs someone to guess.
+                // A word game needs someone to guess, and a question someone
+                // to answer.
                 self.abandon_puzzle();
+                self.asking = None;
             }
         }
         if !self.viewer_gone
@@ -1302,6 +1304,14 @@ impl World {
         }
         if activity != Activity::Visit {
             self.sebae = None;
+        }
+        // A question asked at the glass lapses when it goes to play a game,
+        // hide, or sleep; other pastimes leave it waiting for the answer.
+        if matches!(
+            activity,
+            Activity::Game | Activity::Puzzle | Activity::Rest | Activity::Hide
+        ) {
+            self.asking = None;
         }
         self.abandon_game();
         self.abandon_puzzle();
@@ -2384,6 +2394,7 @@ impl World {
         // there.
         let waiting = self.telling.is_some()
             || matches!(self.ghost.plan.activity, Activity::Wait | Activity::Company)
+            || (self.ghost.plan.activity == Activity::Visit && self.asking.is_some())
             || (matches!(
                 self.ghost.plan.activity,
                 Activity::Rest
