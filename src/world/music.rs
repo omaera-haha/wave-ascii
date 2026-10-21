@@ -653,6 +653,7 @@ impl World {
 
     pub(super) fn play_comfort_lullaby(&mut self) {
         self.begin(Activity::Music);
+        self.compose_on_arrival = false;
         self.queued_tune = Some(built_in(0));
     }
 

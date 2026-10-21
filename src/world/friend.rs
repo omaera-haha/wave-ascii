@@ -278,8 +278,19 @@ impl World {
                     return;
                 }
                 // Whether it comes at all tonight: moonlight and loneliness
-                // make it likelier.
-                if self.random.unit() >= visit_chance(self.moon_phase(), self.ghost.needs.company) {
+                // make it likelier. The saved life keeps the decision, so
+                // reopening the evening doesn't change its mind.
+                let today = self.date.to_string();
+                let coming = match &self.life.friend_decision {
+                    Some((day, coming)) if *day == today => *coming,
+                    _ => {
+                        let coming = self.random.unit()
+                            < visit_chance(self.moon_phase(), self.ghost.needs.company);
+                        self.life.friend_decision = Some((today, coming));
+                        coming
+                    }
+                };
+                if !coming {
                     self.visitors.friend_visited = Some(self.date);
                     return;
                 }
@@ -1063,6 +1074,34 @@ mod tests {
         assert_eq!(first.ghost.position, second.ghost.position);
         assert!(first.life.total.friend_visits > 0);
         assert!(first.life.total.friend_games > 0);
+    }
+
+    #[test]
+    fn reopening_the_same_evening_keeps_the_friends_decision() {
+        for seed in 0..40 {
+            let mut world = World::new(seed, 18.0);
+            world.date = jiff::civil::Date::constant(2026, 10, 25);
+            world.calendar_at = Some(world.date);
+            world.advance_friend();
+            let (day, coming) = world.life.friend_decision.clone().unwrap();
+            assert_eq!(day, world.date.to_string());
+            let mut restored = World::new(seed + 1000, 18.0);
+            restored.date = world.date;
+            restored.calendar_at = Some(restored.date);
+            restored.life = world.saved_life();
+            let mut before = restored.random.clone();
+            restored.advance_friend();
+            assert_eq!(
+                restored.life.friend_decision,
+                Some((day.clone(), coming)),
+                "{seed}"
+            );
+            assert_eq!(restored.visitors.friend_visited.is_some(), !coming);
+            if !coming {
+                // Nothing was drawn to decide again.
+                assert_eq!(restored.random.next_u64(), before.next_u64());
+            }
+        }
     }
 
     #[test]

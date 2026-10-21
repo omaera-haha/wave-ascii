@@ -81,9 +81,6 @@ pub struct Visitors {
     pub(super) friend_evening: Option<jiff::civil::Date>,
     /// An evening the friend has come, or won't.
     pub(super) friend_visited: Option<jiff::civil::Date>,
-    /// The day the bird made up its mind about a gift, and whether it
-    /// means to leave one.
-    gift_day: Option<(jiff::civil::Date, bool)>,
 }
 
 impl Visitors {
@@ -96,7 +93,6 @@ impl Visitors {
             next_friend: f64::INFINITY,
             friend_evening: None,
             friend_visited: None,
-            gift_day: None,
         }
     }
 }
@@ -381,8 +377,7 @@ impl World {
                 {
                     let gift = Keepsake::choose(self.season(), &mut self.random);
                     self.life.sill = Some(gift);
-                    self.life.gift_day = Some(self.date.to_string());
-                    self.visitors.gift_day = Some((self.date, false));
+                    self.life.gift_decision = Some((self.date.to_string(), false));
                     self.ghost.saw_gift = false;
                     self.record(EventKind::GiftLeft(gift));
                 }
@@ -553,16 +548,16 @@ fn gift_chance(trust: f32) -> f32 {
 const GIFT_ON_A_GIFT_DAY: f32 = 0.35;
 
 impl World {
-    // Whether the bird means to leave a gift today, decided once a day, and
-    // never twice in one day, even across restarts.
+    // Whether the bird means to leave a gift today, decided once a day and
+    // kept in the saved life, so restarting neither repeats a gift nor
+    // changes its mind.
     fn brings_gift_today(&mut self) -> bool {
-        let date = self.date;
-        match self.visitors.gift_day {
-            Some((day, giving)) if day == date => giving,
+        let today = self.date.to_string();
+        match &self.life.gift_decision {
+            Some((day, giving)) if *day == today => *giving,
             _ => {
-                let given = self.life.gift_day.as_deref() == Some(date.to_string().as_str());
-                let giving = !given && self.random.unit() < gift_chance(self.life.bird_trust);
-                self.visitors.gift_day = Some((date, giving));
+                let giving = self.random.unit() < gift_chance(self.life.bird_trust);
+                self.life.gift_decision = Some((today, giving));
                 giving
             }
         }

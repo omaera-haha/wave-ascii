@@ -174,7 +174,10 @@ pub fn understand(text: &str, life: &Life, ghost_name: &str) -> Understood {
         {
             understood.tones.push(tone);
         }
-        if let Some(name) = vocabulary::introduced_name(sentence) {
+        // "I'm stressed." says how they feel, not who they are.
+        if super::feelings::felt(sentence).is_none()
+            && let Some(name) = vocabulary::introduced_name(sentence)
+        {
             understood.viewer_name = Some(name);
         } else if let Some(name) = vocabulary::given_name(sentence) {
             understood.ghost_name = Some(name);
@@ -900,6 +903,23 @@ mod tests {
         assert!(world.life.received[0].read, "{:?}", world.ghost.plan);
         assert!(world.time - held_at.unwrap() >= 6.0);
         assert!(world.time - started < 60.0);
+    }
+
+    #[test]
+    fn a_feeling_in_a_letter_is_no_introduction() {
+        let life = Life {
+            viewer_name: Some("Mina".to_owned()),
+            ..Life::default()
+        };
+        for text in ["I'm Stressed.", "I'm Tired!\nI am Happy."] {
+            let understood = understand(text, &life, "Pip");
+            assert_eq!(understood.viewer_name, None, "{text}");
+            assert!(!understood.feelings.is_empty(), "{text}");
+        }
+        assert_eq!(
+            understand("I'm Mina.", &life, "Pip").viewer_name.as_deref(),
+            Some("Mina")
+        );
     }
 
     #[test]

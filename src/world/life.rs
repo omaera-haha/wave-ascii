@@ -1140,9 +1140,14 @@ pub struct Life {
     /// A gift still waiting outside, even while the app is closed.
     #[serde(default)]
     pub sill: Option<Keepsake>,
-    /// The local day the bird last left a gift, as YYYY-MM-DD.
+    /// The local day, as YYYY-MM-DD, the bird last decided whether to
+    /// leave a gift, and whether one is still to come that day.
     #[serde(default)]
-    pub gift_day: Option<String>,
+    pub gift_decision: Option<(String, bool)>,
+    /// The local evening the friend last decided whether to come, and
+    /// whether it would.
+    #[serde(default)]
+    pub friend_decision: Option<(String, bool)>,
     /// Arrivals at each local hour, with older days gradually fading.
     #[serde(default)]
     pub arrivals: [f32; 24],
@@ -1842,9 +1847,11 @@ impl Life {
         if !self.alone.is_finite() || self.alone < 0.0 {
             self.alone = 0.0;
         }
-        self.gift_day = self
-            .gift_day
-            .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
+        for decision in [&mut self.gift_decision, &mut self.friend_decision] {
+            *decision = decision
+                .take()
+                .filter(|(day, _)| day.parse::<jiff::civil::Date>().is_ok());
+        }
         self.warmed = if self.warmed.is_finite() {
             self.warmed.clamp(0.0, DAILY_WARMTH)
         } else {

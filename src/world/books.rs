@@ -586,15 +586,37 @@ impl World {
         }
     }
 
+    /// The book it has finished most often, its own or the library's; a
+    /// tie goes to one it wrote.
     pub fn favorite_book(&self) -> Option<usize> {
-        self.life
+        let library = self.life.books.favorite().map(|index| {
+            let finished = self
+                .life
+                .books
+                .owned
+                .iter()
+                .find(|owned| owned.index == index)
+                .map_or(0, |owned| owned.finished);
+            (finished, index)
+        });
+        let own = self
+            .life
             .written
             .iter()
             .enumerate()
             .filter(|(_, book)| book.finished)
             .max_by_key(|(_, book)| book.read)
-            .map(|(index, _)| LIBRARY.len() + index)
-            .or_else(|| self.life.books.favorite())
+            .map(|(index, book)| (book.read, LIBRARY.len() + index));
+        match (library, own) {
+            (Some((library_count, library)), Some((own_count, own))) => {
+                Some(if library_count > own_count {
+                    library
+                } else {
+                    own
+                })
+            }
+            (library, own) => own.or(library).map(|(_, index)| index),
+        }
     }
 
     pub fn reading_words(&self) -> String {
@@ -1325,6 +1347,31 @@ mod tests {
         restored.step(0.0);
         assert_eq!(restored.life.books, world.life.books);
         assert_eq!(restored.life.total.books_received, 1);
+    }
+
+    #[test]
+    fn the_favorite_is_the_book_finished_most_whether_it_wrote_it_or_not() {
+        let mut world = World::new(3, 12.0);
+        world.life.books.owned[1].finished = 10;
+        world
+            .life
+            .written
+            .push(crate::world::creation::WrittenBook {
+                title: ("My Book".to_owned(), "내 책".to_owned()),
+                pages: vec![("A page.".to_owned(), "한 쪽.".to_owned())],
+                day: world.date.to_string(),
+                finished: true,
+                read: 0,
+                outline: Vec::new(),
+                page: 0,
+            });
+        let own = LIBRARY.len();
+        assert_eq!(world.favorite_book(), Some(world.life.books.owned[1].index));
+        world.life.written[0].read = 10;
+        assert_eq!(world.favorite_book(), Some(own));
+        world.life.books.owned[1].finished = 0;
+        world.life.written[0].read = 0;
+        assert_eq!(world.favorite_book(), Some(own));
     }
 
     #[test]

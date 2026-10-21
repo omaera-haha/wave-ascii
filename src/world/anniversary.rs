@@ -251,6 +251,7 @@ impl World {
     pub(super) fn greet_landmark(&mut self, occasion: Occasion) -> bool {
         let day = self.date.to_string();
         if self.life.landmark_greeted.as_ref() == Some(&day)
+            || self.reading_viewer_letter()
             || self.telling.is_some()
             || self.game.is_some()
             || self.puzzle_active()

@@ -67,6 +67,19 @@ impl Feeling {
 
 /// Only complete, first-person statements count. In particular a question,
 /// negation, quoted feeling, or someone else's subject supplies no evidence.
+// Whether `text` says no to something, in English or Korean.
+fn denies(text: &str) -> bool {
+    let text = text.to_lowercase().replace(['\'', '’', '‘'], "");
+    text.split(|character: char| !character.is_alphabetic())
+        .any(|word| {
+            matches!(
+                word,
+                "not" | "never" | "dont" | "isnt" | "arent" | "no" | "nope" | "안" | "못" | "별로"
+            ) || word.contains("않")
+                || word.contains("아니")
+        })
+}
+
 pub fn felt(text: &str) -> Option<Feeling> {
     if text.contains(['?', '？', '"', '“', '”']) || super::question::ask(text).is_some() {
         return None;
@@ -323,12 +336,9 @@ impl World {
         let note = self.life.feelings.last()?;
         let age = self.feeling_at.map_or_else(
             || {
+                // The clock has moved on with the world since restoring.
                 let days = note.days_ago(self.date)?;
-                Some(
-                    f64::from(days) * 86400.0
-                        + f64::from(self.hour - note.hour) * 3600.0
-                        + self.time,
-                )
+                Some(f64::from(days) * 86400.0 + f64::from(self.hour - note.hour) * 3600.0)
             },
             |at| Some(self.time - at),
         )?;
@@ -389,6 +399,10 @@ impl World {
         if let Some((earlier, _)) = follow_up {
             let tone = vocabulary::read(text, &self.ghost.name).tone;
             let negative = feeling.is_some_and(Feeling::negative);
+            // "Not any better" carries a praise word, but it is no recovery.
+            if feeling.is_none() && denies(text) {
+                return Some(self.receive_feeling(text, earlier, korean));
+            }
             if !negative
                 && (feeling.is_some() || matches!(tone, Some(Tone::Praise | Tone::Greeting)))
             {
@@ -1367,6 +1381,22 @@ mod tests {
     }
 
     #[test]
+    fn a_restored_feeling_ages_by_the_clock_alone() {
+        let mut world = World::new(1, 12.25);
+        world.life.feelings.push(FeelingNote {
+            feeling: Feeling::Tired,
+            day: world.date.to_string(),
+            hour: 12.0,
+            asked: false,
+        });
+        // A quarter of an hour of live play after restoring moves both the
+        // clock and the world's time.
+        world.time = 900.0;
+        assert_eq!(world.recent_feeling(1200.0), Some(Feeling::Tired));
+        assert_eq!(world.recent_feeling(600.0), None);
+    }
+
+    #[test]
     fn a_later_day_follow_up_is_saved_once_and_positive_answers_teach_no_words() {
         for answer in [
             "yes",
@@ -1399,7 +1429,17 @@ mod tests {
 
     #[test]
     fn negative_follow_up_answers_restart_care_and_the_window_expires() {
-        for answer in ["no", "not really", "아니", "별로", "I'm sad", "아파"] {
+        for answer in [
+            "no",
+            "not really",
+            "아니",
+            "별로",
+            "I'm sad",
+            "아파",
+            "I'm not feeling any better",
+            "not better",
+            "안 괜찮아",
+        ] {
             let mut world = following_up();
             let heard = world.hear(answer);
             assert!(
