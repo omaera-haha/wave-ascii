@@ -223,7 +223,7 @@ impl World {
             }
             let index = self.pick(&vec![1.0; now.len()]).unwrap();
             lines.push(now.swap_remove(index));
-            let nature = self.life.nature.unwrap_or_default();
+            let nature = self.life.temperament();
             let feeling = if recently_unhappy {
                 language(
                     "I hope you're feeling better.",
@@ -266,7 +266,7 @@ impl World {
             "네가 태어나서 정말 기뻐.",
             korean,
         ));
-        let nature = self.life.nature.unwrap_or_default();
+        let nature = self.life.temperament();
         lines.push(if nature.playful >= 0.6 {
             language("Let's play all day!", "오늘은 하루 종일 같이 놀자!", korean)
         } else {

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::friend::count_words;
 use super::{
     Activity, EventKind, GREETS_FROM, Keepsake, LearnedPicture, Nature, Occasion, Outcome,
-    Vocabulary,
+    Upbringing, Vocabulary,
 };
 
 /// Days of the diary kept.
@@ -130,6 +130,8 @@ pub struct Tally {
     pub heard: u32,
     /// Times the viewer sounded pleased with it.
     pub praises: u32,
+    /// Times the viewer told it no.
+    pub scolds: u32,
     /// Times it worked out what one of the viewer's words means.
     pub learned: u32,
     /// The first few words it worked out, kept for the diary.
@@ -244,6 +246,8 @@ pub struct Tally {
     pub wishes_made: u32,
     #[serde(default)]
     pub wishes_granted: u32,
+    /// Granted wishes that involved the viewer.
+    pub viewer_wishes_granted: u32,
     #[serde(default)]
     pub wishes_faded: u32,
     #[serde(default)]
@@ -263,6 +267,8 @@ pub struct Tally {
     pub viewer_letters_read: u32,
     pub learned_about: u32,
     pub comforts: u32,
+    /// First lasting changes it recognized, kept among the day's deeds.
+    pub temperament_changes: Vec<String>,
     pub feelings_heard: u32,
     pub feelings: Vec<super::Feeling>,
     pub comforted_feelings: Vec<super::Feeling>,
@@ -337,7 +343,13 @@ impl Tally {
                 match kind {
                     EventKind::MadeWish(_) => self.wishes_made = self.wishes_made.saturating_add(1),
                     EventKind::WishGranted(_) => {
-                        self.wishes_granted = self.wishes_granted.saturating_add(1)
+                        self.wishes_granted = self.wishes_granted.saturating_add(1);
+                        if let EventKind::WishGranted(wish) = kind
+                            && wish.with_viewer()
+                        {
+                            self.viewer_wishes_granted =
+                                self.viewer_wishes_granted.saturating_add(1);
+                        }
                     }
                     _ => self.wishes_faded = self.wishes_faded.saturating_add(1),
                 }
@@ -480,6 +492,7 @@ impl Tally {
                 self.moths = self.moths.saturating_add(1)
             }
             EventKind::Heard(_) => self.heard = self.heard.saturating_add(1),
+            EventKind::Scolded => self.scolds = self.scolds.saturating_add(1),
             EventKind::Praised => self.praises = self.praises.saturating_add(1),
             EventKind::LearnedWord { word, .. } => {
                 self.learned = self.learned.saturating_add(1);
@@ -541,6 +554,14 @@ impl Tally {
             .iter()
             .map(|occasion| (Salience::Momentous, occasion.diary_words().to_owned()))
             .collect();
+        deeds.extend(
+            self.temperament_changes
+                .iter()
+                .map(|line| (Salience::Momentous, line.trim_end_matches('.').to_owned())),
+        );
+        if self.scolds > 0 {
+            deeds.push((Salience::Small, "you told me no".to_owned()));
+        }
         deeds.extend(self.anniversary_words.iter().map(|line| {
             let mut letters = line.trim_end_matches('.').chars();
             let line = letters.next().map_or_else(String::new, |first| {
@@ -1127,6 +1148,8 @@ pub struct Life {
     /// The nature it was born with, absent in saves from before natures.
     #[serde(default)]
     pub nature: Option<Nature>,
+    /// The small changes that shared days have made to its inborn nature.
+    pub upbringing: Upbringing,
     /// How close it feels to the viewer, from a stranger at 0 to devoted
     /// at 1.
     pub bond: f32,
@@ -1406,7 +1429,7 @@ impl Life {
             EventKind::Petted => 0.004,
             EventKind::Pounced => 0.003,
             EventKind::Toppled { by_viewer: true } => {
-                if self.nature.unwrap_or_default().playful >= 0.5 || self.bond >= 0.55 {
+                if self.temperament().playful >= 0.5 || self.bond >= 0.55 {
                     0.003
                 } else {
                     -0.003
@@ -1436,7 +1459,7 @@ impl Life {
         let (bond, together) = (self.bond, self.total.together);
         self.total.together += f64::from(seconds);
         self.today.together += f64::from(seconds);
-        let nature = self.nature.unwrap_or_default();
+        let nature = self.temperament();
         let shyness = if self.bond < 0.3 {
             0.4 * (nature.shy - 0.5)
         } else {
@@ -1460,14 +1483,14 @@ impl Life {
         let past_first = |alone: f64| (alone / 86_400.0 - 1.0).max(0.0);
         let days = past_first(self.alone) - past_first(before);
         if days > 0.0 {
-            let holding = 1.15 - 0.3 * self.nature.unwrap_or_default().shy;
+            let holding = 1.15 - 0.3 * self.temperament().shy;
             self.warm(-FADING * days as f32 * holding);
         }
     }
 
     /// How close it needs to feel before coming to greet the viewer.
     pub fn greeting_bond(&self) -> f32 {
-        let nature = self.nature.unwrap_or_default();
+        let nature = self.temperament();
         GREETS_FROM
             * (1.0 + 0.4 * (nature.shy - 0.5) - 0.2 * (nature.tender - 0.5)).clamp(0.75, 1.35)
     }
@@ -1531,6 +1554,10 @@ impl Life {
     /// Starts counting `day`, a local date as YYYY-MM-DD. When it is a new
     /// day, the last one goes into the diary, unless nothing happened in it.
     pub fn begin_day(&mut self, day: &str) {
+        self.begin_day_with_birth(day, None);
+    }
+
+    pub(super) fn begin_day_with_birth(&mut self, day: &str, birthday: Option<jiff::civil::Date>) {
         if self.day == day {
             return;
         }
@@ -1542,6 +1569,7 @@ impl Life {
             .map_or(0, |(before, after)| {
                 (after - before).get_days().clamp(0, 365)
             });
+        self.raise_through(day, birthday);
         let decay = ROUTINE_DECAY.powi(days);
         for weight in &mut self.arrivals {
             *weight *= decay;
@@ -1639,6 +1667,10 @@ impl Life {
             .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
         for tally in [&mut self.today, &mut self.total] {
             tally.anniversary_words.truncate(12);
+            tally
+                .temperament_changes
+                .retain(|text| super::upbringing::valid_change(text));
+            tally.temperament_changes.truncate(5);
         }
         self.feelings.retain(|note| note.valid(&self.day));
         if self.feelings.len() > 12 {
@@ -1690,6 +1722,7 @@ impl Life {
             .filter(|night| night.parse::<jiff::civil::Date>().is_ok());
         self.skills = self.skills.sanitized(&self.total);
         self.nature = self.nature.map(Nature::sanitized);
+        self.upbringing.sanitize(&self.day);
         self.pictures.retain(LearnedPicture::valid);
         // A newer example replaces an older example with the same name.
         let mut names = std::collections::BTreeSet::new();
@@ -1792,6 +1825,8 @@ impl Life {
             tally.names = tally.names.min(100_000_000);
             tally.wishes_made = tally.wishes_made.min(100_000_000);
             tally.wishes_granted = tally.wishes_granted.min(100_000_000);
+            tally.viewer_wishes_granted = tally.viewer_wishes_granted.min(tally.wishes_granted);
+            tally.scolds = tally.scolds.min(100_000_000);
             tally.wishes_faded = tally.wishes_faded.min(100_000_000);
             tally.wish_words.retain(|words| {
                 words.chars().count() <= 256 && !words.chars().any(char::is_control)

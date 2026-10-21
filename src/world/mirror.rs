@@ -101,10 +101,10 @@ impl World {
             if !visit.familiar
                 && !visit.startled
                 && self.ghost.position.x > VISIT.x - 0.3
-                && self.ghost.velocity.x > 0.4 - 0.2 * self.life.nature.unwrap_or_default().shy
+                && self.ghost.velocity.x > 0.4 - 0.2 * self.life.temperament().shy
             {
                 self.mirror_visit.as_mut().unwrap().startled = true;
-                self.ghost.velocity.x = -0.2 - 0.3 * self.life.nature.unwrap_or_default().shy;
+                self.ghost.velocity.x = -0.2 - 0.3 * self.life.temperament().shy;
                 self.suggest_mood(Mood::Curious, 3.0);
             }
             return Some(CENTER);

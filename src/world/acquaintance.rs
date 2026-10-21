@@ -669,7 +669,7 @@ impl World {
         let day = self.date.to_string();
         let viewer = &self.life.viewer;
         let today = viewer.last_asked.as_ref() == Some(&day);
-        let limit = if self.life.nature.unwrap_or_default().curious >= 0.65 {
+        let limit = if self.life.temperament().curious >= 0.65 {
             2
         } else {
             1

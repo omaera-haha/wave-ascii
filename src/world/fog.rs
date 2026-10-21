@@ -313,7 +313,7 @@ impl World {
             .as_ref()
             .and_then(|recognized| recognized.sketch);
         let chance = answer_chance(
-            self.life.nature.unwrap_or_default().playful,
+            self.life.temperament().playful,
             self.life.bond,
             sketch.is_some(),
         );

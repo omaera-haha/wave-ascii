@@ -37,7 +37,8 @@ pub fn observe(world: &World) -> Value {
         "ghost": {
             "name": ghost.name,
             "wearing": world.wearing.map(|accessory| accessory.words()).unwrap_or_else(|| "no accessory".to_owned()),
-            "nature": world.life.nature.unwrap_or_default().words(),
+            "nature": world.life.temperament().words(),
+            "changing": world.life.upbringing.words().unwrap_or("no clear change yet"),
             "stage": world.stage().words(),
             "practice": Skill::for_activity(plan.activity)
                 .map(|skill| format!("you are {}", world.life.skills.description(skill)))

@@ -365,7 +365,8 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
     if ghost.plan.activity == Activity::Wait && !ghost.plan.done && !present {
         lines.extend(["Any minute now.", "I wonder if they'll come today."]);
     }
-    if let Some(nature) = world.life.nature {
+    {
+        let nature = world.life.temperament();
         if nature.shy >= 0.7 && present && world.life.bond < 0.3 {
             lines.push("Is it okay if I watch you?");
         }
@@ -381,6 +382,9 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
         if nature.tender >= 0.7 {
             lines.push("I hope the plant is happy.");
         }
+    }
+    if let Some(thought) = world.life.upbringing.thought() {
+        lines.push(thought);
     }
     if world.morning() {
         lines.extend(morning(world));

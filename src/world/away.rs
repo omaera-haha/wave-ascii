@@ -377,7 +377,7 @@ pub fn story(
     if (first - left.date()).get_days() > 1 {
         away.quiet_before = first.yesterday().ok();
     }
-    let nature = life.nature.unwrap_or_default().sanitized();
+    let nature = life.temperament().sanitized();
     let usual = life.usual_time().and_then(|_| {
         life.arrivals
             .iter()

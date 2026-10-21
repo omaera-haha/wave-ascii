@@ -44,7 +44,7 @@ impl World {
         {
             return;
         }
-        let curious = f64::from(self.life.nature.unwrap_or_default().curious);
+        let curious = f64::from(self.life.temperament().curious);
         let lead = LEAD.0 + (LEAD.1 - LEAD.0) * curious;
         let ahead = until - self.time;
         if !(0.0..=lead).contains(&ahead) {

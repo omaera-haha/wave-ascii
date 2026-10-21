@@ -85,15 +85,7 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
         let clock = start
             .checked_add(jiff::SignedDuration::from_secs_f64(time))
             .unwrap();
-        if clock.date() != world.date {
-            by_day.push(format!(
-                "  {}: bond {:.2}, {} milestones, {} books owned",
-                world.date,
-                world.life.bond,
-                world.life.milestones.len(),
-                world.life.books.owned.len(),
-            ));
-        }
+        let finished_day = (clock.date() != world.date).then_some(world.date);
         world.date = clock.date();
         let hour = f64::from(clock.hour())
             + f64::from(clock.minute()) / 60.0
@@ -169,6 +161,16 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
             log.push(format!("{clock} viewer says {message:?}"));
         }
         world.step(step);
+        if let Some(finished_day) = finished_day {
+            by_day.push(format!(
+                "  {}: bond {:.2}, {} milestones, {} books owned; {}",
+                finished_day,
+                world.life.bond,
+                world.life.milestones.len(),
+                world.life.books.owned.len(),
+                temperament(&world),
+            ));
+        }
         mind.think(&mut world);
         // What the app adds to each frame of a living world.
         world.celebrate_wish();
@@ -324,14 +326,37 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     for entry in &world.life.milestones {
         println!("  {}: {}", entry.day, entry.text);
     }
+    by_day.push(format!(
+        "  {} (so far): {}",
+        world.date,
+        temperament(&world)
+    ));
     println!("-- by day");
     for line in &by_day {
         println!("{line}");
     }
     println!("bond {:.2} needs {:?}", world.life.bond, world.ghost.needs);
+    println!("{}", temperament(&world));
     let path = std::env::temp_dir().join(format!("wave-ascii-audit-{seed}.log"));
     std::fs::write(&path, log.join("\n")).unwrap();
     println!("timeline: {}", path.display());
+}
+
+fn temperament(world: &World) -> String {
+    let nature = world.life.temperament();
+    format!(
+        "temperament [playful {:.3}, curious {:.3}, shy {:.3}, sleepy {:.3}, tender {:.3}], drift [{:+.3}, {:+.3}, {:+.3}, {:+.3}, {:+.3}]",
+        nature.playful,
+        nature.curious,
+        nature.shy,
+        nature.sleepy,
+        nature.tender,
+        world.life.upbringing.drift[0],
+        world.life.upbringing.drift[1],
+        world.life.upbringing.drift[2],
+        world.life.upbringing.drift[3],
+        world.life.upbringing.drift[4]
+    )
 }
 
 /// Days each audit lives: three, or `AUDIT_DAYS` for a longer look.

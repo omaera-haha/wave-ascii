@@ -557,7 +557,7 @@ impl World {
             (true, Some(name)) => format!("{name}에게,"),
             (true, None) => "소중한 너에게,".to_owned(),
         };
-        let nature = self.life.nature.unwrap_or_default();
+        let nature = self.life.temperament();
         let thanks = if nature.tender >= 0.65 {
             say(
                 "Thank you; your letter warmed me.",

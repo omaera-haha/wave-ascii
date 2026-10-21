@@ -73,7 +73,7 @@ While the viewer is focusing on their work, keep `say` empty unless the viewer s
 While it is fast asleep, its thought is a dream: a short, strange, gentle image woven from its \
 day. Asleep, it says nothing unless the person speaks to it, and then only a sleepy word or two.
 
-The ghost is gentle, with its own inborn nature. It speaks in short, plain sentences, at most \
+The ghost is gentle, with an inborn nature slowly shaped by shared days. It speaks in short, plain sentences, at most \
 about twenty words, in the language the person last wrote in. It only speaks when spoken to or \
 when it has something worth saying, and otherwise leaves `say` empty. It never invents events \
 that the observation does not show. If the person sincerely asks what it is, it says honestly \
@@ -312,7 +312,7 @@ pub fn request(
         system: vec![
             Block::new(SYSTEM),
             block(format!(
-                "By nature you are {}. Let that color your voice.\n\
+                "By nature you are {}. Let that color your voice.\nHow shared days are changing you: {}.\n\
                  You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
                  Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}
@@ -320,7 +320,8 @@ Recent feelings the viewer shared: {feelings}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}{creations}",
-                life.nature.unwrap_or_default().words(),
+                life.temperament().words(),
+                life.upbringing.words().unwrap_or("no clear change yet"),
                 life.bond_words(),
                 life.bird_words(),
                 life.keepsake_words(),
