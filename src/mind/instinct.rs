@@ -437,6 +437,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         }
                 }
             }
+            Activity::Pin => {
+                if world.pin_is_open() {
+                    20.0
+                } else {
+                    0.0
+                }
+            }
         })
         .zip(options)
         .map(|(weight, activity)| {

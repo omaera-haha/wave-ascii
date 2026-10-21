@@ -53,6 +53,7 @@ pub enum Material {
     Treasure,
     Origami(crate::world::acquaintance::Color, bool, bool),
     CraneThread,
+    Cork(bool),
 }
 
 impl Material {
@@ -137,6 +138,13 @@ impl Material {
                 .rgb()
                 .lerp(Vec3::ONE, if crease { 0.35 } else { 0.05 }),
             Self::CraneThread => Vec3::new(0.85, 0.82, 0.72),
+            Self::Cork(dotted) => {
+                if dotted {
+                    Vec3::new(0.65, 0.43, 0.28)
+                } else {
+                    Vec3::new(0.76, 0.55, 0.35)
+                }
+            }
         }
     }
 
@@ -195,6 +203,8 @@ pub enum Furniture<'a> {
     Cranes(&'a Garland),
     FoldingPaper(crate::world::cranes::Paper, Vec3, Quat),
     BubbleWand(Vec3),
+    Gallery(&'a [crate::world::gallery::Pin]),
+    GalleryCard(Vec3),
 }
 
 impl Furniture<'_> {
@@ -247,6 +257,8 @@ impl Furniture<'_> {
             Self::Cranes(_) => (crate::world::cranes::CENTER, 0.72),
             Self::FoldingPaper(_, position, _) => (*position, 0.12),
             Self::BubbleWand(position) => (*position - Vec3::Y * 0.07, 0.19),
+            Self::Gallery(_) => (crate::world::gallery::CENTER, 0.54),
+            Self::GalleryCard(position) => (*position, 0.21),
         }
     }
 
@@ -469,6 +481,8 @@ impl Furniture<'_> {
                 );
                 (ring.min(stick), Material::Brass)
             }
+            Self::Gallery(pins) => gallery_distance(point, pins),
+            Self::GalleryCard(position) => gallery_card(point - *position, None, 0),
         }
     }
 
@@ -796,6 +810,97 @@ fn music_box_distance(point: Vec3, open: bool, crank: f32) -> (f32, Material) {
     } else {
         (body.min(lid), Material::Wood)
     }
+}
+
+fn gallery_distance(point: Vec3, pins: &[crate::world::gallery::Pin]) -> (f32, Material) {
+    use crate::world::gallery::{CENTER, DEPTH, FRAME_WIDTH, HEIGHT, WIDTH};
+    let local = point - CENTER;
+    let bounds = box_distance(
+        local,
+        Vec3::new(DEPTH * 0.5 + 0.025, HEIGHT * 0.5, WIDTH * 0.5),
+    );
+    if bounds > 0.012 {
+        return (bounds, Material::Wood);
+    }
+    let frame = box_distance(local, Vec3::new(DEPTH * 0.5, HEIGHT * 0.5, WIDTH * 0.5));
+    let opening = box_distance(
+        local,
+        Vec3::new(DEPTH, HEIGHT * 0.5 - FRAME_WIDTH, WIDTH * 0.5 - FRAME_WIDTH),
+    );
+    let cork = box_distance(
+        local,
+        Vec3::new(
+            DEPTH * 0.3,
+            HEIGHT * 0.5 - FRAME_WIDTH,
+            WIDTH * 0.5 - FRAME_WIDTH,
+        ),
+    );
+    let dotted = (local.z * 85.0).fract().abs() < 0.23 && (local.y * 85.0).fract().abs() < 0.23;
+    let mut nearest = if frame.max(-opening) < cork {
+        (frame.max(-opening), Material::Wood)
+    } else {
+        (cork, Material::Cork(dotted))
+    };
+    for (index, pin) in pins.iter().take(4).enumerate() {
+        let center = Vec2::new(
+            if index % 2 == 0 { -0.205 } else { 0.205 },
+            if index < 2 { 0.13 } else { -0.13 },
+        );
+        let across = Vec2::new(local.z, local.y) - center;
+        let card_bounds = box_distance(
+            Vec3::new(across.x, across.y, local.x - DEPTH * 0.5),
+            Vec3::new(0.18, 0.12, 0.022),
+        );
+        if card_bounds > nearest.0 {
+            continue;
+        }
+        // Fixed small tilts avoid trigonometry in the ray path.
+        let (sine, cosine) = [
+            (-0.06, 0.9982),
+            (0.04, 0.9992),
+            (0.05, 0.99875),
+            (-0.03, 0.99955),
+        ][index];
+        let turned = Vec2::new(
+            across.x * cosine + across.y * sine,
+            across.y * cosine - across.x * sine,
+        );
+        let card = gallery_card(
+            Vec3::new(turned.x, turned.y, local.x - DEPTH * 0.5 - 0.004),
+            Some(pin),
+            index,
+        );
+        if card.0 < nearest.0 {
+            nearest = card;
+        }
+    }
+    nearest
+}
+
+fn gallery_card(
+    point: Vec3,
+    pin: Option<&crate::world::gallery::Pin>,
+    index: usize,
+) -> (f32, Material) {
+    let bounds = box_distance(point, Vec3::new(0.165, 0.105, 0.018));
+    if bounds > 0.006 {
+        return (bounds, Material::BookPages);
+    }
+    let paper = box_distance(point, Vec3::new(0.165, 0.105, 0.003));
+    let thumbtack = point.distance(Vec3::new(0.0, 0.083, 0.008)) - 0.012;
+    if thumbtack < paper {
+        return (thumbtack, Material::Block(index as u8));
+    }
+    let ink = point.y < 0.068
+        && pin.is_some_and(|pin| pin.distance(Vec2::new(point.x, point.y + 0.008) / 0.13) < 0.025);
+    (
+        paper,
+        if ink {
+            Material::BookInk
+        } else {
+            Material::BookPages
+        },
+    )
 }
 
 // A plank and two diagonal brackets, with the gifts in a row above it.
@@ -1734,6 +1839,34 @@ mod tests {
                 assert!(position.is_finite());
                 assert!((*position - thread.center).abs().cmple(thread.half).all());
             }
+        }
+    }
+
+    #[test]
+    fn gallery_distances_and_normals_stay_finite_inside_and_outside_their_bounds() {
+        let pins: Vec<crate::world::gallery::Pin> = serde_json::from_str(r#"[{"kind":"ViewerDrawing","name":"heart","korean":"하트","day":"2026-06-21","strokes":[[[-0.5,0.0],[0.0,0.5],[0.5,0.0],[0.0,-0.5],[-0.5,0.0]]]}]"#).unwrap();
+        for furniture in [
+            Furniture::Gallery(&[]),
+            Furniture::Gallery(&pins),
+            Furniture::GalleryCard(Vec3::ZERO),
+        ] {
+            let (center, radius) = furniture.bounds();
+            assert!(center.is_finite() && radius.is_finite() && radius > 0.0);
+            for horizontal in -7..=7 {
+                for vertical in -7..=7 {
+                    for depth in [-1.0, -0.03, 0.0, 0.03, 1.0] {
+                        let point = center
+                            + Vec3::new(depth, vertical as f32 * 0.1, horizontal as f32 * 0.1);
+                        assert!(furniture.distance(point).0.is_finite());
+                        assert!(furniture.normal(point).is_finite());
+                    }
+                }
+            }
+            assert!(
+                furniture
+                    .trace(center + Vec3::X * 2.0, -Vec3::X, 4.0)
+                    .is_some()
+            );
         }
     }
 }

@@ -18,6 +18,7 @@ pub mod focus;
 pub mod fog;
 pub mod forecast;
 pub mod friend;
+pub mod gallery;
 pub mod game;
 pub mod garden;
 pub mod growth;
@@ -354,6 +355,10 @@ pub enum EventKind {
         blown: u32,
         popped_by_viewer: u32,
     },
+    Pinned {
+        kind: gallery::Kind,
+        name: String,
+    },
 }
 
 impl EventKind {
@@ -622,6 +627,7 @@ impl EventKind {
                 friend::count_words(*blown),
                 friend::count_words(*popped_by_viewer)
             ),
+            Self::Pinned { kind, name } => kind.pinned(name),
         }
     }
 }
@@ -923,6 +929,7 @@ pub struct World {
     pub bubbles: Vec<bubbles::Bubble>,
     bubble_session: Option<bubbles::Session>,
     bubbles_finished_at: Option<f64>,
+    pending_pins: Vec<gallery::Pin>,
 }
 
 impl World {
@@ -1073,6 +1080,7 @@ impl World {
             bubbles: Vec::new(),
             bubble_session: None,
             bubbles_finished_at: None,
+            pending_pins: Vec::new(),
         };
         world.scatter_blocks();
         world
@@ -1419,6 +1427,7 @@ impl World {
                             .bubbles_finished_at
                             .is_none_or(|at| self.time - at >= 3600.0)
                 }
+                Activity::Pin => self.pin_is_open(),
             })
             .collect()
     }
@@ -1543,6 +1552,7 @@ impl World {
                 .to_owned(),
             Activity::Seek => "Search by sight for the treasure the viewer hid, following their warmer and colder hints.".to_owned(),
             Activity::Bubbles => "Float into an open spot and blow soap bubbles. Watch them drift, or let the viewer pop them. Wait until after work and games.".to_owned(),
+            Activity::Pin => "Carry a waiting picture to the gallery on the left wall, pin it up, and admire it. Wait for a quiet moment after games, stories, and work.".to_owned(),
 
             Activity::Fold => "Fold a colored paper crane for the viewer, then hang it on the ceiling garland. A quiet pastime, a few cranes each day.".to_owned(),
         }
@@ -1562,6 +1572,9 @@ impl World {
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
         if activity == Activity::Bubbles && !self.bubbles_are_open() {
+            return;
+        }
+        if activity == Activity::Pin && !self.pin_is_open() {
             return;
         }
         if activity == Activity::Seek
@@ -1685,6 +1698,7 @@ impl World {
             Activity::Puzzle => Puzzle::SILENCE as f32 + 15.0,
             Activity::Look => self.random.range(2.0, 3.0),
             Activity::Bubbles => self.random.range(15.0, 30.0),
+            Activity::Pin => 6.0,
             _ => 0.0,
         };
         let target = match activity {
@@ -1747,8 +1761,18 @@ impl World {
             Activity::Seek => position,
             Activity::Fold => cranes::SEAT,
             Activity::Bubbles => self.bubble_spot(),
+            Activity::Pin => gallery::APPROACH,
         };
         let mut plan = Plan::new(activity, self.time, target, length);
+        if activity == Activity::Explore
+            && !self.life.gallery.is_empty()
+            && self.random.unit() < 0.04
+        {
+            plan.gallery_visit = true;
+            plan.target = gallery::VIEW;
+            plan.anchor = gallery::VIEW;
+            plan.length = self.random.range(12.0, 20.0);
+        }
         if activity == Activity::Air {
             plan.window = Some(!self.window_open);
         }
@@ -2881,6 +2905,7 @@ impl World {
                     | Activity::Comfort
                     | Activity::Fold
                     | Activity::Bubbles
+                    | Activity::Pin
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -2927,7 +2952,7 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
-            Activity::Explore => {
+            Activity::Explore if !self.ghost.plan.gallery_visit => {
                 look = Some(self.ghost.plan.target);
                 if arrived_now {
                     self.ghost.plan.count += 1;
@@ -3186,6 +3211,8 @@ impl World {
             Activity::Seek => look = self.seek_treasure(),
             Activity::Fold => look = self.carry_out_fold(seconds),
             Activity::Bubbles => look = self.carry_out_bubbles(),
+            Activity::Pin => look = self.carry_out_pin(),
+            Activity::Explore => look = self.visit_gallery(),
         }
         self.ghost.look = look;
         if self.ghost.plan.activity == Activity::Read && self.ghost.plan.done && self.bedtime() {
@@ -3234,7 +3261,14 @@ impl World {
                             watched: self.viewer_present(),
                         },
                     };
+                    let sketch = match doodle.picture {
+                        Picture::Sketch(sketch) => Some(sketch),
+                        _ => None,
+                    };
                     self.record(event);
+                    if let Some(sketch) = sketch {
+                        self.keep_doodle(sketch);
+                    }
                     self.ghost.needs.change(0.0, 0.1, 0.0);
                     self.ghost.plan.done = true;
                 }

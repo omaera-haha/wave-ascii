@@ -38,10 +38,11 @@ pub enum Activity {
     Seek,
     Fold,
     Bubbles,
+    Pin,
 }
 
 impl Activity {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::Float,
         Self::Explore,
         Self::Chase,
@@ -72,6 +73,7 @@ impl Activity {
         Self::Seek,
         Self::Fold,
         Self::Bubbles,
+        Self::Pin,
     ];
 
     pub fn name(self) -> &'static str {
@@ -106,6 +108,7 @@ impl Activity {
             Self::Seek => "seek",
             Self::Fold => "fold",
             Self::Bubbles => "bubbles",
+            Self::Pin => "pin",
         }
     }
 
@@ -148,6 +151,7 @@ impl Activity {
             Self::Seek => "searching for the viewer's treasure",
             Self::Fold => "folding a paper crane",
             Self::Bubbles => "blowing soap bubbles",
+            Self::Pin => "pinning a picture to the gallery wall",
         }
     }
 }
@@ -176,6 +180,7 @@ pub struct Plan {
     /// A rest that lasts until morning, even when energy is full.
     pub overnight: bool,
     pub window: Option<bool>,
+    pub gallery_visit: bool,
 }
 
 impl Plan {
@@ -193,6 +198,7 @@ impl Plan {
             done: false,
             overnight: false,
             window: None,
+            gallery_visit: false,
         }
     }
 

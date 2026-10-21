@@ -46,6 +46,7 @@ pub enum Question {
     Mirror,
     Viewer(super::acquaintance::Topic),
     Cranes,
+    Gallery,
 }
 
 impl Question {
@@ -358,6 +359,15 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
             &["how", "many", "cranes"],
         ],
     ),
+    (
+        Question::Gallery,
+        &[
+            &["whats", "on", "your", "wall"],
+            &["what", "is", "on", "your", "wall"],
+            &["whats", "in", "your", "gallery"],
+            &["what", "did", "you", "pin"],
+        ],
+    ),
 ];
 
 // Questions in Korean, as pieces of the message with its spaces taken out,
@@ -548,6 +558,11 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
     ),
     (Question::Feeling, &["잘지내", "괜찮아"], true),
     (Question::Cranes, &["종이학몇마리", "학몇마리접"], false),
+    (
+        Question::Gallery,
+        &["벽에뭐붙", "벽에뭐있", "갤러리에뭐", "무슨그림붙"],
+        false,
+    ),
 ];
 
 /// The question `text` asks, if it is one the ghost can answer by itself.

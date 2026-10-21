@@ -140,6 +140,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Seek => vec![world.hunt_thought()],
         Activity::Fold => vec!["Fold, crease, fold again.", "A little paper wish for you."],
         Activity::Bubbles => vec!["A little breath, and off they go.", "Want to pop them?"],
+        Activity::Pin => vec!["This picture belongs on my wall."],
     };
     if activity == Activity::Window {
         for passing in world.passersby().into_iter().flatten() {
@@ -214,6 +215,10 @@ pub fn named_friend_line(world: &World, line: &str) -> String {
         Some(friend) => line
             .replace("My ghost friend", &friend.name)
             .replace("my ghost friend", &friend.name),
+        None => line.to_owned(),
+    };
+    let line = match world.life.gallery.last() {
+        Some(pin) => line.replace("my pinned picture", &pin.name),
         None => line.to_owned(),
     };
     match world.life.constellations.last() {
@@ -359,6 +364,9 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
         for passing in world.passersby().into_iter().flatten() {
             lines.extend(passing.kind.thoughts());
         }
+    }
+    if !world.life.gallery.is_empty() {
+        lines.push("I still like my pinned picture on the wall.");
     }
     if ghost.plan.activity == Activity::Window
         && world.starry_night()
@@ -586,6 +594,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Seek => world.hunt_thought(),
             Activity::Fold => "Another crane, another little wish for you.",
             Activity::Bubbles => "That one is the biggest yet.",
+            Activity::Pin => "I should pin that picture to my wall.",
         });
     }
     if lines.is_empty() {
@@ -698,6 +707,9 @@ fn dream_lines(world: &World) -> Vec<&'static str> {
     }
     if today.focus_minutes > 0 || today.focus_sessions > 0 || world.focus.is_some() {
         lines.push("…we work side by side, and the little room holds its breath…");
+    }
+    if !world.life.gallery.is_empty() {
+        lines.push("…my pinned picture floats off the wall…");
     }
     if !world.life.constellations.is_empty() {
         lines.push("…my constellation winks at me…");
@@ -1637,6 +1649,7 @@ pub(crate) fn answer(
                 crate::world::friend::count_words(world.life.cranes.total)
             )
         }],
+        Question::Gallery => vec![world.life.gallery_answer(korean)],
     }
 }
 
@@ -1950,6 +1963,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Seek => "네 보물 찾는 중",
         Activity::Fold => "종이학 접는 중",
         Activity::Bubbles => "비눗방울 부는 중",
+        Activity::Pin => "벽에 그림 붙이는 중",
     }
 }
 
@@ -1986,6 +2000,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Seek => "네 보물 찾기",
         Activity::Fold => "종이학 접기",
         Activity::Bubbles => "비눗방울 불기",
+        Activity::Pin => "벽에 그림 붙이기",
     }
 }
 

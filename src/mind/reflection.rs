@@ -292,6 +292,12 @@ pub fn request(
     let occasion = observation["occasion"]
         .as_str()
         .unwrap_or("an ordinary day");
+    let gallery = life.gallery.last().map_or_else(String::new, |pin| {
+        format!(
+            "\nThe newest picture pinned to your gallery wall: {}.",
+            pin.words()
+        )
+    });
     let creations = format!(
         "\n\nSongs you composed yourself:\n{}\n\nPicture books you wrote:\n{}",
         bullets(
@@ -325,7 +331,7 @@ pub fn request(
                 "By nature you are {}. Let that color your voice.\nHow shared days are changing you: {}.\n\
                  You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
-                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}\nPaper cranes folded for the viewer: {cranes}.
+                 Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}{gallery}\nPaper cranes folded for the viewer: {cranes}.
 Recent feelings the viewer shared: {feelings}\nViewer plans you remember: {agenda}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\

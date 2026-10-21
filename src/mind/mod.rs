@@ -2564,4 +2564,50 @@ mod acquaintance_tests {
             }
         }
     }
+
+    #[test]
+    fn gallery_pictures_reach_questions_observations_reflections_and_offline_memories() {
+        let mut world = World::new(1, 12.0);
+        world.life.gallery = serde_json::from_str(r#"[{"kind":"ViewerDrawing","name":"heart","korean":"하트","day":"2026-06-21","strokes":[[[-0.5,0.0],[0.0,0.5],[0.5,0.0]]]}]"#).unwrap();
+        let observed = observation::observe(&world);
+        assert!(
+            observed["room"]["gallery"]
+                .as_str()
+                .unwrap()
+                .contains("viewer's heart")
+        );
+        let request = reflection::request(&observed, &[], &world.life, &[], None, None, None);
+        assert!(
+            request
+                .system
+                .iter()
+                .any(|block| block.text.contains("newest picture pinned")
+                    && block.text.contains("heart"))
+        );
+        for pool in [musing::idle(&world), musing::dreams(&world)] {
+            assert!(
+                pool.iter()
+                    .any(|line| musing::named_friend_line(&world, line).contains("heart"))
+            );
+        }
+        for (message, name) in [
+            ("what's on your wall?", "heart"),
+            ("벽에 뭐 붙였어?", "하트"),
+        ] {
+            let vocabulary = world.life.vocabulary.clone();
+            let heard = world.hear(message);
+            let replies = musing::reply(&world, &heard, None);
+            assert!(replies.iter().any(|line| line.contains(name)));
+            assert_eq!(world.life.vocabulary, vocabulary);
+        }
+        let empty = instinct::weigh(&World::new(1, 12.0), &[Activity::Float, Activity::Pin]);
+        assert_eq!(
+            empty
+                .iter()
+                .find(|(activity, _)| *activity == Activity::Pin)
+                .unwrap()
+                .1,
+            0.0
+        );
+    }
 }

@@ -193,6 +193,11 @@ mod tests {
                 world.start_hiding().unwrap();
                 world.hide_treasure(Vec3::new(-1.8, 0.0, -1.2));
             }
+            if activity == Activity::Pin {
+                world
+                    .pending_pins
+                    .push(super::super::gallery::Pin::default());
+            }
             world.begin(activity);
             wiggle(&mut world);
             assert_eq!(

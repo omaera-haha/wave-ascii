@@ -243,6 +243,7 @@ impl World {
         let english = format!("I found a picture in the stars! {}.", constellation.name);
         let korean = format!("별들이 그림이 됐어! {} 별자리야.", constellation.korean);
         let name = constellation.name.clone();
+        self.keep_constellation(&constellation);
         self.life.constellations.push(constellation);
         if self.life.constellations.len() > KEPT {
             self.life.constellations.remove(0);

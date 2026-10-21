@@ -200,6 +200,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::NoticedLateNight => Expression::Doze,
         EventKind::FoldedCrane { .. } => Expression::Smile,
         EventKind::BlewBubbles { .. } => Expression::Smile,
+        EventKind::Pinned { .. } => Expression::Smile,
         _ => return None,
     })
 }

@@ -521,6 +521,7 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
             "A thousand paper cranes, and a wish for you.".to_owned(),
             None,
         ),
+        EventKind::Pinned { kind, name } => (format!("I {}.", kind.pinned(name)), None),
         _ => return None,
     };
     Some((caption, daily))
@@ -1316,5 +1317,16 @@ mod tests {
         assert_eq!(snapshot(), before);
         assert_eq!(html("Pip", &pages).matches("<figure>").count(), pages.len());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pinning_a_picture_schedules_an_ordinary_album_moment() {
+        let moment = caption(&EventKind::Pinned {
+            kind: crate::world::gallery::Kind::ViewerDrawing,
+            name: "heart".to_owned(),
+        })
+        .unwrap();
+        assert!(moment.0.contains("heart"));
+        assert_eq!(moment.1, None);
     }
 }

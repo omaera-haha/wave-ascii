@@ -41,6 +41,14 @@ after you, writes back when you write to it, makes up songs and, in time, a
 picture book of its own life, remembers the day it learned your name a month
 later, and celebrates its hundredth day with you.
 
+A small cork board on the left wall keeps four pictures from its life:
+above all copies of your fog drawings, then its own proud doodles and
+constellations it found. It always keeps your first drawing, sometimes keeps
+later ones (at most twice a day), and pins them when it has a quiet moment.
+Old cards make room for new ones, keeping your drawings longest. It sometimes
+visits to remember a picture. Ask “what's on your wall?” or “벽에 뭐 붙였어?”;
+the Gallery row in its life panel names the pictures too.
+
 A wooden mirror on the right wall reflects the room and its ghosts. At first
 it greets the stranger inside, then tests how the reflection copies it.
 After enough completed visits, a young or grown ghost recognizes itself;
@@ -909,7 +917,7 @@ first, deciding on instinct. `--hour` sets the time of day (default noon),
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
-COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-26 --hour 21 --time 1020 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-27 --hour 20 --time 800 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat
@@ -920,7 +928,7 @@ COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-25 --hour 21 < /dev/null | c
 ```
 
 The September evening example has a full moon and a visiting ghost friend
-after about four simulated minutes.
+after about forty simulated minutes.
 
 The same `--time`, `--hour`, `--date`, and `--born` give the same frame.
 Without `--born`, piped ghosts have no birthday or day-of-life celebrations. Piped time advances the

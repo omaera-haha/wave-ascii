@@ -324,6 +324,14 @@ pub struct Tally {
     pub bubbles_blown: u32,
     #[serde(default)]
     pub bubbles_popped: u32,
+    #[serde(default)]
+    pub viewer_pins: u32,
+    #[serde(default)]
+    pub doodle_pins: u32,
+    #[serde(default)]
+    pub constellation_pins: u32,
+    #[serde(default)]
+    pub pinned_doodles: Vec<String>,
 }
 
 impl Tally {
@@ -643,6 +651,20 @@ impl Tally {
                 self.bubble_sessions = self.bubble_sessions.saturating_add(1);
                 self.bubbles_blown = self.bubbles_blown.saturating_add(*blown);
                 self.bubbles_popped = self.bubbles_popped.saturating_add(*popped_by_viewer);
+            }
+            EventKind::Pinned { kind, name } => {
+                if *kind == super::gallery::Kind::OwnDoodle
+                    && self.pinned_doodles.len() < 8
+                    && !self.pinned_doodles.contains(name)
+                {
+                    self.pinned_doodles.push(name.clone());
+                }
+                let count = match kind {
+                    super::gallery::Kind::ViewerDrawing => &mut self.viewer_pins,
+                    super::gallery::Kind::OwnDoodle => &mut self.doodle_pins,
+                    super::gallery::Kind::Constellation => &mut self.constellation_pins,
+                };
+                *count = count.saturating_add(1).min(100_000_000);
             }
             _ => {}
         }
@@ -1343,6 +1365,30 @@ impl Tally {
                 (Salience::Small, "blew bubbles".to_owned())
             });
         }
+        if self.viewer_pins > 0 {
+            deeds.push((
+                Salience::Notable,
+                "pinned your drawing to my wall".to_owned(),
+            ));
+        }
+        if self.doodle_pins > 0 {
+            if self.pinned_doodles.is_empty() {
+                deeds.push((Salience::Small, "pinned my doodle to the wall".to_owned()));
+            } else {
+                for name in &self.pinned_doodles {
+                    deeds.push((
+                        Salience::Small,
+                        format!("pinned my {name} doodle to the wall"),
+                    ));
+                }
+            }
+        }
+        if self.constellation_pins > 0 {
+            deeds.push((
+                Salience::Small,
+                "pinned my constellation to the wall".to_owned(),
+            ));
+        }
         deeds
     }
 
@@ -1525,6 +1571,8 @@ pub struct Life {
     pub rhythm_suggestions: u8,
     #[serde(default)]
     pub cranes: super::cranes::Cranes,
+    #[serde(default, deserialize_with = "super::gallery::deserialize")]
+    pub gallery: Vec<super::gallery::Pin>,
 }
 
 impl Life {
@@ -1734,6 +1782,10 @@ impl Life {
             EventKind::BlewBubbles {
                 popped_by_viewer, ..
             } if *popped_by_viewer > 0 => 0.003,
+            EventKind::Pinned {
+                kind: super::gallery::Kind::ViewerDrawing,
+                ..
+            } => 0.005,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -1983,6 +2035,7 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        super::gallery::sanitize(&mut self);
         super::breaks::sanitize(&mut self);
         self.cranes.sanitize(&self.day);
         for (tally, maximum) in [
@@ -2602,6 +2655,10 @@ impl Life {
             EventKind::BlewBubbles {
                 popped_by_viewer, ..
             } if *popped_by_viewer > 0 => "You popped my bubbles for the first time.".to_owned(),
+            EventKind::Pinned {
+                kind: super::gallery::Kind::ViewerDrawing,
+                ..
+            } if total.viewer_pins == 1 => "I pinned your drawing on my wall.".to_owned(),
             _ => return None,
         };
         self.reach(text)
@@ -2663,7 +2720,7 @@ fn duration_words(seconds: f64) -> String {
 }
 
 /// Items joined as "a", "a and b", or "a, b, and c".
-fn listed(items: &[String]) -> String {
+pub(super) fn listed(items: &[String]) -> String {
     match items {
         [] => String::new(),
         [only] => only.clone(),
@@ -3975,5 +4032,28 @@ mod tests {
         assert_eq!(life.total.watched_writings, 2);
         assert_eq!(life.total.written_words, vec!["HI"; WORDS_NAMED]);
         assert!(life.total.viewer_names.is_empty());
+    }
+    #[test]
+    fn viewer_art_is_notable_and_a_named_doodle_is_a_small_diary_deed() {
+        let mut tally = Tally::default();
+        tally.note(&EventKind::Pinned {
+            kind: super::super::gallery::Kind::ViewerDrawing,
+            name: "heart".to_owned(),
+        });
+        tally.note(&EventKind::Pinned {
+            kind: super::super::gallery::Kind::OwnDoodle,
+            name: "star".to_owned(),
+        });
+        let deeds = tally.deeds();
+        assert!(deeds.contains(&(
+            Salience::Notable,
+            "pinned your drawing to my wall".to_owned()
+        )));
+        assert!(deeds.contains(&(
+            Salience::Small,
+            "pinned my star doodle to the wall".to_owned()
+        )));
+        assert_eq!(tally.viewer_pins, 1);
+        assert_eq!(tally.doodle_pins, 1);
     }
 }
