@@ -553,7 +553,7 @@ fn help_panel(screen: &mut Canvas) {
         "j          journal and diary   click room    drop a light mote",
         "                               click blocks  nudge or topple",
         "                               click friend  make it giggle",
-        "l          life, growth, skills p             save a postcard",
+        "l          life and growth     p             save a postcard",
         "g          noughts and crosses 1-9, click    choose a square",
         "f          finger in the fog   right-drag    draw on glass",
         "           f or Esc stops      left-click    still interacts",
@@ -564,8 +564,7 @@ fn help_panel(screen: &mut Canvas) {
         "",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "While a reading panel is open, the mouse selects text.",
-        "A ghost friend sometimes visits on clear evenings to play.",
-        "Moonlight and loneliness invite it; it remembers their friendship.",
+        "On clear evenings, most of all by moonlight, a ghost friend may visit.",
         "Any key closes this.",
     ];
     let lines: Vec<(String, Rgb)> = lines
