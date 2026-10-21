@@ -16,6 +16,7 @@ pub struct Outside {
 }
 
 impl Outside {
+    #[cfg(test)]
     pub fn clear(hour: f32, time: f64) -> Self {
         Self {
             hour,

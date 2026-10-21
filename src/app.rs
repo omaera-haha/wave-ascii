@@ -8,6 +8,7 @@ use crate::face::{self, mood::Cues};
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::render::ghost::{Aura, Pose};
+use crate::render::window::Outside;
 use crate::render::{self, Camera, GHOST_SCALE, Scene, View};
 use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
@@ -515,7 +516,12 @@ impl App {
         let frame = render::render(
             &Scene {
                 world,
-                outside: render::window::Outside::clear(world.hour, world.time),
+                outside: Outside {
+                    hour: world.hour,
+                    rain: world.weather.rain(world.time),
+                    rainbow: world.weather.rainbow(world.time),
+                    time: world.time,
+                },
                 view,
                 face,
                 aura,
