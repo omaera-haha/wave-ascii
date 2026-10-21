@@ -34,6 +34,8 @@ pub struct Ball {
 
 impl Ball {
     pub const RADIUS: f32 = 0.14;
+    /// How fast a dropped ball falls, in units per second squared.
+    const GRAVITY: f32 = 9.0;
 
     pub fn at(x: f32, z: f32) -> Self {
         Self {
@@ -43,19 +45,35 @@ impl Ball {
         }
     }
 
-    /// Rolls the ball for `seconds`, slowing it with friction and bouncing it
-    /// off the walls and off `obstacles`, given as floor circles of center and
+    /// Rolls the ball for `seconds`, dropping it to the floor if it was let
+    /// go above it, slowing it with friction, and bouncing it off the floor,
+    /// the walls, and `obstacles`, given as floor circles of center and
     /// radius. Returns the speed of the hardest bounce, or 0.
     pub fn roll(&mut self, seconds: f32, obstacles: &[(Vec3, f32)]) -> f32 {
         if self.held {
             return 0.0;
         }
         let mut bounce: f32 = 0.0;
-        self.velocity.y = 0.0;
+        let grounded = self.position.y <= Self::RADIUS && self.velocity.y <= 0.0;
+        if grounded {
+            self.velocity.y = 0.0;
+        } else {
+            self.velocity.y -= Self::GRAVITY * seconds;
+        }
         self.position += self.velocity * seconds;
-        self.position.y = Self::RADIUS;
-        self.velocity *= (-0.9 * seconds).exp();
-        if self.velocity.length_squared() < 1e-4 {
+        if self.position.y <= Self::RADIUS {
+            self.position.y = Self::RADIUS;
+            if self.velocity.y < -0.6 {
+                bounce = bounce.max(-self.velocity.y);
+                self.velocity.y *= -0.45;
+            } else {
+                self.velocity.y = 0.0;
+            }
+        }
+        let friction = (-0.9 * seconds).exp();
+        self.velocity.x *= friction;
+        self.velocity.z *= friction;
+        if self.velocity.length_squared() < 1e-4 && self.position.y <= Self::RADIUS {
             self.velocity = Vec3::ZERO;
         }
 
@@ -209,6 +227,22 @@ mod tests {
             assert!(flat(ball.position - post.0).length() >= 0.3 + Ball::RADIUS - 1e-4);
         }
         assert!(ball.velocity.x <= 0.0);
+    }
+
+    #[test]
+    fn a_ball_let_go_in_the_air_falls_bounces_and_settles_on_the_floor() {
+        let mut ball = Ball::at(0.0, 0.0);
+        ball.position.y = 0.8;
+        let mut bounced = false;
+        let mut lowest = f32::INFINITY;
+        for _ in 0..300 {
+            bounced |= ball.roll(0.01, &[]) > 0.0;
+            lowest = lowest.min(ball.position.y);
+        }
+        assert!(bounced);
+        assert_eq!(lowest, Ball::RADIUS);
+        assert_eq!(ball.position.y, Ball::RADIUS);
+        assert_eq!(ball.velocity, Vec3::ZERO);
     }
 
     #[test]

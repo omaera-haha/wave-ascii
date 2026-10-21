@@ -629,11 +629,9 @@ impl World {
         }
     }
 
+    // Lets go of a held ball, which falls to the floor from where it was.
     fn drop_ball(&mut self) {
-        if self.ball.held {
-            self.ball.held = false;
-            self.ball.position.y = Ball::RADIUS;
-        }
+        self.ball.held = false;
     }
 
     // Floor circles the ball bounces off and the ghost flies around, with
@@ -1278,7 +1276,6 @@ mod tests {
             );
             assert!(!world.ball.held);
             assert!(world.ball.position.z > ROOM_MAX.z - 0.75);
-            assert_eq!(world.ball.position.y, Ball::RADIUS);
             assert!(world.ghost.needs.fun > fun);
             assert!(world.ghost.needs.company > company);
             assert_eq!(world.ghost.mood, Mood::Excited);
@@ -1327,10 +1324,10 @@ mod tests {
                 _ => world.poke(),
             }
             assert!(!world.ball.held);
-            assert_eq!(world.ball.position.y, Ball::RADIUS);
             assert_eq!(world.ball.velocity, velocity);
-            world.step(0.05);
+            run(&mut world, 1.0);
             assert!(!world.ball.held);
+            assert_eq!(world.ball.position.y, Ball::RADIUS);
         }
     }
 
@@ -1349,6 +1346,7 @@ mod tests {
         world.step(0.1);
         assert!(world.needs_decision());
         assert!(!world.ball.held);
+        run(&mut world, 1.0);
         assert_eq!(world.ball.position.y, Ball::RADIUS);
         assert!(
             !world
