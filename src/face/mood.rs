@@ -193,6 +193,11 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::SpottedTreasure => Expression::Surprise,
         EventKind::FoundTreasure { .. } => Expression::Sparkle,
         EventKind::AskedTreasureHint => Expression::Prompt,
+        EventKind::SuggestedBreak { long: false } => Expression::Stretch,
+        EventKind::SuggestedBreak { long: true }
+        | EventKind::TookBreak
+        | EventKind::SaidGoodnightTogether => Expression::Smile,
+        EventKind::NoticedLateNight => Expression::Doze,
         _ => return None,
     })
 }

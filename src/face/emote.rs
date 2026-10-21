@@ -335,6 +335,8 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::PlanWentWell(_) | EventKind::PlanWentBadly(_) => Emote::Heart,
         EventKind::FoundTreasure { .. } => Emote::Sparkle,
         EventKind::AskedTreasureHint => Emote::Question,
+        EventKind::TookBreak | EventKind::SaidGoodnightTogether => Emote::Heart,
+        EventKind::NoticedLateNight => Emote::Sleep,
         _ => return None,
     })
 }

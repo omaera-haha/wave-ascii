@@ -108,6 +108,7 @@ pub fn observe(world: &World) -> Value {
         "viewer_letter": if world.waiting_letter().is_some() { "a letter from the viewer waits on the inside of the front glass" }
             else if world.life.received.iter().any(|letter| letter.reply.is_some()) { "It is thinking about how to answer the viewer's letter." }
             else { "the viewer's letters are kept safely" },
+        "viewer_rhythm": world.rhythm_words(),
         "letter": if world.unread_letter().is_some() { "a letter for the viewer waits unread by the front glass" } else { "no unread letter waiting" },
     })
 }

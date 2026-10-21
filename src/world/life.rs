@@ -301,6 +301,14 @@ pub struct Tally {
     pub treasure_hints: u32,
     #[serde(default)]
     pub fastest_treasure: Option<u32>,
+    #[serde(default)]
+    pub breaks_suggested: u32,
+    #[serde(default)]
+    pub breaks_taken: u32,
+    #[serde(default)]
+    pub late_nights: u32,
+    #[serde(default)]
+    pub goodnights_together: u32,
 }
 
 impl Tally {
@@ -595,6 +603,14 @@ impl Tally {
             }
             EventKind::TreasureHint(_) => {
                 self.treasure_hints = self.treasure_hints.saturating_add(1)
+            }
+            EventKind::SuggestedBreak { .. } => {
+                self.breaks_suggested = self.breaks_suggested.saturating_add(1)
+            }
+            EventKind::TookBreak => self.breaks_taken = self.breaks_taken.saturating_add(1),
+            EventKind::NoticedLateNight => self.late_nights = self.late_nights.saturating_add(1),
+            EventKind::SaidGoodnightTogether => {
+                self.goodnights_together = self.goodnights_together.saturating_add(1)
             }
             _ => {}
         }
@@ -1231,6 +1247,35 @@ impl Tally {
                 format!("your {} was hard, so I stayed close", errand.name()),
             )
         }));
+        if self.breaks_suggested > 0 {
+            deeds.push((
+                Salience::Small,
+                format!(
+                    "suggested {} {}",
+                    count_words(self.breaks_suggested),
+                    if self.breaks_suggested == 1 {
+                        "break"
+                    } else {
+                        "breaks"
+                    }
+                ),
+            ));
+        }
+        if self.breaks_taken > 0 {
+            deeds.push((
+                Salience::Notable,
+                "you took a break when I asked".to_owned(),
+            ));
+        }
+        if self.late_nights > 0 {
+            deeds.push((Salience::Small, "you stayed up very late".to_owned()));
+        }
+        if self.goodnights_together > 0 {
+            deeds.push((
+                Salience::Notable,
+                "we said goodnight together late at night".to_owned(),
+            ));
+        }
         deeds
     }
 
@@ -1403,6 +1448,14 @@ pub struct Life {
     pub feelings: Vec<super::feelings::FeelingNote>,
     #[serde(default, deserialize_with = "super::agenda::deserialize")]
     pub agenda: Vec<super::agenda::Engagement>,
+    #[serde(default)]
+    pub late_night_said: Option<String>,
+    #[serde(default)]
+    pub goodnight_together_said: Option<String>,
+    #[serde(default)]
+    pub rhythm_day: Option<String>,
+    #[serde(default)]
+    pub rhythm_suggestions: u8,
 }
 
 impl Life {
@@ -1591,6 +1644,7 @@ impl Life {
             EventKind::WishedLuck(_) => 0.003,
             EventKind::PlanWentWell(_) => 0.008,
             EventKind::FoundTreasure { gave_up: false, .. } => 0.004,
+            EventKind::TookBreak | EventKind::SaidGoodnightTogether => 0.004,
             _ => 0.0,
         };
         self.warm(warmth);
@@ -1836,6 +1890,7 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        super::breaks::sanitize(&mut self);
         self.promise = self.promise.filter(|promise| {
             promise.valid()
                 && self
@@ -2422,6 +2477,9 @@ impl Life {
             }
             EventKind::FoundTreasure { gave_up: false, .. } if total.treasures_found == 1 => {
                 "I found the treasure you hid for the first time.".to_owned()
+            }
+            EventKind::TookBreak if total.breaks_taken == 1 => {
+                "You took a break when I asked.".to_owned()
             }
             _ => return None,
         };
