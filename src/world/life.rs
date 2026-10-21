@@ -44,10 +44,15 @@ const MOTES_MARKED: [(u32, &str); 4] = [
     (500, "Ate my five hundredth light mote."),
     (1000, "Ate my thousandth light mote."),
 ];
-/// How fast the bond grows for each second the viewer is around, while it is
-/// new. It slows as the bond deepens: about a third after an hour together,
-/// two thirds after four, and most of the way after a dozen.
-const GROWING: f32 = 0.43 / 3600.0;
+/// How much each second with the viewer around warms the bond, before the
+/// day's warmth wears off and a deeper bond slows it.
+const GROWING: f32 = 0.26 / 3600.0;
+/// The warmth one day can hold. Closeness gathered in a day wears off as it
+/// gathers, so hours spread over many days count for more than one long
+/// day: with company most of each day, the ghost gets to know the viewer on
+/// the first day, grows fond within a few, is close after about a week and
+/// a half, and devoted only after many weeks.
+const DAILY_WARMTH: f32 = 0.45;
 /// How much of the bond fades for each day the viewer stays away, after the
 /// first.
 const FADING: f32 = 0.03;
@@ -982,6 +987,10 @@ pub struct Life {
     pub bond: f32,
     /// The closest it has ever felt. Half of that never fades.
     pub closest: f32,
+    /// Warmth the bond gathered today, which makes more of it harder to
+    /// gather.
+    #[serde(default)]
+    pub warmed: f32,
     /// Everything since it first appeared.
     pub total: Tally,
     /// The day so far.
@@ -1258,7 +1267,7 @@ impl Life {
             0.0
         };
         let warmth = (1.0 + 0.4 * (nature.tender - 0.5) - shyness).clamp(0.75, 1.35);
-        self.warm(GROWING * (1.0 - self.bond).powi(2) * seconds * warmth);
+        self.warm(GROWING * seconds * warmth);
         let milestone = HOURS_MARKED
             .into_iter()
             .find(|(hours, _)| (together..self.total.together).contains(&(hours * 3600.0)))
@@ -1379,6 +1388,7 @@ impl Life {
         }
         self.day = day.to_owned();
         self.today = Tally::default();
+        self.warmed = 0.0;
     }
 
     /// Starts a new ghost's life on `day`, a local date as YYYY-MM-DD, with
@@ -1613,6 +1623,11 @@ impl Life {
         if !self.alone.is_finite() || self.alone < 0.0 {
             self.alone = 0.0;
         }
+        self.warmed = if self.warmed.is_finite() {
+            self.warmed.clamp(0.0, DAILY_WARMTH)
+        } else {
+            0.0
+        };
         self.vocabulary = self.vocabulary.sanitized();
         self.routine_days = if self.routine_days.is_finite() {
             self.routine_days.clamp(0.0, 11.0)
@@ -1890,8 +1905,17 @@ impl Life {
         Some(text)
     }
 
+    // A moment's warmth fills only what room the day has left for it, and
+    // a deeper bond takes it in more slowly; coolness lands in full.
     fn warm(&mut self, amount: f32) {
-        self.bond = (self.bond + amount).clamp(self.closest * 0.5, 1.0);
+        let change = if amount > 0.0 {
+            let fresh = amount * (1.0 - self.warmed / DAILY_WARMTH).max(0.0);
+            self.warmed = (self.warmed + fresh).min(DAILY_WARMTH);
+            fresh * (1.0 - self.bond).powi(2)
+        } else {
+            amount
+        };
+        self.bond = (self.bond + change).clamp(self.closest * 0.5, 1.0);
         self.closest = self.closest.max(self.bond);
     }
 }
@@ -2480,7 +2504,7 @@ mod tests {
         assert!((life.bond - 0.003).abs() < 1e-6);
         assert!(life.today.words().starts_with("Pounced on your finger."));
         assert_eq!(life.note(&EventKind::Pounced), None);
-        assert!((life.bond - 0.006).abs() < 1e-6);
+        assert!((life.bond - 0.006).abs() < 1e-4);
         life.begin_day("2026-10-21");
         assert_eq!((life.today.pounces, life.total.pounces), (0, 2));
         assert!(
@@ -2566,21 +2590,65 @@ mod tests {
 
     #[test]
     fn time_together_deepens_the_bond_ever_more_slowly() {
+        // Company through most of each day.
         let mut life = Life::default();
         let mut after = Vec::new();
-        for hours in [1, 3, 8] {
-            for _ in 0..(hours * 3600) {
-                life.pass(1.0, true);
+        for day in 1..=60 {
+            life.begin_day(&format!(
+                "2026-{:02}-{:02}",
+                1 + (day - 1) / 28,
+                1 + (day - 1) % 28
+            ));
+            for _ in 0..(8 * 60) {
+                life.pass(60.0, true);
             }
             after.push(life.bond);
         }
-        assert!((0.25..0.35).contains(&after[0]), "{after:?}");
-        assert!((0.55..0.7).contains(&after[1]), "{after:?}");
-        assert!((0.8..0.9).contains(&after[2]), "{after:?}");
+        assert!((0.3..0.4).contains(&after[0]), "{after:?}");
+        assert!(after[1] < 0.55 && after[4] >= 0.55, "{after:?}");
+        assert!(after[7] < 0.8 && after[13] >= 0.8, "{after:?}");
+        assert!(after[27] < 0.95 && after[59] >= 0.95, "{after:?}");
+        let gains: Vec<f32> = after.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        assert!(gains.windows(2).all(|pair| pair[1] < pair[0]), "{gains:?}");
         let before = life.bond;
         life.pass(3600.0, false);
         assert_eq!(life.bond, before);
-        assert_eq!(life.total.together, 12.0 * 3600.0);
+        assert_eq!(life.total.together, 60.0 * 8.0 * 3600.0);
+    }
+
+    #[test]
+    fn hours_spread_over_days_bring_the_ghost_closer_than_one_long_day() {
+        let mut long_day = Life::default();
+        long_day.begin_day("2026-10-01");
+        for _ in 0..12 {
+            long_day.pass(3600.0, true);
+        }
+        let mut spread = Life::default();
+        for day in 1..=6 {
+            spread.begin_day(&format!("2026-10-{day:02}"));
+            spread.pass(3600.0, true);
+            spread.pass(3600.0, true);
+        }
+        assert_eq!(long_day.total.together, spread.total.together);
+        assert!(long_day.bond < 0.4, "{}", long_day.bond);
+        assert!(
+            spread.bond > long_day.bond + 0.2,
+            "{} {}",
+            spread.bond,
+            long_day.bond
+        );
+        // A day's warmth from talk and play wears off the same way.
+        let mut chatty = Life::default();
+        for _ in 0..200 {
+            chatty.note(&EventKind::Heard("hello".into()));
+        }
+        assert!(chatty.bond < DAILY_WARMTH, "{}", chatty.bond);
+        assert!(chatty.warmed <= DAILY_WARMTH);
+        chatty.begin_day("2026-10-02");
+        assert_eq!(chatty.warmed, 0.0);
+        let before = chatty.bond;
+        chatty.note(&EventKind::Heard("hello".into()));
+        assert!(chatty.bond - before > 0.005);
     }
 
     #[test]
@@ -2611,6 +2679,7 @@ mod tests {
         for life in [&mut average, &mut shy] {
             life.bond = 0.5;
             life.closest = 0.5;
+            life.warmed = 0.0;
         }
         average.pass(1.0, true);
         shy.pass(1.0, true);
@@ -2820,19 +2889,23 @@ mod tests {
     fn growing_closer_and_hours_together_are_milestones() {
         let mut life = Life::default();
         let mut reached = Vec::new();
-        for _ in 0..(11 * 3600) {
-            if let Some(text) = life.pass(1.0, true) {
-                reached.push(text);
+        for day in 1..=20 {
+            life.begin_day(&format!("2026-10-{day:02}"));
+            for _ in 0..(6 * 60) {
+                if let Some(text) = life.pass(60.0, true) {
+                    reached.push(text);
+                }
             }
         }
         assert_eq!(
             reached,
             [
-                "We got to know each other.",
                 "We spent our first hour together.",
+                "We got to know each other.",
+                "We've spent ten hours together.",
                 "I've grown fond of you.",
                 "We're close now, you and I.",
-                "We've spent ten hours together.",
+                "We've spent a hundred hours together.",
             ]
         );
     }
@@ -2959,7 +3032,11 @@ mod tests {
         life.begin_day("2026-11-01");
         assert_eq!(life.today.celebrations, 0);
         assert_eq!(life.total.celebrations, 11);
-        assert!(life.diary[0].text.starts_with("Celebrated Halloween, celebrated the winter"));
+        assert!(
+            life.diary[0]
+                .text
+                .starts_with("Celebrated Halloween, celebrated the winter")
+        );
         assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().celebrations, 0);
     }
 

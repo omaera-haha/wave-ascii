@@ -1201,7 +1201,12 @@ mod tests {
                 ..Life::default()
             };
             life.note(&EventKind::WishGranted(wish.clone()));
-            let expected = if wish.with_viewer() { 0.41 } else { 0.4 };
+            // A bond already this deep warms by the rest of the way squared.
+            let expected = if wish.with_viewer() {
+                0.4 + 0.01 * 0.6 * 0.6
+            } else {
+                0.4
+            };
             assert!((life.bond - expected).abs() < 0.00001);
         }
     }

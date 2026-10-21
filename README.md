@@ -606,10 +606,13 @@ Its nature also colors its thoughts and words. Press `l` to see it.
 The ghost grows close to you over time. Each minute you spend with it (it
 knows you're there while you use the keys or the mouse, and in terminals that
 report focus, twenty seconds in another window count as away) deepens its bond with
-you, quickly at first and then more slowly: about a third of the way after an
-hour together, most of the way after a dozen. Talking to it, dropping it light
-motes, and flicking it the ball warm it a little; poking it again and again
-cools it. If you stay away for days, whether the app is closed or left
+you, quickly at first and then more slowly. Closeness takes days, not hours:
+each day can hold only so much warmth, so a long day counts for less than the
+same hours spread over several. With company through most of each day, it
+gets to know you on the first day, grows fond of you within a few, feels close
+after about a week and a half, and becomes devoted only after many weeks.
+Talking to it, dropping it light motes, and flicking it the ball warm it a
+little, within the same daily room; poking it again and again cools it. If you stay away for days, whether the app is closed or left
 running, the bond fades a little each day, but never below half the closest
 it has been. Once it knows you, it leaves
 whatever it was idly doing to come to the glass when you arrive, and it seeks
