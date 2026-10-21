@@ -131,8 +131,9 @@ const LITTLE: &[&str] = &[
     "please", "now", "just", "so", "too", "very", "really", "oh", "ok", "okay", "lets", "let",
     "what", "how", "why", "when", "who", "want", "wanna", "like", "some", "any", "again", "more",
     "then", "if", "but", "all", "go", "get", "have", "has", "been", "bit", "little", "about",
-    "from", "by", "as", "into", "there", "not", "ghost", "좀", "너", "나", "우리", "그냥", "진짜",
-    "정말", "이제", "한번", "빨리", "해", "해줘", "줘",
+    "from", "by", "as", "into", "there", "not", "ghost", "job", "done", "work", "boy", "girl",
+    "one", "thing", "좀", "너", "나", "우리", "그냥", "진짜", "정말", "이제", "한번", "빨리", "해",
+    "해줘", "줘",
 ];
 
 /// What the ghost makes of a message without knowing what its words mean

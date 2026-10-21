@@ -17,6 +17,9 @@ use crate::terminal::{Input, Key, Mouse, MouseAction};
 use crate::ui;
 use crate::world::{Ball, Mood, Nature, Needs, ROOM_MAX, ROOM_MIN, World};
 
+/// Seconds after the ghost first answers in its own words that the viewer
+/// hears a Claude key would let it talk.
+const HINT_AFTER: f64 = 6.0;
 // Radians per arrow key press, and per cell dragged.
 const TURN: f32 = 0.12;
 const DRAG_TURN: f32 = 0.03;
@@ -180,6 +183,10 @@ pub struct App {
     /// The aura's color, eased toward the color of the ghost's mood.
     aura: Vec3,
     last_save: f64,
+    /// Whether the viewer has been told, this run, that a Claude key lets
+    /// the ghost talk, and when to tell them.
+    hinted_claude: bool,
+    hint_claude_at: Option<f64>,
     /// The last watching frame's scene and words, before its status bar.
     postcard: Option<Postcard>,
 }
@@ -211,6 +218,8 @@ impl App {
             dragged: false,
             aura,
             last_save: 0.0,
+            hinted_claude: false,
+            hint_claude_at: None,
             postcard: None,
         }
     }
@@ -241,6 +250,13 @@ impl App {
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
         self.mind.think(&mut self.world);
+        if self
+            .hint_claude_at
+            .is_some_and(|time| self.world.time >= time)
+        {
+            self.hint_claude_at = None;
+            self.post("It talks in a few words of its own. With a Claude key (press k), it can really talk.");
+        }
         let ease = 1.0 - (-1.5 * seconds).exp();
         self.aura = self.aura.lerp(mood_color(self.world.ghost.mood), ease);
         if self.live_clock && self.world.time - self.last_save > SAVE_EVERY {
@@ -307,8 +323,11 @@ impl App {
                         self.mode = Mode::Watching;
                         if !text.is_empty() {
                             self.mind.hear(&mut self.world, &text);
-                            if !self.mind.can_talk() {
-                                self.post("The ghost listens, but can't answer in words without a Claude key (press k).");
+                            // Its own few words answer right away; the
+                            // hint about Claude comes once, after them.
+                            if !self.mind.can_talk() && !self.hinted_claude {
+                                self.hinted_claude = true;
+                                self.hint_claude_at = Some(self.world.time + HINT_AFTER);
                             }
                         }
                     }
@@ -856,7 +875,17 @@ mod tests {
             app.world.events.iter().rev().find(|event| matches!(event.kind, EventKind::Heard(_))),
             Some(event) if event.kind == EventKind::Heard("go play".into())
         ));
+        // Its own words come first; the hint about Claude follows once.
+        assert!(app.world.ghost.speech.is_some());
+        assert_eq!(app.notice(), None);
+        app.advance(HINT_AFTER as f32 + 0.1);
         assert!(app.notice().unwrap().contains("Claude key"));
+        app.input(Input::Key(Key::Enter));
+        type_text(&mut app, "hello again");
+        app.input(Input::Key(Key::Enter));
+        app.advance(10.0);
+        app.advance(HINT_AFTER as f32 + 0.1);
+        assert_eq!(app.notice(), None);
     }
 
     #[test]
