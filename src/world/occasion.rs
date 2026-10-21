@@ -321,7 +321,7 @@ impl super::World {
                     || self.game.is_some()
                     || self.puzzle_active()
                     || self.reading.is_some()
-                    || self.asking.is_some()
+                    || (self.asking.is_some() || self.awaiting_plan_answer())
                     || self
                         .ghost
                         .speech

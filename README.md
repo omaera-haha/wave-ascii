@@ -273,6 +273,17 @@ next few days; “yes”, “much better”, “괜찮아”, or a no tells it h
 next. A letter that says how you feel counts too. While you work it stays in
 quiet company, and a sleeping ghost keeps your words for when it wakes.
 
+### Your plans
+
+Tell it “I have an exam tomorrow”, “my presentation is on Friday”, or
+“내일 면접 있어”. It remembers your newest eight dated plans, wishes you
+luck on the day, and asks how it went that evening or over the next three
+days. “Passed!”, “잘 봤어”, or “망했어” brings a little celebration or quiet
+comfort. Answer within three minutes; it listens without learning activity
+words from your plans. Today's plans get a cheer right away, while a
+sleeping ghost waits until it wakes. Undated plans and other people's plans
+stay ordinary conversation.
+
 ### Focus together
 
 Press `o` to work beside the ghost for twenty-five minutes, or tell it

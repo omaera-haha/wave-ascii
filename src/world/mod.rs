@@ -1,5 +1,6 @@
 pub mod acquaintance;
 mod activity;
+pub mod agenda;
 pub mod anniversary;
 pub mod away;
 pub mod blocks;
@@ -310,6 +311,14 @@ pub enum EventKind {
     ReadViewerLetter,
     AskedViewer(acquaintance::Topic),
     LearnedAboutViewer(acquaintance::Topic),
+    HeardPlan {
+        errand: agenda::Errand,
+        days: i32,
+    },
+    WishedLuck(agenda::Errand),
+    AskedAboutPlan(agenda::Errand),
+    PlanWentWell(agenda::Errand),
+    PlanWentBadly(agenda::Errand),
 }
 
 impl EventKind {
@@ -517,6 +526,21 @@ impl EventKind {
             Self::PlayedWithFriend(game) => {
                 format!("finished {} with your ghost friend", game.words())
             }
+            Self::HeardPlan { errand, days } => format!(
+                "the viewer told me about their {} {}",
+                errand.name(),
+                agenda::when(*days)
+            ),
+            Self::WishedLuck(errand) => {
+                format!("wished the viewer luck for their {}", errand.name())
+            }
+            Self::AskedAboutPlan(errand) => {
+                format!("asked how the viewer's {} went", errand.name())
+            }
+            Self::PlanWentWell(errand) => format!("the viewer's {} went well", errand.name()),
+            Self::PlanWentBadly(errand) => {
+                format!("the viewer's {} was hard, so I stayed close", errand.name())
+            }
         }
     }
 }
@@ -587,6 +611,11 @@ pub enum Understanding {
     },
     Answered(acquaintance::Topic),
     Unanswered(acquaintance::Topic),
+    Planned(agenda::Errand),
+    PlanAnswered {
+        errand: agenda::Errand,
+        went_well: Option<bool>,
+    },
 }
 
 /// The viewer's latest words that might mean something, and what the
@@ -792,6 +821,9 @@ pub struct World {
     last_message_at: Option<f64>,
     last_question_at: Option<f64>,
     viewer_blush_at: Option<f64>,
+    agenda_answer: Option<(agenda::Errand, String, f64)>,
+    agenda_visit_asked: bool,
+    agenda_visit_question: bool,
 }
 
 impl World {
@@ -931,6 +963,9 @@ impl World {
             last_message_at: None,
             last_question_at: None,
             viewer_blush_at: None,
+            agenda_answer: None,
+            agenda_visit_asked: false,
+            agenda_visit_question: false,
         };
         world.scatter_blocks();
         world
@@ -962,6 +997,7 @@ impl World {
         self.greet_favorite_season();
         self.follow_up_feeling();
         self.ask_viewer();
+        self.follow_up_agenda();
     }
 
     fn advance(&mut self, seconds: f32) {
@@ -1075,6 +1111,9 @@ impl World {
                 self.asking = None;
                 self.abandon_comfort();
                 self.feeling_visit_asked = false;
+                self.agenda_answer = None;
+                self.agenda_visit_asked = false;
+                self.agenda_visit_question = false;
             }
         }
         if !self.viewer_gone
@@ -1409,6 +1448,8 @@ impl World {
             }
         }
         if activity != Activity::Visit {
+            self.agenda_visit_asked = false;
+            self.agenda_visit_question = false;
             self.sebae = None;
         }
         // A question asked at the glass lapses when it goes to play a game,
@@ -1418,6 +1459,7 @@ impl World {
             Activity::Game | Activity::Puzzle | Activity::Rest | Activity::Hide
         ) {
             self.asking = None;
+            self.agenda_answer = None;
         }
         self.abandon_comfort();
         self.abandon_game();
@@ -1813,6 +1855,9 @@ impl World {
         // Only the very next message answers a wellbeing question, even if
         // another direct handler consumes that message first.
         let feeling_follow_up = self.feeling_follow_up.take();
+        if let Some(heard) = self.answer_plan(text, korean) {
+            return heard;
+        }
         if let Some(heard) = self.answer_viewer(text, korean) {
             return heard;
         }
@@ -1886,13 +1931,19 @@ impl World {
         }
         if introduction.is_none()
             && naming.is_none()
-            && let Some(heard) = self.hear_feelings(text, korean, feeling_follow_up)
+            && let Some(heard) = self.hear_promise(text, korean)
         {
             return heard;
         }
         if introduction.is_none()
             && naming.is_none()
-            && let Some(heard) = self.hear_promise(text, korean)
+            && let Some(heard) = self.hear_agenda(text, korean)
+        {
+            return heard;
+        }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_feelings(text, korean, feeling_follow_up)
         {
             return heard;
         }

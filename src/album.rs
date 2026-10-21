@@ -497,6 +497,7 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
         EventKind::FocusEnded {
             completed: true, ..
         } => ("We finished our work together.".to_owned(), None),
+        EventKind::PlanWentWell(errand) => (format!("Your {} went well!", errand.name()), None),
         _ => return None,
     };
     Some((caption, daily))
@@ -972,5 +973,15 @@ mod tests {
         ] {
             assert!(caption(&kind).is_none());
         }
+    }
+
+    #[test]
+    fn good_news_about_a_plan_is_an_ordinary_album_moment() {
+        use crate::world::agenda::Errand;
+        let (words, daily) = caption(&EventKind::PlanWentWell(Errand::Interview)).unwrap();
+        assert_eq!(words, "Your interview went well!");
+        assert!(daily.is_none());
+        assert!(caption(&EventKind::WishedLuck(Errand::Interview)).is_none());
+        assert!(caption(&EventKind::PlanWentBadly(Errand::Interview)).is_none());
     }
 }

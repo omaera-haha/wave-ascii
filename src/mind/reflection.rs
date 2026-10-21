@@ -214,6 +214,12 @@ pub fn request(
         .promise
         .map_or_else(String::new, |promise| format!("\n{}", promise.words()));
     let feelings = crate::world::feelings::memories(&life.feelings, &life.day);
+    let agenda = life
+        .day
+        .parse()
+        .ok()
+        .map(|today| crate::world::agenda::memories(&life.agenda, today))
+        .unwrap_or_default();
     let viewer = life.viewer.words();
     let viewer = if viewer.is_empty() {
         String::new()
@@ -319,7 +325,7 @@ pub fn request(
                  You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
                  Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}
-Recent feelings the viewer shared: {feelings}\n\n{wishes}\n\n\
+Recent feelings the viewer shared: {feelings}\nViewer plans you remember: {agenda}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}{creations}",
