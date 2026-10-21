@@ -288,6 +288,13 @@ impl Life {
         self.today = Tally::default();
     }
 
+    /// Starts a new ghost's life on `day`, a local date as YYYY-MM-DD, with
+    /// the first moment it keeps.
+    pub fn begin(&mut self, day: &str) -> Option<String> {
+        self.begin_day(day);
+        self.reach("I came into being in a glass box.".to_owned())
+    }
+
     /// How much more, or less, than a new ghost it leans toward `activity`
     /// because of how often it chose it before: from 0.85 for what it never
     /// does to 1.3 for what it does most. Floating is no habit.
@@ -632,6 +639,15 @@ mod tests {
         assert!(life.habit(Activity::Explore) < 0.95);
         assert_eq!(life.habit(Activity::Float), 1.0);
         assert_eq!(life.favorite(), Some(Activity::Play));
+    }
+
+    #[test]
+    fn a_new_life_begins_with_its_first_moment() {
+        let mut life = Life::default();
+        assert!(life.begin("2026-10-21").is_some());
+        assert_eq!(life.day, "2026-10-21");
+        assert_eq!(life.milestones[0].day, "2026-10-21");
+        assert_eq!(life.begin("2026-10-21"), None);
     }
 
     #[test]

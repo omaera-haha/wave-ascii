@@ -209,7 +209,10 @@ fn run() -> io::Result<()> {
     let now = mind::now();
     let (journal, born) = match &save {
         Some(save) => (app::restore(&mut world, save, now), save.born),
-        None => (Journal::default(), now),
+        None => {
+            world.begin_life(&jiff::Zoned::now().date().to_string());
+            (Journal::default(), now)
+        }
     };
     let mind = Mind::new(&config, journal, options.offline);
     let color = options.color.unwrap_or_else(ColorMode::detect);

@@ -615,6 +615,13 @@ impl World {
         self.record(EventKind::KickedBall);
     }
 
+    /// A new ghost comes into being on `day`, a local date as YYYY-MM-DD.
+    pub fn begin_life(&mut self, day: &str) {
+        if let Some(milestone) = self.life.begin(day) {
+            self.record(EventKind::Milestone(milestone));
+        }
+    }
+
     /// The viewer opened the app again after `away` seconds.
     pub fn record_return(&mut self, away: f32) {
         self.record(EventKind::Returned {
