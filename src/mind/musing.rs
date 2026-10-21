@@ -9,6 +9,11 @@ use crate::world::{Activity, Heard, Mood, Occasion, Question, Sky, Tone, Underst
 pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
     let present = world.viewer_present();
     match activity {
+        Activity::Friend => vec![
+            "Tag! You’re it!",
+            "Let’s play together.",
+            "Two ghosts, one moon.",
+        ],
         Activity::Float => Vec::new(),
         Activity::Explore => vec![
             "I wonder what's in that corner.",
@@ -96,12 +101,36 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
     }
 }
 
+/// Gives the friend its remembered name in the thoughts picked from the pools.
+pub fn named_friend_line(world: &World, line: &str) -> String {
+    match &world.life.friend {
+        Some(friend) => line
+            .replace("My ghost friend", &friend.name)
+            .replace("my ghost friend", &friend.name),
+        None => line.to_owned(),
+    }
+}
+
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<&'static str> {
     let ghost = &world.ghost;
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if world.friend.is_some() {
+        lines.extend([
+            "My ghost friend is fun!",
+            "Two little ghosts in one little room.",
+        ]);
+    } else if world
+        .events
+        .iter()
+        .rev()
+        .take_while(|event| world.time - event.time < 180.0)
+        .any(|event| matches!(event.kind, crate::world::EventKind::FriendLeft(_)))
+    {
+        lines.push("I hope my ghost friend comes back soon.");
+    }
     if !world.life.keepsakes.is_empty() {
         lines.extend(["Every little gift has a place.", "I like my little shelf."]);
     }
@@ -230,6 +259,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Rest => "Naps are the best part of the day.",
             Activity::Explore => "I know every corner of this room.",
             Activity::Lamp => "I like the lamp's warm light.",
+            Activity::Friend => "Playing together is the best.",
             Activity::Float => "Floating is nice.",
             Activity::Build => "How high could I stack those blocks?",
             Activity::Fetch => "Throw the ball again! Please?",
@@ -297,6 +327,12 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
             "…everyone sings, even the plant…",
         ]),
         None => {}
+    }
+    if today.friend_visits > 0 {
+        lines.extend([
+            "…two ghosts chasing each other past the moon…",
+            "…my ghost friend and I twirl among the stars…",
+        ]);
     }
     if today.motes > 0 {
         lines.extend([
@@ -475,6 +511,30 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
     let needs = ghost.needs;
     let bond = world.life.bond;
     match question {
+        Question::Friend => match &world.life.friend {
+            Some(friend) if korean => vec![format!(
+                "내 유령 친구 이름은 {}! {}",
+                friend.name,
+                if world.friend.is_some() {
+                    "지금 같이 있어."
+                } else {
+                    "다시 놀러 오면 좋겠다."
+                }
+            )],
+            Some(friend) => vec![format!(
+                "{} is my ghost friend. {}",
+                friend.name,
+                if world.friend.is_some() {
+                    "They're here to play!"
+                } else {
+                    "I hope they come back soon."
+                }
+            )],
+            None => lines(
+                &["I haven't met another ghost yet. Maybe one evening."],
+                &["아직 유령 친구는 못 만났어. 언젠가 오겠지."],
+            ),
+        },
         Question::Feeling => match ghost.mood {
             Mood::Content => lines(
                 &["I'm good, thanks.", "Content. Just being a ghost."],
@@ -760,6 +820,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Game => "유리에 틱택토 하는 중",
         Activity::Wait => "유리 앞에서 너를 기다리는 중",
         Activity::Build => "블록으로 탑 쌓는 중",
+        Activity::Friend => "유령 친구와 노는 중",
     }
 }
 
@@ -783,6 +844,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Game => "틱택토",
         Activity::Wait => "너 기다리기",
         Activity::Build => "블록 쌓기",
+        Activity::Friend => "유령 친구와 놀기",
     }
 }
 
@@ -1216,5 +1278,31 @@ mod tests {
                 .all(|line| line.contains("민수"))
         );
         assert!(reply(&world, &heard, None).contains(&"반가워, 민수!".to_owned()));
+    }
+    #[test]
+    fn offline_answers_and_thoughts_use_the_friends_remembered_name() {
+        let mut world = World::new(1, 12.0);
+        world.life.friend = Some(crate::world::Companion {
+            name: "Lumi".to_owned(),
+            ..Default::default()
+        });
+        for text in ["Who is your friend?", "친구 이름은 뭐야?"] {
+            let heard = world.hear(text);
+            assert!(
+                reply(&world, &heard, None)
+                    .iter()
+                    .all(|answer| answer.contains("Lumi"))
+            );
+        }
+        assert_eq!(
+            named_friend_line(&world, "My ghost friend is fun!"),
+            "Lumi is fun!"
+        );
+        world.life.today.friend_visits = 1;
+        assert!(
+            dreams(&world)
+                .iter()
+                .any(|line| named_friend_line(&world, line).contains("Lumi"))
+        );
     }
 }

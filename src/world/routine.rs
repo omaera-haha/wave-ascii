@@ -184,6 +184,7 @@ mod tests {
     #[test]
     fn a_wait_drifts_along_the_glass_and_finishes_after_its_full_length() {
         let mut world = expecting(20.0, 20.0);
+        world.visitors.friend_visited = Some(world.date);
         world.begin(Activity::Wait);
         let length = world.ghost.plan.length;
         assert!((60.0..=120.0).contains(&length));

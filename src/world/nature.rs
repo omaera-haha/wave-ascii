@@ -92,7 +92,8 @@ impl Nature {
             | Activity::Fetch
             | Activity::Dance
             | Activity::Pounce
-            | Activity::Game => signed(self.playful),
+            | Activity::Game
+            | Activity::Friend => signed(self.playful),
             Activity::Hide => (signed(self.playful) + signed(self.shy)) / 2.0,
             Activity::Explore | Activity::Window | Activity::Build => signed(self.curious),
             Activity::Rest => signed(self.sleepy),

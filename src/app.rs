@@ -8,9 +8,9 @@ use crate::face::{self, expression::Expression, mood::Cues};
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::postcard::{self, Postcard};
-use crate::render::ghost::{Aura, Pose};
+use crate::render::ghost::{Aura, Body, Pose, friend_color};
 use crate::render::window::Outside;
-use crate::render::{self, Camera, GHOST_SCALE, Scene, View};
+use crate::render::{self, Camera, FRIEND_SCALE, GHOST_SCALE, Scene, View};
 use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
 use crate::terminal::{Input, Key, Mouse, MouseAction};
@@ -428,11 +428,15 @@ impl App {
         self.post(message);
     }
 
-    fn doing(&self) -> &'static str {
+    pub fn doing(&self) -> String {
         if self.world.ghost.asleep > 0.5 {
-            "asleep on the cushion"
+            "asleep on the cushion".to_owned()
+        } else if self.world.ghost.plan.activity == crate::world::Activity::Friend
+            && let Some(friend) = &self.world.life.friend
+        {
+            format!("playing with {}", friend.name)
         } else {
-            self.world.ghost.plan.activity.doing()
+            self.world.ghost.plan.activity.doing().to_owned()
         }
     }
 
@@ -515,8 +519,10 @@ impl App {
                 self.press = Some((mouse.column, mouse.row));
                 self.dragged = false;
                 self.stroke = point.filter(|point| {
-                    self.view
-                        .is_some_and(|view| view.touches_ghost(*point, self.world.ghost.position))
+                    self.view.is_some_and(|view| {
+                        view.touches_ghost(*point, self.world.ghost.position, GHOST_SCALE)
+                            && !self.touches_friend(view, *point)
+                    })
                 });
             }
             MouseAction::Drag => {
@@ -524,7 +530,7 @@ impl App {
                     if point != last {
                         self.dragged = true;
                         self.stroke = Some(point);
-                        if view.touches_ghost(point, self.world.ghost.position) {
+                        if view.touches_ghost(point, self.world.ghost.position, GHOST_SCALE) {
                             self.world.pet(point.distance(last));
                             let across = point.x - last.x;
                             self.stroke_side = if across.abs() > 1e-4 {
@@ -566,6 +572,15 @@ impl App {
         Response::Continue
     }
 
+    fn touches_friend(&self, view: View, point: Vec2) -> bool {
+        self.world.friend.as_ref().is_some_and(|friend| {
+            friend.visibility() > 0.0
+                && view.touches_ghost(point, friend.position, FRIEND_SCALE)
+                && (!view.touches_ghost(point, self.world.ghost.position, GHOST_SCALE)
+                    || (friend.position - self.world.ghost.position).dot(view.forward) < 0.0)
+        })
+    }
+
     fn click(&mut self, point: Vec2) {
         let Some(view) = self.view else {
             return;
@@ -579,7 +594,11 @@ impl App {
             self.world.mark(cell);
             return;
         }
-        if view.touches_ghost(point, self.world.ghost.position) {
+        if self.touches_friend(view, point) {
+            self.world.poke_friend();
+            return;
+        }
+        if view.touches_ghost(point, self.world.ghost.position, GHOST_SCALE) {
             self.world.poke();
             return;
         }
@@ -709,6 +728,61 @@ impl App {
             ghost.velocity.y / GHOST_SCALE,
             ghost.asleep,
         );
+        let friend =
+            world
+                .friend
+                .as_ref()
+                .zip(world.life.friend.as_ref())
+                .map(|(friend, companion)| {
+                    let time = world.time + f64::from(friend.phase);
+                    let slot = (time / 4.0).floor() as u64;
+                    let blink_at =
+                        0.5 + ((slot.wrapping_mul(0x9E37_79B9) >> 12) % 250) as f64 / 100.0;
+                    let blink =
+                        (1.0 - ((time.rem_euclid(4.0) - blink_at) / 0.12).abs()).max(0.0) as f32;
+                    let poked = (1.0 - (world.time - friend.poked_at) / 1.2).clamp(0.0, 1.0) as f32;
+                    let leaving = friend.state == crate::world::friend::State::Leaving;
+                    Body {
+                        position: friend.position,
+                        scale: FRIEND_SCALE,
+                        pose: Pose::new(
+                            time,
+                            friend.velocity.dot(view.right) / FRIEND_SCALE,
+                            friend.velocity.dot(view.up) / FRIEND_SCALE,
+                            0.0,
+                        ),
+                        face: face::Face {
+                            shut: [blink; 2],
+                            widen: poked,
+                            smile: if poked > 0.5 {
+                                0.0
+                            } else if friend.state == crate::world::friend::State::Playing
+                                || leaving
+                                || poked > 0.0
+                            {
+                                0.75
+                            } else {
+                                0.0
+                            },
+                            gaze: if leaving {
+                                Vec2::new((time as f32 * 6.0).sin() * 0.5, 0.0)
+                            } else {
+                                Vec2::new(
+                                    friend.heading.dot(view.right),
+                                    friend.heading.dot(view.up),
+                                ) * 0.5
+                            },
+                            ..face::Face::REST
+                        },
+                        aura: Aura {
+                            color: friend_color(companion.hue),
+                            visibility: 1.0,
+                            brightness: 0.75,
+                            beat: 0.8,
+                        },
+                        opacity: friend.visibility(),
+                    }
+                });
         let samples = if self.style == Style::Braille { 1 } else { 2 };
         let frame = render::render(
             &Scene {
@@ -737,6 +811,7 @@ impl App {
                 face,
                 aura,
                 pose,
+                friend,
             },
             grid,
             samples,
@@ -757,7 +832,7 @@ impl App {
             } else {
                 None
             };
-            self.postcard = Some(Postcard::new(canvas, colored, &self.world, self.doing()));
+            self.postcard = Some(Postcard::new(canvas, colored, &self.world, &self.doing()));
         }
         ui::draw(self, &mut screen, scene_rows);
         screen
@@ -932,6 +1007,52 @@ mod tests {
             .to_pixels()
             .transform_point2(point);
         (pixel.x as usize, pixel.y as usize)
+    }
+
+    #[test]
+    fn the_documented_full_moon_preview_has_a_visiting_friend() {
+        let mut world = World::new(1, 20.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 25);
+        world.step(0.0);
+        let mind = Mind::new(&Config::default(), Journal::default(), true);
+        let mut app = App::new(
+            world,
+            mind,
+            Config::default(),
+            Style::Ascii,
+            ColorMode::Plain,
+        );
+        for _ in 0..3600 {
+            app.advance(0.05);
+        }
+        assert!(
+            app.world.friend.is_some(),
+            "visits: {}, energy: {}, time: {}",
+            app.world.life.total.friend_visits,
+            app.world.ghost.needs.energy,
+            app.world.time
+        );
+        assert_eq!(app.world.life.total.friend_visits, 1);
+        assert!(app.world.life.total.friend_games > 0);
+        let name = app.world.life.friend.as_ref().unwrap().name.clone();
+        app.world.begin(Activity::Friend);
+        assert!(app.title().contains(&format!("playing with {name}")));
+        app.world.ghost.position = Vec3::new(-0.8, 1.1, 0.0);
+        app.world.friend.as_mut().unwrap().position = Vec3::new(0.6, 1.4, 0.3);
+        let view = Camera::default().view(Grid::cells(100, 32));
+        app.view = Some(view);
+        let point = view
+            .project(app.world.friend.as_ref().unwrap().position)
+            .unwrap();
+        let bond = app.world.life.bond;
+        app.click(point);
+        assert_eq!(app.world.life.bond, bond);
+        assert!(
+            app.world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::PokedFriend)
+        );
     }
 
     #[test]

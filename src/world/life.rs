@@ -137,6 +137,14 @@ pub struct Tally {
     pub tallest: u32,
     #[serde(default)]
     pub toppled: u32,
+    #[serde(default)]
+    pub friend_visits: u32,
+    #[serde(default)]
+    pub friend_games: u32,
+    #[serde(default)]
+    pub friend_name: Option<String>,
+    #[serde(default)]
+    pub friend_played: Vec<super::friend::Game>,
 }
 
 impl Tally {
@@ -223,6 +231,16 @@ impl Tally {
             }
             EventKind::ExpectedArrival => self.expected += 1,
             EventKind::MissedVisit => self.missed += 1,
+            EventKind::FriendArrived(name) => {
+                self.friend_visits = self.friend_visits.saturating_add(1);
+                self.friend_name = Some(name.clone());
+            }
+            EventKind::PlayedWithFriend(game) => {
+                self.friend_games = self.friend_games.saturating_add(1);
+                if !self.friend_played.contains(game) {
+                    self.friend_played.push(*game);
+                }
+            }
             _ => {}
         }
     }
@@ -240,6 +258,26 @@ impl Tally {
             .iter()
             .map(|occasion| occasion.diary_words().to_owned())
             .collect();
+        if let Some(name) = &self.friend_name {
+            let visit = match self.friend_visits {
+                0 => String::new(),
+                1 => format!("{name} came to visit"),
+                2 => format!("{name} visited twice"),
+                count => format!("{name} visited {} times", super::friend::count_words(count)),
+            };
+            if !visit.is_empty() {
+                let games: Vec<String> = self
+                    .friend_played
+                    .iter()
+                    .map(|game| game.words().to_owned())
+                    .collect();
+                deeds.push(if games.is_empty() {
+                    visit
+                } else {
+                    format!("{visit} and we played {}", listed(&games))
+                });
+            }
+        }
         match self.motes {
             0 => {}
             1 => deeds.push("ate a light mote".to_owned()),
@@ -485,6 +523,8 @@ pub struct Life {
     pub last_arrival: Option<(String, f32)>,
     #[serde(default)]
     pub viewer_name: Option<String>,
+    #[serde(default)]
+    pub friend: Option<super::Companion>,
 }
 
 impl Life {
@@ -555,8 +595,28 @@ impl Life {
     pub fn note(&mut self, kind: &EventKind) -> Option<String> {
         self.total.note(kind);
         self.today.note(kind);
+        if let Some(friend) = &mut self.friend {
+            match kind {
+                EventKind::FriendArrived(_) => {
+                    friend.visits = friend.visits.saturating_add(1);
+                    friend.closeness = (friend.closeness + 0.05).min(1.0);
+                }
+                EventKind::PlayedWithFriend(_) => {
+                    friend.closeness = (friend.closeness + 0.025).min(1.0)
+                }
+                _ => {}
+            }
+        }
         let bond = self.bond;
         let milestone = self.first(kind);
+        if matches!(
+            kind,
+            EventKind::FriendArrived(_) | EventKind::PlayedWithFriend(_)
+        ) && let Some(friend) = &self.friend
+            && friend.closeness >= 0.5
+        {
+            self.reach(format!("{} and I are good friends now.", friend.name));
+        }
         let milestone = if matches!(kind, EventKind::Built { height } if *height >= 5) {
             let tallest = self.reach("I built a tower five blocks high.".to_owned());
             milestone.or(tallest)
@@ -790,6 +850,16 @@ impl Life {
                 0.0
             }
         };
+        self.friend = self.friend.filter(|friend| {
+            !friend.name.trim().is_empty()
+                && friend.name.chars().count() <= 24
+                && !friend.name.chars().any(char::is_control)
+        });
+        if let Some(friend) = &mut self.friend {
+            friend.hue = unit(friend.hue);
+            friend.closeness = unit(friend.closeness);
+            friend.visits = friend.visits.min(1_000_000);
+        }
         self.closest = unit(self.closest);
         self.bird_trust = unit(self.bird_trust);
         if self.keepsakes.len() > 8 {
@@ -798,6 +868,14 @@ impl Life {
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
+            tally.friend_visits = tally.friend_visits.min(1_000_000);
+            tally.friend_games = tally.friend_games.min(100_000_000);
+            tally.friend_name = tally.friend_name.take().filter(|name| {
+                !name.trim().is_empty()
+                    && name.chars().count() <= 24
+                    && !name.chars().any(char::is_control)
+            });
+            tally.friend_played.truncate(3);
             tally.tallest = tally.tallest.min(5);
             tally.watched_writings = tally.watched_writings.min(tally.writings);
             tally.written_words.truncate(WORDS_NAMED);
@@ -848,6 +926,15 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if let EventKind::FriendArrived(name) = kind {
+            return match self.friend.as_ref().map_or(0, |friend| friend.visits) {
+                1 => self.reach(format!(
+                    "I met another ghost tonight. Their name is {name}."
+                )),
+                5 => self.reach(format!("{name} has come to see me five times now.")),
+                _ => None,
+            };
+        }
         let total = &self.total;
         if let EventKind::GameOver(outcome) = kind {
             let firsts = [

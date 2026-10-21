@@ -73,6 +73,10 @@ pub fn face(time: f64, cues: &Cues) -> Face {
 /// The expression the face answers an event with, if any.
 pub fn reaction(event: &EventKind) -> Option<Expression> {
     Some(match event {
+        EventKind::FriendArrived(_) => Expression::Sparkle,
+        EventKind::FriendLeft(_) => Expression::Worry,
+        EventKind::Tagged { .. } => Expression::Surprise,
+        EventKind::PokedFriend | EventKind::PlayedWithFriend(_) => Expression::Smile,
         EventKind::Poked { count: 1 } => Expression::Surprise,
         EventKind::Poked { count: 2 } => Expression::Smile,
         EventKind::Poked { .. } => Expression::Glare,

@@ -46,6 +46,9 @@ pub fn observe(world: &World) -> Value {
             "light_motes": motes(world),
             "glass": glass(world),
         },
+        "friend": world.friend.as_ref().zip(world.life.friend.as_ref()).map(|(friend, companion)| {
+            format!("{}, another ghost and {}, is {}", companion.name, companion.closeness_words(), friend.doing())
+        }).unwrap_or_else(|| "no ghost friend visiting just now".to_owned()),
         "viewer": viewer(world),
         "viewer_name": world.life.viewer_name.as_ref().map_or_else(|| "not known yet".to_owned(), |name| format!("The viewer's name is {name}.")),
         "bond_with_viewer": world.life.bond_words(),
@@ -67,6 +70,7 @@ pub fn recent(world: &World, count: usize) -> Vec<String> {
         .iter()
         .rev()
         .filter(|event| !matches!(event.kind, crate::world::EventKind::Began(Activity::Float)))
+        .filter(|event| !matches!(event.kind, crate::world::EventKind::Tagged { .. }))
         .take(count)
         .map(|event| {
             format!(
@@ -224,6 +228,10 @@ fn thing(world: &World, thing: Thing) -> String {
         Thing::Ball => "the ball".to_owned(),
         Thing::Cushion => "the cushion".to_owned(),
         Thing::Shelf => world.life.keepsake_words(),
+        Thing::Friend => world.life.friend.as_ref().map_or_else(
+            || "another ghost".to_owned(),
+            |friend| format!("your ghost friend {}", friend.name),
+        ),
         Thing::Blocks if world.tower.is_some() => format!(
             "the toy blocks, stacked in a tower {} blocks high",
             crate::world::blocks::height_words(world.tower_height())
@@ -985,5 +993,44 @@ mod tests {
                 .chars()
                 .any(|character| character.is_ascii_digit())
         );
+    }
+    #[test]
+    fn observations_name_the_visiting_friend_without_digits_or_a_flood_of_tags() {
+        let mut world = World::new(1, 20.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 25);
+        for _ in 0..3000 {
+            world.step(0.1);
+            if world.friend.is_some() {
+                break;
+            }
+        }
+        let name = world.life.friend.as_ref().unwrap().name.clone();
+        let observation = observe(&world);
+        assert!(observation["friend"].as_str().unwrap().contains(&name));
+        assert!(
+            observation["friend"]
+                .as_str()
+                .unwrap()
+                .contains("still a new friend")
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        for _ in 0..12 {
+            world.events.push(crate::world::Event {
+                time: world.time,
+                kind: crate::world::EventKind::Tagged { by_friend: true },
+            });
+        }
+        let recent = recent(&world, 8);
+        assert!(
+            recent
+                .iter()
+                .any(|line| line.contains("floated in through the window"))
+        );
+        assert!(!recent.iter().any(|line| line.contains("tagged")));
     }
 }

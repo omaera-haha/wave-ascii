@@ -30,12 +30,26 @@ pub enum Question {
     Shelf,
     /// How it gets on with the bird at the window.
     Bird,
+    Friend,
 }
 
 // Questions in English, as runs of words to find in the message, compared
 // lowercased and without apostrophes. More particular questions come first,
 // so "are you tired" is not taken for "are you okay".
 const ENGLISH: &[(Question, &[&[&str]])] = &[
+    (
+        Question::Friend,
+        &[
+            &["who", "is", "your", "friend"],
+            &["whos", "your", "friend"],
+            &["how", "is", "your", "friend"],
+            &["do", "you", "have", "a", "friend"],
+            &["tell", "me", "about", "your", "friend"],
+            &["where", "is", "your", "friend"],
+            &["whats", "your", "friends", "name"],
+            &["what", "is", "your", "friends", "name"],
+        ],
+    ),
     (
         Question::Shelf,
         &[
@@ -184,6 +198,17 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // and whether the message must end in a question mark, for words that are
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
+    (
+        Question::Friend,
+        &[
+            "친구는누구",
+            "친구이름",
+            "친구어디",
+            "친구있어",
+            "친구는어때",
+        ],
+        false,
+    ),
     (
         Question::Shelf,
         &["선반에뭐", "보물이뭐", "보물뭐", "선물뭐받"],

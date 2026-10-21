@@ -257,6 +257,20 @@ whitening the hills and dusting the branches. Snow builds in about two
 minutes and melts over about twenty minutes by day or an hour at night. The
 ghost lights up when it spots a rainbow or falling snow.
 
+**A friend.** On some clear evenings, between about half past five and a quarter
+to ten, a smaller ghost drifts in through the window. A full moon and a lonely
+ghost make a visit more likely. They play tag, twirl together, or float side by
+side to watch the moon. Having a friend nearby helps with loneliness. After a
+few minutes it waves goodbye and floats away; sleep, bedtime, rain, or snow
+bring the visit to an early end. There is at most one visit each evening.
+
+The same friend returns, with its own name and soft glow, and they grow closer
+with each visit and game. It is shy near your glass at first and comes closer
+as their friendship grows. Click the friend to make it giggle and bob away.
+The life panel (`l`), diary, dreams, and thoughts remember it between runs,
+though a visit in progress ends when you close the app. You can ask “Who is
+your friend?” or “친구 이름은 뭐야?” even without model keys.
+
 ### Special days
 
 From October 24–31, a grinning jack-o'-lantern warms the room with candlelight.
@@ -387,11 +401,15 @@ first, deciding on instinct. `--hour` sets the time of day (default noon),
 
 ```bash
 COLUMNS=100 LINES=32 cargo run -q -- --time 20 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-25 --hour 20 --time 180 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2027-03-01 --born 2026-03-01 < /dev/null | cat
 ```
+
+The October evening example has a nearly full moon and a visiting ghost friend
+within three simulated minutes.
 
 The same `--time`, `--hour`, `--date`, and `--born` give the same frame.
 Without `--born`, piped ghosts have no birthday. Piped time advances the

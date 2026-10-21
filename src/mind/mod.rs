@@ -378,7 +378,7 @@ impl Mind {
             return;
         }
         if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
-            world.think(lines[index]);
+            world.think(&musing::named_friend_line(world, lines[index]));
         }
     }
 

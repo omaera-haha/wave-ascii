@@ -171,6 +171,9 @@ mod tests {
     fn a_darting_pointer_interrupts_idle_plans_and_leaves_other_activities_alone() {
         for activity in Activity::ALL {
             let mut world = World::new(1, 12.0);
+            if activity == Activity::Friend {
+                world.invite_friend();
+            }
             world.begin(activity);
             wiggle(&mut world);
             assert_eq!(

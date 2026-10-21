@@ -10,11 +10,12 @@ use crate::face::Face;
 use crate::frame::{Frame, Grid, Shade};
 use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
-use ghost::{Aura, BOUNDS, Pose};
+use ghost::{Aura, BOUNDS, Body, Pose};
 use shapes::{Furniture, Material, decoration_light, sphere_span};
 
 /// World units per unit of the ghost's own space.
 pub const GHOST_SCALE: f32 = 0.45;
+pub const FRIEND_SCALE: f32 = GHOST_SCALE * 0.75;
 /// The point the camera circles and looks at.
 const TARGET: Vec3 = Vec3::new(0.0, 1.05, 0.0);
 /// One over the tangent of half the vertical field of view, about 50 degrees.
@@ -122,14 +123,14 @@ impl View {
 
     /// Whether the ray through `point` of the screen meets the ghost's
     /// billboard inside its outline's bounds.
-    pub fn touches_ghost(&self, point: Vec2, ghost: Vec3) -> bool {
-        self.billboard(self.ray(point), ghost)
+    pub fn touches_ghost(&self, point: Vec2, ghost: Vec3, scale: f32) -> bool {
+        self.billboard(self.ray(point), ghost, scale)
             .is_some_and(|(_, local)| local.abs().cmple(Vec2::new(0.6, 0.75)).all())
     }
 
     /// Where a ray meets the ghost's billboard: the distance along the ray
     /// and the point in the ghost's own space.
-    fn billboard(&self, direction: Vec3, ghost: Vec3) -> Option<(f32, Vec2)> {
+    fn billboard(&self, direction: Vec3, ghost: Vec3, scale: f32) -> Option<(f32, Vec2)> {
         let along = direction.dot(self.forward);
         let distance = (ghost - self.eye).dot(self.forward) / along;
         if along <= 0.0 || distance <= 0.0 {
@@ -138,7 +139,7 @@ impl View {
         let offset = self.eye + direction * distance - ghost;
         Some((
             distance,
-            Vec2::new(offset.dot(self.right), offset.dot(self.up)) / GHOST_SCALE,
+            Vec2::new(offset.dot(self.right), offset.dot(self.up)) / scale,
         ))
     }
 }
@@ -151,6 +152,7 @@ pub struct Scene<'a> {
     pub face: Face,
     pub aura: Aura,
     pub pose: Pose,
+    pub friend: Option<Body>,
 }
 
 /// Renders the scene, averaging `samples` by `samples` rays a pixel or so
@@ -159,6 +161,22 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     if samples > 1 {
         let (fine, across, down) = grid.refine(samples);
         return render(scene, fine, 1).downsample(across, down);
+    }
+    let mut bodies = [
+        Some(Body {
+            position: scene.world.ghost.position,
+            scale: GHOST_SCALE,
+            pose: scene.pose,
+            face: scene.face,
+            aura: scene.aura,
+            opacity: 1.0,
+        }),
+        scene.friend,
+    ];
+    if let [Some(first), Some(second)] = bodies
+        && first.position.dot(scene.view.forward) < second.position.dot(scene.view.forward)
+    {
+        bodies.swap(0, 1);
     }
     let lights = Lights::of(scene);
     let world = scene.world;
@@ -182,7 +200,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     let spread = grid.scale() / FOCAL;
     Frame::sample(grid, |point| {
         let direction = scene.view.ray(point);
-        let color = trace(scene, &lights, &furniture, direction, spread);
+        let color = trace(scene, &lights, &furniture, &bodies, direction, spread);
         Shade::from_rgb(color.min(Vec3::ONE))
     })
 }
@@ -191,6 +209,7 @@ fn trace(
     scene: &Scene,
     lights: &Lights,
     furniture: &[Furniture<'_>],
+    bodies: &[Option<Body>; 2],
     direction: Vec3,
     spread: f32,
 ) -> Vec3 {
@@ -227,7 +246,7 @@ fn trace(
         }
     }
     if let Some(moth) = &world.visitors.moth
-        && let Some((distance, local)) = scene.view.billboard(direction, moth.position)
+        && let Some((distance, local)) = scene.view.billboard(direction, moth.position, GHOST_SCALE)
         && distance < limit
     {
         let point = local * GHOST_SCALE;
@@ -259,27 +278,33 @@ fn trace(
     // and under the ghost when the ghost is nearer.
     let glass = glass_distance(eye, direction).filter(|distance| *distance <= limit + 1e-3);
     let mut glazed = false;
-    if let Some((distance, local)) = scene.view.billboard(direction, world.ghost.position)
-        && distance < limit
-        && local.cmpge(BOUNDS[0]).all()
-        && local.cmple(BOUNDS[1]).all()
-    {
+    for body in bodies.iter().flatten() {
+        if body.opacity <= 0.0 {
+            continue;
+        }
+        let through_window = body.position.z < ROOM_MIN.z
+            && room.is_some_and(|hit| {
+                hit.axis == 2 && !hit.high && (limit - hit.distance).abs() < 1e-4
+            });
+        let Some((distance, local)) = scene.view.billboard(direction, body.position, body.scale)
+        else {
+            continue;
+        };
+        if (distance >= limit && !through_window)
+            || local.cmplt(BOUNDS[0]).any()
+            || local.cmpgt(BOUNDS[1]).any()
+        {
+            continue;
+        }
         if let Some(glass) = glass
             && glass > distance
+            && !glazed
         {
             color = glass_color(scene, direction, spread, glass, color);
             glazed = true;
         }
-        let pixel = distance * spread / GHOST_SCALE;
-        let glow = ghost::shade(
-            local,
-            pixel,
-            world.time,
-            &scene.pose,
-            &scene.face,
-            &scene.aura,
-        );
-        color = glow.over(color);
+        let pixel = distance * spread / body.scale;
+        color = ghost::shade(local, pixel, world.time, body).over(color);
     }
     if let Some(glass) = glass
         && !glazed
@@ -537,6 +562,13 @@ impl Lights {
                 * scene.aura.visibility.clamp(0.0, 1.0),
             falloff: 5.0,
         });
+        if let Some(body) = &scene.friend {
+            points.push(Light {
+                position: body.position,
+                color: body.aura.color * 0.15 * body.aura.visibility * body.opacity,
+                falloff: 6.0,
+            });
+        }
         if let Some(decoration) = world.decoration() {
             points.push(Light {
                 position: Decoration::POSITION + Vec3::Y * decoration.height() * 0.65,
@@ -692,8 +724,28 @@ mod tests {
         let view = Camera::default().view(grid());
         let ghost = Vec3::new(0.4, 1.1, 0.2);
         let screen = view.project(ghost).unwrap();
-        assert!(view.touches_ghost(screen, ghost));
-        assert!(!view.touches_ghost(screen + Vec2::new(0.6, 0.0), ghost));
+        assert!(view.touches_ghost(screen, ghost, GHOST_SCALE));
+        assert!(!view.touches_ghost(screen + Vec2::new(0.6, 0.0), ghost, GHOST_SCALE));
+    }
+
+    #[test]
+    fn the_friend_is_touched_where_its_scaled_billboard_is_projected() {
+        let grid = Grid::cells(100, 32);
+        for yaw in [0.0, 1.2, 3.0] {
+            let view = Camera {
+                yaw,
+                ..Camera::default()
+            }
+            .view(grid);
+            let position = Vec3::new(-0.6, 1.4, -0.4);
+            let point = view.project(position).unwrap();
+            assert!(view.touches_ghost(point, position, FRIEND_SCALE));
+            let outside = view
+                .project(position + view.right * FRIEND_SCALE * 0.7)
+                .unwrap();
+            assert!(!view.touches_ghost(outside, position, FRIEND_SCALE));
+            assert!(view.touches_ghost(outside, position, GHOST_SCALE));
+        }
     }
 
     #[test]
@@ -749,6 +801,7 @@ mod tests {
                             beat: 1.0,
                         },
                         pose: Pose::new(time, 0.0, 0.0, 0.0),
+                        friend: None,
                     };
                     let frame = render(&scene, grid, 1);
                     for row in 0..frame.height() {
@@ -802,6 +855,7 @@ mod tests {
                             beat: 1.0,
                         },
                         pose: Pose::new(0.0, 0.0, 0.0, 0.0),
+                        friend: None,
                     };
                     assert!(window::light_through(&scene.outside).is_finite());
                     let frame = render(&scene, grid, 1);

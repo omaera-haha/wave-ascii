@@ -77,6 +77,9 @@ pub struct Visitors {
     pub moth: Option<Moth>,
     next_bird: f64,
     next_moth: f64,
+    pub(super) next_friend: f64,
+    pub(super) friend_evening: Option<jiff::civil::Date>,
+    pub(super) friend_visited: Option<jiff::civil::Date>,
 }
 
 impl Visitors {
@@ -86,6 +89,9 @@ impl Visitors {
             moth: None,
             next_bird: f64::from(random.range(180.0, 360.0)),
             next_moth: f64::from(random.range(300.0, 600.0)),
+            next_friend: f64::INFINITY,
+            friend_evening: None,
+            friend_visited: None,
         }
     }
 }
