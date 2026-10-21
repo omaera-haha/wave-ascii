@@ -823,10 +823,13 @@ keys or network.
 To check the ghost's rhythm after tuning it, an ignored test lets a ghost
 live three days offline beside a simulated viewer and prints how it spent
 them: activity shares by hour, how long plans last, every kind of event,
-its most repeated thoughts and speech, its diary, and its milestones.
+its most repeated thoughts and speech, its diary, its milestones, and its
+bond and library at the end of each day. `AUDIT_DAYS` lets it live longer,
+for pacing that only shows over weeks.
 
 ```bash
 cargo test --release audit -- --ignored --nocapture
+AUDIT_DAYS=40 cargo test --release audit -- --ignored --nocapture
 ```
 
 Dependencies: `crossterm` for the terminal, `glam` for vector math, `tokio`

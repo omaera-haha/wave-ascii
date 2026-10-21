@@ -18,9 +18,10 @@ cargo fmt --check
 cargo clippy --all-targets
 cargo run --release            # interactive; --style, --color, --fps, --offline, --help
 cargo test --release audit -- --ignored --nocapture   # three simulated days: pacing report
+AUDIT_DAYS=40 cargo test --release audit -- --ignored --nocapture   # a longer life, for pacing over weeks
 ```
 
-`src/audit.rs` holds that report: a seeded ghost lives offline beside a simulated viewer (mornings, lunch, evenings), and it prints activity shares, plan lengths, event counts, repeated thoughts, the diary, and milestones, with the timeline in the temporary directory. Use it after changing rates, plan lengths, or instinct weights; for a grown ghost, aim for a few naps and a couple of rainbows a day rather than dozens.
+`src/audit.rs` holds that report: a seeded ghost lives offline beside a simulated viewer (mornings, lunch, evenings), and it prints activity shares, plan lengths, event counts, repeated thoughts, the diary, milestones, and each day's bond, milestone count, and library size, with the timeline in the temporary directory. Use it after changing rates, plan lengths, or instinct weights; for a grown ghost, aim for a few naps and a couple of rainbows a day rather than dozens.
 
 When stdin or stdout isn't a terminal, the app prints one frame of a fresh, seeded ghost and exits. It never touches saved files or models. The frame size comes from `COLUMNS`/`LINES`. `--time` runs the world that long first (instinct decides), `--hour` sets the time of day (default 12), `--date YYYY-MM-DD` sets the date (default 2026-06-21), and optional `--born YYYY-MM-DD` sets its birth date for birthday and day-of-life previews, so a given `--time`/`--hour`/`--date`/`--born` always gives the same frame:
 
