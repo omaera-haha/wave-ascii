@@ -35,6 +35,30 @@ impl Keepsake {
         }
     }
 
+    /// More than one of it, after a number.
+    pub fn plural(self) -> &'static str {
+        match self {
+            Self::Feather => "feathers",
+            Self::Petal => "blossom petals",
+            Self::Acorn => "acorns",
+            Self::Leaf => "red leaves",
+            Self::Berry => "holly berries",
+            Self::Pebble => "smooth pebbles",
+        }
+    }
+
+    /// Its name in Korean.
+    pub fn korean(self) -> &'static str {
+        match self {
+            Self::Feather => "깃털",
+            Self::Petal => "꽃잎",
+            Self::Acorn => "도토리",
+            Self::Leaf => "빨간 나뭇잎",
+            Self::Berry => "호랑가시 열매",
+            Self::Pebble => "조약돌",
+        }
+    }
+
     fn choose(season: Season, random: &mut Random) -> Self {
         let choices = match season {
             Season::Spring => [Self::Petal, Self::Feather],

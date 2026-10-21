@@ -517,16 +517,37 @@ impl Life {
     }
 
     pub fn keepsake_words(&self) -> String {
-        let names: Vec<String> = self
-            .keepsakes
-            .iter()
-            .map(|gift| gift.name().to_owned())
-            .collect();
-        if names.is_empty() {
-            "an empty shelf".to_owned()
-        } else {
-            format!("the shelf of keepsakes, with {}", listed(&names))
+        match self.keepsake_list() {
+            Some(list) => format!("the shelf of keepsakes, with {list}"),
+            None => "an empty shelf".to_owned(),
         }
+    }
+
+    /// The keepsakes on the shelf, alike ones counted together in words,
+    /// such as "three feathers and an acorn", or `None` while it is empty.
+    pub fn keepsake_list(&self) -> Option<String> {
+        const NUMBERS: [&str; 9] = [
+            "", "one", "two", "three", "four", "five", "six", "seven", "eight",
+        ];
+        let mut kinds: Vec<(Keepsake, usize)> = Vec::new();
+        for gift in &self.keepsakes {
+            match kinds.iter_mut().find(|(kind, _)| kind == gift) {
+                Some((_, count)) => *count += 1,
+                None => kinds.push((*gift, 1)),
+            }
+        }
+        let names: Vec<String> = kinds
+            .into_iter()
+            .map(|(gift, count)| match count {
+                1 => gift.name().to_owned(),
+                count => format!(
+                    "{} {}",
+                    NUMBERS.get(count).copied().unwrap_or("many"),
+                    gift.plural()
+                ),
+            })
+            .collect();
+        (!names.is_empty()).then(|| listed(&names))
     }
 
     /// Counts what happened, and lets it warm or cool the bond. Returns the

@@ -689,6 +689,54 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
             &["Not really.", "I have the plant."],
             &["별로.", "화분이 있잖아."],
         ),
+        Question::Shelf if korean => {
+            let mut kinds: Vec<(&str, usize)> = Vec::new();
+            for gift in &world.life.keepsakes {
+                match kinds.iter_mut().find(|(name, _)| *name == gift.korean()) {
+                    Some((_, count)) => *count += 1,
+                    None => kinds.push((gift.korean(), 1)),
+                }
+            }
+            if kinds.is_empty() {
+                return vec![
+                    "아직 아무것도 없어. 새가 뭘 가져다줄지도 몰라.".to_owned(),
+                    "아직 비어 있어…".to_owned(),
+                ];
+            }
+            let list: Vec<String> = kinds
+                .into_iter()
+                .map(|(name, count)| format!("{name} {count}개"))
+                .collect();
+            let list = list.join(", ");
+            vec![
+                format!("{list}! 새가 준 선물이야."),
+                format!("내 보물: {list}."),
+            ]
+        }
+        Question::Shelf => match world.life.keepsake_list() {
+            Some(list) => vec![
+                format!("{}. Gifts from the bird!", capitalized(&list)),
+                format!("My treasures: {list}."),
+            ],
+            None => vec![
+                "Nothing yet. Maybe the bird will bring something.".to_owned(),
+                "It's empty… for now.".to_owned(),
+            ],
+        },
+        Question::Bird => match world.life.bird_trust {
+            trust if trust < 0.2 => lines(
+                &["It's still shy of me.", "I'd like to be its friend."],
+                &["아직 나를 무서워해.", "친구가 되고 싶어."],
+            ),
+            trust if trust < 0.5 => lines(
+                &["It's getting used to me!", "A little more each day."],
+                &["조금씩 익숙해지고 있어!", "하루하루 가까워져."],
+            ),
+            _ => lines(
+                &["The bird is my friend!", "We're friends now."],
+                &["새는 내 친구야!", "이제 우리 친구야."],
+            ),
+        },
     }
 }
 
@@ -1049,6 +1097,41 @@ mod tests {
             assert!(korean_doing(activity).ends_with('중'));
             assert!(!korean_favorite(activity).is_empty());
         }
+    }
+
+    #[test]
+    fn the_shelf_and_the_bird_are_answered_from_the_ghosts_life() {
+        use crate::world::Keepsake;
+
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        let asked = |world: &mut World, text: &str| {
+            let heard = world.hear(text);
+            reply(world, &heard, None)
+        };
+        assert!(
+            asked(&mut world, "what's on your shelf?").contains(&"It's empty… for now.".to_owned())
+        );
+        world.life.keepsakes = vec![
+            Keepsake::Feather,
+            Keepsake::Acorn,
+            Keepsake::Feather,
+            Keepsake::Feather,
+        ];
+        assert!(
+            asked(&mut world, "what's on your shelf?")
+                .contains(&"Three feathers and an acorn. Gifts from the bird!".to_owned())
+        );
+        assert!(
+            asked(&mut world, "선반에 뭐 있어?")
+                .contains(&"내 보물: 깃털 3개, 도토리 1개.".to_owned())
+        );
+        assert!(
+            asked(&mut world, "do you like the bird?")
+                .contains(&"It's still shy of me.".to_owned())
+        );
+        world.life.bird_trust = 0.8;
+        assert!(asked(&mut world, "저 새 좋아해?").contains(&"새는 내 친구야!".to_owned()));
     }
 
     #[test]
