@@ -1415,6 +1415,20 @@ impl Life {
         (0.85 + 0.15 * share * kinds).clamp(0.85, 1.3)
     }
 
+    /// How fresh a pastime still feels today. Done often already today, it
+    /// draws the ghost less, so a day holds some variety; what it needs, and
+    /// what the viewer starts, stay as they are.
+    pub fn novelty(&self, activity: Activity) -> f32 {
+        let enough = match activity {
+            Activity::Mirror => 4.0,
+            Activity::Music => 5.0,
+            Activity::Doodle | Activity::Hide | Activity::Build => 8.0,
+            Activity::Dance | Activity::Explore | Activity::Play => 16.0,
+            _ => return 1.0,
+        };
+        1.0 / (1.0 + self.today.times(activity) as f32 / enough)
+    }
+
     /// What it has done most, once it has done it a few times.
     pub fn favorite(&self) -> Option<Activity> {
         Activity::ALL
@@ -2805,6 +2819,23 @@ mod tests {
         assert!(life.habit(Activity::Explore) < 0.95);
         assert_eq!(life.habit(Activity::Float), 1.0);
         assert_eq!(life.favorite(), Some(Activity::Play));
+    }
+
+    #[test]
+    fn pastimes_done_often_today_draw_the_ghost_less_until_the_next_day() {
+        let mut life = Life::default();
+        life.begin_day("2026-10-20");
+        assert_eq!(life.novelty(Activity::Music), 1.0);
+        for _ in 0..5 {
+            life.note(&EventKind::Began(Activity::Music));
+            life.note(&EventKind::Began(Activity::Rest));
+            life.note(&EventKind::Began(Activity::Chase));
+        }
+        assert!((life.novelty(Activity::Music) - 0.5).abs() < 1e-6);
+        assert_eq!(life.novelty(Activity::Rest), 1.0);
+        assert_eq!(life.novelty(Activity::Chase), 1.0);
+        life.begin_day("2026-10-21");
+        assert_eq!(life.novelty(Activity::Music), 1.0);
     }
 
     #[test]

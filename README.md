@@ -655,7 +655,9 @@ grows closer to you. It lights up when it reaches one.
 
 It also grows habits. The more often it chooses something, the more it leans
 toward it, so over days each ghost becomes its own: one loves the ball,
-another the window. At the end of each day it writes a line in its diary
+another the window. Within a day it tires of repeating itself: a pastime it
+has already turned to many times today, like the music box or doodling, draws
+it less until tomorrow. At the end of each day it writes a line in its diary
 about what stood out most, the most notable first, leaving everyday things
 like motes and ball pushes out of a busy day ("Learned your name: Sam, saw a
 rainbow, and watered the plant until it flowered. You were here for about an

@@ -425,6 +425,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 * quiet
                 * playful
                 * world.life.habit(*activity)
+                * world.life.novelty(*activity)
                 * world
                     .life
                     .nature
