@@ -282,6 +282,10 @@ fn visiting_bird(
     season: Season,
 ) -> Vec3 {
     let mut point = (coordinates - bird.position) * Vec2::new(1.5, 1.0);
+    // Nothing of the bird, wings and tail included, reaches farther.
+    if point.length() > 0.11 + footprint {
+        return color;
+    }
     point.x *= bird.facing;
     point.y -= if bird.singing {
         0.006 * bird.flap.sin()

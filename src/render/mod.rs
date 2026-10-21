@@ -224,7 +224,14 @@ fn trace(
     {
         let point = local * GHOST_SCALE;
         let pixel = (distance * spread).max(1e-5);
-        let coverage = moth_coverage(point, pixel, moth.flap(world.time));
+        // Nothing of the moth, outspread wings and their soft edge
+        // included, reaches farther; the wings' distance is scaled down,
+        // so their edge widens with the pixel.
+        let coverage = if point.length() < MOTH_REACH + 1.6 * pixel {
+            moth_coverage(point, pixel, moth.flap(world.time))
+        } else {
+            0.0
+        };
         if coverage > 0.0 {
             let warm = if world.lamp.on {
                 (1.0 - moth.position.distance(world.lamp.bulb()) / 0.7).max(0.0)
@@ -284,6 +291,9 @@ fn trace(
     }
     color
 }
+
+/// How far the moth reaches from its center, wings spread.
+const MOTH_REACH: f32 = 0.13;
 
 fn moth_coverage(point: Vec2, pixel: f32, flap: f32) -> f32 {
     let wing_width = (0.025 + 0.035 * flap.abs()).max(pixel.min(0.09) * 0.8);
@@ -550,6 +560,19 @@ mod tests {
 
     fn grid() -> Grid {
         Style::Ascii.grid(100, 30)
+    }
+
+    #[test]
+    fn nothing_of_the_moth_lies_beyond_the_bound_that_skips_it() {
+        for pixel in [0.001, 0.01, 0.05, 0.2] {
+            for flap in [-1.0, -0.4, 0.0, 0.6, 1.0] {
+                for step in 0..64 {
+                    let angle = step as f32 / 64.0 * std::f32::consts::TAU;
+                    let point = Vec2::from_angle(angle) * (MOTH_REACH + 1.6 * pixel);
+                    assert_eq!(moth_coverage(point, pixel, flap), 0.0, "{pixel} {flap}");
+                }
+            }
+        }
     }
 
     #[test]

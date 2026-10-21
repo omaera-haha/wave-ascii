@@ -313,13 +313,29 @@ impl World {
     }
 }
 
+// The angle of an oscillation at `speed` radians a second, taken in
+// double precision so it stays smooth however long the world runs.
 fn phase(time: f64, speed: f64) -> f32 {
-    (time.rem_euclid(4096.0) * speed).rem_euclid(f64::from(TAU)) as f32
+    (time * speed).rem_euclid(std::f64::consts::TAU) as f32
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oscillations_stay_smooth_however_long_the_world_runs() {
+        for speed in [0.7, 3.1, 23.0] {
+            for time in [10.0, 4095.99, 4096.0, 1.0e6, 3.0e7] {
+                let step = 0.01;
+                let before = phase(time, speed);
+                let after = phase(time + step, speed);
+                let turned = (after - before).rem_euclid(TAU);
+                let expected = (speed * step) as f32;
+                assert!((turned - expected).abs() < 1e-3, "{speed} {time}: {turned}");
+            }
+        }
+    }
     use crate::world::{Activity, Thing, WINDOW_CENTER};
 
     fn quiet_world(hour: f32) -> World {

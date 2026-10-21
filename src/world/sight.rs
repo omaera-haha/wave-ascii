@@ -267,8 +267,13 @@ impl World {
         }
 
         // Motes it sees become known to it, and the first sight of a
-        // rainbow, snowfall, or visitor is an event.
-        let sight = self.sight();
+        // rainbow, snowfall, or visitor is an event. Asleep, it sees
+        // nothing.
+        let sight = if self.ghost.asleep < 0.5 {
+            self.sight()
+        } else {
+            Sight::default()
+        };
         for seen in &sight.in_view {
             match seen.thing {
                 Thing::Mote(id)
@@ -477,6 +482,27 @@ mod tests {
             world.attend(name, 5.0);
             assert!(world.ghost.attention.is_some(), "{name}");
         }
+    }
+
+    #[test]
+    fn a_sleeping_ghost_notices_nothing_until_it_wakes() {
+        let mut world = World::new(1, 23.0);
+        world.date = jiff::civil::Date::constant(2026, 12, 10);
+        world.time = 100.0;
+        world.weather.sky = Sky::Snow;
+        world.weather.since = 0.0;
+        world.weather.until = 1000.0;
+        world.tuck_in();
+        world.attend("window", 100.0);
+        let toward = WINDOW_CENTER - world.ghost.position;
+        facing(&mut world, toward);
+        world.step(1.0);
+        assert!(world.ghost.asleep > 0.9);
+        assert!(!world.ghost.saw_snow);
+        world.poke();
+        world.attend("window", 100.0);
+        world.step(1.0);
+        assert!(world.ghost.saw_snow);
     }
 
     #[test]
