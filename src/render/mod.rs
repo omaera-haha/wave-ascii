@@ -1,5 +1,6 @@
 pub mod ghost;
 mod shapes;
+pub mod window;
 
 use std::f32::consts::PI;
 
@@ -145,6 +146,7 @@ impl View {
 /// Everything one frame shows.
 pub struct Scene<'a> {
     pub world: &'a World,
+    pub outside: window::Outside,
     pub view: View,
     pub face: Face,
     pub aura: Aura,
@@ -185,7 +187,9 @@ fn trace(
     let eye = scene.view.eye;
     let room = room_exit(eye, direction);
     let mut limit = room.map_or(f32::INFINITY, |hit| hit.distance);
-    let mut color = room.map_or(Vec3::ZERO, |hit| room_color(&hit, lights, spread));
+    let mut color = room.map_or(Vec3::ZERO, |hit| {
+        room_color(&hit, lights, spread, &scene.outside)
+    });
 
     if let Some((enter, _)) = sphere_span(eye, direction, world.ball.position, Ball::RADIUS)
         && enter > 0.0
@@ -290,7 +294,7 @@ fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
 
 // The inside of a wall: a lattice of dots, densest on the floor, edged by
 // dashed lines along the box's corners. The glass shows only its edges.
-fn room_color(hit: &RoomHit, lights: &Lights, spread: f32) -> Vec3 {
+fn room_color(hit: &RoomHit, lights: &Lights, spread: f32, outside: &window::Outside) -> Vec3 {
     let footprint = hit.distance * spread;
     let (first, second) = match hit.axis {
         0 => (1, 2),
@@ -302,6 +306,14 @@ fn room_color(hit: &RoomHit, lights: &Lights, spread: f32) -> Vec3 {
     let high = Vec2::new(ROOM_MAX[first], ROOM_MAX[second]);
     let mut normal = Vec3::ZERO;
     normal[hit.axis] = if hit.high { -1.0 } else { 1.0 };
+    let light = lights.at(hit.point, normal);
+    if hit.axis == 2
+        && !hit.high
+        && let Some(window) = window::window(position, footprint, outside)
+    {
+        let frame_color = Vec3::new(0.62, 0.46, 0.32);
+        return window.sky * (1.0 - window.frame) + frame_color * light * window.frame;
+    }
 
     let floor = hit.axis == 1 && !hit.high;
     let glass = hit.axis == 2 && hit.high;
@@ -321,7 +333,6 @@ fn room_color(hit: &RoomHit, lights: &Lights, spread: f32) -> Vec3 {
         average,
         smoothstep(spacing * 0.15, spacing * 0.5, footprint),
     );
-    let light = lights.at(hit.point, normal);
     let mut color = WALL_COLOR * light * (0.03 + 0.9 * dots * strength);
 
     // The wall's own border is an edge of the box.
@@ -346,8 +357,8 @@ fn room_color(hit: &RoomHit, lights: &Lights, spread: f32) -> Vec3 {
     color
 }
 
-/// The light in the room: daylight from outside by the hour, the lamp, and
-/// the glow of the ghost and the motes.
+/// The light in the room: daylight and the window, the lamp, and the glow of
+/// the ghost and the motes.
 struct Lights {
     ambient: Vec3,
     points: Vec<Light>,
@@ -364,6 +375,12 @@ impl Lights {
     fn of(scene: &Scene) -> Self {
         let world = scene.world;
         let mut points = Vec::new();
+        let window_center = (window::WINDOW_LOW + window::WINDOW_HIGH) * 0.5;
+        points.push(Light {
+            position: Vec3::new(window_center.x, window_center.y, ROOM_MIN.z + 0.35),
+            color: window::light_through(&scene.outside),
+            falloff: 0.35,
+        });
         if world.lamp.on {
             points.push(Light {
                 position: world.lamp.bulb() - Vec3::Y * 0.1,
@@ -384,7 +401,7 @@ impl Lights {
             });
         }
         Self {
-            ambient: daylight(world.hour),
+            ambient: daylight(world.hour) * (1.0 - scene.outside.rain.clamp(0.0, 1.0) / 3.0),
             points,
         }
     }
@@ -474,6 +491,26 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_ray_through_the_window_from_the_default_camera_hits_the_back_wall() {
+        let view = Camera::default().view(grid());
+        let center = (window::WINDOW_LOW + window::WINDOW_HIGH) * 0.5;
+        let point = Vec3::new(center.x, center.y, ROOM_MIN.z);
+        let screen = view.project(point).unwrap();
+        let hit = room_exit(view.eye, view.ray(screen)).unwrap();
+        assert_eq!(hit.axis, 2);
+        assert!(!hit.high);
+        assert!(hit.point.distance(point) < 1e-4);
+        assert!(
+            window::window(
+                Vec2::new(hit.point.x, hit.point.y),
+                0.01,
+                &window::Outside::clear(12.0, 0.0),
+            )
+            .is_some()
+        );
     }
 
     #[test]
