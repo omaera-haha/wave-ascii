@@ -70,6 +70,7 @@ pub fn observe(world: &World) -> Value {
             "plant": plant(&world.plant),
             "pots": world.garden_words(),
             "tending": world.tend_description(),
+            "bubbles": world.bubble_words(),
             "ball": ball(world),
             "music_box": world.music_words(),
             "mirror": thing(world, Thing::Mirror),

@@ -194,6 +194,7 @@ pub enum Furniture<'a> {
     },
     Cranes(&'a Garland),
     FoldingPaper(crate::world::cranes::Paper, Vec3, Quat),
+    BubbleWand(Vec3),
 }
 
 impl Furniture<'_> {
@@ -245,6 +246,7 @@ impl Furniture<'_> {
             } => (*position, radius + 0.01),
             Self::Cranes(_) => (crate::world::cranes::CENTER, 0.72),
             Self::FoldingPaper(_, position, _) => (*position, 0.12),
+            Self::BubbleWand(position) => (*position - Vec3::Y * 0.07, 0.19),
         }
     }
 
@@ -455,6 +457,17 @@ impl Furniture<'_> {
                 }
                 let (distance, crease) = folding_paper_distance(point, paper.progress);
                 (distance, Material::Origami(paper.color, crease, false))
+            }
+            Self::BubbleWand(position) => {
+                let local = point - *position;
+                let ring = Vec2::new(local.truncate().length() - 0.065, local.z).length() - 0.009;
+                let stick = capsule(
+                    local,
+                    Vec3::new(0.0, -0.065, 0.0),
+                    Vec3::new(0.02, -0.21, 0.0),
+                    0.012,
+                );
+                (ring.min(stick), Material::Brass)
             }
         }
     }

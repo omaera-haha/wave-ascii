@@ -139,6 +139,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         },
         Activity::Seek => vec![world.hunt_thought()],
         Activity::Fold => vec!["Fold, crease, fold again.", "A little paper wish for you."],
+        Activity::Bubbles => vec!["A little breath, and off they go.", "Want to pop them?"],
     };
     if activity == Activity::Window {
         for passing in world.passersby().into_iter().flatten() {
@@ -304,6 +305,13 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
         lines.push("My book, {own_book}, keeps a little piece of my life.");
     }
 
+    if ghost.plan.activity == Activity::Bubbles && !ghost.plan.done {
+        lines.extend([
+            "Pop!",
+            "That one is the biggest yet.",
+            "A rainbow that floats away.",
+        ]);
+    }
     if ghost.plan.activity == Activity::Seek && !ghost.plan.done {
         lines.push(world.hunt_thought());
     }
@@ -577,6 +585,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Mirror => "I wonder what the mirror ghost is doing.",
             Activity::Seek => world.hunt_thought(),
             Activity::Fold => "Another crane, another little wish for you.",
+            Activity::Bubbles => "That one is the biggest yet.",
         });
     }
     if lines.is_empty() {
@@ -638,6 +647,9 @@ pub fn dreams(world: &World) -> Vec<String> {
 fn dream_lines(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if today.bubble_sessions > 0 {
+        lines.push("…soap bubbles as big as moons… pop! …your fingers catch the stars…");
+    }
     if today.treasures_found > 0 {
         lines.push("A little golden treasure… I found it for you.");
     }
@@ -886,6 +898,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::Planned(_)
             | Understanding::PlanAnswered { .. }
             | Understanding::Folding
+            | Understanding::Bubbles { .. }
     ) && heard.learned_name.is_none()
     {
         babble(world, &mut lines, heard.korean || world.speaks_korean());
@@ -939,6 +952,13 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
     }
     if heard.understanding == Understanding::Undressing {
         return lines(&[("All right, I took it off.", "응, 벗었어.")]);
+    }
+    if let Understanding::Bubbles { accepted } = heard.understanding {
+        return if accepted {
+            lines(&[("Catch the bubbles!", "비눗방울 잡아 봐!")])
+        } else {
+            lines(&[("I'll blow some bubbles later.", "비눗방울은 나중에 불게.")])
+        };
     }
     if let Understanding::Music { lullaby } = heard.understanding {
         if world.ghost.asleep >= 0.3 {
@@ -1929,6 +1949,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Mirror => "거울 보는 중",
         Activity::Seek => "네 보물 찾는 중",
         Activity::Fold => "종이학 접는 중",
+        Activity::Bubbles => "비눗방울 부는 중",
     }
 }
 
@@ -1964,6 +1985,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Mirror => "거울 보기",
         Activity::Seek => "네 보물 찾기",
         Activity::Fold => "종이학 접기",
+        Activity::Bubbles => "비눗방울 불기",
     }
 }
 

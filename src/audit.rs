@@ -72,6 +72,7 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
     let mut last_activity = world.ghost.plan.activity;
     let mut was_present = true;
     let mut next_action = 0.0f64;
+    let mut next_bubble_pop = 0.0f64;
     let mut log: Vec<String> = Vec::new();
     let mut focus_day = None;
     let mut feeling_day = None;
@@ -103,6 +104,13 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
                 if here { "arrives" } else { "leaves" }
             ));
             was_present = here;
+        }
+        if here && time >= next_bubble_pop && !world.bubbles.is_empty() {
+            next_bubble_pop = time + 2.5;
+            if let Some(bubble) = world.bubbles.iter().find(|bubble| bubble.popping.is_none()) {
+                let origin = Vec3::new(bubble.position.x, bubble.position.y, ROOM_MAX.z + 0.1);
+                world.pop_bubble(origin, -Vec3::Z);
+            }
         }
         if here && time >= next_action {
             next_action = time + 60.0 + rng.next() * 240.0;
@@ -382,6 +390,20 @@ fn run(seed: u64, days: f64, born: Option<jiff::civil::Date>, korean: bool) {
         world.life.total.treasure_hints,
         world.life.total.fastest_treasure
     );
+    println!(
+        "-- bubbles: {} sessions, {} blown, {} popped by viewer ({:.2} sessions/day)",
+        world.life.total.bubble_sessions,
+        world.life.total.bubbles_blown,
+        world.life.total.bubbles_popped,
+        f64::from(world.life.total.bubble_sessions) / days
+    );
+    if days >= 10.0 {
+        let sessions_per_day = f64::from(world.life.total.bubble_sessions) / days;
+        assert!(
+            (2.0..=4.0).contains(&sessions_per_day),
+            "bubble pacing: {sessions_per_day} sessions per day"
+        );
+    }
     println!("-- diary");
     for entry in &world.life.diary {
         println!("  {}: {}", entry.day, entry.text);

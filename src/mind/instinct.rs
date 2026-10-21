@@ -418,6 +418,25 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         * caring
                 }
             }
+            Activity::Bubbles => {
+                if !world.bubbles_are_open() {
+                    0.0
+                } else {
+                    (0.012 + 0.035 * (1.0 - needs.fun))
+                        * needs.energy
+                        * if present { 1.6 } else { 1.0 }
+                        * if !night && world.weather.sky == Sky::Clear {
+                            1.25
+                        } else {
+                            1.0
+                        }
+                        * if world.window_open && world.wind.strength > 0.2 {
+                            1.25
+                        } else {
+                            1.0
+                        }
+                }
+            }
         })
         .zip(options)
         .map(|(weight, activity)| {
@@ -1200,5 +1219,43 @@ mod tests {
         assert!(chance(&weigh(&world, &options), Activity::Fold) > usual);
         world.birthday = Some(world.date);
         assert_eq!(chance(&weigh(&world, &options), Activity::Fold), 0.0);
+    }
+
+    #[test]
+    fn bubble_instinct_favors_an_audience_sun_breeze_and_playful_curiosity_but_tires_of_repeats() {
+        use crate::world::{Nature, Understanding};
+        let chance = |world: &World| weigh(world, &[Activity::Float, Activity::Bubbles])[1].1;
+        let mut world = World::new(3, 12.0);
+        world.life.nature = Some(Nature::default());
+        world.weather.sky = Sky::Rain;
+        let ordinary = chance(&world);
+        world.time = 1.0;
+        world.notice_viewer();
+        assert!(chance(&world) > ordinary);
+        let audience = chance(&world);
+        world.weather.sky = Sky::Clear;
+        assert!(chance(&world) > audience);
+        let sunny = chance(&world);
+        world.window_open = true;
+        world.wind.strength = 0.5;
+        assert!(chance(&world) > sunny);
+        let breezy = chance(&world);
+        world.life.nature = Some(Nature {
+            playful: 1.0,
+            curious: 1.0,
+            ..Nature::default()
+        });
+        assert!(chance(&world) > breezy);
+        let fresh = chance(&world);
+        for _ in 0..4 {
+            world.life.note(&EventKind::Began(Activity::Bubbles));
+        }
+        assert!(chance(&world) < fresh);
+        assert!(!world.options().contains(&Activity::Bubbles));
+        // A viewer request may still start a fifth session.
+        assert_eq!(
+            world.hear("bubbles!").understanding,
+            Understanding::Bubbles { accepted: true }
+        );
     }
 }
