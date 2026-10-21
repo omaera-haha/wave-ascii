@@ -215,7 +215,7 @@ fn remove_oldest(pins: &mut Vec<Pin>) {
 }
 
 impl Life {
-    fn pin(&mut self, pin: Pin) {
+    pub(super) fn pin(&mut self, pin: Pin) {
         if self.gallery.len() >= KEPT {
             remove_oldest(&mut self.gallery);
         }
@@ -600,6 +600,16 @@ mod tests {
         assert_eq!(world.pending_pins[0].kind, Kind::Constellation);
         assert_eq!(world.pending_pins[1].kind, Kind::ViewerDrawing);
         assert!(!world.queue_pin(pin(Kind::OwnDoodle, "star")));
+    }
+
+    #[test]
+    fn a_card_waiting_to_be_pinned_is_on_the_saved_board() {
+        let mut world = with_drawing(1);
+        world.queue_pin(pin(Kind::Constellation, "the Little Heart"));
+        assert!(world.life.gallery.is_empty());
+        let saved = world.saved_life();
+        assert_eq!(saved.gallery.len(), 1);
+        assert_eq!(saved.gallery[0].kind, Kind::Constellation);
     }
 
     #[test]

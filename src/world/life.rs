@@ -341,13 +341,13 @@ pub struct Tally {
     pub plans_went_well: u32,
     #[serde(default)]
     pub plans_went_badly: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub heard_plans: Vec<super::agenda::Errand>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub wished_plans: Vec<super::agenda::Errand>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub good_plans: Vec<super::agenda::Errand>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub hard_plans: Vec<super::agenda::Errand>,
     #[serde(default)]
     pub hunts: u32,
@@ -393,7 +393,7 @@ pub struct Tally {
     pub korean_details: BTreeMap<String, String>,
     #[serde(default)]
     pub things_shown: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub shown_kinds: Vec<super::show::Kind>,
     #[serde(default)]
     pub tidies: u32,
@@ -2110,7 +2110,7 @@ pub struct Life {
     pub goodnight_together_said: Option<String>,
     #[serde(default)]
     pub rhythm_day: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_count")]
     pub rhythm_suggestions: u8,
     #[serde(default)]
     pub cranes: super::cranes::Cranes,
@@ -3609,8 +3609,54 @@ fn sketch_korean(name: &str) -> &str {
     }
 }
 
+/// A saved list that keeps the entries it understands and drops the rest,
+/// so one unknown or damaged value can't refuse a whole life.
+pub(super) fn lenient<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value.as_array().map_or_else(Vec::new, |entries| {
+        entries
+            .iter()
+            .filter_map(|entry| serde_json::from_value(entry.clone()).ok())
+            .collect()
+    }))
+}
+
+/// A small saved count that a damaged save may hold out of range: kept
+/// within a byte here, and clamped further by sanitizing.
+pub(super) fn lenient_count<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u8, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .map_or(0, |count| count.min(u64::from(u8::MAX)) as u8))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unknown_list_entries_and_oversized_counts_cannot_refuse_a_saved_life() {
+        let mut saved = serde_json::to_value(Life::default()).unwrap();
+        saved["today"]["heard_plans"] = serde_json::json!(["unknown", "exam", 7]);
+        saved["today"]["shown_kinds"] = serde_json::json!(["Crane", {"Nope": 1}]);
+        saved["cranes"]["colors"] = serde_json::json!(["Pink", "Ultraviolet"]);
+        saved["showing"]["recent"] = serde_json::json!(["Book", "Spaceship"]);
+        saved["rhythm_suggestions"] = serde_json::json!(256);
+        let life: Life = serde_json::from_value(saved).unwrap();
+        assert_eq!(
+            life.today.heard_plans,
+            vec![super::super::agenda::Errand::Exam]
+        );
+        assert_eq!(life.today.shown_kinds.len(), 1);
+        assert_eq!(life.cranes.colors.len(), 1);
+        assert_eq!(life.showing.recent.len(), 1);
+        assert!(life.sanitized().rhythm_suggestions <= 2);
+    }
+
     #[test]
     fn the_diary_ranks_a_kept_trip_above_an_everyday_return() {
         let mut tally = Tally::default();

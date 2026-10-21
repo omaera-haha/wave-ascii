@@ -26,7 +26,7 @@ fn paper_color() -> Color {
 pub struct Cranes {
     #[serde(default)]
     pub total: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::life::lenient")]
     pub colors: Vec<Color>,
     #[serde(default)]
     pub day: Option<String>,

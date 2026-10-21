@@ -447,6 +447,11 @@ impl World {
                 life.note(&EventKind::WishGranted(wish));
             }
         }
+        // Cards still waiting to be pinned go straight onto the saved board,
+        // as a carried gift goes onto the shelf.
+        for pin in &self.pending_pins {
+            life.pin(pin.clone());
+        }
         life
     }
 

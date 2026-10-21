@@ -52,7 +52,7 @@ impl Kind {
 pub struct ShowingLife {
     #[serde(default)]
     pub day: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::life::lenient")]
     pub recent: Vec<Kind>,
 }
 

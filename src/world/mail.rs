@@ -375,11 +375,17 @@ impl World {
         {
             return;
         }
-        let today = self.date.to_string();
-        if self.life.weekly_letter.as_deref() == Some(today.as_str()) {
+        // A clock turned back must not write a week's letter again.
+        if self
+            .life
+            .weekly_letter
+            .as_deref()
+            .and_then(|day| day.parse::<Date>().ok())
+            .is_some_and(|day| day >= self.date)
+        {
             return;
         }
-        self.life.weekly_letter = Some(today);
+        self.life.weekly_letter = Some(self.date.to_string());
         let korean = self.speaks_korean();
         let lines = weekly_lines(
             &self.life.milestones,
@@ -490,6 +496,11 @@ mod tests {
         let letter = world.life.letters.last().unwrap();
         assert!(letter.korean);
         assert_eq!(letter.lines[2], "너를 위해 첫 종이학을 접었어.");
+        // A clock turned back to a Sunday already written about stays quiet.
+        let letters = world.life.letters.len();
+        world.date = Date::constant(2026, 10, 25);
+        world.write_weekly_letter();
+        assert_eq!(world.life.letters.len(), letters);
         let mut young = World::new(5, 19.0);
         young.date = Date::constant(2026, 10, 25);
         young.birthday = Some(Date::constant(2026, 10, 22));
