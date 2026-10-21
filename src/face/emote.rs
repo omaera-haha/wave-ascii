@@ -242,6 +242,8 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::Quirk(Quirk::Yawn) => Emote::Yawn,
         EventKind::Quirk(Quirk::Shiver) => Emote::Shiver,
         EventKind::Quirk(Quirk::Sigh) => Emote::Sigh,
+        EventKind::Remembered(line) if crate::world::anniversary::with_viewer(line) => Emote::Heart,
+        EventKind::Remembered(_) => Emote::Sparkle,
         EventKind::MadeWish(_) => Emote::WishStar,
         EventKind::SawPasserby(kind) if kind.delighted() => Emote::Sparkle,
         EventKind::SawPasserby(_) => Emote::Question,

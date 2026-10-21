@@ -317,7 +317,12 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     + rainbow
                     + if matches!(
                         world.occasion(),
-                        Some(Occasion::Birthday | Occasion::ViewerBirthday)
+                        Some(
+                            Occasion::Birthday
+                                | Occasion::ViewerBirthday
+                                | Occasion::HundredDays
+                                | Occasion::ThousandDays
+                        )
                     ) {
                         0.6
                     } else {
@@ -1009,6 +1014,15 @@ mod tests {
         assert!(
             ratio(&weigh(&world, &options), Activity::Dance) > ratio(&ordinary, Activity::Dance)
         );
+        for elapsed in [99, 999] {
+            let born = Date::constant(2026, 3, 3);
+            world.birthday = Some(born);
+            world.date = born.checked_add(jiff::Span::new().days(elapsed)).unwrap();
+            assert!(
+                ratio(&weigh(&world, &options), Activity::Dance)
+                    > ratio(&ordinary, Activity::Dance)
+            );
+        }
         world.date = Date::constant(2026, 12, 31);
         assert!(
             ratio(&weigh(&world, &options), Activity::Window) > ratio(&ordinary, Activity::Window)

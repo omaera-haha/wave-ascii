@@ -265,7 +265,7 @@ impl World {
         self.deliver(lines, korean);
     }
 
-    fn deliver(&mut self, lines: Vec<String>, korean: bool) {
+    pub(super) fn deliver(&mut self, lines: Vec<String>, korean: bool) {
         let letter = Letter {
             day: self.date.to_string(),
             lines,

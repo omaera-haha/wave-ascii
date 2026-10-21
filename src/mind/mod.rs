@@ -46,6 +46,8 @@ const THOUGHT_FRESHENS: f64 = 7200.0;
 /// How fresh the freshest musing that fits must be for the ghost to bother
 /// thinking it; with only lately-had thoughts to hand, it stays quiet.
 const QUIET_BELOW: f32 = 0.2;
+/// Distinct thoughts remembered before those already fresh again are let go.
+const THOUGHTS_REMEMBERED: usize = 512;
 /// Seconds the ghost's own words get before it brings up something new.
 const SPEECH_SETTLES: f64 = 8.0;
 /// Seconds a thought stays before a musing may replace it.
@@ -123,7 +125,7 @@ pub struct Mind {
     mused_at: f64,
     /// Its latest thoughts, newest last.
     /// When it last had each thought.
-    thought_at: HashMap<&'static str, f64>,
+    thought_at: HashMap<String, f64>,
     next_musing: f64,
     dreaming: bool,
     /// Messages from the viewer still waiting for a reply.
@@ -617,12 +619,15 @@ impl Mind {
                 .any(|event| matches!(event.kind, EventKind::FriendArrived(_)));
         // Reactions to what just happened always come to mind; idle
         // musings, dreams, and setting out only when something fresh fits.
+        let owned = |lines: &[&str]| -> Vec<String> {
+            lines.iter().map(|line| (*line).to_owned()).collect()
+        };
         let (lines, optional) = if let Some(kind) = quirk {
-            (kind.thoughts().to_vec(), false)
+            (owned(kind.thoughts()), false)
         } else if friend_noticed {
-            (musing::friend_notices_outfit(world), false)
+            (owned(&musing::friend_notices_outfit(world)), false)
         } else if let Some(kind) = passerby {
-            (kind.thoughts().to_vec(), false)
+            (owned(&kind.thoughts()), false)
         } else if world.time >= self.next_musing {
             self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
             let lines = if asleep {
@@ -635,7 +640,7 @@ impl Mind {
             && !asleep
             && world.random_unit() < MUSES_ON_SETTING_OUT
         {
-            (musing::setting_out(world, activity), true)
+            (owned(&musing::setting_out(world, activity)), true)
         } else {
             return;
         };
@@ -658,8 +663,12 @@ impl Mind {
         }
         let weights: Vec<f32> = weights.into_iter().map(|weight| weight.max(1e-3)).collect();
         if let Some(index) = world.pick(&weights) {
-            self.thought_at.insert(lines[index], world.time);
-            let line = musing::named_friend_line(world, lines[index]);
+            self.thought_at.insert(lines[index].clone(), world.time);
+            if self.thought_at.len() > THOUGHTS_REMEMBERED {
+                let now = world.time;
+                self.thought_at.retain(|_, at| now - *at < THOUGHT_FRESHENS);
+            }
+            let line = musing::named_friend_line(world, &lines[index]);
             world.think(&line);
             if asleep {
                 world.dream_of(&line);
@@ -1013,13 +1022,21 @@ mod tests {
                 .unwrap()
                 .contains("waits unread")
         );
-        assert!(musing::idle(&world).contains(&"I hope they find my letter."));
+        assert!(
+            musing::idle(&world)
+                .iter()
+                .any(|line| line == "I hope they find my letter.")
+        );
         world.read_letter(0);
         assert_eq!(
             observation::observe(&world)["letter"],
             "no unread letter waiting"
         );
-        assert!(!musing::idle(&world).contains(&"I hope they find my letter."));
+        assert!(
+            !musing::idle(&world)
+                .iter()
+                .any(|line| line == "I hope they find my letter.")
+        );
     }
 
     #[test]
@@ -1478,7 +1495,7 @@ mod tests {
         world.ghost.asleep = 1.0;
         let pool = musing::dreams(&world);
         for line in &pool {
-            mind.thought_at.insert(line, world.time);
+            mind.thought_at.insert(line.clone(), world.time);
         }
         world.time += 60.0;
         mind.dreaming = true;
@@ -1496,8 +1513,8 @@ mod tests {
             "{thought}"
         );
         assert_eq!(mind.freshness("never thought", world.time), 1.0);
-        let had = pool[0];
-        mind.thought_at.insert(had, world.time);
+        let had = &pool[0];
+        mind.thought_at.insert(had.clone(), world.time);
         assert_eq!(mind.freshness(had, world.time), 0.0);
         assert!((mind.freshness(had, world.time + THOUGHT_FRESHENS / 2.0) - 0.25).abs() < 1e-6);
     }

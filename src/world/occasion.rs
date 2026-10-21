@@ -14,6 +14,8 @@ pub enum Occasion {
     Chuseok,
     HangulDay,
     ViewerBirthday,
+    HundredDays,
+    ThousandDays,
 }
 
 impl Occasion {
@@ -25,6 +27,8 @@ impl Occasion {
             Self::Valentine => "Valentine's Day",
             Self::Birthday => "birthday",
             Self::ViewerBirthday => "your birthday",
+            Self::HundredDays => "hundredth day",
+            Self::ThousandDays => "thousandth day",
             Self::Seollal => "Seollal",
             Self::Chuseok => "Chuseok",
             Self::HangulDay => "Hangul Day",
@@ -35,6 +39,8 @@ impl Occasion {
         match self {
             Self::WinterHolidays => "the winter holidays",
             Self::Birthday => "the ghost's birthday",
+            Self::HundredDays => "the ghost's hundredth day",
+            Self::ThousandDays => "the ghost's thousandth day",
             _ => self.name(),
         }
     }
@@ -47,6 +53,8 @@ impl Occasion {
             Self::Valentine => "celebrated Valentine's Day",
             Self::Birthday => "had a birthday",
             Self::ViewerBirthday => "it was your birthday",
+            Self::HundredDays => "celebrated my hundredth day",
+            Self::ThousandDays => "celebrated my thousandth day",
             Self::Seollal => "celebrated Seollal",
             Self::Chuseok => "celebrated Chuseok",
             Self::HangulDay => "celebrated Hangul Day",
@@ -58,6 +66,9 @@ impl Occasion {
 pub fn occasion(date: Date, hour: f32, birthday: Option<Date>) -> Option<Occasion> {
     if birthday.is_some_and(|birthday| birthday_years(date, birthday).is_some()) {
         return Some(Occasion::Birthday);
+    }
+    if let Some(landmark) = birthday.and_then(|born| super::anniversary::landmark(born, date)) {
+        return Some(landmark);
     }
     if matches!((date.month(), date.day()), (12, 31) if hour >= 20.0)
         || (date.month(), date.day()) == (1, 1)
@@ -167,7 +178,10 @@ impl Decoration {
     pub fn radius(self) -> f32 {
         match self.occasion {
             Occasion::WinterHolidays | Occasion::NewYear => 0.23,
-            Occasion::Seollal | Occasion::Chuseok => 0.25,
+            Occasion::Seollal
+            | Occasion::Chuseok
+            | Occasion::HundredDays
+            | Occasion::ThousandDays => 0.25,
             _ => 0.18,
         }
     }
@@ -188,6 +202,12 @@ impl Decoration {
             Occasion::Valentine | Occasion::HangulDay => "",
             Occasion::Seollal => "a little table with rice-cake soup and a lucky pouch",
             Occasion::Chuseok => "a little table with half-moon rice cakes and persimmons",
+            Occasion::HundredDays => {
+                "a low table with a layered white rice cake and a tiny paper flag"
+            }
+            Occasion::ThousandDays => {
+                "a low table with two layered white rice cakes and a tiny paper flag"
+            }
         }
     }
 }
@@ -221,6 +241,8 @@ impl super::World {
                     format!("its {} birthday", ordinal(years))
                 }
             }
+            Some(Occasion::HundredDays) => "its hundredth day of life".to_owned(),
+            Some(Occasion::ThousandDays) => "its thousandth day of life".to_owned(),
             Some(Occasion::NewYear) if self.date.month() == 12 => "New Year's Eve".to_owned(),
             Some(Occasion::NewYear) => "New Year's Day".to_owned(),
             Some(occasion) => occasion.words().to_owned(),
@@ -330,6 +352,11 @@ impl super::World {
                 self.reconsider_wardrobe();
                 self.write_birthday_letter();
             }
+            Occasion::HundredDays | Occasion::ThousandDays => {
+                if !self.greet_landmark(occasion) {
+                    return;
+                }
+            }
             Occasion::Chuseok => self.say(self.spoken("Happy Chuseok!", "즐거운 한가위 보내!")),
             Occasion::HangulDay if self.speaks_korean() => self.say("한글은 그리는 것도 재밌어!"),
             _ => return,
@@ -421,7 +448,12 @@ impl super::World {
         }
         if matches!(
             occasion,
-            Some(Occasion::Birthday | Occasion::ViewerBirthday)
+            Some(
+                Occasion::Birthday
+                    | Occasion::ViewerBirthday
+                    | Occasion::HundredDays
+                    | Occasion::ThousandDays
+            )
         ) {
             self.ghost.mood = self.feeling();
         }

@@ -1035,17 +1035,25 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         1 => "one day old".to_owned(),
         days => format!("{days} days old"),
     };
+    let life_day = app.world.day_of_life().map_or_else(String::new, |day| {
+        format!(" · its {} day", crate::world::anniversary::ordinal(day))
+    });
     let mut header = vec![
         (
             format!(
-                "{} · {age} · {} · born {}",
+                "{} · {age}{life_day} · {} · born {}",
                 ghost.name,
                 app.world.stage().words(),
                 date(app.born())
             ),
             TITLE,
         ),
-        (String::new(), TEXT),
+        (
+            app.world.occasion().map_or_else(String::new, |_| {
+                format!("Today     {}", app.world.occasion_words())
+            }),
+            TEXT,
+        ),
         (
             format!("Nature    {}", life.nature.unwrap_or_default().words()),
             TEXT,
