@@ -1,1 +1,0 @@
-from operator: you doing good and almost done ?
