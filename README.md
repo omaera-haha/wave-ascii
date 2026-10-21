@@ -7,11 +7,22 @@ little pots its seeds grow in, a ball, five bright toy blocks, a cushion to
 sleep on, a little shelf of keepsakes, specks of light that drift in, and a
 window onto hills where the seasons turn, birds come to perch, storms roll
 through, snow falls in winter, rain can leave a rainbow, and shooting stars
-fall on clear nights. On lit nights, most of all with the window open, a little moth flutters in and
-circles the lamp. The ghost is a point in that room with a body, needs, a
+fall on clear nights. Migrating geese honk past, hot-air balloons drift,
+kites tug in gusts, squirrels scamper in the tree, and planes blink overhead.
+A snowman keeps the snowy hill company as it thaws; paper lanterns rise on
+Chuseok and Seollal nights. The ghost follows passing life with its gaze and
+remembers each first sighting. On lit nights, most of all with the window open, a little moth flutters in and circles the lamp. The ghost is a point in that room with a body, needs, a
 mood, and a gaze: it sees what lies within sixty degrees of where it faces,
 and furniture hides what's behind it. You see it as an abstract shape made of
 dots, and its glow shows how it is.
+
+In suitable weather and hours, each moving kind passes about three times
+an hour (kites about twice, during seeded gusts), for twenty to ninety
+seconds. Geese migrate in spring and autumn; balloons favor clear summer
+and autumn mornings and late afternoons; kites fly on spring and summer
+days; squirrels visit in autumn; planes cross clear nights. Lanterns rise
+only on Chuseok and Seollal nights. At most two appear together. A snowman
+waits for deep snowfall to settle and stays as the remaining cover melts.
 
 It floats about, chases and eats the light motes it has spotted, plays with
 the ball and brings it back after a throw, stacks towers of blocks and knocks

@@ -63,7 +63,13 @@ impl DreamPicture {
             for (roots, picture) in [
                 (&["tower", "block"][..], Self::Tower),
                 (&["ball", "fetch"][..], Self::Ball),
-                (&["bird", "feather", "song", "wing"][..], Self::Bird),
+                (
+                    &["bird", "feather", "song", "wing", "geese"][..],
+                    Self::Bird,
+                ),
+                (&["kite", "plane"][..], Self::Cloud),
+                (&["squirrel"][..], Self::Bird),
+                (&["lantern"][..], Self::Star),
                 (&["moon"][..], Self::Moon),
                 (
                     &["star", "wish", "shooting", "constellation"][..],

@@ -483,7 +483,22 @@ impl Mind {
                 EventKind::Began(activity) => Some(activity),
                 _ => None,
             });
-        let lines = if world.time >= self.next_musing {
+        let passerby = (!asleep && !focusing)
+            .then(|| {
+                world
+                    .events
+                    .iter()
+                    .rev()
+                    .take_while(|event| event.time > since)
+                    .find_map(|event| match event.kind {
+                        EventKind::SawPasserby(kind) => Some(kind),
+                        _ => None,
+                    })
+            })
+            .flatten();
+        let lines = if let Some(kind) = passerby {
+            kind.thoughts().to_vec()
+        } else if world.time >= self.next_musing {
             self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
             if asleep {
                 musing::dreams(world)
@@ -1299,6 +1314,35 @@ mod tests {
             mind.two,
             Status::Failed("Claude authentication: bad key".into())
         );
+    }
+
+    #[test]
+    fn offline_sightings_bring_a_thought_and_focus_keeps_it_quiet() {
+        for focusing in [false, true] {
+            for kind in crate::world::Passerby::ALL {
+                let mut mind = offline();
+                let mut world = World::new(7, 12.0);
+                world.time = 10.0;
+                if focusing {
+                    world.start_focus(25);
+                }
+                world.events.clear();
+                world.events.push(crate::world::Event {
+                    time: world.time,
+                    kind: EventKind::SawPasserby(kind),
+                });
+                mind.next_musing = f64::INFINITY;
+                mind.muse(&mut world);
+                if focusing {
+                    assert!(world.ghost.thought.is_none());
+                } else {
+                    assert!(
+                        kind.thoughts()
+                            .contains(&world.ghost.thought.as_ref().unwrap().text.as_str())
+                    );
+                }
+            }
+        }
     }
 
     #[test]

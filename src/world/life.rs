@@ -181,6 +181,10 @@ pub struct Tally {
     pub constellations: u32,
     #[serde(default)]
     pub airings: u32,
+    #[serde(default)]
+    pub passersby: u32,
+    #[serde(default)]
+    pub passerby_kinds: Vec<super::Passerby>,
 }
 
 impl Tally {
@@ -191,6 +195,12 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::SawPasserby(passerby) => {
+                self.passersby = self.passersby.saturating_add(1);
+                if !self.passerby_kinds.contains(passerby) {
+                    self.passerby_kinds.push(*passerby);
+                }
+            }
             EventKind::FocusEnded { minutes, completed } => {
                 self.focus_minutes = self.focus_minutes.saturating_add(*minutes);
                 self.focus_sessions = self.focus_sessions.saturating_add(u32::from(*completed));
@@ -557,6 +567,18 @@ impl Tally {
                 [word] => format!("learned what {word} means"),
                 words => format!("learned what {} mean", listed(words)),
             });
+        }
+        if self.passersby > 0 {
+            if self.passerby_kinds.is_empty() {
+                deeds.push("watched passing life outside the window".to_owned());
+            } else {
+                let kinds: Vec<String> = self
+                    .passerby_kinds
+                    .iter()
+                    .map(|kind| kind.name().to_owned())
+                    .collect();
+                deeds.push(format!("saw {} through the window", listed(&kinds)));
+            }
         }
         match self.shooting_stars {
             0 => {}
@@ -1078,6 +1100,14 @@ impl Life {
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
+            tally.passersby = tally.passersby.min(100_000_000);
+            let mut kinds = Vec::new();
+            for kind in &tally.passerby_kinds {
+                if !kinds.contains(kind) {
+                    kinds.push(*kind);
+                }
+            }
+            tally.passerby_kinds = kinds;
             tally.focus_sessions = tally.focus_sessions.min(1_000_000);
             tally.focus_minutes = tally.focus_minutes.min(100_000_000);
             tally.stories = tally.stories.min(100_000_000);
@@ -1144,6 +1174,9 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if let EventKind::SawPasserby(passerby) = kind {
+            return self.reach(format!("I saw {} for the first time.", passerby.name()));
+        }
         if let EventKind::FocusEnded { completed, .. } = kind {
             let reached = [
                 (

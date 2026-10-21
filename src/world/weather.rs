@@ -44,6 +44,8 @@ pub struct Weather {
     /// How much snow lies on the hills, from bare to fully covered.
     pub snow_cover: f32,
     season: Season,
+    /// The last deep snowfall that settled, held until its cover thaws.
+    pub settled_snow: Option<f64>,
 }
 
 /// Seconds rain or snow takes to set in or clear, and a rainbow to appear or fade.
@@ -63,6 +65,7 @@ impl Weather {
             until: f64::from(random.range(180.0, 420.0)) * clear_factor(Season::Summer),
             snow_cover: 0.0,
             season: Season::Summer,
+            settled_snow: None,
         }
     }
 
@@ -111,6 +114,9 @@ impl Weather {
                 Change::RainbowFaded,
             ),
         };
+        if change == Change::SnowStopped && self.snow_cover >= 0.65 {
+            self.settled_snow = Some(time);
+        }
         self.sky = sky;
         self.storm = change == Change::StormStarted;
         self.next_flash = f64::INFINITY;
@@ -133,6 +139,9 @@ impl Weather {
         self.snow_cover = (self.snow_cover
             + seconds.max(0.0) * (snow / 120.0 - (1.0 - snow) / melting_time))
             .clamp(0.0, 1.0);
+        if self.snow_cover <= 0.05 {
+            self.settled_snow = None;
+        }
     }
 
     /// Schedules lightning in heavy storm rain and delivers each strike's

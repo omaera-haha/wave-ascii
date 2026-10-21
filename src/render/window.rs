@@ -4,6 +4,7 @@ use glam::{Vec2, Vec3};
 
 use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::meteor::Streak;
+use crate::world::passerby::{Passerby, Passing};
 use crate::world::stars::{self, Constellation, hash};
 use crate::world::{BirdPicture, Keepsake, Season};
 
@@ -34,6 +35,7 @@ pub struct Outside {
     pub wind: f32,
     pub window_lift: f32,
     pub wind_travel: f64,
+    pub passersby: [Option<Passing>; 2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -88,6 +90,7 @@ impl Outside {
             wind: 0.0,
             window_lift: 0.0,
             wind_travel: 0.0,
+            passersby: [None; 2],
         }
     }
 }
@@ -341,6 +344,9 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     }
 
     color = tree(color, coordinates, footprint, outside, land_light, cloud);
+    for passing in outside.passersby.iter().flatten() {
+        color = passerby(color, coordinates, footprint, passing, &sky, cloud);
+    }
     if matches!(outside.season, Season::Autumn | Season::Spring) {
         color = falling_leaves(color, coordinates, footprint, outside, land_light);
     }
@@ -388,6 +394,186 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     let along = (fraction.y - 0.5).abs() / 7.0 - 0.035;
     let streak = coverage(across.max(along), footprint * 0.5);
     color + Vec3::splat(0.36) * streak * rain
+}
+
+fn passerby(
+    mut color: Vec3,
+    coordinates: Vec2,
+    footprint: f32,
+    passing: &Passing,
+    sky: &Sky,
+    cloud: f32,
+) -> Vec3 {
+    let mut point = (coordinates - passing.position) * Vec2::new(1.5, 1.0);
+    let bounds = match passing.kind {
+        Passerby::Geese => Vec2::new(0.19, 0.10),
+        Passerby::Balloon => Vec2::new(0.055, 0.09),
+        Passerby::Kite => Vec2::new(0.17, 0.36),
+        Passerby::Squirrel => Vec2::new(0.065, 0.05),
+        Passerby::Plane => Vec2::new(0.045, 0.03),
+        Passerby::Snowman => Vec2::new(0.07, 0.10),
+        Passerby::Lanterns => Vec2::new(0.11, 0.15),
+    };
+    if point.abs().cmpgt(bounds + Vec2::splat(footprint)).any() {
+        return color;
+    }
+    let background = color;
+    let edge = footprint * 0.6 + 0.0007;
+    let light = 0.08 + sky.day * 0.85 + sky.twilight * 0.25;
+    let lit = |tint: Vec3| weather_color(tint * light + sky.horizon * 0.08, cloud);
+    let paint = |color: Vec3, tint, distance| color.lerp(tint, coverage(distance, edge));
+    match passing.kind {
+        Passerby::Geese => {
+            let mut distance = f32::INFINITY;
+            for index in -3_i32..=3 {
+                let rank = index.abs() as f32;
+                let center = Vec2::new(-passing.facing * rank * 0.043, index as f32 * 0.025);
+                let point = point - center;
+                let flap = (passing.motion * 2.0 + rank).sin() * 0.012;
+                distance = distance
+                    .min(capsule(point, Vec2::new(-0.012, flap), Vec2::ZERO, 0.0015))
+                    .min(capsule(point, Vec2::ZERO, Vec2::new(0.012, flap), 0.0015));
+            }
+            color = paint(color, lit(Vec3::new(0.16, 0.18, 0.21)), distance);
+        }
+        Passerby::Balloon => {
+            let envelope = (point / Vec2::new(0.04, 0.055)).length() - 1.0;
+            let stripe = if passing.striped {
+                (point.x * 210.0).cos() * 0.5 + 0.5
+            } else {
+                0.0
+            };
+            let warm = Vec3::new(1.0, 0.42, 0.24).lerp(Vec3::new(1.0, 0.83, 0.45), stripe);
+            color = paint(color, lit(warm), envelope * 0.04);
+            let basket = (point - Vec2::new(0.0, -0.075)).abs() - Vec2::new(0.012, 0.008);
+            let mut ropes = f32::INFINITY;
+            for side in [-1.0, 1.0] {
+                ropes = ropes.min(capsule(
+                    point,
+                    Vec2::new(side * 0.018, -0.043),
+                    Vec2::new(side * 0.01, -0.07),
+                    0.001,
+                ));
+            }
+            color = paint(
+                color,
+                lit(Vec3::new(0.65, 0.44, 0.27)),
+                basket.max_element().min(ropes),
+            );
+        }
+        Passerby::Kite => {
+            let string = capsule(
+                point,
+                Vec2::new(0.0, -0.025),
+                Vec2::new(-0.13, -0.33),
+                0.0008,
+            );
+            color = paint(color, lit(Vec3::new(0.84, 0.82, 0.69)), string);
+            point.x += point.y * (passing.motion.sin() * 0.2);
+            let diamond = (point.x.abs() / 0.027 + point.y.abs() / 0.044 - 1.0) * 0.023;
+            let tint = if point.x < 0.0 {
+                Vec3::new(1.0, 0.5, 0.33)
+            } else {
+                Vec3::new(0.47, 0.75, 1.0)
+            };
+            color = paint(color, lit(tint), diamond);
+            for index in 0..3 {
+                let center = Vec2::new(
+                    0.006 * (passing.motion + index as f32).sin(),
+                    -0.06 - index as f32 * 0.017,
+                );
+                let bow = capsule(
+                    point,
+                    center - Vec2::new(0.006, 0.003),
+                    center + Vec2::new(0.006, 0.003),
+                    0.0015,
+                );
+                color = paint(color, lit(Vec3::new(1.0, 0.73, 0.42)), bow);
+            }
+        }
+        Passerby::Squirrel => {
+            point.x *= passing.facing;
+            let body = (point / Vec2::new(1.4, 1.0)).length() - 0.013;
+            let head = point.distance(Vec2::new(0.021, 0.009)) - 0.009;
+            let tail_point = point - Vec2::new(-0.025, 0.014);
+            let tail = (tail_point / Vec2::new(0.014, 0.025)).length() - 1.0;
+            color = paint(
+                color,
+                lit(Vec3::new(0.78, 0.4, 0.2)),
+                body.min(head).min(tail * 0.014),
+            );
+            color = paint(
+                color,
+                lit(Vec3::splat(0.15)),
+                point.distance(Vec2::new(0.025, 0.013)) - 0.0015,
+            );
+        }
+        Passerby::Plane => {
+            for (offset, tint, on) in [
+                (
+                    -0.012,
+                    Vec3::new(1.0, 0.2, 0.18),
+                    passing.motion.sin() > 0.15,
+                ),
+                (
+                    0.012,
+                    Vec3::new(0.9, 0.95, 1.0),
+                    passing.motion.cos() > 0.55,
+                ),
+            ] {
+                if on {
+                    let distance = point.distance(Vec2::X * offset);
+                    color += tint
+                        * (coverage(distance - 0.0018, edge) * 0.8
+                            + (-distance.powi(2) / 0.000035).exp() * 0.15);
+                }
+            }
+        }
+        Passerby::Snowman => {
+            point.y /= 1.0 - passing.phase * 0.65;
+            point.x -= point.y * passing.phase * 0.3;
+            let body = point.distance(Vec2::new(0.0, 0.023)) - 0.029;
+            let head = point.distance(Vec2::new(0.0, 0.063)) - 0.019;
+            color = paint(color, lit(Vec3::new(0.88, 0.94, 1.0)), body.min(head));
+            let scarf = capsule(
+                point,
+                Vec2::new(-0.018, 0.046),
+                Vec2::new(0.018, 0.043),
+                0.003,
+            );
+            color = paint(color, lit(Vec3::new(0.9, 0.35, 0.27)), scarf);
+            let nose = capsule(
+                point,
+                Vec2::new(0.002, 0.06),
+                Vec2::new(0.019, 0.057),
+                0.002,
+            );
+            color = paint(color, lit(Vec3::new(1.0, 0.64, 0.28)), nose);
+            for across in [-0.007, 0.006] {
+                color = paint(
+                    color,
+                    lit(Vec3::splat(0.16)),
+                    point.distance(Vec2::new(across, 0.069)) - 0.0015,
+                );
+            }
+        }
+        Passerby::Lanterns => {
+            for offset in [Vec2::ZERO, Vec2::new(-0.05, -0.065), Vec2::new(0.04, -0.1)] {
+                let point = point - offset;
+                let distance = (point / Vec2::new(0.012, 0.019)).length() - 1.0;
+                let glow = (-point.length_squared() / 0.00045).exp();
+                color += Vec3::new(1.0, 0.38, 0.12) * glow * 0.1;
+                color = paint(color, Vec3::new(1.0, 0.64, 0.27), distance * 0.012);
+                color += Vec3::new(1.0, 0.84, 0.46) * coverage(point.length() - 0.003, edge) * 0.3;
+            }
+        }
+    }
+    let presence = if passing.kind == Passerby::Snowman {
+        1.0
+    } else {
+        smoothstep(0.0, 0.08, passing.phase) * (1.0 - smoothstep(0.92, 1.0, passing.phase))
+    };
+    background.lerp(color, presence)
 }
 
 fn visiting_bird(
@@ -741,6 +927,89 @@ fn noise(point: Vec2) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_samples_stay_finite_through_every_passing_at_every_hour() {
+        use crate::world::{Sky, World};
+        use jiff::civil::Date;
+
+        for kind in Passerby::ALL {
+            let mut world = World::new(7, 9.0);
+            world.date = match kind {
+                Passerby::Kite => Date::constant(2026, 4, 12),
+                Passerby::Lanterns => Date::constant(2026, 9, 25),
+                _ => Date::constant(2026, 10, 12),
+            };
+            if matches!(kind, Passerby::Plane | Passerby::Lanterns) {
+                world.hour = 23.0;
+            }
+            if kind == Passerby::Snowman {
+                world.weather.snow_cover = 0.85;
+                world.weather.settled_snow = Some(0.0);
+            }
+            world.weather.sky = Sky::Clear;
+            let passing = (0..30_000)
+                .find_map(|step| {
+                    Passerby::at(
+                        kind,
+                        7,
+                        f64::from(step) * 2.0,
+                        world.date,
+                        world.hour,
+                        &world.weather,
+                    )
+                })
+                .unwrap();
+            for progress in [0.0, 0.5, 1.0] {
+                let time = passing.began
+                    + progress
+                        * if passing.duration.is_finite() {
+                            passing.duration
+                        } else {
+                            1200.0
+                        };
+                let passing = if kind == Passerby::Snowman {
+                    Passing {
+                        phase: progress as f32,
+                        ..passing
+                    }
+                } else {
+                    // Sample immediately inside both ends of the scheduled visit.
+                    kind.at(
+                        7,
+                        time.clamp(
+                            passing.began + 0.0001,
+                            passing.began + passing.duration - 0.0001,
+                        ),
+                        world.date,
+                        world.hour,
+                        &world.weather,
+                    )
+                    .unwrap()
+                };
+                for hour in 0..24 {
+                    for striped in [false, true] {
+                        let mut outside = Outside::clear(hour as f32, time);
+                        outside.passersby[0] = Some(Passing { striped, ..passing });
+                        for row in 0..=8 {
+                            for column in 0..=12 {
+                                let coordinates = Vec2::new(column as f32 / 12.0, row as f32 / 8.0);
+                                assert!(
+                                    landscape(coordinates, 0.004, &outside).is_finite(),
+                                    "{kind:?}, {progress}, {hour}"
+                                );
+                            }
+                        }
+                        for offset in [Vec2::ZERO, Vec2::new(0.001, 0.002)] {
+                            assert!(
+                                landscape(passing.position + offset, 0.0, &outside).is_finite()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     fn point(across: f32, up: f32) -> Vec2 {
         WINDOW_LOW + (WINDOW_HIGH - WINDOW_LOW) * Vec2::new(across, up)

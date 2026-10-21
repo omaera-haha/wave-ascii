@@ -340,17 +340,28 @@ impl World {
     /// going, else wherever its eyes wander. Then notes what it newly sees.
     pub(super) fn look_around(&mut self, seconds: f32) {
         let time = self.time;
+        let following = (self.ghost.plan.activity == super::Activity::Window
+            && self.focus.is_none())
+        .then(|| self.passersby().into_iter().flatten().next())
+        .flatten()
+        .map(super::passerby::Passing::window_position);
         let ghost = &self.ghost;
         let attended = ghost
             .attention
             .filter(|(_, until)| *until > time)
-            .and_then(|(thing, _)| self.position_of(thing));
+            .and_then(|(thing, _)| {
+                if thing == Thing::Window {
+                    following.or_else(|| self.position_of(thing))
+                } else {
+                    self.position_of(thing)
+                }
+            });
         let wander = || {
             let phase = time as f32;
             let yaw = PI * (phase * 0.045).sin() + 0.6 * (phase * 0.21).sin();
             Vec3::new(yaw.sin(), 0.15 * (phase * 0.17).sin(), yaw.cos())
         };
-        let desired = match attended.or(ghost.look) {
+        let desired = match attended.or(following).or(ghost.look) {
             Some(target) => (target - ghost.position).normalize_or(ghost.heading),
             None if ghost.velocity.length() > 0.15 => ghost.velocity.normalize(),
             None => wander().normalize(),
@@ -377,6 +388,13 @@ impl World {
         } else {
             Sight::default()
         };
+        if sight
+            .in_view
+            .iter()
+            .any(|seen| seen.thing == Thing::Window && seen.hidden_behind.is_none())
+        {
+            self.notice_passersby();
+        }
         // A shooting star counts once it has begun to streak.
         let shooting_star = self
             .shooting_star()

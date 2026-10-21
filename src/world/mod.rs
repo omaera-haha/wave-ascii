@@ -17,6 +17,7 @@ pub mod meteor;
 mod nature;
 mod needs;
 pub mod occasion;
+pub mod passerby;
 mod pounce;
 mod question;
 mod random;
@@ -50,6 +51,7 @@ pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
 pub use occasion::{Decoration, Occasion};
+pub use passerby::Passerby;
 pub use question::{Question, ask as asked_question};
 pub use random::Random;
 pub use room::Room;
@@ -235,6 +237,7 @@ pub enum EventKind {
     OpenedWindow,
     ClosedWindow,
     Puddle,
+    SawPasserby(Passerby),
 }
 
 impl EventKind {
@@ -244,6 +247,7 @@ impl EventKind {
             Self::OpenedWindow => "opened the window for fresh air".to_owned(),
             Self::ClosedWindow => "closed the window".to_owned(),
             Self::Puddle => "noticed a puddle below the window".to_owned(),
+            Self::SawPasserby(kind) => format!("noticed {} through the window", kind.name()),
             Self::ToldStory => "told the viewer a story".to_owned(),
             Self::FoundConstellation(name) => format!("found a constellation: {name}"),
             Self::Began(activity) => format!("started {}", activity.doing()),
@@ -603,6 +607,7 @@ pub struct World {
     window_refused_at: Option<f64>,
     next_windfall_at: f64,
     windfall_random: Random,
+    seen_passersby: [Option<u64>; Passerby::ALL.len()],
 }
 
 impl World {
@@ -709,6 +714,7 @@ impl World {
             window_refused_at: None,
             next_windfall_at: 8.0,
             windfall_random: Random::new(seed ^ 0x6c65_6176_6573),
+            seen_passersby: [None; Passerby::ALL.len()],
         };
         world.scatter_blocks();
         world

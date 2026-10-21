@@ -1016,6 +1016,7 @@ impl App {
                     wind: world.wind.sideways(world.time),
                     window_lift: world.window_lift(),
                     wind_travel: world.wind.travel,
+                    passersby: world.passersby(),
                 },
                 view,
                 face,

@@ -189,6 +189,19 @@ fn outside_the_window(world: &World) -> String {
             shower.name
         ));
     }
+    for passing in world.passersby().into_iter().flatten() {
+        outside.push_str(&format!(", {} right now", passing.kind.name()));
+    }
+    if !world.life.today.passerby_kinds.is_empty() {
+        let kinds: Vec<&str> = world
+            .life
+            .today
+            .passerby_kinds
+            .iter()
+            .map(|kind| kind.name())
+            .collect();
+        outside.push_str(&format!("; you saw today: {}", kinds.join(", ")));
+    }
     if world.shooting_star().is_some() {
         outside.push_str(", a shooting star streaking across it right now");
     }

@@ -288,6 +288,11 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
             Sky::Clear => vec!["I like watching the clouds.", "The hills look soft today."],
         },
     };
+    if activity == Activity::Window {
+        for passing in world.passersby().into_iter().flatten() {
+            lines.extend(passing.kind.thoughts());
+        }
+    }
     if let Some(skill) = Skill::for_activity(activity)
         && world.life.skills.practice(skill) > 0.0
     {
@@ -350,6 +355,11 @@ pub fn idle(world: &World) -> Vec<&'static str> {
         lines.extend(["The air smells like rain.", "The breeze tickles my hem."]);
         if world.season() == crate::world::Season::Autumn {
             lines.push("Leaves are dancing in.");
+        }
+    }
+    if ghost.plan.activity == Activity::Window {
+        for passing in world.passersby().into_iter().flatten() {
+            lines.extend(passing.kind.thoughts());
         }
     }
     if ghost.plan.activity == Activity::Window
@@ -593,6 +603,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     let mut lines = Vec::new();
     if world.window_open || today.airings > 0 {
         lines.push("…the wind carries a cloud through my little room…");
+    }
+    for kind in &today.passerby_kinds {
+        lines.push(kind.dream());
     }
     if today.focus_minutes > 0 || today.focus_sessions > 0 || world.focus.is_some() {
         lines.push("…we work side by side, and the little room holds its breath…");
