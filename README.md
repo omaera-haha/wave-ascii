@@ -191,6 +191,11 @@ ghost's eyes follow the pointer. Right-drag on the glass to draw in its fog,
 or press `f` to draw with left drags on a trackpad. Left clicks still poke,
 flick, or play board moves in this mode; `f` or Esc returns to ordinary drags.
 
+The box lives in your terminal, so resizing the window jostles it like a
+snow globe: the light motes and petals swirl and slowly settle, the ball
+rolls, and the ghost startles. Keep rattling it and a playful ghost squeals
+for more while another grumbles. Towers stay standing and sleepers sleep on.
+
 The journal wraps all retained memories, its moments to remember, the diary,
 the conversation, the latest ten events, and any model errors. It opens at
 the newest lines; arrows on its borders and a line range show where you are.

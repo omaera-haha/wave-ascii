@@ -89,8 +89,11 @@ pub enum Input {
     /// Text pasted all at once.
     Paste(String),
     Mouse(Mouse),
-    /// The terminal changed size.
-    Resize,
+    /// The terminal changed size to this many columns and rows.
+    Resize {
+        columns: u16,
+        rows: u16,
+    },
     /// The terminal window gained (true) or lost (false) the focus, in
     /// terminals that report it.
     Focus(bool),
@@ -145,7 +148,7 @@ impl Input {
                 }))
             }
             Event::Paste(text) => Some(Self::Paste(text)),
-            Event::Resize(..) => Some(Self::Resize),
+            Event::Resize(columns, rows) => Some(Self::Resize { columns, rows }),
             Event::FocusGained => Some(Self::Focus(true)),
             Event::FocusLost => Some(Self::Focus(false)),
             _ => None,
@@ -355,7 +358,10 @@ mod tests {
         );
         assert_eq!(
             Input::from_event(Event::Resize(80, 24)),
-            Some(Input::Resize)
+            Some(Input::Resize {
+                columns: 80,
+                rows: 24
+            })
         );
     }
 

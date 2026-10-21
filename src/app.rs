@@ -397,7 +397,10 @@ impl App {
                 Response::Continue
             }
             Input::Mouse(mouse) => self.mouse(mouse),
-            Input::Resize => Response::Restyle,
+            Input::Resize { columns, rows } => {
+                self.shake(usize::from(columns), usize::from(rows));
+                Response::Restyle
+            }
             Input::Focus(focused) => {
                 self.focused = focused;
                 self.world.look_away(!focused);
@@ -1005,6 +1008,19 @@ impl App {
                     GHOST_SCALE * self.world.size(),
                 ) || (friend.position - self.world.ghost.position).dot(view.forward) < 0.0)
         })
+    }
+
+    // A resize shakes the box like a snow globe, by how much the screen
+    // changed, while the room is on screen and running.
+    fn shake(&mut self, columns: usize, rows: usize) {
+        let (old_columns, old_rows) = self.screen_size;
+        let watching = matches!(self.mode, Mode::Watching | Mode::Talking);
+        if old_columns > 0 && old_rows > 0 && !self.paused && watching {
+            let change = |new: usize, old: usize| (new as f32 - old as f32) / old as f32;
+            self.world
+                .jostle(change(columns, old_columns), change(rows, old_rows));
+        }
+        self.screen_size = (columns, rows);
     }
 
     fn click(&mut self, point: Vec2) {
@@ -2766,7 +2782,36 @@ mod tests {
             action: MouseAction::ScrollUp,
         }));
         assert!(app.camera.zoom > 1.0);
-        assert_eq!(app.input(Input::Resize), Response::Restyle);
+        assert_eq!(
+            app.input(Input::Resize {
+                columns: 80,
+                rows: 24
+            }),
+            Response::Restyle
+        );
+    }
+
+    #[test]
+    fn resizing_jostles_the_box_only_when_watching_a_known_size() {
+        let mut app = app();
+        let resize = |columns, rows| Input::Resize { columns, rows };
+        app.screen_size = (0, 0);
+        app.input(resize(80, 24));
+        assert_eq!(app.world.jostle.velocity, Vec3::ZERO);
+        app.frame(100, 30);
+        app.input(resize(60, 30));
+        assert!(app.world.jostle.velocity.x < 0.0);
+        assert_eq!(app.screen_size, (60, 30));
+
+        let mut app = self::app();
+        app.frame(100, 30);
+        app.paused = true;
+        app.input(resize(60, 30));
+        assert_eq!(app.world.jostle.velocity, Vec3::ZERO);
+        app.paused = false;
+        app.mode = Mode::Journal;
+        app.input(resize(140, 30));
+        assert_eq!(app.world.jostle.velocity, Vec3::ZERO);
     }
 
     #[test]

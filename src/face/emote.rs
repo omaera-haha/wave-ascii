@@ -273,6 +273,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::DroppedMote
         | EventKind::WokeUp
         | EventKind::Thunder
+        | EventKind::Jostled { rattled: false }
         | EventKind::Poked { count: 1 } => Emote::Alarm,
         EventKind::Poked { count } if *count >= 3 => Emote::Anger,
         EventKind::Jumped | EventKind::Toppled { .. } => Emote::Alarm,

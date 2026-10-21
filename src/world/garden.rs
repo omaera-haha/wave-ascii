@@ -509,7 +509,8 @@ impl World {
             for petal in &mut self.petals {
                 petal.drift(
                     seconds,
-                    super::breeze::breeze(self.window_open, &self.wind, self.time, petal.position),
+                    super::breeze::breeze(self.window_open, &self.wind, self.time, petal.position)
+                        + self.jostle.stir(petal.position, petal.spin),
                 );
             }
             self.petals

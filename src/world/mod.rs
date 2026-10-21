@@ -17,6 +17,7 @@ pub mod friend;
 pub mod game;
 pub mod garden;
 pub mod growth;
+pub mod jostle;
 mod letters;
 mod life;
 pub mod mail;
@@ -310,6 +311,10 @@ pub enum EventKind {
     ReadViewerLetter,
     AskedViewer(acquaintance::Topic),
     LearnedAboutViewer(acquaintance::Topic),
+    /// The glass box shook; `rattled` once it kept shaking a while.
+    Jostled {
+        rattled: bool,
+    },
 }
 
 impl EventKind {
@@ -517,6 +522,10 @@ impl EventKind {
             Self::PlayedWithFriend(game) => {
                 format!("finished {} with your ghost friend", game.words())
             }
+            Self::Jostled { rattled: false } => {
+                "the whole room jolted and the light motes swirled".to_owned()
+            }
+            Self::Jostled { rattled: true } => "the room kept shaking like a snow globe".to_owned(),
         }
     }
 }
@@ -792,6 +801,7 @@ pub struct World {
     last_message_at: Option<f64>,
     last_question_at: Option<f64>,
     viewer_blush_at: Option<f64>,
+    pub jostle: jostle::Jostle,
 }
 
 impl World {
@@ -931,6 +941,7 @@ impl World {
             last_message_at: None,
             last_question_at: None,
             viewer_blush_at: None,
+            jostle: jostle::Jostle::default(),
         };
         world.scatter_blocks();
         world
@@ -991,11 +1002,13 @@ impl World {
             self.puzzle = None;
         }
 
+        self.jostle.settle(seconds);
         for mote in &mut self.motes {
             mote.drift(
                 self.time,
                 seconds,
-                breeze::breeze(self.window_open, &self.wind, self.time, mote.position),
+                breeze::breeze(self.window_open, &self.wind, self.time, mote.position)
+                    + self.jostle.stir(mote.position, mote.seed),
             );
         }
         let time = self.time;
