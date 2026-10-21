@@ -167,6 +167,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::AteMote
         | EventKind::Bloomed
         | EventKind::Fetched
+        | EventKind::Pounced
         | EventKind::Found
         | EventKind::Celebrated(_)
         | EventKind::Milestone(_) => Emote::Sparkle,

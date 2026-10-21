@@ -497,9 +497,10 @@ impl App {
         }
 
         self.pointer = point.map(|point| (point, self.world.time));
-        self.world.viewer.pointer = point
+        let pointer = point
             .zip(self.view)
             .and_then(|(point, view)| view.on_glass(point));
+        self.world.point_at(pointer);
         Response::Continue
     }
 
@@ -1076,6 +1077,23 @@ mod tests {
         let center = view.project(app.world.ghost.position);
         let (gaze, firmness) = app.gaze(&view, center).unwrap();
         assert!(gaze.x > 0.0 && gaze.y > 0.0 && firmness > 0.5);
+    }
+
+    #[test]
+    fn quick_mouse_moves_across_the_room_make_the_pointer_lively() {
+        let mut app = app();
+        for across in [-0.6, 0.6, -0.6] {
+            let (column, row) = cell_of(&app, Vec3::new(across, 1.2, ROOM_MAX.z));
+            app.mouse(Mouse {
+                column,
+                row,
+                action: MouseAction::Move,
+            });
+            app.world.step(0.05);
+        }
+        assert!(app.world.viewer.liveliness > 0.8);
+        assert!(app.world.viewer.pointer_is_lively());
+        assert!(app.world.options().contains(&Activity::Pounce));
     }
 
     #[test]
