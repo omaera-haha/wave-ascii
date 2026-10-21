@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::claude::{Effort, Message, Request, Role};
+use super::claude::{Block, Cache, Effort, Message, Request, Role};
 use crate::store::{Memory, Remark, Speaker};
 use crate::world::Mood;
 
@@ -70,12 +70,16 @@ pub fn schema() -> Value {
 
 /// The request for one reflection: the ghost's situation, what it
 /// remembers, the conversation so far, and what the person just said, if
-/// anything.
+/// anything. What changes least comes first, so with `cache` the persona and
+/// memories, and then the conversation, are read from the prompt cache;
+/// only the moment itself is new each time.
 pub fn request(
     observation: &Value,
     memories: &[Memory],
     conversation: &[Remark],
     heard: Option<&str>,
+    effort: Option<Effort>,
+    cache: Option<Cache>,
 ) -> Request {
     let memories: Vec<&str> = memories
         .iter()
@@ -101,21 +105,25 @@ pub fn request(
         Some(text) => format!("The person just said: {text}"),
         None => "Nobody said anything just now. Think over the moment quietly.".to_owned(),
     };
-    let content = format!(
-        "Observation:\n{}\n\nWhat the ghost remembers:\n{}\n\nRecent conversation:\n{}\n\n{prompt}",
-        serde_json::to_string_pretty(observation).unwrap_or_default(),
-        bullets(&memories),
-        bullets(&conversation),
-    );
+    let block = |text: String| Block { text, cache };
     Request {
-        system: SYSTEM.to_owned(),
+        system: vec![
+            Block::new(SYSTEM),
+            block(format!("What the ghost remembers:\n{}", bullets(&memories))),
+        ],
         messages: vec![Message {
             role: Role::User,
-            content,
+            content: vec![
+                block(format!("Recent conversation:\n{}", bullets(&conversation))),
+                Block::new(format!(
+                    "Observation:\n{}\n\n{prompt}",
+                    serde_json::to_string_pretty(observation).unwrap_or_default(),
+                )),
+            ],
         }],
         schema: schema(),
         max_tokens: 4000,
-        effort: Effort::Low,
+        effort,
     }
 }
 
@@ -187,14 +195,32 @@ mod tests {
             &memories,
             &conversation,
             Some("안녕"),
+            Some(Effort::Medium),
+            Some(Cache::OneHour),
+        );
+        assert!(
+            request.system[1]
+                .text
+                .contains("- The person's name is Mina.")
         );
         let content = &request.messages[0].content;
-        assert!(content.contains("\"time_of_day\": \"night\""));
-        assert!(content.contains("- The person's name is Mina."));
-        assert!(content.contains("- ghost: Hello!"));
-        assert!(content.ends_with("The person just said: 안녕"));
+        assert!(content[0].text.contains("- ghost: Hello!"));
+        assert!(content[1].text.contains("\"time_of_day\": \"night\""));
+        assert!(content[1].text.ends_with("The person just said: 안녕"));
         assert_eq!(request.messages.len(), 1);
         assert_eq!(request.messages[0].role, Role::User);
+        assert_eq!(request.effort, Some(Effort::Medium));
+    }
+
+    #[test]
+    fn what_changes_least_is_cached_and_the_moment_is_not() {
+        let cached = request(&json!({}), &[], &[], None, None, Some(Cache::OneHour));
+        assert_eq!(cached.system[0].cache, None);
+        assert_eq!(cached.system[1].cache, Some(Cache::OneHour));
+        assert_eq!(cached.messages[0].content[0].cache, Some(Cache::OneHour));
+        assert_eq!(cached.messages[0].content[1].cache, None);
+        let uncached = request(&json!({}), &[], &[], None, None, None);
+        assert!(uncached.system.iter().all(|block| block.cache.is_none()));
     }
 
     #[test]

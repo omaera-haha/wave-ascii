@@ -7,6 +7,7 @@ use crate::color::Rgb;
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::Status;
 use crate::render::{GHOST_SCALE, View};
+use crate::settings::{Field, cache_name, effort_name};
 use crate::store::{Speaker, mask};
 
 const PANEL: Rgb = Rgb([17, 19, 27]);
@@ -32,7 +33,7 @@ pub fn draw(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) {
     status_line(app, screen, scene_rows + 1);
     match app.mode {
         Mode::Help => help_panel(screen),
-        Mode::Keys => keys_panel(app, screen),
+        Mode::Settings => settings_panel(app, screen),
         Mode::Journal => journal_panel(app, screen),
         Mode::Watching | Mode::Talking => {}
     }
@@ -325,7 +326,16 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
     let mut right = vec![
         (" jev ".to_owned(), DIM),
         status_mark(&app.mind.one),
-        ("  claude ".to_owned(), DIM),
+        (
+            format!(
+                "  {} ",
+                app.config
+                    .claude_model
+                    .strip_prefix("claude-")
+                    .unwrap_or(&app.config.claude_model)
+            ),
+            DIM,
+        ),
         status_mark(&app.mind.two),
     ];
     if app.paused {
@@ -439,9 +449,10 @@ fn help_panel(screen: &mut Canvas) {
         "A ghost lives in this glass box. Jev (System One) makes its quick",
         "choices, and Claude (System Two) gives it thoughts and words.",
         "Without keys it lives on instinct. Press k to add keys.",
+        "Models, effort, and caching change in the same place, at once.",
         "",
         "t, Enter   talk to it          click ghost   poke it",
-        "k          API keys            click ball    flick it",
+        "k          keys and models     click ball    flick it",
         "j          journal             click room    drop a light mote",
         "arrows     turn the view       drag          turn the view",
         "+ -        zoom                wheel         zoom",
@@ -462,31 +473,24 @@ fn help_panel(screen: &mut Canvas) {
     panel(screen, "Help", &lines);
 }
 
-fn keys_panel(app: &App, screen: &mut Canvas) {
+fn settings_panel(app: &App, screen: &mut Canvas) {
+    let settings = &app.settings;
     let saved_in = app
         .config_path()
         .map_or("nowhere (this run only)".to_owned(), |path| {
             path.display().to_string()
         });
-    let current = |from_environment: bool, saved: &Option<String>, variable: &str| match saved {
-        _ if from_environment => format!("set by {variable}"),
-        Some(key) => mask(key),
-        None => "none".to_owned(),
+    let current = |variable: &str, saved: &Option<String>| {
+        if std::env::var(variable).is_ok_and(|key| !key.trim().is_empty()) {
+            format!("set by {variable}")
+        } else {
+            saved.as_deref().map_or("none".to_owned(), mask)
+        }
     };
-    let claude_now = current(
-        std::env::var("ANTHROPIC_API_KEY").is_ok_and(|key| !key.is_empty()),
-        &app.config.anthropic_api_key,
-        "ANTHROPIC_API_KEY",
-    );
-    let jev_now = current(
-        std::env::var("TYPESAFE_API_KEY").is_ok_and(|key| !key.is_empty()),
-        &app.config.typesafe_api_key,
-        "TYPESAFE_API_KEY",
-    );
-    let field = |index: usize| {
-        let text = app.keys[index].text();
-        let count = text.chars().count();
-        let shown: String = text
+    // Typed keys show only their last four characters.
+    let hidden = |line: &crate::app::Line| {
+        let count = line.text().chars().count();
+        line.text()
             .chars()
             .enumerate()
             .map(|(position, character)| {
@@ -496,28 +500,43 @@ fn keys_panel(app: &App, screen: &mut Canvas) {
                     character
                 }
             })
-            .collect();
-        let marker = if app.key_focus == index { "›" } else { " " };
-        (
-            format!("{marker} [{shown:<40}]"),
-            if app.key_focus == index { TITLE } else { TEXT },
-        )
+            .collect::<String>()
     };
-    let lines = vec![
+    let mut lines = vec![
         (format!("Saved to {saved_in}, readable only by you."), DIM),
         (String::new(), TEXT),
-        (format!("Claude (Anthropic API)   now: {claude_now}"), TEXT),
-        field(0),
-        (format!("Jev (TypeSafe API)       now: {jev_now}"), TEXT),
-        field(1),
-        (String::new(), TEXT),
-        (
-            "Enter saves · Tab switches · empty keeps a key · - removes it · Esc cancels"
-                .to_owned(),
-            DIM,
-        ),
     ];
-    panel(screen, "API keys", &lines);
+    for field in Field::ALL {
+        let value = match field {
+            Field::ClaudeKey => format!(
+                "[{:<34}]  now {}",
+                hidden(&settings.claude_key),
+                current("ANTHROPIC_API_KEY", &app.config.anthropic_api_key)
+            ),
+            Field::JevKey => format!(
+                "[{:<34}]  now {}",
+                hidden(&settings.jev_key),
+                current("TYPESAFE_API_KEY", &app.config.typesafe_api_key)
+            ),
+            Field::ClaudeModel => format!("‹ {} ›", settings.claude_model.text()),
+            Field::Effort => format!("‹ {} ›", effort_name(settings.effort)),
+            Field::Cache => format!("‹ {} ›", cache_name(settings.cache)),
+            Field::JevModel => format!("‹ {} ›", settings.jev_model.text()),
+        };
+        let focused = settings.focus == field;
+        let marker = if focused { "›" } else { " " };
+        lines.push((
+            format!("{marker} {:<13} {value}", field.label()),
+            if focused { TITLE } else { TEXT },
+        ));
+    }
+    lines.push((String::new(), TEXT));
+    lines.push((
+        "↑↓ choose · ←→ change · type or paste a key, - removes it · Enter saves · Esc cancels"
+            .to_owned(),
+        DIM,
+    ));
+    panel(screen, "Settings", &lines);
 }
 
 fn journal_panel(app: &App, screen: &mut Canvas) {

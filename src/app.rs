@@ -9,6 +9,7 @@ use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::render::ghost::{Aura, Pose};
 use crate::render::{self, Camera, GHOST_SCALE, Scene, View};
+use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
 use crate::terminal::{Input, Key, Mouse, MouseAction};
 use crate::ui;
@@ -40,8 +41,8 @@ pub enum Mode {
     Watching,
     /// Typing a message to the ghost.
     Talking,
-    /// Entering API keys.
-    Keys,
+    /// Changing the keys, models, effort, and caching.
+    Settings,
     Help,
     /// Reading what the ghost remembers and what was said.
     Journal,
@@ -122,6 +123,16 @@ impl Line {
     }
 }
 
+/// A line holding `text`, with the cursor at its end.
+impl From<&str> for Line {
+    fn from(text: &str) -> Self {
+        Self {
+            text: text.to_owned(),
+            cursor: text.chars().count(),
+        }
+    }
+}
+
 /// The app: the world and the ghost's mind, how the viewer looks at them,
 /// and what the keys and mouse are doing.
 pub struct App {
@@ -133,9 +144,8 @@ pub struct App {
     pub paused: bool,
     pub mode: Mode,
     pub talk: Line,
-    /// The key fields: Claude's, then Jev's.
-    pub keys: [Line; 2],
-    pub key_focus: usize,
+    /// The settings panel's rows while it is open.
+    pub settings: Settings,
     pub config: Config,
     paths: Option<Paths>,
     /// Unix seconds when the ghost first appeared.
@@ -170,8 +180,7 @@ impl App {
             paused: false,
             mode: Mode::Watching,
             talk: Line::default(),
-            keys: [Line::default(), Line::default()],
-            key_focus: 0,
+            settings: Settings::from(&config),
             config,
             paths: None,
             born: mind::now(),
@@ -245,7 +254,7 @@ impl App {
             Input::Paste(text) => {
                 match self.mode {
                     Mode::Talking => self.talk.insert(&text),
-                    Mode::Keys => self.keys[self.key_focus].insert(text.trim()),
+                    Mode::Settings => self.settings.paste(&text),
                     _ => {}
                 }
                 Response::Continue
@@ -280,18 +289,12 @@ impl App {
                 }
                 Response::Continue
             }
-            Mode::Keys => {
+            Mode::Settings => {
                 match key {
-                    Key::Enter => self.save_keys(),
-                    Key::Escape => {
-                        self.keys = [Line::default(), Line::default()];
-                        self.mode = Mode::Watching;
-                    }
-                    Key::Tab | Key::BackTab | Key::Up | Key::Down => {
-                        self.key_focus = 1 - self.key_focus
-                    }
+                    Key::Enter => self.save_settings(),
+                    Key::Escape => self.mode = Mode::Watching,
                     key => {
-                        self.keys[self.key_focus].edit(&key);
+                        self.settings.press(&key);
                     }
                 }
                 Response::Continue
@@ -312,9 +315,8 @@ impl App {
             Key::Character('q') | Key::Escape => return Response::Quit,
             Key::Enter | Key::Character('t') => self.mode = Mode::Talking,
             Key::Character('k') => {
-                self.keys = [Line::default(), Line::default()];
-                self.key_focus = 0;
-                self.mode = Mode::Keys;
+                self.settings = Settings::from(&self.config);
+                self.mode = Mode::Settings;
             }
             Key::Character('?' | 'h') => self.mode = Mode::Help,
             Key::Character('j') => self.mode = Mode::Journal,
@@ -341,37 +343,29 @@ impl App {
         Response::Continue
     }
 
-    // Saves the keys typed into the panel: a field left empty keeps its key,
-    // and a lone "-" removes it.
-    fn save_keys(&mut self) {
-        let [claude, jev] = &mut self.keys;
-        for (field, key) in [
-            (claude, &mut self.config.anthropic_api_key),
-            (jev, &mut self.config.typesafe_api_key),
-        ] {
-            match field.take().as_str() {
-                "" => {}
-                "-" => *key = None,
-                text => *key = Some(text.to_owned()),
-            }
-        }
+    // Saves the settings panel and starts using it at once: the next
+    // requests go out with the new keys, models, effort, and caching.
+    fn save_settings(&mut self) {
+        let settings = std::mem::replace(&mut self.settings, Settings::from(&self.config));
+        settings.apply(&mut self.config);
         self.mode = Mode::Watching;
         self.mind.reconfigure(&self.config);
         let saved = match &self.paths {
             Some(paths) => self.config.save(&paths.config),
             None => Ok(()),
         };
+        let on = |on: bool| if on { "on" } else { "off" };
         let message = match saved {
             Ok(()) => format!(
-                "Keys saved. Claude: {}. Jev: {}.",
-                if self.mind.can_talk() { "on" } else { "off" },
-                if self.config.typesafe_key().is_some() {
-                    "on"
-                } else {
-                    "off"
-                },
+                "Saved. Claude {} ({}), effort {}, cache {}. Jev {} ({}).",
+                self.config.claude_model,
+                on(self.mind.can_talk()),
+                effort_name(self.config.claude_effort),
+                cache_name(self.config.cache),
+                self.config.jev_model,
+                on(self.mind.one != crate::mind::Status::Off),
             ),
-            Err(error) => format!("Couldn't save the keys: {error}"),
+            Err(error) => format!("Couldn't save the settings: {error}"),
         };
         self.post(message);
     }
@@ -726,6 +720,50 @@ mod tests {
         app.input(Input::Key(Key::Enter));
         assert_eq!(app.config.anthropic_api_key, None);
         assert!(app.config.typesafe_api_key.is_some());
+        // Started offline, the ghost stays offline whatever keys it gets.
+        assert_eq!(app.mind.one, crate::mind::Status::Off);
+    }
+
+    #[test]
+    fn the_model_effort_and_cache_change_while_the_app_runs() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('k')));
+        for key in [
+            Key::Down,
+            Key::Down,
+            Key::Left,
+            Key::Left,
+            Key::Down,
+            Key::Right,
+            Key::Down,
+            Key::Left,
+        ] {
+            app.input(Input::Key(key));
+        }
+        app.input(Input::Key(Key::Enter));
+        assert_eq!(app.mode, Mode::Watching);
+        assert_eq!(app.config.claude_model, "claude-haiku-5-5");
+        assert_eq!(
+            app.config.claude_effort,
+            Some(crate::mind::claude::Effort::Medium)
+        );
+        assert_eq!(
+            app.config.cache,
+            Some(crate::mind::claude::Cache::FiveMinutes)
+        );
+        let notice = app.notice().unwrap();
+        assert!(
+            notice.contains("claude-haiku-5-5") && notice.contains("effort medium"),
+            "{notice}"
+        );
+
+        // Escape leaves the settings as they were.
+        app.input(Input::Key(Key::Character('k')));
+        app.input(Input::Key(Key::Down));
+        app.input(Input::Key(Key::Down));
+        app.input(Input::Key(Key::Right));
+        app.input(Input::Key(Key::Escape));
+        assert_eq!(app.config.claude_model, "claude-haiku-5-5");
     }
 
     #[test]

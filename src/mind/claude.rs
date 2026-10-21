@@ -25,6 +25,8 @@ pub struct Claude {
     base_url: String,
     timeout: Duration,
     backoff_base: Duration,
+    /// Whether requests ask for server-side fallbacks on a refusal.
+    fallbacks: bool,
 }
 
 impl Claude {
@@ -39,14 +41,23 @@ impl Claude {
             .map_err(|error| ClaudeError::Network {
                 message: redact(&error.to_string(), &key),
             })?;
+        let model = model.into();
         Ok(Self {
             client,
             key,
-            model: model.into(),
+            fallbacks: offers_fallbacks(&model),
+            model,
             base_url: "https://api.anthropic.com".into(),
             timeout: Duration::from_secs(120),
             backoff_base: Duration::from_secs(1),
         })
+    }
+
+    /// Turns server-side fallbacks on or off, overriding the guess from the
+    /// model's name.
+    pub fn with_fallbacks(mut self, fallbacks: bool) -> Self {
+        self.fallbacks = fallbacks;
+        self
     }
 
     /// Overrides the API origin, primarily for local HTTP tests.
@@ -72,25 +83,59 @@ impl Claude {
     /// Requests JSON, preserving refusals and truncated replies as distinct outcomes.
     ///
     /// Retries transient HTTP statuses, timeouts, and connection failures twice.
+    /// When the API rejects the request outright (HTTP 400) and it carried
+    /// optional settings, effort, fallbacks, or cache markers, which not every
+    /// model takes, it is sent once more without them.
     pub async fn structured(&self, request: &Request) -> Result<Reply, ClaudeError> {
         if request.messages.last().map(|message| message.role) != Some(Role::User) {
             return Err(ClaudeError::InvalidRequest {
                 message: "the conversation must end with a user message".into(),
             });
         }
-        let body = self.request_body(request);
+        let full = self
+            .exchange(&self.request_body(request, false), self.fallbacks)
+            .await;
+        match full {
+            Err((_, Some(StatusCode::BAD_REQUEST))) if self.has_options(request) => self
+                .exchange(&self.request_body(request, true), false)
+                .await
+                .map_err(|(error, _)| error),
+            result => result.map_err(|(error, _)| error),
+        }
+    }
+
+    fn has_options(&self, request: &Request) -> bool {
+        let cached = |blocks: &[Block]| blocks.iter().any(|block| block.cache.is_some());
+        request.effort.is_some()
+            || self.fallbacks
+            || cached(&request.system)
+            || request
+                .messages
+                .iter()
+                .any(|message| cached(&message.content))
+    }
+
+    // Sends one body with retries, returning the error with the HTTP status
+    // that caused it, if there was one.
+    async fn exchange(
+        &self,
+        body: &Value,
+        fallbacks: bool,
+    ) -> Result<Reply, (ClaudeError, Option<StatusCode>)> {
         let mut attempt = 0;
         loop {
-            match self.send(&body).await {
+            match self.send(body, fallbacks).await {
                 Ok(response) => {
                     if response.status == StatusCode::OK {
-                        return self.parse_reply(&response.body);
+                        return self
+                            .parse_reply(&response.body)
+                            .map_err(|error| (error, None));
                     }
                     let error = self.http_error(response.status, &response.body);
                     let retryable = response.status == StatusCode::TOO_MANY_REQUESTS
                         || response.status.is_server_error();
                     if !retryable || attempt == MAXIMUM_RETRIES {
-                        return Err(error);
+                        return Err((error, Some(response.status)));
                     }
                     tokio::time::sleep(self.retry_delay(attempt, response.retry_after)).await;
                 }
@@ -108,7 +153,7 @@ impl Claude {
                         ClaudeError::Network { message }
                     };
                     if !retryable || attempt == MAXIMUM_RETRIES {
-                        return Err(failure);
+                        return Err((failure, None));
                     }
                     tokio::time::sleep(self.retry_delay(attempt, None)).await;
                 }
@@ -117,31 +162,57 @@ impl Claude {
         }
     }
 
-    fn request_body(&self, request: &Request) -> Value {
-        json!({
+    // The request as the API reads it. A `plain` body leaves out the
+    // optional settings.
+    fn request_body(&self, request: &Request, plain: bool) -> Value {
+        let blocks = |blocks: &[Block]| -> Vec<Value> {
+            blocks
+                .iter()
+                .map(|block| {
+                    let mut value = json!({"type": "text", "text": block.text});
+                    if let Some(cache) = block.cache.filter(|_| !plain) {
+                        value["cache_control"] = json!({"type": "ephemeral", "ttl": cache});
+                    }
+                    value
+                })
+                .collect()
+        };
+        let messages: Vec<Value> = request
+            .messages
+            .iter()
+            .map(|message| json!({"role": message.role, "content": blocks(&message.content)}))
+            .collect();
+        let mut body = json!({
             "model": self.model,
             "max_tokens": request.max_tokens,
-            "system": request.system,
-            "messages": request.messages,
+            "system": blocks(&request.system),
+            "messages": messages,
             "output_config": {
-                "effort": request.effort,
                 "format": { "type": "json_schema", "schema": request.schema },
             },
-            "fallbacks": "default",
-        })
+        });
+        if !plain {
+            if let Some(effort) = request.effort {
+                body["output_config"]["effort"] = json!(effort);
+            }
+            if self.fallbacks {
+                body["fallbacks"] = json!("default");
+            }
+        }
+        body
     }
 
-    async fn send(&self, body: &Value) -> Result<HttpReply, reqwest::Error> {
+    async fn send(&self, body: &Value, fallbacks: bool) -> Result<HttpReply, reqwest::Error> {
         let mut request = self
             .client
             .post(format!("{}/v1/messages", self.base_url))
             .header("content-type", "application/json")
             .header("x-api-key", &self.key)
-            .header("anthropic-version", "2023-06-01")
-            .header("anthropic-beta", "server-side-fallback-2026-07-01")
-            .timeout(self.timeout)
-            .json(body)
-            .build()?;
+            .header("anthropic-version", "2023-06-01");
+        if fallbacks {
+            request = request.header("anthropic-beta", "server-side-fallback-2026-07-01");
+        }
+        let mut request = request.timeout(self.timeout).json(body).build()?;
         if let Some(key) = request.headers_mut().get_mut("x-api-key") {
             key.set_sensitive(true);
         }
@@ -269,7 +340,7 @@ impl fmt::Debug for Claude {
 #[derive(Clone, Debug)]
 pub struct Request {
     /// Instructions that apply to the whole conversation.
-    pub system: String,
+    pub system: Vec<Block>,
     /// Conversation history ending with a user message; assistant prefill is forbidden.
     pub messages: Vec<Message>,
     /// JSON Schema with `additionalProperties: false` and `required` on every object.
@@ -277,17 +348,62 @@ pub struct Request {
     pub schema: Value,
     /// Maximum number of generated tokens, including adaptive thinking.
     pub max_tokens: u32,
-    /// Amount of reasoning effort requested from the model.
-    pub effort: Effort,
+    /// Amount of reasoning effort requested from the model, or `None` for
+    /// the model's default.
+    pub effort: Option<Effort>,
 }
 
 /// A text turn in the conversation sent to Claude.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Message {
     /// Participant who supplied this turn.
     pub role: Role,
-    /// Plain text content of the turn.
-    pub content: String,
+    pub content: Vec<Block>,
+}
+
+impl Message {
+    /// A turn of plain text, not cached.
+    pub fn text(role: Role, text: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: vec![Block::new(text)],
+        }
+    }
+}
+
+/// A run of prompt text. A block with `cache` set ends a prefix the API
+/// keeps, so later requests that begin the same way read it at a tenth of
+/// the input price.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Block {
+    pub text: String,
+    pub cache: Option<Cache>,
+}
+
+impl Block {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            cache: None,
+        }
+    }
+
+    pub fn cached(text: impl Into<String>, cache: Cache) -> Self {
+        Self {
+            text: text.into(),
+            cache: Some(cache),
+        }
+    }
+}
+
+/// How long a cached prompt prefix lives after it is last used. Writing an
+/// hour-long entry costs twice the input price, a five-minute one 1.25 times.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Cache {
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "1h")]
+    OneHour,
 }
 
 /// Identifies the participant for a conversation turn.
@@ -301,7 +417,7 @@ pub enum Role {
 }
 
 /// Controls the model's adaptive reasoning effort.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Effort {
     /// Requests low reasoning effort.
@@ -314,6 +430,26 @@ pub enum Effort {
     XHigh,
     /// Requests maximum reasoning effort.
     Max,
+}
+
+impl Effort {
+    pub const ALL: [Self; 5] = [Self::Low, Self::Medium, Self::High, Self::XHigh, Self::Max];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+}
+
+/// Whether a model takes server-side fallbacks, by its name: the Haiku
+/// models don't.
+fn offers_fallbacks(model: &str) -> bool {
+    !model.contains("haiku")
 }
 
 /// Token accounting reported by the serving model.
@@ -635,20 +771,11 @@ mod tests {
 
     fn request() -> Request {
         Request {
-            system: "Reply with a thought.".into(),
+            system: vec![Block::new("Reply with a thought.")],
             messages: vec![
-                Message {
-                    role: Role::User,
-                    content: "Hello".into(),
-                },
-                Message {
-                    role: Role::Assistant,
-                    content: "Hello again".into(),
-                },
-                Message {
-                    role: Role::User,
-                    content: "What are you thinking?".into(),
-                },
+                Message::text(Role::User, "Hello"),
+                Message::text(Role::Assistant, "Hello again"),
+                Message::text(Role::User, "What are you thinking?"),
             ],
             schema: json!({
                 "type": "object",
@@ -657,7 +784,7 @@ mod tests {
                 "additionalProperties": false,
             }),
             max_tokens: 4000,
-            effort: Effort::Low,
+            effort: Some(Effort::Low),
         }
     }
 
@@ -691,16 +818,17 @@ mod tests {
     #[test]
     fn the_request_body_matches_the_messages_api_contract_exactly() {
         let client = Claude::new(KEY, "claude-opus-5-5").unwrap();
+        let text = |text: &str| json!([{"type": "text", "text": text}]);
         assert_eq!(
-            client.request_body(&request()),
+            client.request_body(&request(), false),
             json!({
                 "model": "claude-opus-5-5",
                 "max_tokens": 4000,
-                "system": "Reply with a thought.",
+                "system": text("Reply with a thought."),
                 "messages": [
-                    {"role": "user", "content": "Hello"},
-                    {"role": "assistant", "content": "Hello again"},
-                    {"role": "user", "content": "What are you thinking?"},
+                    {"role": "user", "content": text("Hello")},
+                    {"role": "assistant", "content": text("Hello again")},
+                    {"role": "user", "content": text("What are you thinking?")},
                 ],
                 "output_config": {
                     "effort": "low",
@@ -750,7 +878,75 @@ mod tests {
             captured.headers["anthropic-beta"],
             "server-side-fallback-2026-07-01"
         );
-        assert_eq!(captured.body, client.request_body(&request()));
+        assert_eq!(captured.body, client.request_body(&request(), false));
+    }
+
+    #[test]
+    fn cached_blocks_mark_the_end_of_a_prefix_with_their_lifetime() {
+        let client = Claude::new(KEY, "claude-opus-5-5").unwrap();
+        let mut cached = request();
+        cached.system = vec![
+            Block::new("Persona."),
+            Block::cached("Memories.", Cache::OneHour),
+        ];
+        cached.messages[2]
+            .content
+            .insert(0, Block::cached("History.", Cache::FiveMinutes));
+        let body = client.request_body(&cached, false);
+        assert_eq!(
+            body["system"],
+            json!([
+                {"type": "text", "text": "Persona."},
+                {"type": "text", "text": "Memories.",
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+            ])
+        );
+        assert_eq!(
+            body["messages"][2]["content"][0]["cache_control"],
+            json!({"type": "ephemeral", "ttl": "5m"})
+        );
+        let plain = client.request_body(&cached, true);
+        assert!(!plain.to_string().contains("cache_control"));
+    }
+
+    #[tokio::test]
+    async fn haiku_models_ask_for_no_fallbacks() {
+        let server = Server::start(vec![successful_response()]).await;
+        let client = server.client();
+        let client = Claude {
+            model: "claude-haiku-5-5".into(),
+            fallbacks: offers_fallbacks("claude-haiku-5-5"),
+            ..client
+        };
+        client.structured(&request()).await.unwrap();
+        let requests = server.requests.lock().unwrap();
+        assert!(!requests[0].headers.contains_key("anthropic-beta"));
+        assert!(requests[0].body.get("fallbacks").is_none());
+        assert_eq!(requests[0].body["output_config"]["effort"], "low");
+    }
+
+    #[tokio::test]
+    async fn a_rejected_request_is_tried_once_more_without_optional_settings() {
+        let server = Server::start(vec![
+            CannedResponse::error(400, "effort is not supported"),
+            successful_response(),
+        ])
+        .await;
+        let client = server.client();
+        let mut cached = request();
+        cached.system[0].cache = Some(Cache::OneHour);
+        client.structured(&cached).await.unwrap();
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        let retried = &requests[1];
+        assert!(retried.body["output_config"].get("effort").is_none());
+        assert!(retried.body.get("fallbacks").is_none());
+        assert!(!retried.body.to_string().contains("cache_control"));
+        assert!(!retried.headers.contains_key("anthropic-beta"));
+        assert_eq!(
+            retried.body["output_config"]["format"]["type"],
+            "json_schema"
+        );
     }
 
     #[tokio::test]
@@ -911,15 +1107,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_requests_surface_the_api_error_message_without_retrying() {
-        let server = Server::start(vec![CannedResponse::error(
-            400,
-            "Unsupported schema keyword",
-        )])
+    async fn invalid_requests_surface_the_api_error_message_after_the_plain_attempt() {
+        let server = Server::start(vec![
+            CannedResponse::error(400, "Unsupported schema keyword"),
+            CannedResponse::error(400, "Unsupported schema keyword"),
+        ])
         .await;
         let error = server.client().structured(&request()).await.unwrap_err();
         assert!(matches!(error, ClaudeError::InvalidRequest { .. }));
         assert!(error.to_string().contains("Unsupported schema keyword"));
+        assert_eq!(server.request_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_plain_request_that_is_rejected_is_not_sent_again() {
+        let server = Server::start(vec![CannedResponse::error(400, "bad schema")]).await;
+        let client = server.client().with_fallbacks(false);
+        let mut plain = request();
+        plain.effort = None;
+        assert!(client.structured(&plain).await.is_err());
         assert_eq!(server.request_count(), 1);
     }
 
@@ -983,10 +1189,7 @@ mod tests {
     async fn an_empty_conversation_or_assistant_prefill_is_rejected_before_sending() {
         let server = Server::start(Vec::new()).await;
         let mut invalid = request();
-        invalid.messages.push(Message {
-            role: Role::Assistant,
-            content: "{".into(),
-        });
+        invalid.messages.push(Message::text(Role::Assistant, "{"));
         assert!(matches!(
             server.client().structured(&invalid).await.unwrap_err(),
             ClaudeError::InvalidRequest { .. }

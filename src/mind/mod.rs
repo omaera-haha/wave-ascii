@@ -15,7 +15,7 @@ use tokio::runtime::Runtime;
 
 use crate::store::{Config, Memory, Remark, Speaker};
 use crate::world::{Activity, World};
-use claude::{Claude, Reply};
+use claude::{Cache, Claude, Effort, Reply};
 use decision::Decision;
 use jev::Jev;
 use reflection::Reflection;
@@ -76,6 +76,10 @@ pub struct Mind {
     pub two: Status,
     pub journal: Journal,
     reflect_every: f64,
+    effort: Option<Effort>,
+    cache: Option<Cache>,
+    /// Never call a model, whatever the keys.
+    offline: bool,
     /// The decision being waited on: its id and when it was asked for.
     deciding: Option<(u64, f64)>,
     next_id: u64,
@@ -99,21 +103,29 @@ impl Mind {
             two: Status::Off,
             journal,
             reflect_every: f64::from(config.reflect_every.max(30.0)),
+            effort: config.claude_effort,
+            cache: config.cache,
+            offline,
             deciding: None,
             next_id: 0,
             reflecting: false,
             last_reflection: None,
             heard: VecDeque::new(),
         };
-        if !offline {
-            mind.reconfigure(config);
-        }
+        mind.reconfigure(config);
         mind
     }
 
-    /// Starts using the keys and models in `config`, for example after the
-    /// viewer enters new keys.
+    /// Starts using the keys, models, and settings in `config`, for example
+    /// after the viewer changes them. Requests already out finish as they
+    /// were sent.
     pub fn reconfigure(&mut self, config: &Config) {
+        self.effort = config.claude_effort;
+        self.cache = config.cache;
+        self.reflect_every = f64::from(config.reflect_every.max(30.0));
+        if self.offline {
+            return;
+        }
         self.jev = config
             .typesafe_key()
             .and_then(|key| Jev::new(key, config.jev_model.clone()).ok())
@@ -216,6 +228,8 @@ impl Mind {
                     &self.journal.memories,
                     &self.journal.conversation,
                     heard.as_deref(),
+                    self.effort,
+                    self.cache,
                 );
                 self.reflecting = true;
                 self.last_reflection = Some(world.time);
@@ -513,6 +527,8 @@ mod tests {
             .unwrap();
         assert!(reflection.contains("please play with the ball"));
         assert!(reflection.contains("\"fallbacks\":\"default\""));
+        assert!(reflection.contains("\"ttl\":\"1h\""));
+        assert!(reflection.contains("\"effort\":\"low\""));
         let decisions = requests
             .iter()
             .filter(|(path, _)| path == "/v1/systemone")

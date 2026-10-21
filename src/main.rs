@@ -6,6 +6,7 @@ mod frame;
 mod mind;
 mod render;
 mod sdf;
+mod settings;
 mod store;
 mod terminal;
 mod ui;

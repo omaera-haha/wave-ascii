@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::mind::claude::{Cache, Effort};
 use crate::world::{Needs, Plant};
 
 const APP: &str = "wave-ascii";
@@ -58,6 +59,11 @@ pub struct Config {
     pub anthropic_api_key: Option<String>,
     pub typesafe_api_key: Option<String>,
     pub claude_model: String,
+    /// How hard Claude thinks; `null` leaves it to the model.
+    pub claude_effort: Option<Effort>,
+    /// How long Claude keeps the unchanging start of each request cached;
+    /// `null` turns caching off.
+    pub cache: Option<Cache>,
     pub jev_model: String,
     /// Seconds between the ghost's reflections while the viewer is around.
     pub reflect_every: f32,
@@ -72,6 +78,8 @@ impl Default for Config {
             anthropic_api_key: None,
             typesafe_api_key: None,
             claude_model: "claude-opus-5-5".to_owned(),
+            claude_effort: Some(Effort::Low),
+            cache: Some(Cache::OneHour),
             jev_model: "jev-latest".to_owned(),
             reflect_every: 180.0,
             claude_base_url: None,
@@ -94,6 +102,8 @@ impl fmt::Debug for Config {
                 &self.typesafe_api_key.as_deref().map(mask),
             )
             .field("claude_model", &self.claude_model)
+            .field("claude_effort", &self.claude_effort)
+            .field("cache", &self.cache)
             .field("jev_model", &self.jev_model)
             .field("reflect_every", &self.reflect_every)
             .field("claude_base_url", &self.claude_base_url)
@@ -265,6 +275,11 @@ mod tests {
         let config = Config::load(&path).unwrap();
         assert_eq!(config.typesafe_api_key.as_deref(), Some("ts-key"));
         assert_eq!(config.claude_model, "claude-opus-5-5");
+        assert_eq!(config.cache, Some(Cache::OneHour));
+        fs::write(&path, r#"{"claude_effort": "high", "cache": null}"#).unwrap();
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.claude_effort, Some(Effort::High));
+        assert_eq!(config.cache, None);
         fs::remove_dir_all(directory).unwrap();
     }
 
