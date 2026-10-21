@@ -30,6 +30,10 @@ pub enum Material {
     AutumnLeaf,
     Berry,
     Pebble,
+    Porcelain,
+    RiceCake(u8),
+    Silk,
+    Steam,
 }
 
 impl Material {
@@ -68,6 +72,14 @@ impl Material {
             Self::AutumnLeaf => Vec3::new(1.0, 0.42, 0.2),
             Self::Berry => Vec3::new(1.0, 0.3, 0.38),
             Self::Pebble => Vec3::new(0.7, 0.76, 0.84),
+            Self::Porcelain => Vec3::new(0.95, 0.95, 0.9),
+            Self::RiceCake(index) => match index % 3 {
+                0 => Vec3::new(1.0, 0.7, 0.8),
+                1 => Vec3::new(0.65, 0.88, 0.6),
+                _ => Vec3::new(1.0, 0.96, 0.87),
+            },
+            Self::Silk => Vec3::new(0.95, 0.3, 0.38),
+            Self::Steam => Vec3::new(0.68, 0.75, 0.8),
             Self::TreeLight(index) => match index % 4 {
                 0 => Vec3::new(1.0, 0.4, 0.44),
                 1 => Vec3::new(0.45, 0.72, 1.0),
@@ -468,12 +480,122 @@ fn cake_distance(point: Vec3, candles: u16, time: f64) -> (f32, Material) {
     nearest
 }
 
+fn holiday_table_distance(point: Vec3, occasion: Occasion, time: f64) -> (f32, Material) {
+    let mut nearest = (
+        rounded_cylinder(point - Vec3::Y * 0.1, 0.23, 0.04, 0.012),
+        Material::Wood,
+    );
+    let mut include = |distance, material| {
+        if distance < nearest.0 {
+            nearest = (distance, material);
+        }
+    };
+    for horizontal in [-0.13, 0.13] {
+        for depth in [-0.13, 0.13] {
+            include(
+                rounded_cylinder(
+                    point - Vec3::new(horizontal, 0.0, depth),
+                    0.018,
+                    0.11,
+                    0.004,
+                ),
+                Material::Wood,
+            );
+        }
+    }
+    if point.y < 0.1 {
+        return nearest;
+    }
+    if occasion == Occasion::Seollal {
+        let bowl = point - Vec3::new(-0.09, 0.2, 0.0);
+        let outside = ellipsoid(bowl, Vec3::new(0.085, 0.06, 0.085));
+        let inside = ellipsoid(bowl, Vec3::new(0.077, 0.052, 0.077));
+        include(outside.max(-inside).max(bowl.y), Material::Porcelain);
+        include(
+            rounded_cylinder(point - Vec3::new(-0.09, 0.182, 0.0), 0.069, 0.005, 0.002),
+            Material::Lampshade,
+        );
+        for (horizontal, depth) in [(-0.11, 0.025), (-0.07, 0.02), (-0.09, -0.025)] {
+            include(
+                ellipsoid(
+                    point - Vec3::new(horizontal, 0.189, depth),
+                    Vec3::new(0.018, 0.003, 0.011),
+                ),
+                Material::RiceCake(2),
+            );
+        }
+        let pouch = point - Vec3::new(0.12, 0.205, 0.0);
+        include(
+            ellipsoid(pouch, Vec3::new(0.065, 0.066, 0.06)),
+            Material::Silk,
+        );
+        let neck = point - Vec3::new(0.12, 0.25, 0.0);
+        include(
+            Vec2::new(Vec2::new(neck.x, neck.z).length() - 0.038, neck.y).length() - 0.004,
+            Material::Brass,
+        );
+        include(
+            capsule(
+                point,
+                Vec3::new(0.14, 0.25, 0.038),
+                Vec3::new(0.15, 0.18, 0.048),
+                0.003,
+            ),
+            Material::Brass,
+        );
+        if point.x < 0.0 && point.y > 0.2 {
+            let sway = (time.rem_euclid(3600.0) as f32 * 1.3).sin() * 0.008;
+            for horizontal in [-0.11, -0.07] {
+                include(
+                    capsule(
+                        point,
+                        Vec3::new(horizontal, 0.21, 0.0),
+                        Vec3::new(horizontal + sway, 0.3, 0.008),
+                        0.0015,
+                    ),
+                    Material::Steam,
+                );
+            }
+        }
+    } else {
+        include(
+            rounded_cylinder(point - Vec3::new(-0.06, 0.14, 0.0), 0.125, 0.012, 0.005),
+            Material::Porcelain,
+        );
+        for (index, (horizontal, depth)) in [(-0.12, -0.025), (-0.04, -0.04), (-0.075, 0.045)]
+            .into_iter()
+            .enumerate()
+        {
+            let cake = point - Vec3::new(horizontal, 0.17, depth);
+            include(
+                ellipsoid(cake, Vec3::new(0.045, 0.022, 0.04)).max(-cake.z - 0.006),
+                Material::RiceCake(index as u8),
+            );
+        }
+        for depth in [-0.075, 0.075] {
+            let fruit = point - Vec3::new(0.13, 0.185, depth);
+            include(
+                ellipsoid(fruit, Vec3::new(0.055, 0.045, 0.05)),
+                Material::Pumpkin,
+            );
+            include(
+                ellipsoid(fruit - Vec3::Y * 0.043, Vec3::new(0.025, 0.006, 0.02)),
+                Material::Leaf,
+            );
+        }
+    }
+    nearest
+}
+
 fn decoration_distance(point: Vec3, decoration: Decoration, time: f64) -> (f32, Material) {
     match decoration.occasion {
         Occasion::Halloween => pumpkin_distance(point),
         Occasion::WinterHolidays | Occasion::NewYear => tree_distance(point),
         Occasion::Birthday => cake_distance(point, decoration.candles, time),
-        Occasion::Valentine => (f32::INFINITY, Material::Frosting),
+        Occasion::Valentine | Occasion::HangulDay => (f32::INFINITY, Material::Frosting),
+        Occasion::Seollal | Occasion::Chuseok => {
+            holiday_table_distance(point, decoration.occasion, time)
+        }
     }
 }
 
@@ -492,7 +614,9 @@ pub fn decoration_light(decoration: Decoration, time: f64) -> Vec3 {
             Vec3::new(0.8, 0.55, 0.65).lerp(Vec3::new(0.45, 0.8, 1.0), 0.5 + 0.5 * phase.sin())
                 * 0.4
         }
-        Occasion::Valentine => Vec3::ZERO,
+        Occasion::Valentine | Occasion::HangulDay | Occasion::Seollal | Occasion::Chuseok => {
+            Vec3::ZERO
+        }
     }
 }
 

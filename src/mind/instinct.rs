@@ -104,7 +104,8 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     } else {
                         0.0
                     }
-                    + if world.fireworks() { 1.5 } else { 0.0 };
+                    + if world.fireworks() { 1.5 } else { 0.0 }
+                    + if world.chuseok_night() { 2.0 } else { 0.0 };
                 weight * if shelter { 0.2 } else { 1.0 }
                     + if world.life.sill.is_some()
                         && !world
@@ -270,6 +271,23 @@ pub fn blend(model: &[(Activity, f32)], own: &[(Activity, f32)]) -> Vec<(Activit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clear_chuseok_evenings_pull_the_ghost_toward_the_window() {
+        let mut world = World::new(3, 21.0);
+        world.date = jiff::civil::Date::constant(2026, 9, 25);
+        let options = [Activity::Float, Activity::Window];
+        let clear = weigh(&world, &options)[1].1;
+        world.weather.sky = crate::world::Sky::Rain;
+        let rain = weigh(&world, &options)[1].1;
+        world.weather.sky = crate::world::Sky::Clear;
+        world.hour = 12.0;
+        let daytime = weigh(&world, &options)[1].1;
+        world.hour = 21.0;
+        world.date = jiff::civil::Date::constant(2026, 9, 28);
+        let ordinary = weigh(&world, &options)[1].1;
+        assert!(clear > rain && clear > daytime && clear > ordinary);
+    }
     use crate::world::{Event, Sky};
     use glam::Vec3;
 

@@ -180,6 +180,7 @@ pub enum EventKind {
     MothLeft,
     GiftLeft(Keepsake),
     Kept(Keepsake),
+    MoonWish,
 }
 
 impl EventKind {
@@ -202,6 +203,7 @@ impl EventKind {
                 "knocked your tower down with a whoosh".to_owned()
             }
             Self::Pounced => "pounced on the viewer's finger on the glass".to_owned(),
+            Self::MoonWish => "made a wish on the Chuseok moon".to_owned(),
             Self::Danced => "danced a little twirl".to_owned(),
             Self::Tended => "watered the plant".to_owned(),
             Self::Bloomed => "the plant came into flower".to_owned(),
@@ -444,6 +446,10 @@ pub struct World {
     /// Whether this spell of petting has been counted.
     petted: bool,
     routine: routine::Routine,
+    last_holiday_greeting: Option<(jiff::civil::Date, Occasion)>,
+    sebae: Option<occasion::Bow>,
+    sebae_gift_until: f64,
+    wished_night: Option<jiff::civil::Date>,
 }
 
 impl World {
@@ -522,6 +528,10 @@ impl World {
             petting: 0.0,
             petted: false,
             routine: routine::Routine::default(),
+            last_holiday_greeting: None,
+            sebae: None,
+            sebae_gift_until: 0.0,
+            wished_night: None,
         };
         world.scatter_blocks();
         world
@@ -622,6 +632,7 @@ impl World {
             self.record(EventKind::Milestone(milestone));
         }
 
+        self.holiday_greeting();
         self.carry_out(seconds);
         let hiding = !self.ghost.plan.done
             && self.ghost.plan.activity == Activity::Hide
@@ -825,6 +836,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity != Activity::Visit {
+            self.sebae = None;
+        }
         self.abandon_game();
         self.put_keepsake_away();
         self.drop_ball();
@@ -913,6 +927,12 @@ impl World {
                 Some((i32::from(self.date.year()) + i32::from(self.date.month() == 12)).to_string())
             }
             Some(Occasion::Birthday) if self.random.unit() < 0.3 => Some("YAY".to_owned()),
+            Some(Occasion::Seollal) if self.random.unit() < 0.4 => Some("복".to_owned()),
+            Some(Occasion::Chuseok) if self.random.unit() < 0.35 => Some("달".to_owned()),
+            Some(Occasion::HangulDay) if self.random.unit() < 0.6 => {
+                let words = ["한글", "가나다", "안녕"];
+                Some(words[self.random.range(0.0, words.len() as f32) as usize].to_owned())
+            }
             _ => None,
         };
         if let Some(text) = special {
@@ -920,14 +940,15 @@ impl World {
         }
         if self.life.bond >= 0.55 && self.life.viewer_name.is_some() && self.random.unit() < 0.3 {
             let name = self.life.viewer_name.as_deref().unwrap();
-            if name
+            let latin = name
                 .chars()
-                .all(|character| character.is_ascii_alphabetic())
-            {
+                .all(|character| character.is_ascii_alphabetic());
+            let hangul = name
+                .chars()
+                .all(|character| letters::decompose(character).is_some());
+            if latin || hangul {
                 let mut text = name.to_ascii_uppercase();
-                if occasion == Some(Occasion::Valentine)
-                    || ((text.len() + 1) as f32 * 0.8 - 0.2) * 0.2 <= 1.6
-                {
+                if doodle::writing_width(&format!("{text}♥")) * 0.2 <= 1.6 {
                     text.push('♥');
                 }
                 return self.writing(text);
@@ -990,6 +1011,11 @@ impl World {
         self.ghost.known.push(id);
         self.ghost.attention = Some((Thing::Mote(id), self.time + 2.0));
         self.record(EventKind::DroppedMote);
+        if self.sebae_gift_until > self.time && self.ghost.asleep < 0.3 {
+            self.sebae_gift_until = 0.0;
+            self.suggest_mood(Mood::Excited, 6.0);
+            self.say(self.spoken("A New Year's gift!", "세뱃돈이다!"));
+        }
         self.shown(Activity::Chase);
     }
 
@@ -1060,6 +1086,17 @@ impl World {
     /// it was doing, and whether the viewer sounds pleased with what it did
     /// about their last words, teach it what words mean.
     pub fn hear(&mut self, text: &str) -> Heard {
+        let korean = text.chars().any(|character| {
+            matches!(
+                character,
+                '\u{1100}'..='\u{11ff}' | '\u{3130}'..='\u{318f}' | '가'..='힣'
+                    | '\u{a960}'..='\u{a97f}' | '\u{d7b0}'..='\u{d7ff}'
+            )
+        });
+        if korean || text.chars().any(char::is_alphabetic) {
+            let language = if korean { 1.0 } else { 0.0 };
+            self.life.korean += (language - self.life.korean) / 3.0;
+        }
         let introduction = vocabulary::introduced_name(text);
         let mut reading = vocabulary::read(text, &self.ghost.name);
         if introduction.is_some() {
@@ -1214,9 +1251,7 @@ impl World {
             learned,
             stopped,
             learned_name,
-            korean: text
-                .chars()
-                .any(|character| ('가'..='힣').contains(&character)),
+            korean,
         }
     }
 
@@ -1270,6 +1305,18 @@ impl World {
             if !words.is_empty() {
                 self.listening.acted = Some((activity, self.time, false));
             }
+        }
+    }
+
+    pub fn speaks_korean(&self) -> bool {
+        self.life.korean > 0.5
+    }
+
+    pub(crate) fn spoken(&self, english: &'static str, korean: &'static str) -> &'static str {
+        if self.speaks_korean() {
+            korean
+        } else {
+            english
         }
     }
 
@@ -1694,10 +1741,14 @@ impl World {
             }
             Activity::Window => {
                 look = self.watch_window();
+                self.wish_on_moon();
             }
             Activity::Visit => {
-                if self.viewer.pointer.is_some() {
+                if self.viewer.pointer.is_some() && self.sebae.is_none() {
                     self.ghost.plan.target = self.glass_spot();
+                }
+                if self.sebae.is_some() {
+                    self.bow();
                 }
                 // Toward the viewer, on the other side of the glass.
                 look = Some(self.ghost.plan.target + Vec3::Z * 3.0);
@@ -1798,9 +1849,9 @@ impl World {
                     self.ghost.velocity =
                         (self.ghost.plan.target - position).normalize_or_zero() * 1.6;
                     self.say(if self.date.month() == 10 && self.date.day() == 31 {
-                        "BOO!"
+                        self.spoken("BOO!", "왁!")
                     } else {
-                        "Boo!"
+                        self.spoken("Boo!", "까꿍!")
                     });
                     self.record(EventKind::Jumped);
                     self.ghost.plan.done = true;
@@ -3653,7 +3704,11 @@ mod tests {
     #[test]
     fn writing_sanitizes_text_and_requires_an_awake_ghost_with_energy() {
         let mut world = World::new(5, 12.0);
-        assert!(!world.write(" /한글♥ "));
+        assert!(!world.write(" /ㄱ♥ "));
+        assert!(world.write(" /한글♥ "));
+        assert!(
+            matches!(&world.ghost.plan.picture, Some(Picture::Word(writing)) if writing.text == "한글")
+        );
         assert!(world.write(" hi /2027!? more"));
         let Some(Picture::Word(writing)) = &world.ghost.plan.picture else {
             panic!("expected writing")
@@ -3798,6 +3853,7 @@ mod tests {
     fn greetings_require_a_recent_arrival_and_a_friend_and_names_need_a_close_bond() {
         let mut greetings = 0;
         let mut names = 0;
+        let mut hangul_names = 0;
         for seed in 0..250 {
             let mut world = World::new(seed, 12.0);
             world.notice_viewer();
@@ -3820,10 +3876,89 @@ mod tests {
                 names += 1;
             }
             world.life.viewer_name = Some("민수".to_owned());
+            if let Picture::Word(writing) = world.choose_picture() {
+                assert_eq!(writing.text, "민수♥");
+                hangul_names += 1;
+            }
+            world.life.viewer_name = Some("민Sam".to_owned());
             assert!(matches!(world.choose_picture(), Picture::Sketch(_)));
         }
         assert!((50..170).contains(&greetings));
         assert!((35..130).contains(&names));
+        assert!((35..130).contains(&hangul_names));
+    }
+
+    #[test]
+    fn messages_ease_the_viewers_language_and_punctuation_leaves_it_alone() {
+        let mut world = World::new(1, 12.0);
+        assert!(!world.speaks_korean());
+        assert!(world.hear("안녕").korean);
+        assert!(!world.speaks_korean());
+        world.hear("같이 놀자");
+        assert!(world.speaks_korean());
+        let before = world.life.korean;
+        world.hear("!? 123 ♥");
+        assert_eq!(world.life.korean, before);
+        world.say(world.spoken("Boo!", "까꿍!"));
+        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "까꿍!");
+        world.hear("hello");
+        assert!(!world.speaks_korean());
+        world.say(world.spoken("Boo!", "까꿍!"));
+        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Boo!");
+        world.hear("ㅋㅋ");
+        assert!(world.speaks_korean());
+    }
+
+    #[test]
+    fn korean_holidays_choose_their_own_hangul_words() {
+        for (date, expected) in [
+            (jiff::civil::Date::constant(2027, 2, 7), &["복"][..]),
+            (jiff::civil::Date::constant(2026, 9, 25), &["달"][..]),
+            (
+                jiff::civil::Date::constant(2026, 10, 9),
+                &["한글", "가나다", "안녕"][..],
+            ),
+        ] {
+            let mut words = 0;
+            for seed in 0..100 {
+                let mut world = World::new(seed, 12.0);
+                world.date = date;
+                if let Picture::Word(writing) = world.choose_picture() {
+                    assert!(expected.contains(&writing.text.as_str()));
+                    words += 1;
+                }
+            }
+            assert!(words > 15);
+        }
+    }
+
+    #[test]
+    fn korean_holiday_actions_replay_from_the_same_seed() {
+        for date in [
+            jiff::civil::Date::constant(2027, 2, 7),
+            jiff::civil::Date::constant(2026, 9, 25),
+        ] {
+            let replay = || {
+                let mut world = World::new(19, 21.0);
+                world.date = date;
+                world.hear("안녕");
+                world.hear("반가워");
+                world.step(12.0);
+                world.drop_mote(world.ghost.position);
+                world.begin(Activity::Doodle);
+                world.step(10.0);
+                world.begin(Activity::Window);
+                world.step(15.0);
+                world
+            };
+            let first = replay();
+            let second = replay();
+            assert_eq!(first.events, second.events);
+            assert_eq!(first.life, second.life);
+            assert_eq!(first.doodles, second.doodles);
+            assert_eq!(first.ghost.position, second.ghost.position);
+            assert_eq!(first.ghost.thought, second.ghost.thought);
+        }
     }
 
     #[test]

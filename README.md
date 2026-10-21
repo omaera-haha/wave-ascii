@@ -159,11 +159,14 @@ piped output never saves them.
   admire it. Up to three pictures linger, fading after about two and a half
   minutes. It also writes "HI" for a friend arriving, "BOO" at Halloween,
   the coming year at New Year, "YAY" on its birthday, and your name once it
-  grows close to you, sometimes followed by a heart. Names in other scripts
-  get a heart instead. At first it writes as it reads from inside the box,
+  grows close to you, sometimes followed by a heart. It writes Hangul names
+  too, composing each syllable from consonant and vowel strokes; names mixing
+  scripts or using other scripts get a heart instead. At first it writes as
+  it reads from inside the box,
   so the letters look mirrored to you. After three words written while you
   watch, it learns to write your way round and keeps that moment as a milestone.
-  Claude can also ask it to write a short word in the fog.
+  Claude can also ask it to write a short word in the fog: up to eight
+  characters, including at most five Hangul syllables.
 - **Asking.** With a Jev key, what you type can ask it to do things: play,
   fetch, build a tower, catch your finger, play noughts and crosses, dance, hide, draw, rest,
   look out of
@@ -272,6 +275,24 @@ one candle per year, up to five, and a cheerful urge to dance. Its birth date
 comes from its saved life in your local time zone; a February 29 birthday falls
 on February 28 in other years. Birthdays take precedence over other occasions.
 Special days find their way into its thoughts, dreams, and diary, even offline.
+
+Seollal brings a little wooden table with rice-cake soup and a red lucky pouch.
+An awake ghost comes to the glass for a deep New Year's bow, once each day,
+and wishes you luck. Drop a light mote within twenty seconds afterward and it
+delights in its New Year's gift. It sometimes writes "복" in the fog.
+
+At Chuseok, the same table holds half-moon songpyeon and two persimmons.
+Clear evenings draw the ghost to the window, where it makes a wish on the
+harvest moon once a night, and it sometimes writes "달". Seollal and Chuseok
+each last three days, the day before through the day after the holiday;
+their dates are included for 2026–2035 only. The first celebration of each
+becomes a milestone.
+
+Hangul Day, October 9, brings words such as "한글", "가나다", and "안녕" to the
+fog, and a little remark about letters for a Korean-speaking viewer. The
+ghost remembers how often you speak Korean and follows that language in its
+greetings, games, and offline replies. A Korean message gets a Korean reply
+straight away; its private thoughts stay in English.
 
 ### Its life between runs
 
@@ -391,6 +412,8 @@ COLUMNS=100 LINES=32 cargo run -q -- --style blocks --color truecolor --hour 21 
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-12-24 --hour 22 --time 400 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2026-10-31 --hour 22 < /dev/null | cat
 COLUMNS=100 LINES=32 cargo run -q -- --date 2027-03-01 --born 2026-03-01 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2027-02-07 < /dev/null | cat
+COLUMNS=100 LINES=32 cargo run -q -- --date 2026-09-25 --hour 21 < /dev/null | cat
 ```
 
 The same `--time`, `--hour`, `--date`, and `--born` give the same frame.

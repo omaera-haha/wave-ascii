@@ -275,26 +275,24 @@ pub struct Writing {
 impl Writing {
     pub fn new(text: String, mirrored: bool) -> Self {
         let characters = text.chars().count();
-        let width = (characters as f32 * 0.8 - 0.2).max(0.6);
+        let width = writing_width(&text);
         let scale = 0.2_f32.min(1.6 / width);
-        let strokes = text
-            .chars()
-            .enumerate()
-            .flat_map(|(index, character)| {
-                super::letters::glyph(character).iter().map(move |stroke| {
+        let mut offset = -width * 0.5;
+        let mut strokes = Vec::new();
+        for character in text.chars() {
+            for stroke in super::letters::strokes(character) {
+                strokes.push(
                     stroke
-                        .iter()
-                        .map(|&(horizontal, vertical)| {
-                            let point = Vec2::new(
-                                horizontal + index as f32 * 0.8 - width * 0.5,
-                                vertical - 0.5,
-                            ) * scale;
+                        .into_iter()
+                        .map(|(horizontal, vertical)| {
+                            let point = Vec2::new(horizontal + offset, vertical - 0.5) * scale;
                             Vec2::new(if mirrored { -point.x } else { point.x }, point.y)
                         })
-                        .collect()
-                })
-            })
-            .collect();
+                        .collect(),
+                );
+            }
+            offset += super::letters::cell(character).1;
+        }
         Self {
             text,
             mirrored,
@@ -371,15 +369,31 @@ impl Picture {
 
 /// Only the supported characters reach the pen.
 pub(super) fn sanitize(text: &str) -> String {
+    let mut syllables = 0;
     text.to_uppercase()
         .chars()
         .filter(|character| {
+            if super::letters::decompose(*character).is_some() {
+                syllables += 1;
+                return syllables <= 5;
+            }
             character.is_ascii_uppercase()
                 || character.is_ascii_digit()
                 || matches!(character, '!' | '?')
         })
         .take(8)
         .collect()
+}
+
+pub(super) fn writing_width(text: &str) -> f32 {
+    let mut width = 0.0;
+    let mut spacing = 0.0;
+    for character in text.chars() {
+        let (cell, advance) = super::letters::cell(character);
+        width += advance;
+        spacing = advance - cell;
+    }
+    (width - spacing).max(0.6)
 }
 
 /// Digits on the glass reach the minds as spoken words.
@@ -509,7 +523,15 @@ mod tests {
 
     #[test]
     fn words_fit_the_glass_and_mirroring_reflects_every_stroke() {
-        for text in ["HI", "MINA♥", "2027", "ABCDEFGHIJKLMNOP"] {
+        for text in [
+            "HI",
+            "MINA♥",
+            "2027",
+            "ABCDEFGHIJKLMNOP",
+            "민수♥",
+            "HI한글!?",
+            "가나다라마",
+        ] {
             let forward = Writing::new(text.to_owned(), false);
             let mirrored = Writing::new(text.to_owned(), true);
             assert!(forward.path.extent.x * 2.0 <= 1.6 + 1e-5);
@@ -527,6 +549,25 @@ mod tests {
             let copy = forward.clone();
             assert!(Arc::ptr_eq(&forward.path, &copy.path));
         }
+    }
+
+    #[test]
+    fn mixed_words_keep_each_scripts_spacing_and_limit_hangul_syllables() {
+        assert_eq!(sanitize(" hi 한글! ☃"), "HI한글!");
+        assert_eq!(sanitize("가나다라마바사아"), "가나다라마");
+        assert_eq!(sanitize("가나다라마바abcde"), "가나다라마ABC");
+        assert_eq!(sanitize("ㄱㅏ a"), "A");
+        assert!((writing_width("HI") - 1.4).abs() < 1e-5);
+        assert!((writing_width("한글") - 1.95).abs() < 1e-5);
+        assert!((writing_width("A한B") - 2.45).abs() < 1e-5);
+        let writing = Writing::new("A한B".to_owned(), false);
+        let first_hangul = writing.path.strokes[2][0];
+        let expected = super::super::letters::strokes('한')[0][0];
+        assert!((first_hangul.x - (expected.0 + 0.8 - 2.45 * 0.5) * 0.2).abs() < 1e-5);
+        assert_eq!(writing_words("한글"), "한글");
+        assert_eq!(writing_words("복2"), "복 two");
+        let long = Writing::new("한글".repeat(20), false);
+        assert!(long.path.extent.x * 2.0 <= 1.6 + 1e-5);
     }
 
     #[test]

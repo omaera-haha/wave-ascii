@@ -466,20 +466,25 @@ impl World {
     fn end_game(&mut self, game: &mut Game, outcome: Outcome) {
         game.finish(outcome, self.time);
         self.record(EventKind::GameOver(outcome));
-        let lines: &[&str] = match outcome {
+        let lines: &[(&str, &str)] = match outcome {
             Outcome::GhostWon { .. } if self.life.nature.unwrap_or_default().playful > 0.6 => {
-                &["Got you!", "I win!"]
+                &[("Got you!", "잡았다!"), ("I win!", "내가 이겼다!")]
             }
-            Outcome::GhostWon { .. } => &["I win!", "That was fun."],
-            Outcome::ViewerWon { .. } if !self.good_sport() => {
-                &["Hmph. Again?", "You win. Rematch?"]
+            Outcome::GhostWon { .. } => {
+                &[("I win!", "내가 이겼다!"), ("That was fun.", "재밌었어.")]
             }
-            Outcome::ViewerWon { .. } => &["You win!", "Well played!"],
-            Outcome::Draw => &["A draw!", "Nobody wins."],
-            Outcome::Abandoned => &["Maybe later."],
+            Outcome::ViewerWon { .. } if !self.good_sport() => &[
+                ("Hmph. Again?", "흥. 한 번 더?"),
+                ("You win. Rematch?", "네가 이겼어. 또 할래?"),
+            ],
+            Outcome::ViewerWon { .. } => {
+                &[("You win!", "네가 이겼어!"), ("Well played!", "잘했어!")]
+            }
+            Outcome::Draw => &[("A draw!", "비겼다!"), ("Nobody wins.", "우리 비겼네.")],
+            Outcome::Abandoned => &[("Maybe later.", "다음에 하자.")],
         };
         let line = lines[self.random.range(0.0, lines.len() as f32) as usize];
-        self.say(line);
+        self.say(self.spoken(line.0, line.1));
         if outcome.finished() {
             self.ghost.needs.change(0.0, 0.15, 0.08);
         }
@@ -493,6 +498,30 @@ fn inside(point: Vec2, setback: f32) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_results_are_spoken_in_the_viewers_language() {
+        for korean in [false, true] {
+            for outcome in [
+                Outcome::GhostWon { line: [0, 1, 2] },
+                Outcome::ViewerWon { line: [0, 1, 2] },
+                Outcome::Draw,
+                Outcome::Abandoned,
+            ] {
+                let mut world = World::new(1, 12.0);
+                world.life.korean = if korean { 1.0 } else { 0.0 };
+                let mut game = Game::new(Vec2::ZERO, Mark::Cross, world.time);
+                world.end_game(&mut game, outcome);
+                let spoken = &world.ghost.speech.as_ref().unwrap().text;
+                assert_eq!(
+                    spoken
+                        .chars()
+                        .any(|character| ('가'..='힣').contains(&character)),
+                    korean
+                );
+            }
+        }
+    }
     use crate::world::{Doodle, Mood, Picture, Sketch};
 
     fn run_until(world: &mut World, condition: impl Fn(&World) -> bool) {

@@ -542,6 +542,7 @@ fn help_panel(screen: &mut Canvas) {
         "A ghost lives in this glass box. Jev (System One) makes its quick",
         "choices, and Claude (System Two) gives it thoughts and words.",
         "Without keys it lives on instinct, and learns words you teach it.",
+        "Speak Korean and it remembers; it can write Hangul in the fog.",
         "Press k to add keys; models, effort, and caching change there too.",
         "",
         "t, Enter   talk to it          click ghost   poke or find it",
@@ -895,6 +896,9 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     if let Some(name) = &life.viewer_name {
         header.push((format!("You: {name}"), TEXT));
     }
+    if app.world.speaks_korean() {
+        header.push(("You speak Korean.".to_owned(), TEXT));
+    }
     let total = &life.total;
     let mut bird = vec![(format!("The bird: {}", life.bird_words()), TEXT)];
     let room = columns.saturating_sub(10).clamp(20, 56);
@@ -951,6 +955,9 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             format!("  {first:<18}{first_count:>5}     {second:<14}{second_count:>5}"),
             TEXT,
         ));
+    }
+    if total.moon_wishes > 0 {
+        counts.push((format!("  Moon wishes: {}", total.moon_wishes), TEXT));
     }
     let latest = match life.milestones.last() {
         Some(milestone) => vec![

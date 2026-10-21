@@ -210,6 +210,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::Pounced
         | EventKind::Built { .. }
         | EventKind::Found
+        | EventKind::MoonWish
         | EventKind::Celebrated(_)
         | EventKind::Morning
         | EventKind::Milestone(_) => Emote::Sparkle,
