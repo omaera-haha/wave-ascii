@@ -6,7 +6,7 @@ use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, SetTitle};
 use crossterm::{cursor, execute};
 
 use crate::canvas::Canvas;
@@ -148,6 +148,7 @@ pub struct Terminal {
     previous: Option<Canvas>,
     output: String,
     mouse_capture: bool,
+    title: Option<String>,
 }
 
 impl Terminal {
@@ -157,9 +158,11 @@ impl Terminal {
             previous: None,
             output: String::new(),
             mouse_capture: true,
+            title: None,
         };
         execute!(
             io::stdout(),
+            crossterm::style::Print("\x1b[22;0t"),
             EnterAlternateScreen,
             cursor::Hide,
             EnableMouseCapture,
@@ -178,6 +181,15 @@ impl Terminal {
                 execute!(io::stdout(), DisableMouseCapture)?;
             }
             self.mouse_capture = on;
+        }
+        Ok(())
+    }
+
+    /// Changes the window title only when the ghost's name or activity changes.
+    pub fn set_title(&mut self, title: &str) -> io::Result<()> {
+        if self.title.as_deref() != Some(title) {
+            execute!(io::stdout(), SetTitle(title))?;
+            self.title = Some(title.to_owned());
         }
         Ok(())
     }
@@ -234,6 +246,7 @@ impl Drop for Terminal {
             DisableMouseCapture,
             cursor::Show,
             LeaveAlternateScreen,
+            crossterm::style::Print("\x1b[23;0t"),
         );
         let _ = terminal::disable_raw_mode();
     }

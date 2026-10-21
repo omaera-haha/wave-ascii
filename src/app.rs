@@ -7,6 +7,7 @@ use crate::color::ColorMode;
 use crate::face::{self, mood::Cues};
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
+use crate::postcard::{self, Postcard};
 use crate::render::ghost::{Aura, Pose};
 use crate::render::window::Outside;
 use crate::render::{self, Camera, GHOST_SCALE, Scene, View};
@@ -179,6 +180,8 @@ pub struct App {
     /// The aura's color, eased toward the color of the ghost's mood.
     aura: Vec3,
     last_save: f64,
+    /// The last watching frame's scene and words, before its status bar.
+    postcard: Option<Postcard>,
 }
 
 impl App {
@@ -208,6 +211,7 @@ impl App {
             dragged: false,
             aura,
             last_save: 0.0,
+            postcard: None,
         }
     }
 
@@ -350,6 +354,7 @@ impl App {
                 self.mode = Mode::Journal;
             }
             Key::Character('l') => self.mode = Mode::Life,
+            Key::Character('p') => self.save_postcard(),
             Key::Character('m') => {
                 self.style = self.style.next();
                 self.post(format!("Style: {}", self.style.label()));
@@ -371,6 +376,34 @@ impl App {
             _ => {}
         }
         Response::Continue
+    }
+
+    fn save_postcard(&mut self) {
+        let Some(paths) = &self.paths else {
+            self.post("Postcards need a saved life");
+            return;
+        };
+        let Some(postcard) = &self.postcard else {
+            return;
+        };
+        let message = match postcard.save(paths) {
+            Ok(path) => format!("Saved a postcard: {}", postcard::display_path(&path)),
+            Err(error) => format!("Couldn't save a postcard: {error}"),
+        };
+        self.post(message);
+    }
+
+    fn doing(&self) -> &'static str {
+        if self.world.ghost.asleep > 0.5 {
+            "asleep on the cushion"
+        } else {
+            self.world.ghost.plan.activity.doing()
+        }
+    }
+
+    /// The ghost's name and activity for the terminal window title.
+    pub fn title(&self) -> String {
+        format!("{} · {}", self.world.ghost.name, self.doing())
     }
 
     fn scroll_journal(&mut self, key: Key) -> Response {
@@ -593,7 +626,22 @@ impl App {
 
         let mut screen = Canvas::blank(columns, rows);
         screen.paste(&self.style.canvas(&frame, self.color), 0, 0);
-        ui::draw(self, &mut screen, &view, scene_rows);
+        ui::draw_moment(self, &mut screen, &view, scene_rows);
+        if self.mode == Mode::Watching && self.paths.is_some() {
+            let postcard_rows = rows.min(scene_rows + 1);
+            let mut canvas = Canvas::blank(columns, postcard_rows);
+            canvas.paste(&screen, 0, 0);
+            let colored = if self.color == ColorMode::Plain && self.style == Style::Blocks {
+                let mut canvas = Canvas::blank(columns, postcard_rows);
+                canvas.paste(&self.style.canvas(&frame, ColorMode::TrueColor), 0, 0);
+                ui::draw_moment(self, &mut canvas, &view, scene_rows);
+                Some(canvas)
+            } else {
+                None
+            };
+            self.postcard = Some(Postcard::new(canvas, colored, &self.world, self.doing()));
+        }
+        ui::draw(self, &mut screen, scene_rows);
         screen
     }
 
@@ -811,6 +859,87 @@ mod tests {
         assert_eq!(app.input(Input::Key(Key::Escape)), Response::Continue);
         assert_eq!(app.mode, Mode::Watching);
         assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+    }
+
+    #[test]
+    fn p_saves_the_last_watching_frame_and_posts_its_path() {
+        let directory =
+            std::env::temp_dir().join(format!("wave-ascii-app-postcard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let paths = Paths::in_directory(&directory);
+        let mut app = app();
+        app.paths = Some(paths.clone());
+        app.world.date = jiff::civil::Date::constant(2026, 10, 21);
+        app.world.hour = 15.0 + 30.0 / 60.0 + 12.0 / 3600.0;
+        app.world.begin(Activity::Window);
+        let screen = app.frame(40, 12);
+        // Inputs may arrive before the next draw. Keep the moment the viewer saw.
+        app.world.hour = 17.0;
+        app.world.begin(Activity::Play);
+        app.input(Input::Key(Key::Character('p')));
+        let path = paths.postcards().join("2026-10-21-153012.txt");
+        assert_eq!(
+            app.notice(),
+            Some(format!("Saved a postcard: {}", postcard::display_path(&path)).as_str())
+        );
+        let saved = std::fs::read_to_string(&path).unwrap();
+        let caption = "Boo · 21 October 2026, 15:30 · gazing out of the window\n";
+        let displayed = screen.postcard_text();
+        let without_status: String = displayed.split_inclusive('\n').take(11).collect();
+        assert_eq!(saved, format!("{without_status}{caption}"));
+        assert!(
+            std::fs::read_to_string(path.with_extension("ans"))
+                .unwrap()
+                .ends_with(&format!("{}\x1b[0m\n", caption.trim_end()))
+        );
+
+        app.mode = Mode::Talking;
+        app.input(Input::Key(Key::Character('p')));
+        assert_eq!(app.talk.text(), "p");
+        assert_eq!(std::fs::read_dir(paths.postcards()).unwrap().count(), 2);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn p_reports_missing_saved_lives_and_file_errors() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('p')));
+        assert_eq!(app.notice(), Some("Postcards need a saved life"));
+
+        let directory = std::env::temp_dir().join(format!(
+            "wave-ascii-app-postcard-error-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let paths = Paths::in_directory(&directory);
+        std::fs::write(paths.postcards(), "a file is in the way").unwrap();
+        app.paths = Some(paths);
+        app.frame(20, 8);
+        app.input(Input::Key(Key::Character('p')));
+        assert!(
+            app.notice()
+                .unwrap()
+                .starts_with("Couldn't save a postcard: ")
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn the_title_follows_the_name_activity_and_sleep() {
+        let mut app = app();
+        for (activity, doing) in [
+            (Activity::Chase, "chasing a light mote"),
+            (Activity::Window, "gazing out of the window"),
+            (Activity::Rest, "resting on the cushion"),
+        ] {
+            app.world.begin(activity);
+            assert_eq!(app.title(), format!("Boo · {doing}"));
+        }
+        app.world.ghost.asleep = 1.0;
+        assert_eq!(app.title(), "Boo · asleep on the cushion");
+        app.world.ghost.name = "Pip".into();
+        assert_eq!(app.title(), "Pip · asleep on the cushion");
     }
 
     #[test]

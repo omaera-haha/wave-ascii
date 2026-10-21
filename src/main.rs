@@ -4,6 +4,7 @@ mod color;
 mod face;
 mod frame;
 mod mind;
+mod postcard;
 mod render;
 mod sdf;
 mod settings;
@@ -59,7 +60,7 @@ Keys:
   + / -        zoom                   l        its life and bond
   m, c         style, color mode      ?        help
   r            reset the view         space    pause
-                                      q, Esc   quit
+  p            save a postcard        q, Esc   quit
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, and anywhere else in the room to drop in a light mote. Drag to turn
@@ -266,6 +267,7 @@ fn run_loop(app: &mut App, frames_per_second: f64) -> io::Result<()> {
         last_frame = now;
         let size = terminal.size();
         let canvas = app.frame(size.columns, size.rows);
+        terminal.set_title(&app.title())?;
         terminal.draw(&canvas, app.color)?;
 
         // Frames start on a fixed beat. When drawing falls behind, the beat

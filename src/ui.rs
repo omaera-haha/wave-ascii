@@ -26,12 +26,15 @@ const BAD: Rgb = Rgb([255, 110, 100]);
 const SPEECH_SHOWS: f64 = 14.0;
 const THOUGHT_SHOWS: f64 = 30.0;
 
-/// Draws the ghost's symbols and speech bubble, the line under the scene,
-/// the status bar, and any open panel.
-pub fn draw(app: &mut App, screen: &mut Canvas, view: &View, scene_rows: usize) {
+/// Draws the scene's words and symbols, without a status bar or panel.
+pub fn draw_moment(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) {
     let bubble_right = speech_bubble(app, screen, view, scene_rows);
     emote_puffs(app, screen, view, scene_rows, bubble_right);
     words_line(app, screen, scene_rows);
+}
+
+/// Draws the status bar and any open panel over the scene.
+pub fn draw(app: &mut App, screen: &mut Canvas, scene_rows: usize) {
     status_line(app, screen, scene_rows + 1);
     match app.mode {
         Mode::Help => help_panel(screen),
@@ -544,7 +547,7 @@ fn help_panel(screen: &mut Canvas) {
         "t, Enter   talk to it          click ghost   poke or find it",
         "k          keys and models     click ball    flick it",
         "j          journal and diary   click room    drop a light mote",
-        "l          its life and bond",
+        "l          its life and bond    p             save a postcard",
         "arrows     turn the view       drag          turn the view",
         "+ -        zoom                wheel         zoom",
         "m  c       style, color        space         pause",
