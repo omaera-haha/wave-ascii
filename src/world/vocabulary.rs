@@ -363,6 +363,29 @@ const NOT_NAMES: &[&str] = &[
     "friend",
     "mine",
     "names",
+    "weird",
+    "funny",
+    "nice",
+    "pretty",
+    "beautiful",
+    "strange",
+    "boring",
+    "long",
+    "short",
+    "perfect",
+    "great",
+    "awesome",
+    "lovely",
+    "stupid",
+    "dumb",
+    "cool",
+    "adorable",
+    "wrong",
+    "right",
+    "예뻐",
+    "이상해",
+    "귀여워",
+    "좋아",
     "something",
     "anything",
     "nothing",
@@ -442,11 +465,6 @@ pub fn given_name(text: &str) -> Option<String> {
             || ["너의", "네", "니", "너"]
                 .iter()
                 .any(|you| starts(&[you, "이름은"]))
-            || starts(&["넌", "이제"])
-            || starts(&["너는", "이제"])
-            || starts(&["이제", "넌"])
-            || starts(&["이제부터", "넌"])
-            || starts(&["넌", "이제부터"])
         {
             2
         } else {
@@ -926,8 +944,6 @@ mod tests {
             ("너의 이름은 뽀삐야", "뽀삐"),
             ("네 이름은 콩이야!", "콩이"),
             ("너 이름은 모찌", "모찌"),
-            ("넌 이제 뽀삐야", "뽀삐"),
-            ("이제부터 넌 콩이야", "콩이"),
             ("뽀삐라고 부를게", "뽀삐"),
             ("모찌라고 할게!", "모찌"),
             ("콩이라고 불러도 돼?", "콩이"),
@@ -953,6 +969,11 @@ mod tests {
             "너의 이름은?",
             "민수라고 불러",
             "넌 바보야",
+            "넌 이제 자야 해",
+            "넌 이제 혼자야",
+            "your name is weird",
+            "your name is so cute",
+            "네 이름은 예뻐",
             "your name is",
             "your name is Pip123",
             "you are cute",
