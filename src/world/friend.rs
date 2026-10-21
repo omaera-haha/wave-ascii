@@ -583,6 +583,8 @@ mod tests {
         let mut world = World::new(1, 20.0);
         world.date = jiff::civil::Date::constant(2026, 10, 25);
         world.weather.until = f64::INFINITY;
+        // Keep these visitor schedules independent of the daily wish choice.
+        world.calendar_at = Some(world.date);
         world.step(0.0);
         world
     }

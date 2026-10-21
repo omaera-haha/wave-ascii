@@ -33,6 +33,7 @@ mod things;
 pub mod visitor;
 mod vocabulary;
 mod weather;
+pub mod wish;
 
 use glam::Vec3;
 
@@ -67,6 +68,7 @@ pub use visitor::{BirdPicture, Keepsake, Perch, Visitors};
 pub use vocabulary::{Tone, Vocabulary};
 use weather::Change;
 pub use weather::{Sky, Weather};
+pub use wish::{Granted, Wish, Wishing};
 
 /// At most this many motes drift in the room at once.
 const MAX_MOTES: usize = 6;
@@ -244,12 +246,20 @@ pub enum EventKind {
         word: String,
         solved: bool,
     },
+    MadeWish(Wish),
+    WishFaded(Wish),
+    WishGranted(Wish),
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::MadeWish(wish) => format!("made a wish: {}", wish.words(&Life::default())),
+            Self::WishFaded(wish) => format!("let go of a wish: {}", wish.words(&Life::default())),
+            Self::WishGranted(wish) => {
+                format!("a wish came true: {}", wish.words(&Life::default()))
+            }
             Self::OpenedWindow => "opened the window for fresh air".to_owned(),
             Self::ClosedWindow => "closed the window".to_owned(),
             Self::Puddle => "noticed a puddle below the window".to_owned(),
@@ -624,6 +634,7 @@ pub struct World {
     windfall_random: Random,
     seen_passersby: [Option<u64>; Passerby::ALL.len()],
     pub puzzle: Option<Puzzle>,
+    pending_wish: Option<Wish>,
 }
 
 impl World {
@@ -732,6 +743,7 @@ impl World {
             windfall_random: Random::new(seed ^ 0x6c65_6176_6573),
             seen_passersby: [None; Passerby::ALL.len()],
             puzzle: None,
+            pending_wish: None,
         };
         world.scatter_blocks();
         world
@@ -745,16 +757,21 @@ impl World {
         if self.life.day != day {
             self.life.begin_day(&day);
         }
-        if self.calendar_at != Some(self.date) {
+        let calendar_check = self.calendar_at != Some(self.date);
+        if calendar_check {
             self.mark_growth();
         }
         self.celebrate();
+        if calendar_check {
+            self.check_wish();
+        }
         let mut remaining = seconds.max(0.0);
         while remaining > 0.0 {
             let slice = remaining.min(0.1);
             remaining -= slice;
             self.advance(slice);
         }
+        self.celebrate_wish();
     }
 
     fn advance(&mut self, seconds: f32) {
@@ -1742,6 +1759,13 @@ impl World {
     }
 
     pub fn say(&mut self, text: &str) {
+        if let Some(wish) = self.pending_wish.take() {
+            if wish.with_viewer() && self.ghost.asleep < 0.3 {
+                self.say(&format!("{text} {}", wish.joy(self)));
+                return;
+            }
+            wish.celebrate(self);
+        }
         self.ghost.speech = Some(Line {
             text: text.to_owned(),
             time: self.time,
@@ -1754,36 +1778,6 @@ impl World {
             text: text.to_owned(),
             time: self.time,
         });
-    }
-
-    // A wish on a shooting star, kept secret, or about the viewer when a
-    // close friend is there to share the night.
-    fn wish(&mut self) {
-        let friend = self
-            .friend
-            .as_ref()
-            .and(self.life.friend.as_ref())
-            .map(|friend| friend.name.clone());
-        let lines: Vec<String> = if let Some(name) = friend {
-            vec![
-                format!("{name} saw it too! We made a wish together."),
-                format!("I wished {name} could stay all night."),
-            ]
-        } else if self.life.bond >= 0.55 && self.viewer_present() {
-            vec![
-                "I wished you'd stay a little longer.".to_owned(),
-                "I made a wish. It was about you.".to_owned(),
-                "I wished for more nights like this one.".to_owned(),
-            ]
-        } else {
-            vec![
-                "A shooting star! I made a wish.".to_owned(),
-                "Quick, a wish! …There.".to_owned(),
-                "I made a wish. It's a secret.".to_owned(),
-            ]
-        };
-        let index = ((self.random.unit() * lines.len() as f32) as usize).min(lines.len() - 1);
-        self.think(&lines[index]);
     }
 
     /// A mind's suggestion of how the ghost feels, which holds for `seconds`.
@@ -1894,6 +1888,14 @@ impl World {
         ) {
             self.abandon_puzzle();
         }
+        let morning = matches!(kind, EventKind::Morning);
+        let shooting_star = matches!(kind, EventKind::ShootingStar);
+        let granted = self
+            .life
+            .wish
+            .as_ref()
+            .filter(|wishing| wishing.wish.granted_by(&kind))
+            .map(|wishing| wishing.wish.clone());
         let remembered = self.life.milestones.len();
         self.life.note(&kind);
         let milestones: Vec<String> = self.life.milestones[remembered..]
@@ -1904,8 +1906,27 @@ impl World {
             time: self.time,
             kind,
         });
+        let wish_granted = granted.is_some();
+        if let Some(wish) = granted {
+            self.life.wish = None;
+            self.life.granted.push(Granted {
+                wish: wish.clone(),
+                day: self.date.to_string(),
+            });
+            if self.life.granted.len() > 12 {
+                self.life.granted.drain(..self.life.granted.len() - 12);
+            }
+            self.record(EventKind::WishGranted(wish.clone()));
+            self.pending_wish = Some(wish);
+        }
         for milestone in milestones {
             self.record(EventKind::Milestone(milestone));
+        }
+        if morning {
+            self.check_wish();
+        }
+        if shooting_star && !wish_granted {
+            self.wish_on_star();
         }
     }
 
@@ -2680,6 +2701,7 @@ impl World {
                 EventKind::AteMote
                     | EventKind::GameOver(Outcome::GhostWon { .. })
                     | EventKind::WordGame { solved: true, .. }
+                    | EventKind::WishGranted(_)
                     | EventKind::NudgedBall
                     | EventKind::Bloomed
                     | EventKind::Sprouted(_)

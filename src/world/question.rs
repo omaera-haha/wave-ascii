@@ -35,6 +35,7 @@ pub enum Question {
     Story,
     Away,
     Constellations,
+    Wish,
 }
 
 impl Question {
@@ -47,6 +48,15 @@ impl Question {
 // lowercased and without apostrophes. More particular questions come first,
 // so "are you tired" is not taken for "are you okay".
 const ENGLISH: &[(Question, &[&[&str]])] = &[
+    (
+        Question::Wish,
+        &[
+            &["what", "do", "you", "wish", "for"],
+            &["do", "you", "have", "a", "wish"],
+            &["whats", "your", "wish"],
+            &["what", "is", "your", "wish"],
+        ],
+    ),
     (
         Question::Story,
         &[
@@ -240,6 +250,11 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
 // and whether the message must end in a question mark, for words that are
 // statements just as often ("졸려" is also "I'm sleepy").
 const KOREAN: &[(Question, &[&str], bool)] = &[
+    (
+        Question::Wish,
+        &["소원이뭐", "소원있어", "소원은뭐", "무슨소원"],
+        false,
+    ),
     (
         Question::Story,
         &[
@@ -518,5 +533,22 @@ mod tests {
     fn particular_questions_win_over_general_ones() {
         assert_eq!(ask("are you tired? are you okay?"), Some(Question::Tired));
         assert_eq!(ask("how are you, what's your name"), Some(Question::Name));
+    }
+    #[test]
+    fn questions_about_wishes_use_english_word_runs_and_korean_pieces() {
+        for text in [
+            "what do you wish for?",
+            "do you have a wish?",
+            "what's your wish?",
+            "What is your wish?",
+            "소원이 뭐야?",
+            "소원 있어?",
+            "소원은 뭐야?",
+        ] {
+            assert_eq!(ask(text), Some(Question::Wish), "{text}");
+        }
+        for text in ["wishful thinking", "I wish for rain", "내 소원은 무지개야"] {
+            assert_ne!(ask(text), Some(Question::Wish), "{text}");
+        }
     }
 }

@@ -189,6 +189,16 @@ pub struct Tally {
     pub word_games: u32,
     #[serde(default)]
     pub words_guessed: u32,
+    #[serde(default)]
+    pub names: u32,
+    #[serde(default)]
+    pub wishes_made: u32,
+    #[serde(default)]
+    pub wishes_granted: u32,
+    #[serde(default)]
+    pub wishes_faded: u32,
+    #[serde(default)]
+    pub wish_words: Vec<String>,
 }
 
 impl Tally {
@@ -199,6 +209,24 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::Named(_) => self.names = self.names.saturating_add(1),
+            EventKind::MadeWish(_) | EventKind::WishGranted(_) | EventKind::WishFaded(_) => {
+                match kind {
+                    EventKind::MadeWish(_) => self.wishes_made = self.wishes_made.saturating_add(1),
+                    EventKind::WishGranted(_) => {
+                        self.wishes_granted = self.wishes_granted.saturating_add(1)
+                    }
+                    _ => self.wishes_faded = self.wishes_faded.saturating_add(1),
+                }
+                if self.wish_words.len() < 12 {
+                    self.wish_words.push(match kind {
+                        EventKind::MadeWish(wish) => {
+                            format!("made a wish {}", wish.words(&Life::default()))
+                        }
+                        _ => kind.words(),
+                    });
+                }
+            }
             EventKind::SawPasserby(passerby) => {
                 self.passersby = self.passersby.saturating_add(1);
                 if !self.passerby_kinds.contains(passerby) {
@@ -361,6 +389,7 @@ impl Tally {
             .iter()
             .map(|occasion| occasion.diary_words().to_owned())
             .collect();
+        deeds.extend(self.wish_words.iter().cloned());
         if self.focus_sessions > 0 {
             deeds.push(format!(
                 "kept you company through {} focus {}",
@@ -731,6 +760,10 @@ pub struct Life {
     /// The evening of its last search, including an unsuccessful one.
     #[serde(default)]
     pub constellation_night: Option<String>,
+    #[serde(default)]
+    pub wish: Option<super::Wishing>,
+    #[serde(default)]
+    pub granted: Vec<super::Granted>,
 }
 
 impl Life {
@@ -853,6 +886,7 @@ impl Life {
             self.reach("My garden has three little pots.".to_owned());
         }
         let warmth = match kind {
+            EventKind::WishGranted(wish) if wish.with_viewer() => 0.01,
             EventKind::FocusEnded {
                 completed: true, ..
             } => 0.01,
@@ -1114,6 +1148,31 @@ impl Life {
             friend.closeness = unit(friend.closeness);
             friend.visits = friend.visits.min(1_000_000);
         }
+        self.wish = self.wish.take().filter(|wishing| {
+            wishing.wish.valid(&self) && wishing.day.parse::<jiff::civil::Date>().is_ok()
+        });
+        if let Some(wishing) = &mut self.wish {
+            wishing.said = wishing
+                .said
+                .take()
+                .filter(|day| day.parse::<jiff::civil::Date>().is_ok());
+        }
+        let mut granted = std::mem::take(&mut self.granted);
+        granted.retain(|granted| {
+            granted.wish.valid(&self) && granted.day.parse::<jiff::civil::Date>().is_ok()
+        });
+        if granted.len() > 12 {
+            granted.drain(..granted.len() - 12);
+        }
+        self.granted = granted;
+        if self.total.names == 0
+            && self
+                .milestones
+                .iter()
+                .any(|entry| entry.text.starts_with("You gave me my name: "))
+        {
+            self.total.names = 1;
+        }
         self.closest = unit(self.closest);
         self.bird_trust = unit(self.bird_trust);
         self.korean = unit(self.korean);
@@ -1123,6 +1182,14 @@ impl Life {
         self.bond = unit(self.bond).max(self.closest * 0.5);
         self.closest = self.closest.max(self.bond);
         for tally in [&mut self.total, &mut self.today] {
+            tally.names = tally.names.min(100_000_000);
+            tally.wishes_made = tally.wishes_made.min(100_000_000);
+            tally.wishes_granted = tally.wishes_granted.min(100_000_000);
+            tally.wishes_faded = tally.wishes_faded.min(100_000_000);
+            tally.wish_words.retain(|words| {
+                words.chars().count() <= 256 && !words.chars().any(char::is_control)
+            });
+            tally.wish_words.truncate(12);
             tally.passersby = tally.passersby.min(100_000_000);
             let mut kinds = Vec::new();
             for kind in &tally.passerby_kinds {
@@ -1199,6 +1266,18 @@ impl Life {
 
     // The first time something happens, or a count it marks.
     fn first(&mut self, kind: &EventKind) -> Option<String> {
+        if matches!(kind, EventKind::WishGranted(_)) {
+            let mut first = None;
+            for (count, text) in [
+                (1, "My first wish came true."),
+                (5, "Five of my wishes have come true."),
+            ] {
+                if self.total.wishes_granted >= count {
+                    first = first.or(self.reach(text.to_owned()));
+                }
+            }
+            return first;
+        }
         if let EventKind::SawPasserby(passerby) = kind {
             return self.reach(format!("I saw {} for the first time.", passerby.name()));
         }

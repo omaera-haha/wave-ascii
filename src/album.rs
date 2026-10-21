@@ -414,6 +414,13 @@ fn prune(entries: &mut Vec<(PathBuf, Page)>) {
 fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
     let (caption, daily) = match kind {
         EventKind::Milestone(words) => (words.clone(), None),
+        EventKind::WishGranted(wish) => (
+            format!(
+                "My wish came true: {}.",
+                wish.words(&crate::world::Life::default())
+            ),
+            None,
+        ),
         EventKind::Celebrated(occasion) => (
             format!("{} with you.", occasion.name()),
             Some(format!("occasion:{}", occasion.name())),
@@ -745,6 +752,7 @@ mod tests {
     fn only_the_selected_memorable_events_make_album_captions() {
         for kind in [
             EventKind::ShootingStar,
+            EventKind::WishGranted(crate::world::Wish::Rainbow),
             EventKind::FoundConstellation("Sleepy Heart".to_owned()),
             EventKind::Built { height: 5 },
             EventKind::GameOver(Outcome::GhostWon { line: [0, 1, 2] }),

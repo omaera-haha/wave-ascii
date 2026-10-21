@@ -351,7 +351,18 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             } else {
                 1.0
             };
+            let wishing = if world
+                .life
+                .wish
+                .as_ref()
+                .is_some_and(|wishing| wishing.wish.serves(*activity, world))
+            {
+                1.4
+            } else {
+                1.0
+            };
             weight
+                * wishing
                 * quiet
                 * playful
                 * world.life.habit(*activity)
@@ -893,6 +904,11 @@ mod tests {
     fn a_visiting_friend_draws_play_more_when_lonely_and_less_when_tired_or_with_a_close_viewer() {
         let mut world = World::new(1, 20.0);
         world.date = jiff::civil::Date::constant(2026, 10, 25);
+        world.life.wish = Some(crate::world::Wishing {
+            wish: crate::world::Wish::Tower { height: 3 },
+            day: world.date.to_string(),
+            said: None,
+        });
         for _ in 0..3000 {
             world.step(0.1);
             if world.friend.is_some() {
@@ -931,5 +947,28 @@ mod tests {
         let urgent = chance(&weigh(&world, &options), Activity::Tend);
         assert!(urgent > thirsty);
         assert!(urgent > planting);
+    }
+    #[test]
+    fn a_held_wish_moderately_favors_what_serves_it_and_keeps_focus_quiet() {
+        use crate::world::{Wish, Wishing};
+        let mut world = World::new(17, 12.0);
+        world.notice_viewer();
+        let options = [Activity::Float, Activity::Build];
+        let before = weigh(&world, &options);
+        world.life.wish = Some(Wishing {
+            wish: Wish::Tower { height: 3 },
+            day: world.date.to_string(),
+            said: None,
+        });
+        let after = weigh(&world, &options);
+        assert!(after[1].1 > before[1].1);
+        assert!((after[1].1 / after[0].1 / (before[1].1 / before[0].1) - 1.4).abs() < 0.0001);
+        world.start_focus(5);
+        world.life.wish.as_mut().unwrap().wish = Wish::Game;
+        assert!(!world.options().contains(&Activity::Visit));
+        assert_eq!(
+            weigh(&world, &[Activity::Visit, Activity::Company])[0].1,
+            0.0
+        );
     }
 }

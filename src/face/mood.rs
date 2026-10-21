@@ -81,6 +81,9 @@ pub fn face(time: f64, cues: &Cues) -> Face {
 /// The expression the face answers an event with, if any.
 pub fn reaction(event: &EventKind) -> Option<Expression> {
     Some(match event {
+        EventKind::MadeWish(_) => Expression::Smile,
+        EventKind::WishGranted(_) => Expression::Sparkle,
+        EventKind::WishFaded(_) => glance(0.0, -0.3),
         EventKind::SawPasserby(kind) if kind.delighted() => Expression::Sparkle,
         EventKind::SawPasserby(_) => Expression::LookAround,
         EventKind::FocusEnded {

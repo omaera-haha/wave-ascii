@@ -21,6 +21,7 @@ pub enum Emote {
     Anger,
     Sigh,
     Sparkle,
+    WishStar,
 }
 
 impl Emote {
@@ -35,6 +36,7 @@ impl Emote {
             Self::Anger => "#",
             Self::Sigh => "…",
             Self::Sparkle => "✦",
+            Self::WishStar => "✧",
         }
     }
 
@@ -48,7 +50,7 @@ impl Emote {
             Self::Question => Vec3::new(0.45, 0.8, 1.0),
             Self::Anger => Vec3::new(1.0, 0.45, 0.3),
             Self::Sigh => Vec3::new(0.7, 0.65, 0.8),
-            Self::Sparkle => Vec3::new(1.0, 0.8, 0.35),
+            Self::Sparkle | Self::WishStar => Vec3::new(1.0, 0.8, 0.35),
         }
     }
 }
@@ -127,6 +129,11 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 
     if ghost.asleep <= 0.5 {
         for (index, event) in world.events.iter().enumerate() {
+            if matches!(event.kind, EventKind::WishGranted(_)) {
+                add(event.time, Emote::WishStar);
+                add(event.time + 0.35, Emote::Heart);
+                continue;
+            }
             if event.kind == EventKind::Tended && world.garden_recovering() {
                 add(event.time, Emote::Heart);
                 continue;
@@ -200,6 +207,7 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 // has grown fond of the viewer.
 fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
     Some(match event {
+        EventKind::MadeWish(_) => Emote::WishStar,
         EventKind::SawPasserby(kind) if kind.delighted() => Emote::Sparkle,
         EventKind::SawPasserby(_) => Emote::Question,
         EventKind::Noticed(thing)
