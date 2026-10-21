@@ -247,6 +247,10 @@ fn thing(world: &World, thing: Thing) -> String {
             || "another ghost".to_owned(),
             |friend| format!("your ghost friend {}", friend.name),
         ),
+        Thing::Drawing => world.drawing.as_ref().map_or_else(
+            || "the viewer's drawing".to_owned(),
+            |drawing| drawing.words(),
+        ),
         Thing::Blocks if world.tower.is_some() => format!(
             "the toy blocks, stacked in a tower {} blocks high",
             crate::world::blocks::height_words(world.tower_height())
@@ -335,6 +339,9 @@ fn glass(world: &World) -> String {
                 crate::world::Picture::Sketch(sketch) => {
                     format!("a {} you drew in the fog{fading}", sketch.name())
                 }
+                crate::world::Picture::Copy(copy) => {
+                    format!("a {} you drew in the fog{fading}", copy.name)
+                }
                 picture => format!("{} you wrote in the fog{fading}", picture.name()),
             }
         })
@@ -357,6 +364,9 @@ fn glass(world: &World) -> String {
             words.push_str("; you could win with your next move");
         }
         doodles.push(words);
+    }
+    if let Some(drawing) = &world.drawing {
+        doodles.push(drawing.words());
     }
     if doodles.is_empty() {
         "clear".to_owned()
@@ -1081,5 +1091,22 @@ mod tests {
                 .any(|line| line.contains("floated in through the window"))
         );
         assert!(!recent.iter().any(|line| line.contains("tagged")));
+    }
+
+    #[test]
+    fn viewer_drawings_are_described_without_coordinates_or_scores() {
+        let mut world = World::new(1, 12.0);
+        world.draw_on_glass(Vec3::new(-0.4, 1.2, crate::world::ROOM_MAX.z));
+        world.draw_on_glass(Vec3::new(0.4, 1.2, crate::world::ROOM_MAX.z));
+        world.lift_finger();
+        assert!(glass(&world).contains("a picture you haven't studied yet"));
+        world.step(15.0);
+        let observation = observe(&world).to_string();
+        assert!(observation.contains("the viewer drew a line on the glass"));
+        assert!(
+            !observation
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
     }
 }

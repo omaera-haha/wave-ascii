@@ -113,6 +113,12 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::Praised | EventKind::Petted => Expression::Smile,
         EventKind::Scolded => Expression::Worry,
         EventKind::MissedVisit => Expression::Worry,
+        EventKind::SawDrawing { name: None } => Expression::Skeptical,
+        EventKind::SawDrawing { name: Some(name) } if matches!(name.as_str(), "star" | "sun") => {
+            Expression::Sparkle
+        }
+        EventKind::SawDrawing { .. } | EventKind::Copied(_) => Expression::Smile,
+        EventKind::LearnedPicture(_) => Expression::Sparkle,
         EventKind::Puzzled(_) => Expression::Skeptical,
         EventKind::LearnedWord { .. }
         | EventKind::LearnedName(_)

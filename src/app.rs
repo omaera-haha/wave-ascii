@@ -197,6 +197,8 @@ pub struct App {
     postcard: Option<Postcard>,
     /// Whether the terminal has the focus, as far as it reports.
     focused: bool,
+    pub drawing_mode: bool,
+    drawing_right: bool,
 }
 
 impl App {
@@ -232,6 +234,8 @@ impl App {
             hint_claude_at: None,
             postcard: None,
             focused: true,
+            drawing_mode: false,
+            drawing_right: false,
         }
     }
 
@@ -411,6 +415,8 @@ impl App {
 
     fn command(&mut self, key: Key) -> Response {
         match key {
+            Key::Character('f') => self.toggle_drawing(),
+            Key::Escape if self.drawing_mode => self.toggle_drawing(),
             Key::Character('q') | Key::Escape => return Response::Quit,
             Key::Enter | Key::Character('t') => self.mode = Mode::Talking,
             Key::Character('k') => {
@@ -452,7 +458,36 @@ impl App {
             Key::Character(' ') => self.paused = !self.paused,
             _ => {}
         }
+        if self.mode != Mode::Watching {
+            self.world.lift_finger();
+            self.drawing_right = false;
+            self.press = None;
+            self.stroke = None;
+        }
         Response::Continue
+    }
+
+    fn toggle_drawing(&mut self) {
+        self.drawing_mode = !self.drawing_mode;
+        self.world.lift_finger();
+        self.press = None;
+        self.stroke = None;
+        self.drawing_right = false;
+        self.post(if self.drawing_mode {
+            "Drawing in the fog: drag on the glass. f or Esc to stop."
+        } else {
+            "Finished drawing in the fog."
+        });
+    }
+
+    fn trace_glass(&mut self, point: Option<Vec2>) {
+        match point
+            .zip(self.view)
+            .and_then(|(point, view)| view.on_glass(point))
+        {
+            Some(point) => self.world.draw_on_glass(point),
+            None => self.world.lift_finger(),
+        }
     }
 
     fn save_postcard(&mut self) {
@@ -557,10 +592,31 @@ impl App {
             MouseAction::ScrollUp => self.camera.zoom_by(1.1),
             MouseAction::ScrollDown => self.camera.zoom_by(1.0 / 1.1),
             MouseAction::Move => {}
+            MouseAction::DrawPress | MouseAction::DrawDrag | MouseAction::DrawRelease => {
+                if self.mode == Mode::Watching {
+                    match mouse.action {
+                        MouseAction::DrawPress => {
+                            self.world.lift_finger();
+                            self.drawing_right = true;
+                            self.trace_glass(point);
+                        }
+                        MouseAction::DrawDrag if self.drawing_right => self.trace_glass(point),
+                        MouseAction::DrawRelease if self.drawing_right => {
+                            self.trace_glass(point);
+                            self.world.lift_finger();
+                            self.drawing_right = false;
+                        }
+                        _ => {}
+                    }
+                }
+            }
             MouseAction::Press => {
                 self.press = Some((mouse.column, mouse.row));
                 self.dragged = false;
                 self.stroke = point.filter(|point| {
+                    if self.drawing_mode && self.mode == Mode::Watching {
+                        return false;
+                    }
                     self.view.is_some_and(|view| {
                         view.touches_ghost(
                             *point,
@@ -571,7 +627,21 @@ impl App {
                 });
             }
             MouseAction::Drag => {
-                if let (Some(last), Some(point), Some(view)) = (self.stroke, point, self.view) {
+                if self.drawing_mode && self.mode == Mode::Watching {
+                    if let Some((column, row)) = self.press
+                        && (mouse.column != column || mouse.row != row)
+                    {
+                        if !self.dragged {
+                            self.trace_glass(self.scene_point(column, row));
+                        }
+                        self.dragged = true;
+                    }
+                    if self.dragged {
+                        self.trace_glass(point);
+                    }
+                } else if let (Some(last), Some(point), Some(view)) =
+                    (self.stroke, point, self.view)
+                {
                     if point != last {
                         self.dragged = true;
                         self.stroke = Some(point);
@@ -603,6 +673,10 @@ impl App {
                 }
             }
             MouseAction::Release => {
+                if self.drawing_mode && self.mode == Mode::Watching && self.dragged {
+                    self.trace_glass(point);
+                    self.world.lift_finger();
+                }
                 self.stroke = None;
                 if self.press.take().is_some()
                     && !self.dragged
@@ -1959,5 +2033,76 @@ mod tests {
         assert!(app.world.blocks.iter().all(|block| !block.stacked));
         assert_eq!(app.world.life.total.toppled, 1);
         assert_eq!(app.world.motes.len(), motes);
+    }
+
+    #[test]
+    fn right_drags_and_finger_mode_draw_without_orbiting_or_stroking() {
+        for right in [true, false] {
+            let mut app = app();
+            let camera = (app.camera.yaw, app.camera.pitch);
+            if !right {
+                assert_eq!(
+                    app.input(Input::Key(Key::Character('f'))),
+                    Response::Continue
+                );
+            }
+            let (column, row) = cell_of(&app, Vec3::new(0.0, 1.2, ROOM_MAX.z));
+            let actions = if right {
+                [
+                    MouseAction::DrawPress,
+                    MouseAction::DrawDrag,
+                    MouseAction::DrawDrag,
+                    MouseAction::DrawRelease,
+                ]
+            } else {
+                [
+                    MouseAction::Press,
+                    MouseAction::Drag,
+                    MouseAction::Drag,
+                    MouseAction::Release,
+                ]
+            };
+            for (offset, action) in [0, 1, 2, 2].into_iter().zip(actions) {
+                app.input(Input::Mouse(Mouse {
+                    column: column + offset,
+                    row,
+                    action,
+                }));
+            }
+            let drawing = app.world.drawing.as_ref().unwrap();
+            assert_eq!(drawing.strokes.len(), 1);
+            assert!(drawing.strokes[0].len() >= 2);
+            assert_eq!((app.camera.yaw, app.camera.pitch), camera);
+            assert_eq!(app.world.petting(), 0.0);
+        }
+    }
+
+    #[test]
+    fn finger_mode_toggles_and_escape_leaves_it_without_quitting() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('f')));
+        assert!(app.drawing_mode);
+        assert!(app.notice().unwrap().contains("Drawing in the fog"));
+        assert_eq!(app.input(Input::Key(Key::Escape)), Response::Continue);
+        assert!(!app.drawing_mode);
+        app.input(Input::Key(Key::Character('f')));
+        app.input(Input::Key(Key::Character('f')));
+        assert!(!app.drawing_mode);
+        assert_eq!(app.input(Input::Key(Key::Escape)), Response::Quit);
+    }
+
+    #[test]
+    fn a_left_click_in_finger_mode_still_pokes_the_ghost_without_drawing() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('f')));
+        let (column, row) = cell_of(&app, app.world.ghost.position);
+        click(&mut app, column, row);
+        assert!(app.world.drawing.is_none());
+        assert!(
+            app.world
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::Poked { .. }))
+        );
     }
 }

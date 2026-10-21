@@ -2,6 +2,7 @@ mod activity;
 pub mod blocks;
 pub mod calendar;
 mod doodle;
+pub mod fog;
 pub mod friend;
 pub mod game;
 pub mod growth;
@@ -14,6 +15,7 @@ pub mod occasion;
 mod pounce;
 mod question;
 mod random;
+mod recognizer;
 mod routine;
 mod sight;
 mod sleep;
@@ -22,12 +24,13 @@ pub mod visitor;
 mod vocabulary;
 mod weather;
 
-use glam::{Vec2, Vec3};
+use glam::Vec3;
 
 pub use activity::{Activity, Plan};
 pub use blocks::Block;
 pub use calendar::Season;
 pub use doodle::{Doodle, Picture, Sketch, Writing};
+pub use fog::{Drawing, LearnedPicture};
 pub use friend::{Companion, Friend};
 pub use game::{Game, Mark, Outcome};
 pub use growth::{Skill, Skills, Stage};
@@ -200,6 +203,11 @@ pub enum EventKind {
     PokedFriend,
     PlayedWithFriend(friend::Game),
     MoonWish,
+    SawDrawing {
+        name: Option<String>,
+    },
+    LearnedPicture(String),
+    Copied(String),
 }
 
 impl EventKind {
@@ -272,6 +280,14 @@ impl EventKind {
                 }
             }
             .to_owned(),
+            Self::SawDrawing { name: Some(name) } => {
+                format!("looked at a {name} the viewer drew on the glass")
+            }
+            Self::SawDrawing { name: None } => {
+                "looked at a drawing of the viewer's it couldn't make out".to_owned()
+            }
+            Self::LearnedPicture(name) => format!("learned that the viewer's drawing is a {name}"),
+            Self::Copied(name) => format!("drew a {name} on the glass"),
             Self::Doodled(name) => format!("drew a {name} on the glass"),
             Self::Wrote { text, mirrored, .. } => format!(
                 "wrote “{}” on the glass{}",
@@ -344,16 +360,28 @@ pub enum Understanding {
     Nothing,
     /// Words it doesn't know yet, `word` above all; `again` once it has
     /// heard one of them before.
-    Puzzled { word: String, again: bool },
+    Puzzled {
+        word: String,
+        again: bool,
+    },
     /// It took `word` to ask for `activity` and set out to do it.
-    Doing { word: String, activity: Activity },
+    Doing {
+        word: String,
+        activity: Activity,
+    },
     /// It took `word` to ask for `activity`, which it can't do now.
-    Unable { word: String, activity: Activity },
+    Unable {
+        word: String,
+        activity: Activity,
+    },
     /// A question it can answer about itself; `doing` is what it was doing
     /// when asked, or `None` if it was asleep.
     Asked {
         question: Question,
         doing: Option<Activity>,
+    },
+    Named {
+        picture: String,
     },
 }
 
@@ -496,6 +524,8 @@ pub struct World {
     sebae: Option<occasion::Bow>,
     sebae_gift_until: f64,
     wished_night: Option<jiff::civil::Date>,
+    pub drawing: Option<Drawing>,
+    latest_korean: bool,
 }
 
 impl World {
@@ -582,6 +612,8 @@ impl World {
             sebae: None,
             sebae_gift_until: 0.0,
             wished_night: None,
+            drawing: None,
+            latest_korean: false,
         };
         world.scatter_blocks();
         world
@@ -690,6 +722,7 @@ impl World {
         }
 
         self.holiday_greeting();
+        self.advance_fog();
         self.carry_out(seconds);
         let hiding = !self.ghost.plan.done
             && self.ghost.plan.activity == Activity::Hide
@@ -762,6 +795,7 @@ impl World {
         Activity::ALL
             .into_iter()
             .filter(|activity| match activity {
+                Activity::Look => self.look_is_open(),
                 Activity::Chase => self.nearest_mote().is_some(),
                 Activity::Rest => self.ghost.needs.energy < 0.85 || self.bedtime(),
                 Activity::Tend => self.plant.thirst > 0.25,
@@ -812,6 +846,7 @@ impl World {
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
             Activity::Friend => "Play tag, twirl together, or gaze at the moon with your visiting ghost friend. Fits especially when lonely or playful.".to_owned(),
+            Activity::Look => "Study the picture the viewer drew in the fog on the glass, and perhaps draw an answer beside it.".to_owned(),
             Activity::Float => {
                 "Float gently in place and look around. Fits when nothing in particular calls."
                     .to_owned()
@@ -939,9 +974,16 @@ impl World {
             ),
             Activity::Hide => self.random.range(25.0, 45.0),
             Activity::Pounce => 25.0,
+            Activity::Look => self.random.range(2.0, 3.0),
             _ => 0.0,
         };
         let target = match activity {
+            Activity::Look => self.position_of(Thing::Drawing).map_or(position, |point| {
+                (point - Vec3::Z * 0.45).clamp(
+                    ROOM_MIN + Vec3::new(0.35, 0.5, 0.35),
+                    ROOM_MAX - Vec3::new(0.35, 0.4, 0.35),
+                )
+            }),
             Activity::Explore => self.random_spot(),
             Activity::Rest => self.nook.bed(self.size()),
             Activity::Tend => self.plant.top() + Vec3::new(0.0, 0.25, 0.3),
@@ -1054,6 +1096,15 @@ impl World {
         }
         if occasion == Some(Occasion::Valentine) {
             return Picture::Sketch(Sketch::Heart);
+        }
+        if self.life.bond >= 0.3 && !self.life.pictures.is_empty() && self.random.unit() < 0.25 {
+            let index = (self.random.unit() * self.life.pictures.len() as f32) as usize;
+            let picture = &self.life.pictures[index.min(self.life.pictures.len() - 1)];
+            return Picture::copy(
+                picture.name.clone(),
+                &picture.strokes,
+                self.life.total.watched_writings < 3,
+            );
         }
         let arrived = self.events.iter().rev().any(|event| {
             matches!(
@@ -1194,11 +1245,21 @@ impl World {
             let language = if korean { 1.0 } else { 0.0 };
             self.life.korean += (language - self.life.korean) / 3.0;
         }
+        self.latest_korean = korean;
         let introduction = vocabulary::introduced_name(text);
         let naming = introduction
             .is_none()
             .then(|| vocabulary::given_name(text))
             .flatten();
+        let question = naming.is_none().then(|| question::ask(text)).flatten();
+        // A drawing just looked at may be what the words name.
+        if introduction.is_none() && naming.is_none() && question.is_none() {
+            if let Some(heard) = self.name_drawing(text) {
+                return heard;
+            }
+        } else if let Some(drawing) = &mut self.drawing {
+            drawing.close_naming();
+        }
         let mut reading = vocabulary::read(text, &self.ghost.name);
         if introduction.is_some() || naming.is_some() {
             reading.words.clear();
@@ -1207,7 +1268,6 @@ impl World {
         // A question's words ask about the ghost rather than for something
         // to do, so it learns nothing from them, and "do you love me?" is
         // no praise.
-        let question = naming.is_none().then(|| question::ask(text)).flatten();
         if question.is_some() {
             reading.words.clear();
             if reading.tone == Some(Tone::Praise) {
@@ -1783,6 +1843,9 @@ impl World {
                 self.play_with_friend();
                 look = self.friend.as_ref().map(|friend| friend.position);
             }
+            Activity::Look => {
+                look = self.study_drawing();
+            }
             Activity::Float => {
                 let anchor = self.ghost.plan.target;
                 let phase = time as f32;
@@ -2041,7 +2104,7 @@ impl World {
                                 .picture
                                 .clone()
                                 .unwrap_or(Picture::Sketch(Sketch::Smile)),
-                            center: Vec2::new(position.x, position.y),
+                            center: self.ghost.plan.anchor.truncate(),
                             size: self.ghost.plan.picture.as_ref().map_or(0.3, Picture::size),
                             started,
                         });
@@ -2059,6 +2122,7 @@ impl World {
                         if time - started > doodle.picture.draw_time() + 2.0 {
                             let event = match &doodle.picture {
                                 Picture::Sketch(sketch) => EventKind::Doodled(sketch.name()),
+                                Picture::Copy(copy) => EventKind::Copied(copy.name.clone()),
                                 Picture::Word(writing) => EventKind::Wrote {
                                     text: writing.text.clone(),
                                     mirrored: writing.mirrored,
@@ -4233,7 +4297,7 @@ mod tests {
                         assert_eq!(writing.text, word);
                         chosen += 1;
                     }
-                    Picture::Sketch(_) => {}
+                    Picture::Sketch(_) | Picture::Copy(_) => {}
                 }
             }
             assert!((35..180).contains(&chosen), "{word}: {chosen}");

@@ -367,7 +367,8 @@ fn glass_color(
     distance: f32,
     mut color: Vec3,
 ) -> Vec3 {
-    if scene.world.doodles.is_empty() && scene.world.game.is_none() {
+    if scene.world.doodles.is_empty() && scene.world.game.is_none() && scene.world.drawing.is_none()
+    {
         return color;
     }
     let hit = scene.view.eye + direction * distance;
@@ -407,6 +408,19 @@ fn glass_color(
             color = color.lerp(frost, stroke * 0.85 * opacity);
             let winning = coverage(game.winning_distance(point, time) - 0.015, footprint * 0.5);
             color = color.lerp(Vec3::ONE, winning * 0.95 * opacity);
+        }
+    }
+    if let Some(drawing) = &scene.world.drawing {
+        let offset = point - drawing.center();
+        let radius = ((drawing.maximum - drawing.minimum) * 0.5).max(Vec2::splat(0.04));
+        let mist_edge = footprint.max(0.06);
+        if offset.abs().cmple(radius + Vec2::splat(mist_edge)).all() {
+            let opacity = drawing.opacity(scene.world.time);
+            let frost = Vec3::new(1.0, 0.96, 0.88);
+            let mist = coverage((offset.abs() - radius).max_element(), mist_edge);
+            color = color.lerp(frost, mist * 0.1 * opacity);
+            let stroke = coverage(drawing.distance(point) - 0.018, footprint * 0.5);
+            color = color.lerp(frost, stroke * 0.9 * opacity);
         }
     }
     color

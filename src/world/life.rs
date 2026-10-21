@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind, GREETS_FROM, Keepsake, Nature, Occasion, Outcome, Vocabulary};
+use super::{
+    Activity, EventKind, GREETS_FROM, Keepsake, LearnedPicture, Nature, Occasion, Outcome,
+    Vocabulary,
+};
 
 /// Days of the diary kept.
 const DAYS_KEPT: usize = 60;
@@ -150,6 +153,10 @@ pub struct Tally {
     pub friend_played: Vec<super::friend::Game>,
     #[serde(default)]
     pub moon_wishes: u32,
+    #[serde(default)]
+    pub drawings_seen: u32,
+    #[serde(default)]
+    pub pictures_learned: u32,
 }
 
 impl Tally {
@@ -185,7 +192,13 @@ impl Tally {
             }
             EventKind::Found => self.finds += 1,
             EventKind::Jumped => self.jumps += 1,
-            EventKind::Doodled(_) => self.doodles += 1,
+            EventKind::Doodled(_) | EventKind::Copied(_) => self.doodles += 1,
+            EventKind::SawDrawing { .. } => {
+                self.drawings_seen = self.drawings_seen.saturating_add(1)
+            }
+            EventKind::LearnedPicture(_) => {
+                self.pictures_learned = self.pictures_learned.saturating_add(1)
+            }
             EventKind::GameOver(outcome) if outcome.finished() => {
                 self.games += 1;
                 match outcome {
@@ -365,6 +378,12 @@ impl Tally {
             0 => {}
             1 => deeds.push("drew a picture on the glass".to_owned()),
             doodles => deeds.push(format!("drew {doodles} pictures on the glass")),
+        }
+        if self.drawings_seen > 0 {
+            deeds.push("looked at the pictures you drew on the glass".to_owned());
+        }
+        if self.pictures_learned > 0 {
+            deeds.push("learned new pictures from you".to_owned());
         }
         for word in &self.written_words {
             deeds.push(format!(
@@ -548,6 +567,8 @@ pub struct Life {
     /// The share of the viewer's speech that is Korean, eased with each message.
     #[serde(default)]
     pub korean: f32,
+    #[serde(default)]
+    pub pictures: Vec<LearnedPicture>,
 }
 
 impl Life {
@@ -661,6 +682,8 @@ impl Life {
             milestone
         };
         let warmth = match kind {
+            EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
+            EventKind::LearnedPicture(_) => 0.005,
             EventKind::Heard(_) => 0.015,
             EventKind::Praised | EventKind::LearnedWord { .. } | EventKind::LearnedName(_) => 0.005,
             EventKind::Named(_) => 0.01,
@@ -879,6 +902,14 @@ impl Life {
     pub fn sanitized(mut self) -> Self {
         self.skills = self.skills.sanitized(&self.total);
         self.nature = self.nature.map(Nature::sanitized);
+        self.pictures.retain(LearnedPicture::valid);
+        // A newer example replaces an older example with the same name.
+        let mut names = std::collections::BTreeSet::new();
+        self.pictures.reverse();
+        self.pictures
+            .retain(|picture| names.insert(picture.name.clone()));
+        self.pictures.truncate(8);
+        self.pictures.reverse();
         self.viewer_name = self.viewer_name.filter(|name| {
             (2..=16).contains(&name.chars().count()) && name.chars().all(char::is_alphabetic)
         });
@@ -1002,6 +1033,9 @@ impl Life {
             return first;
         }
         let text = match kind {
+            EventKind::LearnedPicture(name) if total.pictures_learned == 1 => {
+                format!("You taught me to draw a {name}.")
+            }
             EventKind::Kept(_) if total.gifts == 1 => "The bird brought me a gift.".to_owned(),
             EventKind::AteMote if total.motes == 1 => "Caught my first light mote.".to_owned(),
             EventKind::AteMote => MOTES_MARKED
@@ -1023,7 +1057,7 @@ impl Life {
             }
             EventKind::Danced if total.dances == 1 => "Danced my first twirl.".to_owned(),
             EventKind::Found if total.finds == 1 => "You found me hiding.".to_owned(),
-            EventKind::Doodled(_) if total.doodles == 1 => {
+            EventKind::Doodled(_) | EventKind::Copied(_) if total.doodles == 1 => {
                 "Drew my first picture on the glass.".to_owned()
             }
             EventKind::Wrote {
