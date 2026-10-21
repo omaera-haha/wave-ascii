@@ -342,7 +342,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             }
             Activity::Hide => {
                 if world.viewer_present() {
-                    0.15 + 0.7 * (1.0 - needs.fun) * needs.energy
+                    0.1 + 0.6 * (1.0 - needs.fun) * needs.energy
                         + if world.occasion() == Some(Occasion::Halloween) {
                             0.5
                         } else {

@@ -2532,7 +2532,9 @@ impl Life {
         let enough = match activity {
             Activity::Mirror => 4.0,
             Activity::Music => 5.0,
-            Activity::Doodle | Activity::Hide | Activity::Build => 8.0,
+            Activity::Doodle | Activity::Build => 8.0,
+            // Hide-and-seek is a game for a few times a day, not a habit.
+            Activity::Hide => 2.0,
             Activity::Dance | Activity::Explore | Activity::Play => 16.0,
             Activity::Bubbles => 1.5,
             _ => return 1.0,
