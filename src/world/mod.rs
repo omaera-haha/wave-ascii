@@ -406,6 +406,11 @@ impl World {
         self.random.pick(weights)
     }
 
+    /// A number from 0 to 1 from the world's own random source.
+    pub fn random_unit(&mut self) -> f32 {
+        self.random.unit()
+    }
+
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
         let position = self.ghost.position;

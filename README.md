@@ -25,7 +25,9 @@ Two models give it a mind:
   as your name.
 
 Without API keys the ghost lives on instinct: its needs alone decide what it
-does, and it can't talk.
+does, and it can't talk. It still thinks to itself now and then, in a few
+words of its own that fit the moment ("The plant looks thirsty."), and
+dreams of its day while it sleeps.
 
 ## Run
 

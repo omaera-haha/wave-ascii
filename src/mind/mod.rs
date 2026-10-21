@@ -4,6 +4,7 @@ mod decision;
 mod instinct;
 #[allow(dead_code, reason = "a general client, of which the ghost uses a part")]
 pub mod jev;
+mod musing;
 mod observation;
 mod reflection;
 
@@ -14,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 
 use crate::store::{Config, Memory, Remark, Speaker};
-use crate::world::{Activity, World};
+use crate::world::{Activity, EventKind, World};
 use claude::{Cache, Claude, Effort, Reply};
 use decision::Decision;
 use jev::Jev;
@@ -32,6 +33,13 @@ const ALONE_FACTOR: f64 = 5.0;
 const MOOD_HOLDS: f32 = 90.0;
 /// Seconds the ghost keeps looking at what a mind turned it to.
 const LOOKS_FOR: f32 = 15.0;
+/// Without System Two, the chance that setting out on something crosses
+/// the ghost's mind, and the seconds between its idle musings and dreams.
+const MUSES_ON_SETTING_OUT: f32 = 0.35;
+const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
+const DREAMS_EVERY: (f32, f32) = (18.0, 30.0);
+/// Seconds a thought stays before a musing may replace it.
+const THOUGHT_HOLDS: f64 = 12.0;
 const MEMORIES_KEPT: usize = 60;
 const REMARKS_KEPT: usize = 40;
 
@@ -90,6 +98,11 @@ pub struct Mind {
     next_id: u64,
     reflecting: bool,
     last_reflection: Option<f64>,
+    /// When the ghost last mused on its own, when it muses next, and
+    /// whether its musings are dreams.
+    mused_at: f64,
+    next_musing: f64,
+    dreaming: bool,
     /// Messages from the viewer still waiting for a reply.
     heard: VecDeque<String>,
     /// The id of the latest message's request routing; answers to earlier
@@ -118,6 +131,9 @@ impl Mind {
             next_id: 0,
             reflecting: false,
             last_reflection: None,
+            mused_at: 0.0,
+            next_musing: f64::from(MUSES_EVERY.0) * 0.4,
+            dreaming: false,
             heard: VecDeque::new(),
             latest_request: 0,
         };
@@ -218,6 +234,10 @@ impl Mind {
             }
         }
 
+        if self.claude.is_none() {
+            self.muse(world);
+        }
+
         if let Some(claude) = &self.claude
             && !self.reflecting
         {
@@ -286,6 +306,55 @@ impl Mind {
                 };
                 Answer::Requested { id, activity }
             });
+        }
+    }
+
+    // Without System Two, the ghost still thinks to itself now and then: as
+    // it sets out on something, when nothing much happens, and in its
+    // dreams.
+    fn muse(&mut self, world: &mut World) {
+        let since = self.mused_at;
+        self.mused_at = world.time;
+        let asleep = world.ghost.asleep > 0.9;
+        let (low, high) = if asleep { DREAMS_EVERY } else { MUSES_EVERY };
+        if asleep != self.dreaming {
+            self.dreaming = asleep;
+            self.next_musing = world.time + f64::from(low);
+        }
+        let began = world
+            .events
+            .iter()
+            .rev()
+            .take_while(|event| event.time > since)
+            .find_map(|event| match event.kind {
+                EventKind::Began(activity) => Some(activity),
+                _ => None,
+            });
+        let lines = if world.time >= self.next_musing {
+            self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
+            if asleep {
+                musing::dreams(world)
+            } else {
+                musing::idle(world)
+            }
+        } else if let Some(activity) = began
+            && !asleep
+            && world.random_unit() < MUSES_ON_SETTING_OUT
+        {
+            musing::setting_out(world, activity)
+        } else {
+            return;
+        };
+        let thinking = world
+            .ghost
+            .thought
+            .as_ref()
+            .is_some_and(|thought| world.time - thought.time < THOUGHT_HOLDS);
+        if thinking || lines.is_empty() {
+            return;
+        }
+        if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
+            world.think(lines[index]);
         }
     }
 
@@ -688,6 +757,30 @@ mod tests {
             mind.two,
             Status::Failed("Claude authentication: bad key".into())
         );
+    }
+
+    #[test]
+    fn without_system_two_the_ghost_muses_and_dreams_on_its_own() {
+        let mut mind = offline();
+        let mut world = World::new(3, 12.0);
+        world.ghost.needs.energy = 1.0;
+        for _ in 0..(150 * 20) {
+            world.step(0.05);
+            mind.think(&mut world);
+        }
+        let mused = world.ghost.thought.clone().unwrap();
+        assert!(!mused.text.starts_with('…'), "{}", mused.text);
+
+        world.ghost.needs.energy = 0.2;
+        world.begin(Activity::Rest);
+        for _ in 0..(60 * 20) {
+            world.step(0.05);
+            mind.think(&mut world);
+        }
+        assert!(world.ghost.asleep > 0.9);
+        let dream = world.ghost.thought.clone().unwrap();
+        assert!(dream.text.starts_with('…'), "{}", dream.text);
+        assert!(dream.time > mused.time);
     }
 
     #[test]
