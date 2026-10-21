@@ -72,14 +72,15 @@ Keys:
   g            noughts and crosses    1-9      choose a square
   o            focus together for twenty-five minutes (o again ends it)
   f            draw in the fog with left drags (f or Esc stops)
+  e            read letters (left/right for older/newer)
   q, Esc       quit
 
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, a block to nudge it or a tower to topple it, the window to ask it
-to open or shut, the music box to wind it, and elsewhere to drop a light mote.
+to open or shut, the music box to wind it, an envelope to read it, and elsewhere to drop a light mote.
 Press on the ghost and drag across it to stroke it; drag elsewhere to turn the view,
 and scroll to zoom. Right-drag draws in the fog on the glass. In the
-journal, help, life, or album panel, the mouse selects text. In the journal,
+journal, help, life, letter, or album panel, the mouse selects text. In the journal,
 PageUp/PageDown and Home/End also scroll; Esc, Enter, or j closes it. In the
 album, left/right flip pages, Home/End jump to newest/oldest, and Esc or b
 closes it; q quits.

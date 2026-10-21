@@ -14,6 +14,7 @@ pub mod garden;
 pub mod growth;
 mod letters;
 mod life;
+pub mod mail;
 pub mod meteor;
 pub mod music;
 mod nature;
@@ -273,12 +274,16 @@ pub enum EventKind {
     MadeWish(Wish),
     WishFaded(Wish),
     WishGranted(Wish),
+    WroteLetter,
+    ReadLetter,
 }
 
 impl EventKind {
     /// The event in a few words, from the ghost's side.
     pub fn words(&self) -> String {
         match self {
+            Self::WroteLetter => "wrote you a letter while you were away".to_owned(),
+            Self::ReadLetter => "you read my letter".to_owned(),
             Self::Quirk(kind) => kind.words().to_owned(),
             Self::PutOn(accessory) => format!("put on {}", accessory.words()),
             Self::TookOff(accessory) => format!("took off {}", accessory.words()),

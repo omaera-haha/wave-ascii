@@ -289,7 +289,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::LearnedTune(_) => Emote::Note,
         EventKind::Doodled(_) | EventKind::Wrote { .. } if bond >= 0.3 => Emote::Heart,
         EventKind::Doodled(_) | EventKind::Wrote { .. } => Emote::Note,
-        EventKind::Praised => Emote::Heart,
+        EventKind::Praised | EventKind::ReadLetter => Emote::Heart,
         EventKind::ExpectedArrival => Emote::Heart,
         EventKind::FocusEnded {
             completed: true, ..

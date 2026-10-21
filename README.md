@@ -130,6 +130,7 @@ the next requests use them at once.
 | `l`             | Its life: age, growth, skills, bond, today so far           |
 | `p`             | Save a postcard of the moment                             |
 | `b`             | Open the album of moments the ghost kept                  |
+| `e`             | Read letters; Left/Right browse older/newer                |
 | `o`             | Focus together for twenty-five minutes; `o` again ends it |
 | `g`             | Invite it to noughts and crosses on the glass              |
 | `f`             | Toggle finger drawing in the fog; `f` or Esc stops         |
@@ -206,6 +207,22 @@ The newest sixty pages live in `~/.local/share/wave-ascii/album/`
 local timestamp names and run-length encoded truecolor cells. Older pages
 are deleted as new ones arrive; missing, damaged, and foreign files are
 skipped. Without a saved life, including piped previews, no pictures are kept.
+
+### Letters from the ghost
+
+After at least six hours away, a ghost past its first day leaves a letter
+by the front glass. Click the little envelope or press `e` to read it.
+Left/Right browse older/newer letters; Esc, Enter, or `e` closes the paper,
+and `q` quits. The status bar shows `✉ e` while a letter waits unread.
+The newest twenty letters stay with its saved life, and the journal lists
+their dates and opening lines after the diary.
+
+Letters remember its time alone and the life you share, in English or
+Korean. Newborns old enough to write leave a tiny babbling note. They work
+without keys; with Claude enabled, a separate request can add its own words
+using the away story, skipped diary days, and memories. Opening the letter
+keeps its words fixed. Letters stay separate from the conversation. Reading
+one warms the bond and can leave a picture in the album.
 
 ### Focus together
 

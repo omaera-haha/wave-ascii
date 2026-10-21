@@ -56,6 +56,7 @@ pub enum Mode {
     Life,
     /// Leafing through the pictures the ghost kept.
     Album,
+    Letter,
 }
 
 /// The most characters a line holds; more is cut off as it is typed or
@@ -203,10 +204,14 @@ pub struct App {
     pub drawing_mode: bool,
     drawing_right: bool,
     pub album: Album,
+    pub letter_index: usize,
+    letter_read: bool,
+    letter_reply_at: Option<f64>,
 }
 
 impl App {
     pub fn new(world: World, mind: Mind, config: Config, style: Style, color: ColorMode) -> Self {
+        mind.write_letter(&world);
         let aura = mood_color(world.ghost.mood);
         Self {
             world,
@@ -241,6 +246,9 @@ impl App {
             drawing_mode: false,
             drawing_right: false,
             album: Album::default(),
+            letter_index: 0,
+            letter_read: false,
+            letter_reply_at: None,
         }
     }
 
@@ -276,6 +284,24 @@ impl App {
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
         self.mind.think(&mut self.world);
+        if self.mode != Mode::Letter
+            && self
+                .letter_reply_at
+                .is_some_and(|time| self.world.time >= time)
+        {
+            self.letter_reply_at = None;
+            if self.world.ghost.asleep < 0.3
+                && self.world.focus.is_none()
+                && self.world.telling.is_none()
+            {
+                self.world.attend("viewer", 8.0);
+                self.world.say(if self.world.speaks_korean() {
+                    "마음에 들었어?"
+                } else {
+                    "Did you like it?"
+                });
+            }
+        }
         self.world.celebrate_wish();
         if let Some(notice) = self.world.share_wish() {
             self.post(notice);
@@ -423,7 +449,7 @@ impl App {
     pub fn wants_mouse(&self) -> bool {
         !matches!(
             self.mode,
-            Mode::Journal | Mode::Help | Mode::Life | Mode::Album
+            Mode::Journal | Mode::Help | Mode::Life | Mode::Album | Mode::Letter
         )
     }
 
@@ -487,6 +513,29 @@ impl App {
                 }
                 Response::Continue
             }
+            Mode::Letter => {
+                match key {
+                    Key::Character('q') => return Response::Quit,
+                    Key::Escape | Key::Enter | Key::Character('e') => {
+                        self.mode = Mode::Watching;
+                        if self.letter_read {
+                            self.letter_reply_at = Some(self.world.time + 1.0);
+                            self.letter_read = false;
+                        }
+                    }
+                    Key::Left | Key::Right => {
+                        let newest = self.world.life.letters.len().saturating_sub(1);
+                        self.letter_index = if key == Key::Left {
+                            self.letter_index.saturating_sub(1)
+                        } else {
+                            (self.letter_index + 1).min(newest)
+                        };
+                        self.letter_read |= self.world.read_letter(self.letter_index);
+                    }
+                    _ => {}
+                }
+                Response::Continue
+            }
             Mode::Watching => self.command(key),
         }
     }
@@ -511,6 +560,7 @@ impl App {
                 self.album.index = 0;
                 self.mode = Mode::Album;
             }
+            Key::Character('e') => self.open_letter(),
             Key::Character('p') => self.save_postcard(),
             Key::Character('o') => self.world.toggle_focus(),
             Key::Character('g') => {
@@ -548,6 +598,24 @@ impl App {
             self.stroke = None;
         }
         Response::Continue
+    }
+
+    fn open_letter(&mut self) {
+        let Some(index) = self
+            .world
+            .unread_letter()
+            .or_else(|| self.world.life.letters.len().checked_sub(1))
+        else {
+            self.post("No letters yet.");
+            return;
+        };
+        self.letter_index = index;
+        self.letter_read = self.world.read_letter(index);
+        self.mode = Mode::Letter;
+        self.world.lift_finger();
+        self.press = None;
+        self.stroke = None;
+        self.drawing_right = false;
     }
 
     fn toggle_drawing(&mut self) {
@@ -873,6 +941,10 @@ impl App {
         let floor = view
             .on_plane(point, 0.0)
             .filter(|spot| spot.cmpge(ROOM_MIN).all() && spot.cmple(ROOM_MAX).all());
+        if self.world.unread_letter().is_some() && floor.is_some_and(crate::world::mail::hit) {
+            self.open_letter();
+            return;
+        }
         let spot = floor
             .map(|spot| spot + Vec3::Y * 0.9)
             .or_else(|| view.on_glass(point).map(|spot| spot - Vec3::Z * 0.5));
@@ -1301,6 +1373,9 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
             }
             world.remember_away(story, seed);
         }
+        if now.saturating_sub(save.born) >= 86_400 {
+            world.write_return_letter(away);
+        }
         world.record_return(away);
     }
     world.restore_wardrobe();
@@ -1312,6 +1387,190 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
 
 #[cfg(test)]
 mod tests {
+    fn letter(day: &str, read: bool) -> crate::world::mail::Letter {
+        crate::world::mail::Letter {
+            day: day.to_owned(),
+            lines: vec!["Dear you,".to_owned(), "Love, Pip".to_owned()],
+            read,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_letter_key_opens_the_newest_unread_letter_and_closes_with_text_panel_keys() {
+        for close in [Key::Character('e'), Key::Escape, Key::Enter] {
+            let mut app = app();
+            app.world.life.letters = vec![letter("2026-06-20", false), letter("2026-06-21", true)];
+            assert_eq!(
+                app.input(Input::Key(Key::Character('e'))),
+                Response::Continue
+            );
+            assert_eq!(app.mode, Mode::Letter);
+            assert_eq!(app.letter_index, 0);
+            assert!(!app.wants_mouse());
+            app.frame(100, 32);
+            assert!(app.world.life.letters[0].read);
+            assert_eq!(app.world.life.total.letters_read, 1);
+            let plan = app.world.ghost.plan.clone();
+            let camera = app.camera;
+            let paused = app.paused;
+            for key in [
+                Key::Character(' '),
+                Key::Character('g'),
+                Key::Character('j'),
+                Key::Up,
+                Key::Home,
+            ] {
+                app.input(Input::Key(key));
+            }
+            app.input(Input::Paste("hello".to_owned()));
+            assert_eq!(app.world.ghost.plan, plan);
+            assert_eq!(app.camera, camera);
+            assert_eq!(app.paused, paused);
+            assert_eq!(app.mode, Mode::Letter);
+            app.input(Input::Key(close));
+            assert_eq!(app.mode, Mode::Watching);
+            assert!(app.wants_mouse());
+            app.input(Input::Key(Key::Character('e')));
+            assert_eq!(app.letter_index, 1);
+            assert_eq!(app.world.life.total.letters_read, 1);
+            assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+        }
+    }
+
+    #[test]
+    fn left_and_right_page_through_letters_and_mark_each_unread_one_once() {
+        let mut app = app();
+        app.world.life.letters = vec![
+            letter("2026-06-19", false),
+            letter("2026-06-20", false),
+            letter("2026-06-21", false),
+        ];
+        app.input(Input::Key(Key::Character('e')));
+        assert_eq!(app.letter_index, 2);
+        for _ in 0..4 {
+            app.input(Input::Key(Key::Left));
+        }
+        assert_eq!(app.letter_index, 0);
+        for _ in 0..4 {
+            app.input(Input::Key(Key::Right));
+        }
+        assert_eq!(app.letter_index, 2);
+        assert!(app.world.life.letters.iter().all(|letter| letter.read));
+        assert_eq!(app.world.life.total.letters_read, 3);
+        assert_eq!(
+            app.world
+                .events
+                .iter()
+                .filter(|event| event.kind == EventKind::ReadLetter)
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn the_letter_key_posts_a_notice_until_there_are_letters() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('e')));
+        assert_eq!(app.mode, Mode::Watching);
+        assert_eq!(app.notice(), Some("No letters yet."));
+        assert!(app.wants_mouse());
+    }
+
+    #[test]
+    fn clicking_an_unread_envelope_opens_it_without_dropping_a_mote() {
+        let mut app = app();
+        app.world.ghost.position = Vec3::new(-1.0, 1.5, 0.0);
+        app.world.life.letters.push(letter("2026-06-21", false));
+        let point = app
+            .view
+            .unwrap()
+            .project(crate::world::mail::POSITION)
+            .unwrap();
+        app.click(point);
+        assert_eq!(app.mode, Mode::Letter);
+        assert!(app.world.life.letters[0].read);
+        assert!(app.world.motes.is_empty());
+        app.input(Input::Key(Key::Escape));
+        app.click(point);
+        assert_eq!(app.mode, Mode::Watching);
+        assert_eq!(app.world.motes.len(), 1);
+    }
+
+    #[test]
+    fn the_ghost_waits_until_after_the_letter_closes_to_ask_about_it_without_waking() {
+        for (korean, asleep) in [(false, false), (true, false), (false, true)] {
+            let mut app = app();
+            app.world.life.korean = if korean { 1.0 } else { 0.0 };
+            if asleep {
+                app.world.hour = 23.0;
+                app.world.tuck_in();
+            }
+            app.world.life.letters.push(letter("2026-06-21", false));
+            app.input(Input::Key(Key::Character('e')));
+            app.advance(3.0);
+            assert!(
+                !app.world
+                    .ghost
+                    .speech
+                    .as_ref()
+                    .is_some_and(|speech| speech.text == "Did you like it?"
+                        || speech.text == "마음에 들었어?")
+            );
+            app.input(Input::Key(Key::Escape));
+            app.advance(1.1);
+            if asleep {
+                assert!(app.world.ghost.asleep > 0.5);
+            } else {
+                assert_eq!(
+                    app.world.ghost.speech.as_ref().unwrap().text,
+                    if korean {
+                        "마음에 들었어?"
+                    } else {
+                        "Did you like it?"
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn restore_writes_one_letter_per_long_return_and_keeps_it_in_the_save() {
+        for hours in [5, 6, 48] {
+            let mut world = World::new(11, 12.0);
+            let save = garden_save(&world);
+            let returned = save.last_seen + hours * 3600;
+            restore(&mut world, &save, returned);
+            let expected = usize::from(hours >= 6);
+            assert_eq!(world.life.letters.len(), expected);
+            let mut app = App::new(
+                world,
+                Mind::new(&Config::default(), Journal::default(), true),
+                Config::default(),
+                Style::Ascii,
+                ColorMode::Plain,
+            );
+            app.advance(10.0);
+            assert_eq!(app.world.life.letters.len(), expected);
+            let mut saved = garden_save(&app.world);
+            saved.last_seen = returned;
+            let saved: Save =
+                serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+            restore(&mut app.world, &saved, returned + 30);
+            assert_eq!(app.world.life.letters.len(), expected);
+        }
+    }
+
+    #[test]
+    fn restore_does_not_ask_a_ghost_under_a_day_old_to_write() {
+        for birth in ["2026-06-21T02:00:00", "2026-06-20T23:00:00"] {
+            let mut world = World::new(1, 12.0);
+            let mut save = garden_save(&world);
+            save.born = local_seconds(birth);
+            restore(&mut world, &save, local_seconds("2026-06-21T20:00:00"));
+            assert!(world.life.letters.is_empty());
+        }
+    }
 
     #[test]
     fn clicking_the_music_box_winds_it_without_dropping_a_mote_or_waking_a_sleeper() {

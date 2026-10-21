@@ -87,6 +87,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::Quirk(Quirk::Yawn) => Expression::Yawn,
         EventKind::Quirk(Quirk::Shiver) => Expression::Worry,
         EventKind::Quirk(Quirk::Sigh) => Expression::Sigh,
+        EventKind::ReadLetter => glance(0.25, -0.2),
         EventKind::MadeWish(_) => Expression::Smile,
         EventKind::WishGranted(_) => Expression::Sparkle,
         EventKind::WishFaded(_) => glance(0.0, -0.3),

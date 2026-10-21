@@ -92,6 +92,7 @@ pub fn observe(world: &World) -> Value {
         "recent_events": recent(world, 8),
         "skills": Skill::ALL.map(|skill| world.life.skills.description(skill)),
         "wish": world.wish_observation(),
+        "letter": if world.unread_letter().is_some() { "a letter for the viewer waits unread by the front glass" } else { "no unread letter waiting" },
     })
 }
 

@@ -194,6 +194,11 @@ pub fn request(
     let stage = observation["ghost"]["stage"]
         .as_str()
         .unwrap_or("a grown ghost");
+    let letter = if life.today.letters_written > 0 {
+        " You wrote a letter for the viewer today. It is kept separately from conversation."
+    } else {
+        ""
+    };
     let voice = if stage == Stage::Newborn.words() {
         " Speak in very short, simple sentences."
     } else {
@@ -239,7 +244,7 @@ pub fn request(
             Block::new(SYSTEM),
             block(format!(
                 "By nature you are {}. Let that color your voice.\n\
-                 You are {stage}.{voice}\n\n\
+                 You are {stage}.{voice}{letter}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
                  Your bond with the viewer: {}.{routine}{name}{friend}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\

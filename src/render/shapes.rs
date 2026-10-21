@@ -46,6 +46,9 @@ pub enum Material {
     BookCover(u8),
     BookPages,
     MusicNote(u8),
+    Envelope,
+    EnvelopeFlap,
+    HeartSeal,
 }
 
 impl Material {
@@ -53,6 +56,9 @@ impl Material {
     /// shapes keep their contrast in plain styles.
     pub fn albedo(self, plant: &Plant) -> Vec3 {
         match self {
+            Self::Envelope => Vec3::new(1.0, 0.98, 0.92),
+            Self::EnvelopeFlap => Vec3::new(0.79, 0.81, 0.84),
+            Self::HeartSeal => Vec3::new(1.0, 0.32, 0.42),
             Self::BookCover(index) => match index % 5 {
                 0 => Vec3::new(0.62, 0.78, 0.9),
                 1 => Vec3::new(0.9, 0.68, 0.72),
@@ -166,11 +172,13 @@ pub enum Furniture<'a> {
     },
     MusicBox(bool, f32),
     MusicNote(Vec3, bool, u8),
+    Envelope,
 }
 
 impl Furniture<'_> {
     pub fn bounds(&self) -> (Vec3, f32) {
         match self {
+            Self::Envelope => (crate::world::mail::POSITION + Vec3::Y * 0.012, 0.24),
             Self::Books(_, _) => (crate::world::books::POSITION + Vec3::Y * 0.09, 0.29),
             Self::OpenBook { position, size, .. } => (*position, 0.29 * size),
             Self::MusicBox(_, _) => (crate::world::music::POSITION + Vec3::Y * 0.19, 0.4),
@@ -213,6 +221,7 @@ impl Furniture<'_> {
     /// nearest it.
     pub fn distance(&self, point: Vec3) -> (f32, Material) {
         match self {
+            Self::Envelope => envelope(point),
             Self::Books(owned, held) => {
                 let point = point - crate::world::books::POSITION;
                 let mut nearest = (f32::MAX, Material::BookPages);
@@ -409,6 +418,42 @@ impl Furniture<'_> {
             distance += gap * 0.9;
         }
         None
+    }
+}
+
+fn envelope(point: Vec3) -> (f32, Material) {
+    let point = point - crate::world::mail::POSITION - Vec3::Y * 0.012;
+    let bounds = box_distance(point, Vec3::new(0.20, 0.025, 0.13));
+    if bounds > 0.03 {
+        return (bounds, Material::Envelope);
+    }
+    let paper = box_distance(
+        point,
+        Vec3::new(
+            crate::world::mail::HALF_WIDTH,
+            0.008,
+            crate::world::mail::HALF_DEPTH,
+        ),
+    );
+    let fold = (point.z - (point.x.abs() * 0.65 - 0.04)).abs();
+    let heart = Vec2::new(point.x, point.z) - Vec2::new(0.0, -0.025);
+    let lobes = (heart - Vec2::new(0.012, 0.008))
+        .length()
+        .min((heart - Vec2::new(-0.012, 0.008)).length())
+        - 0.019;
+    let tip = (heart.x.abs() + (heart.y + 0.019).abs() - 0.025) * 0.707;
+    let seal = lobes.min(tip).max((point.y - 0.01).abs() - 0.006);
+    if seal < paper {
+        (seal, Material::HeartSeal)
+    } else {
+        (
+            paper,
+            if fold < 0.006 {
+                Material::EnvelopeFlap
+            } else {
+                Material::Envelope
+            },
+        )
     }
 }
 
@@ -1083,6 +1128,30 @@ pub fn ellipsoid(point: Vec3, radii: Vec3) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_envelope_distance_is_finite_and_contained_in_its_bounds() {
+        let envelope = Furniture::Envelope;
+        let (center, radius) = envelope.bounds();
+        for across in -12..=12 {
+            for height in -3..=3 {
+                for depth in -12..=12 {
+                    let point =
+                        center + Vec3::new(across as f32, height as f32, depth as f32) * 0.025;
+                    let (distance, _) = envelope.distance(point);
+                    assert!(distance.is_finite());
+                    assert!(envelope.normal(point).is_finite());
+                    if (point - center).length() > radius {
+                        assert!(distance > 0.0);
+                    }
+                }
+            }
+        }
+        for direction in [Vec3::X, Vec3::Y, Vec3::Z, Vec3::ONE.normalize()] {
+            if let Some((distance, _)) = envelope.trace(center + direction, -direction, 2.0) {
+                assert!(distance.is_finite() && (0.0..=2.0).contains(&distance));
+            }
+        }
+    }
 
     #[test]
     fn music_box_and_rising_notes_have_finite_distances_normals_and_ray_hits() {
