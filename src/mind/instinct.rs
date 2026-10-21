@@ -91,6 +91,17 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     }
                     + if world.fireworks() { 1.5 } else { 0.0 };
                 weight * if shelter { 0.2 } else { 1.0 }
+                    + if world.life.sill.is_some()
+                        && !world
+                            .visitors
+                            .bird
+                            .as_ref()
+                            .is_some_and(|bird| bird.perched(world.time))
+                    {
+                        1.5
+                    } else {
+                        0.0
+                    }
             }
             Activity::Fetch => {
                 let thrown = world
@@ -541,7 +552,7 @@ mod tests {
         let mut world = World::new(1, 12.0);
         let options = [Activity::Float, Activity::Window];
         let ordinary = weigh(&world, &options);
-        let mut bird = Bird::new(0.0, &mut Random::new(1));
+        let mut bird = Bird::new(0.0, 0.0, &mut Random::new(1));
         world.time = 5.0;
         world.visitors.bird = Some(bird);
         assert_eq!(weigh(&world, &options), ordinary);
@@ -552,6 +563,24 @@ mod tests {
                 > chance(&ordinary, Activity::Window)
         );
         world.time = 0.0;
+        assert_eq!(weigh(&world, &options), ordinary);
+    }
+
+    #[test]
+    fn a_waiting_gift_invites_a_window_visit_once_the_bird_is_gone() {
+        use crate::world::{Keepsake, Random, visitor::Bird};
+
+        let mut world = World::new(1, 12.0);
+        let options = [Activity::Float, Activity::Window];
+        let ordinary = weigh(&world, &options);
+        world.life.sill = Some(Keepsake::Petal);
+        assert!(
+            chance(&weigh(&world, &options), Activity::Window)
+                > chance(&ordinary, Activity::Window)
+        );
+        assert!(world.describe(Activity::Window).contains("a blossom petal"));
+        world.time = 5.0;
+        world.visitors.bird = Some(Bird::new(0.0, 0.8, &mut Random::new(1)));
         assert_eq!(weigh(&world, &options), ordinary);
     }
 

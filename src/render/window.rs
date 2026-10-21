@@ -3,7 +3,7 @@ use std::f32::consts::{PI, TAU};
 use glam::{Vec2, Vec3};
 
 use crate::sdf::{capsule, coverage, mix, smoothstep};
-use crate::world::{BirdPicture, Season};
+use crate::world::{BirdPicture, Keepsake, Season};
 
 pub const WINDOW_LOW: Vec2 = Vec2::new(-0.75, 1.0);
 pub const WINDOW_HIGH: Vec2 = Vec2::new(0.75, 2.0);
@@ -23,6 +23,7 @@ pub struct Outside {
     pub fireworks: bool,
     pub time: f64,
     pub bird: Option<BirdPicture>,
+    pub sill: Option<Keepsake>,
 }
 
 impl Outside {
@@ -42,6 +43,7 @@ impl Outside {
             fireworks: false,
             time,
             bird: None,
+            sill: None,
         }
     }
 }
@@ -256,6 +258,22 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     }
     if let Some(bird) = outside.bird {
         color = visiting_bird(color, coordinates, footprint, bird, outside.season);
+    }
+    if let Some(gift) = outside.sill {
+        let local = (coordinates - Vec2::new(0.78, 0.06)) * Vec2::new(1.5, 1.0);
+        if local.x.abs() < 0.14 + footprint && (-0.02..0.2).contains(&local.y) {
+            let (distance, _) =
+                super::shapes::keepsake_distance(Vec3::new(local.x, local.y, 0.0), gift);
+            let tint = match gift {
+                Keepsake::Feather => Vec3::new(0.78, 0.9, 1.0),
+                Keepsake::Petal => Vec3::new(1.0, 0.56, 0.76),
+                Keepsake::Acorn => Vec3::new(0.85, 0.58, 0.32),
+                Keepsake::Leaf => Vec3::new(1.0, 0.42, 0.2),
+                Keepsake::Berry => Vec3::new(1.0, 0.3, 0.38),
+                Keepsake::Pebble => Vec3::new(0.7, 0.76, 0.84),
+            };
+            color = color.lerp(tint, coverage(distance, footprint));
+        }
     }
     if snow > 0.0 {
         color = snowfall(color, coordinates, footprint, outside.time, snow);
@@ -605,7 +623,7 @@ mod tests {
     fn window_samples_stay_finite_with_a_flying_or_perched_bird_in_every_season() {
         use crate::world::{Random, visitor::Bird};
 
-        let bird = Bird::new(0.0, &mut Random::new(1));
+        let bird = Bird::new(0.0, 0.0, &mut Random::new(1));
         for season in [
             Season::Spring,
             Season::Summer,

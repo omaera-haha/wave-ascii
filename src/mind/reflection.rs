@@ -38,7 +38,8 @@ You are the inner voice of a small ghost who lives in a glass box inside a perso
 The box holds a floor lamp, a potted plant, a ball, a cushion to sleep on, and light motes that \
 drift in and that the ghost eats for energy. The person watches from the other side of the glass \
 and can move a pointer over it, poke the ghost, drop light motes in, flick the ball, and type to \
-it. The ghost cannot leave the box or do anything outside it.
+it. The ghost stays in the box, but can reach through the window pane to take the bird's gifts \
+from the outer sill and carry them to its shelf of keepsakes.
 
 The ghost learns the person's words the way a pet does, from what it was doing when it heard them, what the person did next, and whether they sounded pleased; `Words it has learned` lists the ones it knows and what it takes them to mean.
 
@@ -157,9 +158,12 @@ pub fn request(
             Block::new(SYSTEM),
             block(format!(
                 "By nature you are {}. Let that color your voice.\n\n\
+                 The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}",
                 life.nature.unwrap_or_default().words(),
+                life.bird_words(),
+                life.keepsake_words(),
                 bullets(&memories),
                 bullets(&milestones),
                 bullets(&days),
@@ -247,6 +251,11 @@ mod tests {
             text: "Hello!".to_owned(),
         }];
         let life = Life {
+            bird_trust: 0.7,
+            keepsakes: vec![
+                crate::world::Keepsake::Feather,
+                crate::world::Keepsake::Acorn,
+            ],
             nature: Some(crate::world::Nature {
                 playful: 0.95,
                 shy: 0.72,
@@ -279,6 +288,9 @@ mod tests {
                 .text
                 .starts_with("By nature you are playful and a little shy.")
         );
+        assert!(request.system[1].text.contains(
+            "The bird: a friend. You treasure the shelf of keepsakes, with a feather and an acorn."
+        ));
         assert_eq!(request.system[1].cache, Some(Cache::OneHour));
         assert!(
             request.system[1]

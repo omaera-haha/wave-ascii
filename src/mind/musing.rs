@@ -60,6 +60,9 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         }
         Activity::Doodle => vec!["Let me draw something.", "Hm, what shall I draw?"],
         Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
+        Activity::Window if world.life.sill.is_some() => {
+            vec!["Is that for me?", "I'll keep it somewhere safe."]
+        }
         Activity::Window if world.morning() => morning(world),
         Activity::Window
             if world
@@ -92,6 +95,15 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if !world.life.keepsakes.is_empty() {
+        lines.extend(["Every little gift has a place.", "I like my little shelf."]);
+    }
+    if world.life.bird_trust >= 0.5 {
+        lines.extend([
+            "I hope my bird comes back soon.",
+            "It isn't afraid of me anymore.",
+        ]);
+    }
     if let Some(nature) = world.life.nature {
         if nature.shy >= 0.7 && present && world.life.bond < 0.3 {
             lines.push("Is it okay if I watch you?");
@@ -275,6 +287,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if today.birds > 0 {
         lines.push("…a little bird, singing…");
+    }
+    if today.gifts > 0 {
+        lines.push("…the bird brings me a feather as big as the sky…");
     }
     if today.nudges > 0 || today.fetches > 0 {
         lines.push("…the ball rolls on and on, out into the hills…");

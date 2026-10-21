@@ -9,7 +9,9 @@ use crate::world::{Activity, Perch, Plant, Seen, Sky, Thing, World, calendar::mo
 pub fn observe(world: &World) -> Value {
     let ghost = &world.ghost;
     let plan = &ghost.plan;
-    let doing = if plan.done {
+    let doing = if let Some(gift) = ghost.keepsake {
+        format!("carrying {} to the shelf of keepsakes", gift.name())
+    } else if plan.done {
         format!("just finished {}", plan.activity.doing())
     } else if plan.activity == Activity::Hide && plan.arrived.is_some() {
         format!("{} and waiting to be found", plan.activity.doing())
@@ -138,6 +140,22 @@ fn outside_the_window(world: &World) -> String {
     if world.fireworks() {
         outside.push_str(", fireworks bursting in the sky");
     }
+    if world.visitors.bird.is_some() {
+        outside.push_str(match world.life.bird_trust {
+            trust if trust < 0.2 => ", the bird is wary of you",
+            trust if trust < 0.5 => ", the bird is getting used to you",
+            _ => ", the bird trusts you",
+        });
+    }
+    if let Some(gift) = world.life.sill
+        && world
+            .sight()
+            .in_view
+            .iter()
+            .any(|seen| seen.thing == Thing::Window && seen.hidden_behind.is_none())
+    {
+        outside.push_str(&format!(", {} waiting on the outer sill", gift.name()));
+    }
     outside
 }
 
@@ -195,6 +213,7 @@ fn thing(world: &World, thing: Thing) -> String {
         Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
         Thing::Ball => "the ball".to_owned(),
         Thing::Cushion => "the cushion".to_owned(),
+        Thing::Shelf => world.life.keepsake_words(),
         Thing::Decoration => world
             .decoration()
             .map_or("a decoration", |decoration| decoration.words())
@@ -330,6 +349,38 @@ mod tests {
     use super::*;
     use crate::world::EventKind;
     use glam::Vec3;
+
+    #[test]
+    fn bird_friendship_and_keepsakes_reach_the_minds_in_words() {
+        use crate::world::{Keepsake, Random, visitor::Bird};
+
+        let mut world = World::new(1, 12.0);
+        world.ghost.heading = (crate::world::WINDOW_CENTER - world.ghost.position).normalize();
+        world.life.sill = Some(Keepsake::Petal);
+        world.life.keepsakes = vec![Keepsake::Feather, Keepsake::Acorn];
+        world.visitors.bird = Some(Bird::new(0.0, 0.8, &mut Random::new(1)));
+        for (trust, words) in [
+            (0.0, "wary of you"),
+            (0.3, "getting used to you"),
+            (0.8, "trusts you"),
+        ] {
+            world.life.bird_trust = trust;
+            let observation = observe(&world).to_string();
+            assert!(observation.contains(words));
+            assert!(observation.contains("a blossom petal waiting on the outer sill"));
+            assert!(
+                !observation
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+        assert_eq!(
+            thing(&world, Thing::Shelf),
+            "the shelf of keepsakes, with a feather and an acorn"
+        );
+        world.ghost.heading = Vec3::Z;
+        assert!(!outside_the_window(&world).contains("waiting on the outer sill"));
+    }
 
     #[test]
     fn the_observation_describes_the_room_in_words_not_numbers() {
@@ -512,7 +563,7 @@ mod tests {
 
         let mut world = World::new(1, 12.0);
         let mut random = Random::new(1);
-        let mut bird = Bird::new(0.0, &mut random);
+        let mut bird = Bird::new(0.0, 0.0, &mut random);
         for (time, perch, words) in [
             (1.0, Perch::Tree, "flying"),
             (5.0, Perch::Tree, "perched on the tree"),

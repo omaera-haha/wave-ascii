@@ -284,7 +284,7 @@ impl App {
             goal: world.ghost.goal.clone(),
             memories: self.mind.journal.memories.clone(),
             conversation: self.mind.journal.conversation.clone(),
-            life: world.life.clone(),
+            life: world.saved_life(),
         };
         crate::store::save_json(&paths.save, &save)
     }
@@ -654,6 +654,7 @@ impl App {
                         .as_ref()
                         .map(|bird| bird.picture(world.time)),
                     time: world.time,
+                    sill: world.life.sill,
                 },
                 view,
                 face,
@@ -915,6 +916,54 @@ mod tests {
         assert_eq!(app.input(Input::Key(Key::Escape)), Response::Continue);
         assert_eq!(app.mode, Mode::Watching);
         assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+    }
+
+    #[test]
+    fn saving_preserves_bird_trust_the_shelf_the_sill_and_a_carried_gift() {
+        use crate::world::Keepsake;
+
+        let directory =
+            std::env::temp_dir().join(format!("wave-ascii-app-bird-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let paths = Paths::in_directory(&directory);
+        let mut app = app();
+        app.paths = Some(paths.clone());
+        app.world.life.bird_trust = 0.72;
+        app.world.life.keepsakes = vec![Keepsake::Feather, Keepsake::Acorn];
+        app.world.life.sill = Some(Keepsake::Pebble);
+        app.save().unwrap();
+        let saved = crate::store::load_json::<Save>(&paths.save)
+            .unwrap()
+            .unwrap();
+        let mut world = World::new(2, 12.0);
+        restore(&mut world, &saved, saved.last_seen);
+        assert_eq!(world.life.bird_trust, 0.72);
+        assert_eq!(world.life.keepsakes, [Keepsake::Feather, Keepsake::Acorn]);
+        assert_eq!(world.life.sill, Some(Keepsake::Pebble));
+
+        app.world.life.sill = None;
+        app.world.ghost.keepsake = Some(Keepsake::Pebble);
+        app.save().unwrap();
+        let saved = crate::store::load_json::<Save>(&paths.save)
+            .unwrap()
+            .unwrap();
+        restore(&mut world, &saved, saved.last_seen);
+        assert_eq!(
+            world.life.keepsakes,
+            [Keepsake::Feather, Keepsake::Acorn, Keepsake::Pebble]
+        );
+        assert_eq!(world.life.sill, None);
+        assert_eq!(world.life.total.gifts, 1);
+
+        let mut old = serde_json::to_value(&saved).unwrap();
+        for field in ["bird_trust", "keepsakes", "sill"] {
+            old["life"].as_object_mut().unwrap().remove(field);
+        }
+        let old: Save = serde_json::from_value(old).unwrap();
+        assert_eq!(old.life.bird_trust, 0.0);
+        assert!(old.life.keepsakes.is_empty());
+        assert_eq!(old.life.sill, None);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -1246,6 +1295,8 @@ mod tests {
             life: crate::world::Life {
                 bond: -2.0,
                 closest: f32::INFINITY,
+                bird_trust: 99.0,
+                keepsakes: vec![crate::world::Keepsake::Feather; 12],
                 nature: Some(Nature {
                     playful: 99.0,
                     curious: -2.0,
@@ -1265,6 +1316,8 @@ mod tests {
         assert!((0.0..=1.0).contains(&world.life.bond));
         assert_eq!(world.life.nature.unwrap().playful, 1.0);
         assert_eq!(world.life.nature.unwrap().curious, 0.0);
+        assert_eq!(world.life.bird_trust, 1.0);
+        assert_eq!(world.life.keepsakes.len(), 8);
     }
 
     #[test]
