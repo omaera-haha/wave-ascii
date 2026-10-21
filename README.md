@@ -47,8 +47,11 @@ drawings to a cork board on its wall, and searches the room by sight for a
 treasure you hide (`x`), following your "warmer!" and "colder!". It poses
 for your camera (`P`), suggests a stretch after a long sitting, mumbles that
 it's late when you're up in the small hours, and writes its diary in the
-language you speak to it. Resize the terminal and the box jostles like a
-snow globe.
+language you speak to it. Now and then it brings a treasure to the glass to
+show you, tidies its blocks before bed, writes you a letter about its week
+on Sunday evenings, and once in a long while catches a little cold and
+remembers that you looked after it. Resize the terminal and the box jostles
+like a snow globe.
 
 A small cork board on the left wall keeps four pictures from its life:
 above all copies of your fog drawings, then its own proud doodles and
