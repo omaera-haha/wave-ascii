@@ -399,11 +399,11 @@ impl World {
         }
 
         if self.visitors.moth.is_none() && time >= self.visitors.next_moth {
-            let gap = self.random.range(300.0, 600.0);
+            let gap = self.random.range(600.0, 1500.0);
             self.visitors.next_moth = time + f64::from(gap);
             // An open window lets moths in; a shut one only now and then,
             // through the gaps.
-            let finds_a_way = self.window_open || gap < 400.0;
+            let finds_a_way = self.window_open || gap < 900.0;
             if self.is_night() && self.lamp.on && finds_a_way {
                 self.visitors.moth = Some(Moth::new(time, &mut self.random));
                 self.record(EventKind::MothArrived);

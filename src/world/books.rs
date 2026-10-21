@@ -631,12 +631,17 @@ impl World {
         if finished {
             owned.finished = owned.finished.saturating_add(1);
         }
+        let owned_finished = owned.finished;
         if thought {
             self.think(&format!("\"{}\"", page.0));
         }
         self.record(EventKind::ReadPage);
         if finished {
-            self.record(EventKind::FinishedBook(book.title.0.to_owned()));
+            // Rereading a favorite is a quiet pleasure; only the first time
+            // through is an event worth telling.
+            if owned_finished == 1 {
+                self.record(EventKind::FinishedBook(book.title.0.to_owned()));
+            }
             self.suggest_mood(Mood::Content, 10.0);
         }
         self.ghost.needs.change(0.0, 0.025, 0.0);
@@ -983,7 +988,8 @@ mod tests {
             world.read_page(index, false);
         }
         assert_eq!(world.life.books.owned[0].finished, 2);
-        assert_eq!(world.life.total.books_finished, 2);
+        // A reread counts toward its favorite, but it is no new finish.
+        assert_eq!(world.life.total.books_finished, 1);
         assert_eq!(
             world
                 .life

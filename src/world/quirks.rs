@@ -298,8 +298,9 @@ impl World {
             remaining: if twice { 2 } else { 1 },
             twice,
         });
+        let (low, high) = rest_after(kind);
         self.quirk_triggers.ready_at =
-            self.time + f64::from(duration + self.random.range(35.0, 65.0));
+            self.time + f64::from(duration + self.random.range(low, high));
         self.quirk_triggers.yawn_at = None;
         if kind == Quirk::Hiccups {
             self.ghost.velocity.y += 0.35;
@@ -527,6 +528,17 @@ impl World {
     }
 }
 
+/// Seconds after a spell before another may begin: a sleepy evening
+/// brings a few yawns rather than dozens, and hiccups are rare.
+fn rest_after(kind: Quirk) -> (f32, f32) {
+    match kind {
+        Quirk::Yawn => (480.0, 900.0),
+        Quirk::Hiccups => (900.0, 1800.0),
+        Quirk::Sneeze | Quirk::Sigh => (120.0, 300.0),
+        Quirk::Shiver => (90.0, 180.0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,7 +618,7 @@ mod tests {
                     spell.next_at,
                     world.time + f64::from(expected.range(2.5, 5.0))
                 );
-                expected.range(35.0, 65.0);
+                expected.range(900.0, 1800.0);
             }
             assert_eq!(world.random.unit(), expected.unit());
         }

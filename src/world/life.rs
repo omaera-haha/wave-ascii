@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::friend::count_words;
 use super::{
     Activity, EventKind, GREETS_FROM, Keepsake, LearnedPicture, Nature, Occasion, Outcome,
     Vocabulary,
@@ -428,14 +429,14 @@ impl Tally {
         if self.pages > 0 {
             deeds.push(format!(
                 "read {} {}",
-                super::friend::count_words(self.pages),
+                count_words(self.pages),
                 if self.pages == 1 { "page" } else { "pages" }
             ));
         }
         if self.books_finished > 0 {
             deeds.push(format!(
                 "finished {} picture {}",
-                super::friend::count_words(self.books_finished),
+                count_words(self.books_finished),
                 if self.books_finished == 1 {
                     "book"
                 } else {
@@ -446,7 +447,7 @@ impl Tally {
         if self.books_received > 0 {
             deeds.push(format!(
                 "received {} new picture {}",
-                super::friend::count_words(self.books_received),
+                count_words(self.books_received),
                 if self.books_received == 1 {
                     "book"
                 } else {
@@ -458,7 +459,7 @@ impl Tally {
         if self.focus_sessions > 0 {
             deeds.push(format!(
                 "kept you company through {} focus {}",
-                super::friend::count_words(self.focus_sessions),
+                count_words(self.focus_sessions),
                 if self.focus_sessions == 1 {
                     "session"
                 } else {
@@ -472,7 +473,7 @@ impl Tally {
         if self.focus_minutes > 0 {
             deeds.push(format!(
                 "focused together for {} {}",
-                super::friend::count_words(self.focus_minutes),
+                count_words(self.focus_minutes),
                 if self.focus_minutes == 1 {
                     "minute"
                 } else {
@@ -485,7 +486,7 @@ impl Tally {
                 0 => String::new(),
                 1 => format!("{name} came to visit"),
                 2 => format!("{name} visited twice"),
-                count => format!("{name} visited {} times", super::friend::count_words(count)),
+                count => format!("{name} visited {} times", count_words(count)),
             };
             if !visit.is_empty() {
                 let games: Vec<String> = self
@@ -503,33 +504,44 @@ impl Tally {
         match self.motes {
             0 => {}
             1 => deeds.push("ate a light mote".to_owned()),
-            motes => deeds.push(format!("ate {motes} light motes")),
+            motes => deeds.push(format!("ate {} light motes", count_words(motes))),
         }
         match self.nudges {
             0 => {}
             1 => deeds.push("nudged the ball".to_owned()),
-            nudges => deeds.push(format!("pushed the ball around {nudges} times")),
+            nudges => deeds.push(format!(
+                "pushed the ball around {} times",
+                count_words(nudges)
+            )),
         }
         match self.fetches {
             0 => {}
             1 => deeds.push("fetched the ball for you".to_owned()),
-            fetches => deeds.push(format!("fetched the ball for you {fetches} times")),
+            fetches => deeds.push(format!(
+                "fetched the ball for you {} times",
+                count_words(fetches)
+            )),
         }
         match self.pounces {
             0 => {}
             1 => deeds.push("pounced on your finger".to_owned()),
-            pounces => deeds.push(format!("pounced on your finger {pounces} times")),
+            pounces => deeds.push(format!(
+                "pounced on your finger {} times",
+                count_words(pounces)
+            )),
         }
         let tower = match self.towers {
             0 => None,
             1 => Some("built a tower of blocks".to_owned()),
-            towers => Some(format!("built {towers} towers of blocks")),
+            towers => Some(format!("built {} towers of blocks", count_words(towers))),
         };
         if let Some(mut tower) = tower {
             match self.toppled {
                 0 => {}
                 1 => tower.push_str(", and you knocked one down"),
-                toppled => tower.push_str(&format!(", and you knocked {toppled} down")),
+                toppled => {
+                    tower.push_str(&format!(", and you knocked {} down", count_words(toppled)))
+                }
             }
             deeds.push(tower);
         } else if self.toppled > 0 {
@@ -548,7 +560,7 @@ impl Tally {
         match self.dances {
             0 => {}
             1 => deeds.push("danced a twirl".to_owned()),
-            dances => deeds.push(format!("danced {dances} twirls")),
+            dances => deeds.push(format!("danced {} twirls", count_words(dances))),
         }
         match (self.finds, self.jumps) {
             (0, 0) => {}
@@ -584,7 +596,10 @@ impl Tally {
         match self.doodles {
             0 => {}
             1 => deeds.push("drew a picture on the glass".to_owned()),
-            doodles => deeds.push(format!("drew {doodles} pictures on the glass")),
+            doodles => deeds.push(format!(
+                "drew {} pictures on the glass",
+                count_words(doodles)
+            )),
         }
         if self.drawings_seen > 0 {
             deeds.push("looked at the pictures you drew on the glass".to_owned());
@@ -625,7 +640,7 @@ impl Tally {
         match self.naps {
             0 => {}
             1 => deeds.push("took a nap".to_owned()),
-            naps => deeds.push(format!("took {naps} naps")),
+            naps => deeds.push(format!("took {} naps", count_words(naps))),
         }
         if self.nights > 0 {
             deeds.push("slept through the night".to_owned());
@@ -687,24 +702,24 @@ impl Tally {
         match self.shooting_stars {
             0 => {}
             1 => deeds.push("wished on a shooting star".to_owned()),
-            stars => deeds.push(format!("wished on {stars} shooting stars")),
+            stars => deeds.push(format!("wished on {} shooting stars", count_words(stars))),
         }
         if self.word_games > 0 {
             deeds.push(format!(
                 "played {} word {} with you; you guessed {}",
-                super::friend::count_words(self.word_games),
+                count_words(self.word_games),
                 if self.word_games == 1 {
                     "game"
                 } else {
                     "games"
                 },
-                super::friend::count_words(self.words_guessed)
+                count_words(self.words_guessed)
             ));
         }
         if self.tunes_played > 0 {
             deeds.push(format!(
                 "played {} {} on the music box",
-                super::friend::count_words(self.tunes_played),
+                count_words(self.tunes_played),
                 if self.tunes_played == 1 {
                     "tune"
                 } else {
@@ -721,16 +736,13 @@ impl Tally {
         match self.stories {
             0 => {}
             1 => deeds.push("told you a story".to_owned()),
-            count => deeds.push(format!(
-                "told you {} stories",
-                super::friend::count_words(count)
-            )),
+            count => deeds.push(format!("told you {} stories", count_words(count))),
         }
         match (self.rainbows, self.showers) {
             (0, 0) => {}
             (0, _) => deeds.push("listened to the rain".to_owned()),
             (1, _) => deeds.push("saw a rainbow".to_owned()),
-            (rainbows, _) => deeds.push(format!("saw {rainbows} rainbows")),
+            (rainbows, _) => deeds.push(format!("saw {} rainbows", count_words(rainbows))),
         }
         let mut text = if deeds.is_empty() {
             "A quiet day.".to_owned()
@@ -1673,7 +1685,10 @@ fn duration_words(seconds: f64) -> String {
         minutes if minutes < 20.0 => "for a while".to_owned(),
         minutes if minutes < 45.0 => "for about half an hour".to_owned(),
         minutes if minutes < 90.0 => "for about an hour".to_owned(),
-        minutes => format!("for about {} hours", (minutes / 60.0).round()),
+        minutes => format!(
+            "for about {} hours",
+            count_words((minutes / 60.0).round() as u32)
+        ),
     }
 }
 
@@ -2119,7 +2134,7 @@ mod tests {
         };
         assert_eq!(
             day.words(),
-            "Ate 4 light motes, nudged the ball, watered the plant until it flowered, and saw a \
+            "Ate four light motes, nudged the ball, watered the plant until it flowered, and saw a \
              rainbow. You were here for about an hour, and we talked."
         );
         day = Tally {
@@ -2130,7 +2145,7 @@ mod tests {
         };
         assert_eq!(
             day.words(),
-            "Fetched the ball for you 3 times and danced a twirl. You were here for about half \
+            "Fetched the ball for you three times and danced a twirl. You were here for about half \
              an hour."
         );
         day = Tally {
@@ -2140,7 +2155,7 @@ mod tests {
         };
         assert_eq!(
             day.words(),
-            "Took 2 naps and listened to the rain. You didn't come by."
+            "Took two naps and listened to the rain. You didn't come by."
         );
         day = Tally {
             finds: 1,
@@ -2149,7 +2164,7 @@ mod tests {
         };
         assert_eq!(
             day.words(),
-            "Played hide-and-seek, and you found me and drew 2 pictures on the glass. You \
+            "Played hide-and-seek, and you found me and drew two pictures on the glass. You \
              didn't come by."
         );
         day = Tally {
@@ -2187,7 +2202,7 @@ mod tests {
         assert_eq!((life.today.motes, life.total.motes), (1, 3));
         assert_eq!(life.diary.len(), 1);
         assert_eq!(life.diary[0].day, "2026-10-20");
-        assert!(life.diary[0].text.starts_with("Ate 2 light motes"));
+        assert!(life.diary[0].text.starts_with("Ate two light motes"));
     }
 
     #[test]
@@ -2207,7 +2222,7 @@ mod tests {
         assert!(
             life.diary[0]
                 .text
-                .starts_with("Pounced on your finger 2 times.")
+                .starts_with("Pounced on your finger two times.")
         );
         assert_eq!(serde_json::from_str::<Tally>("{}").unwrap().pounces, 0);
         let saved = serde_json::to_string(&life).unwrap();
@@ -2707,7 +2722,7 @@ mod tests {
         assert!(
             life.today
                 .words()
-                .contains("Built 2 towers of blocks, and you knocked one down")
+                .contains("Built two towers of blocks, and you knocked one down")
         );
         assert!(life.milestones.iter().all(|entry| {
             !entry

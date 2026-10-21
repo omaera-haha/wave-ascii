@@ -1489,7 +1489,7 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         );
-        for _ in 0..3600 {
+        for _ in 0..13680 {
             app.advance(0.05);
         }
         assert!(
@@ -2278,7 +2278,7 @@ mod tests {
         ));
         assert!(world.life.bond < 0.6 && world.life.bond >= 0.3);
         world.life.begin_day("2026-10-23");
-        assert!(world.life.diary[0].text.starts_with("Ate 3 light motes"));
+        assert!(world.life.diary[0].text.starts_with("Ate three light motes"));
     }
 
     #[test]

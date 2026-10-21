@@ -22,7 +22,8 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 } else {
                     1.0
                 };
-                (0.15 + 0.3 * (1.0 - needs.fun) + if world.focus.is_some() { 0.45 } else { 0.0 })
+                // A few sittings a day, more as quiet company during work.
+                (0.04 + 0.1 * (1.0 - needs.fun) + if world.focus.is_some() { 0.45 } else { 0.0 })
                     * needs.energy
                     * age
             }
@@ -30,7 +31,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 if world.focus.is_some() || world.ghost.asleep >= 0.3 {
                     0.0
                 } else {
-                    (0.16 + 0.45 * (1.0 - needs.fun) + if world.hour >= 18.0 { 0.2 } else { 0.0 })
+                    (0.03 + 0.1 * (1.0 - needs.fun) + if world.hour >= 18.0 { 0.06 } else { 0.0 })
                         * needs.energy
                 }
             }
@@ -109,10 +110,10 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 0.2 + 1.2 * (1.0 - needs.fun) * needs.energy + close
             }
             Activity::Build => {
-                (0.15
-                    + 0.6 * (1.0 - needs.fun)
-                    + 0.3 * world.life.nature.unwrap_or_default().curious
-                    + if present { 0.2 } else { 0.0 })
+                (0.06
+                    + 0.3 * (1.0 - needs.fun)
+                    + 0.15 * world.life.nature.unwrap_or_default().curious
+                    + if present { 0.1 } else { 0.0 })
                     * needs.energy
             }
             Activity::Tend => {
@@ -141,8 +142,10 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 } else {
                     0.0
                 };
+                // Alone, it looks out for the viewer now and then, but it
+                // has a life of its own to get on with.
                 present
-                    + 1.3 * (1.0 - needs.company)
+                    + if world.viewer_present() { 1.3 } else { 0.6 } * (1.0 - needs.company)
                     + if morning && world.viewer_present() {
                         1.2
                     } else {
@@ -278,7 +281,8 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 } else {
                     0.0
                 };
-                (0.1 + rainbow
+                (0.03
+                    + rainbow
                     + if world.occasion() == Some(Occasion::Birthday) {
                         0.6
                     } else {
@@ -286,7 +290,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     }
                     + if delighted { 0.7 } else { 0.0 }
                     + company
-                    + if needs.fun > 0.7 { 0.15 } else { 0.0 })
+                    + if needs.fun > 0.7 { 0.06 } else { 0.0 })
                     * needs.energy
             }
             Activity::Hide => {
@@ -334,11 +338,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             }
             Activity::Doodle => {
                 let fond = if world.viewer_present() && needs.company > 0.6 {
-                    0.4
+                    0.2
                 } else {
                     0.0
                 };
-                (0.12 + 0.35 * (1.0 - needs.fun) + fond) * needs.energy
+                (0.05 + 0.18 * (1.0 - needs.fun) + fond) * needs.energy
             }
         })
         .zip(options)
