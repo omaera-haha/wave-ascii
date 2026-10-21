@@ -83,6 +83,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         | EventKind::Kept(_)
         | EventKind::Pounced
         | EventKind::Found
+        | EventKind::ExpectedArrival
         | EventKind::Celebrated(_)
         | EventKind::Milestone(_) => Expression::Sparkle,
         EventKind::Heard(_) | EventKind::GameOver(Outcome::GhostWon { .. }) => Expression::Sparkle,
@@ -102,6 +103,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::ViewerArrived => Expression::Wink,
         EventKind::Praised | EventKind::Petted => Expression::Smile,
         EventKind::Scolded => Expression::Worry,
+        EventKind::MissedVisit => Expression::Worry,
         EventKind::Puzzled(_) => Expression::Skeptical,
         EventKind::LearnedWord { .. } => Expression::Sparkle,
         EventKind::Noticed(thing)

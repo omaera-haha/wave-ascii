@@ -48,6 +48,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         }
         Activity::Visit if present => vec!["Someone's at the glass.", "Who's there?"],
         Activity::Visit => vec!["Is anyone out there?", "Maybe someone will come by."],
+        Activity::Wait => vec!["They usually come around now.", "I'll wait by the glass."],
         Activity::Fetch => vec!["I'll get it!", "Wait for me, ball!"],
         Activity::Pounce => vec![
             "What's that? I'll get it!",
@@ -104,6 +105,9 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             "I hope my bird comes back soon.",
             "It isn't afraid of me anymore.",
         ]);
+    }
+    if ghost.plan.activity == Activity::Wait && !ghost.plan.done && !present {
+        lines.extend(["Any minute now.", "I wonder if they'll come today."]);
     }
     if let Some(nature) = world.life.nature {
         if nature.shy >= 0.7 && present && world.life.bond < 0.3 {
@@ -214,6 +218,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Tend => "My plant is the best plant.",
             Activity::Window => "I wonder what's past those hills.",
             Activity::Visit => "I like it at the glass.",
+            Activity::Wait => "I know when to look for you.",
             Activity::Rest => "Naps are the best part of the day.",
             Activity::Explore => "I know every corner of this room.",
             Activity::Lamp => "I like the lamp's warm light.",
@@ -295,6 +300,12 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
     }
     if today.gifts > 0 {
         lines.push("…the bird brings me a feather as big as the sky…");
+    }
+    if today.expected > 0 {
+        lines.push("…you arrive just as the stars come out, like always…");
+    }
+    if today.missed > 0 {
+        lines.push("…waiting at the glass, until you wave from the moon…");
     }
     if today.nudges > 0 || today.fetches > 0 {
         lines.push("…the ball rolls on and on, out into the hills…");

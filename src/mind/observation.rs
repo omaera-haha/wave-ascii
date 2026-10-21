@@ -48,6 +48,13 @@ pub fn observe(world: &World) -> Value {
         },
         "viewer": viewer(world),
         "bond_with_viewer": world.life.bond_words(),
+        "visiting_routine": world.life.usual_time().map(|usual| {
+            let mut words = format!("the viewer usually comes {usual}");
+            if !world.viewer_present() && world.life.expectation(world.hour) >= 0.5 {
+                words.push_str("; it is about the time the viewer usually comes");
+            }
+            words
+        }).unwrap_or_else(|| "not known yet".to_owned()),
         "recent_events": recent(world, 8),
     })
 }
@@ -435,6 +442,55 @@ mod tests {
         );
         world.ghost.heading = Vec3::Z;
         assert!(!outside_the_window(&world).contains("waiting on the outer sill"));
+    }
+
+    #[test]
+    fn learned_visiting_hours_and_waiting_are_described_in_words() {
+        let mut world = World::new(1, 20.0);
+        assert_eq!(observe(&world)["visiting_routine"], "not known yet");
+        for day in 1..=3 {
+            world.life.begin_day(&format!("2026-06-{day:02}"));
+            world.life.arrive(20.0);
+        }
+        world.date = jiff::civil::Date::constant(2026, 6, 4);
+        world.life.begin_day(&world.date.to_string());
+        world.begin(Activity::Wait);
+        let observation = observe(&world);
+        assert_eq!(
+            observation["ghost"]["doing"],
+            "waiting at the glass for the viewer"
+        );
+        assert_eq!(
+            observation["visiting_routine"],
+            "the viewer usually comes in the evening; it is about the time the viewer usually comes"
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.notice_viewer();
+        world.step(0.1);
+        let observation = observe(&world);
+        assert_eq!(
+            observation["visiting_routine"],
+            "the viewer usually comes in the evening"
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        for event in [EventKind::ExpectedArrival, EventKind::MissedVisit] {
+            assert!(
+                !event
+                    .words()
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
     }
 
     #[test]

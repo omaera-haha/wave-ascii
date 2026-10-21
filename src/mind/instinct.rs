@@ -71,6 +71,14 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                         0.0
                     }
             }
+            Activity::Wait => {
+                let expectation = world
+                    .life
+                    .expectation(world.hour)
+                    .max(world.life.expectation(world.hour + 1.0 / 3.0));
+                (0.9 + 1.2 * expectation + 0.8 * world.life.bond)
+                    * (1.0 - 0.3 * world.life.nature.unwrap_or_default().shy)
+            }
             Activity::Window => {
                 let outside = &world.weather;
                 let weight = 0.2
@@ -155,6 +163,7 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                             event.kind,
                             EventKind::Bloomed
                                 | EventKind::GameOver(Outcome::GhostWon { .. })
+                                | EventKind::ExpectedArrival
                                 | EventKind::Fetched
                                 | EventKind::AteMote
                                 | EventKind::Milestone(_)

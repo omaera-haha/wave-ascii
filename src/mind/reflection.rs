@@ -152,16 +152,21 @@ pub fn request(
         Some(text) => format!("The person just said: {text}"),
         None => "Nobody said anything just now. Think over the moment quietly.".to_owned(),
     };
+    let routine = life.usual_time().map_or_else(String::new, |usual| {
+        format!("\nThe viewer usually visits {usual}.")
+    });
     let block = |text: String| Block { text, cache };
     Request {
         system: vec![
             Block::new(SYSTEM),
             block(format!(
-                "By nature you are {}. Let that color your voice.\n\n\
+                "By nature you are {}. Let that color your voice.\n\
+                 Your bond with the viewer: {}.{routine}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
                  Its diary of the last few days:\n{}\n\nWords it has learned:\n{}",
                 life.nature.unwrap_or_default().words(),
+                life.bond_words(),
                 life.bird_words(),
                 life.keepsake_words(),
                 bullets(&memories),
@@ -272,6 +277,10 @@ mod tests {
             ..Life::default()
         };
         let mut life = life;
+        for day in 1..=3 {
+            life.begin_day(&format!("2026-10-{day:02}"));
+            life.arrive(20.0);
+        }
         life.vocabulary
             .teach(&["ball".to_owned()], crate::world::Activity::Fetch, 2.0);
         let request = request(
@@ -282,6 +291,11 @@ mod tests {
             Some("안녕"),
             Some(Effort::Medium),
             Some(Cache::OneHour),
+        );
+        assert!(
+            request.system[1]
+                .text
+                .contains("The viewer usually visits in the evening.")
         );
         assert!(
             request.system[1]
