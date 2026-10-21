@@ -149,6 +149,8 @@ pub struct App {
     pub color: ColorMode,
     pub paused: bool,
     pub mode: Mode,
+    /// Lines above the journal's bottom; zero follows its newest lines.
+    pub journal_scroll: usize,
     pub talk: Line,
     /// The settings panel's rows while it is open.
     pub settings: Settings,
@@ -163,6 +165,8 @@ pub struct App {
     /// The size in cells of the area the scene is drawn in, and the view
     /// it was drawn with, for placing the mouse.
     area: (usize, usize),
+    /// The last screen size, so scrolling uses the same bounds as drawing.
+    screen_size: (usize, usize),
     view: Option<View>,
     /// Where the pointer is on screen, in scene space, and when it moved.
     pointer: Option<(Vec2, f64)>,
@@ -185,6 +189,7 @@ impl App {
             color,
             paused: false,
             mode: Mode::Watching,
+            journal_scroll: 0,
             talk: Line::default(),
             settings: Settings::from(&config),
             config,
@@ -193,6 +198,7 @@ impl App {
             live_clock: false,
             notice: None,
             area: (0, 0),
+            screen_size: (0, 0),
             view: None,
             pointer: None,
             press: None,
@@ -270,6 +276,11 @@ impl App {
         }
     }
 
+    /// Reading panels leave mouse selection and the wheel to the terminal.
+    pub fn wants_mouse(&self) -> bool {
+        !matches!(self.mode, Mode::Journal | Mode::Help)
+    }
+
     fn press_key(&mut self, key: Key) -> Response {
         self.world.notice_viewer();
         if key == Key::Control('c') {
@@ -305,13 +316,14 @@ impl App {
                 }
                 Response::Continue
             }
-            Mode::Help | Mode::Journal => {
+            Mode::Help => {
                 if matches!(key, Key::Character('q')) {
                     return Response::Quit;
                 }
                 self.mode = Mode::Watching;
                 Response::Continue
             }
+            Mode::Journal => self.scroll_journal(key),
             Mode::Watching => self.command(key),
         }
     }
@@ -325,7 +337,10 @@ impl App {
                 self.mode = Mode::Settings;
             }
             Key::Character('?' | 'h') => self.mode = Mode::Help,
-            Key::Character('j') => self.mode = Mode::Journal,
+            Key::Character('j') => {
+                self.journal_scroll = 0;
+                self.mode = Mode::Journal;
+            }
             Key::Character('m') => {
                 self.style = self.style.next();
                 self.post(format!("Style: {}", self.style.label()));
@@ -344,6 +359,30 @@ impl App {
             Key::Character('-' | '_') => self.camera.zoom_by(1.0 / 1.1),
             Key::Character('r') => self.camera = Camera::default(),
             Key::Character(' ') => self.paused = !self.paused,
+            _ => {}
+        }
+        Response::Continue
+    }
+
+    fn scroll_journal(&mut self, key: Key) -> Response {
+        match key {
+            Key::Character('q') => return Response::Quit,
+            Key::Escape | Key::Enter | Key::Character('j') => self.mode = Mode::Watching,
+            Key::Up | Key::Down | Key::PageUp | Key::PageDown | Key::Home | Key::End => {
+                let journal = ui::JournalPanel::new(self, self.screen_size.0, self.screen_size.1);
+                let limit = journal.max_scroll();
+                self.journal_scroll = self.journal_scroll.min(limit);
+                self.journal_scroll = match key {
+                    Key::Up => self.journal_scroll.saturating_add(1),
+                    Key::Down => self.journal_scroll.saturating_sub(1),
+                    Key::PageUp => self.journal_scroll.saturating_add(journal.height),
+                    Key::PageDown => self.journal_scroll.saturating_sub(journal.height),
+                    Key::Home => limit,
+                    Key::End => 0,
+                    _ => self.journal_scroll,
+                }
+                .min(limit);
+            }
             _ => {}
         }
         Response::Continue
@@ -380,6 +419,9 @@ impl App {
     /// A click on the ghost pokes it, on the ball flicks it, and anywhere
     /// else in the room drops in a light mote.
     pub fn mouse(&mut self, mouse: Mouse) -> Response {
+        if !self.wants_mouse() {
+            return Response::Continue;
+        }
         self.world.notice_viewer();
         let point = self.scene_point(mouse.column, mouse.row);
         match mouse.action {
@@ -472,6 +514,7 @@ impl App {
     /// Draws the whole screen, `columns` by `rows`: the scene above two
     /// lines of words, and any open panel over it.
     pub fn frame(&mut self, columns: usize, rows: usize) -> Canvas {
+        self.screen_size = (columns, rows);
         let scene_rows = rows.saturating_sub(2).max(1);
         self.area = (columns, scene_rows);
         let grid = self.style.grid(columns, scene_rows);
@@ -630,7 +673,7 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::Config;
+    use crate::store::{Config, Memory};
     use crate::world::{Activity, EventKind};
 
     fn app() -> App {
@@ -645,6 +688,15 @@ mod tests {
         );
         app.frame(100, 32);
         app
+    }
+
+    fn fill_journal(app: &mut App) {
+        app.mind.journal.memories = (0..80)
+            .map(|number| Memory {
+                at: 0,
+                text: format!("Memory {number}"),
+            })
+            .collect();
     }
 
     fn type_text(app: &mut App, text: &str) {
@@ -937,7 +989,139 @@ mod tests {
     }
 
     #[test]
-    fn panels_close_on_any_key_and_space_pauses() {
+    fn only_the_journal_and_help_leave_the_mouse_to_the_terminal() {
+        let mut app = app();
+        for (mode, wants_mouse) in [
+            (Mode::Watching, true),
+            (Mode::Talking, true),
+            (Mode::Settings, true),
+            (Mode::Journal, false),
+            (Mode::Help, false),
+        ] {
+            app.mode = mode;
+            assert_eq!(app.wants_mouse(), wants_mouse, "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn the_journal_opens_and_reopens_at_the_bottom_and_follows_new_lines() {
+        let mut app = app();
+        fill_journal(&mut app);
+        app.input(Input::Key(Key::Character('j')));
+        assert_eq!(app.mode, Mode::Journal);
+        assert_eq!(app.journal_scroll, 0);
+        app.input(Input::Key(Key::Home));
+        assert!(app.journal_scroll > 0);
+        app.input(Input::Key(Key::Escape));
+        app.input(Input::Key(Key::Character('j')));
+        assert_eq!(app.journal_scroll, 0);
+
+        app.mind.journal.memories.push(Memory {
+            at: 0,
+            text: "A new memory".into(),
+        });
+        app.frame(100, 32);
+        assert_eq!(app.journal_scroll, 0);
+    }
+
+    #[test]
+    fn journal_keys_scroll_by_lines_and_pages_and_clamp_at_both_ends() {
+        let mut app = app();
+        fill_journal(&mut app);
+        app.input(Input::Key(Key::Character('j')));
+        let journal = ui::JournalPanel::new(&app, 100, 32);
+        let page = journal.height;
+        let limit = journal.max_scroll();
+        assert!(limit > page + 1);
+        for (key, scroll) in [
+            (Key::Up, 1),
+            (Key::Down, 0),
+            (Key::Down, 0),
+            (Key::Up, 1),
+            (Key::PageUp, page + 1),
+            (Key::PageDown, 1),
+            (Key::Home, limit),
+            (Key::Up, limit),
+            (Key::PageUp, limit),
+            (Key::Down, limit - 1),
+            (Key::End, 0),
+            (Key::Down, 0),
+            (Key::PageDown, 0),
+        ] {
+            assert_eq!(app.input(Input::Key(key.clone())), Response::Continue);
+            assert_eq!(app.mode, Mode::Journal);
+            assert_eq!(app.journal_scroll, scroll, "{key:?}");
+        }
+    }
+
+    #[test]
+    fn the_journal_closes_only_with_its_close_keys_and_quits_with_q() {
+        let mut app = app();
+        for close in [Key::Escape, Key::Enter, Key::Character('j')] {
+            app.input(Input::Key(Key::Character('j')));
+            assert!(!app.wants_mouse());
+            for ignored in [
+                Key::Character('x'),
+                Key::Character(' '),
+                Key::Character('?'),
+                Key::Left,
+                Key::Right,
+                Key::Delete,
+            ] {
+                assert_eq!(app.input(Input::Key(ignored)), Response::Continue);
+                assert_eq!(app.mode, Mode::Journal);
+            }
+            assert_eq!(app.input(Input::Key(close)), Response::Continue);
+            assert_eq!(app.mode, Mode::Watching);
+            assert!(app.wants_mouse());
+        }
+        app.input(Input::Key(Key::Character('j')));
+        assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
+    }
+
+    #[test]
+    fn resizing_and_changing_journal_content_clamps_the_scroll() {
+        let mut app = app();
+        fill_journal(&mut app);
+        app.input(Input::Key(Key::Character('j')));
+        app.input(Input::Key(Key::Home));
+        assert!(app.journal_scroll > 0);
+        app.frame(100, 200);
+        assert_eq!(app.journal_scroll, 0);
+        app.frame(100, 32);
+        app.input(Input::Key(Key::Home));
+        assert!(app.journal_scroll > 0);
+        app.mind.journal.memories.clear();
+        app.frame(100, 32);
+        assert_eq!(app.journal_scroll, 0);
+    }
+
+    #[test]
+    fn the_journal_draws_and_scrolls_on_tiny_screens_without_panicking() {
+        let mut app = app();
+        fill_journal(&mut app);
+        app.input(Input::Key(Key::Character('j')));
+        for (columns, rows) in [(20, 6), (1, 1)] {
+            app.frame(columns, rows);
+            for key in [
+                Key::Home,
+                Key::Up,
+                Key::PageUp,
+                Key::Down,
+                Key::PageDown,
+                Key::End,
+            ] {
+                app.input(Input::Key(key));
+                app.frame(columns, rows);
+                assert!(
+                    app.journal_scroll <= ui::JournalPanel::new(&app, columns, rows).max_scroll()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn help_closes_on_any_key_quits_with_q_and_space_pauses_the_world() {
         let mut app = app();
         app.input(Input::Key(Key::Character('?')));
         assert_eq!(app.mode, Mode::Help);
@@ -948,5 +1132,7 @@ mod tests {
         app.advance(1.0);
         assert_eq!(app.world.time, time);
         assert!(app.world.ghost.plan.activity == Activity::Float || app.paused);
+        app.input(Input::Key(Key::Character('?')));
+        assert_eq!(app.input(Input::Key(Key::Character('q'))), Response::Quit);
     }
 }

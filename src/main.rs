@@ -51,13 +51,15 @@ Options:
 
 Keys:
   t, Enter     talk to the ghost      k        API keys
-  arrows/WASD  turn the view          j        journal
+  arrows/WASD  turn the view          j        journal (arrows scroll)
   + / -        zoom                   ?        help
   m, c         style, color mode      space    pause
   r            reset the view         q, Esc   quit
 
 Mouse: click the ghost to poke it, the ball to flick it, and anywhere else in
 the room to drop in a light mote. Drag to turn the view and scroll to zoom.
+In the journal or help panel, the mouse selects text. In the journal,
+PageUp/PageDown and Home/End also scroll; Esc, Enter, or j closes it.
 
 Piped output prints one frame of a fresh ghost, sized by COLUMNS and LINES.";
 
@@ -214,6 +216,7 @@ fn run_loop(app: &mut App, frames_per_second: f64) -> io::Result<()> {
                 Response::Continue => {}
             }
         }
+        terminal.set_mouse_capture(app.wants_mouse())?;
         if Instant::now() < next_frame {
             continue;
         }
