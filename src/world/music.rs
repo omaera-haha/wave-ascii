@@ -260,48 +260,117 @@ pub fn compose(random: &mut super::Random, mood: super::Mood, nature: super::Nat
     notes
 }
 
+/// A title for a new song from what fills the ghost's life now: each fitting
+/// inspiration offers a few titles, and the first one not already among its
+/// songs wins, taking every inspiration's first title before any second, so
+/// a beloved viewer doesn't name every song.
 pub fn composition_title(world: &World) -> (String, String) {
     let life = &world.life;
-    let (english, korean) = if let Some(name) = &life.viewer_name
+    let mut inspirations: Vec<Vec<(String, String)>> = Vec::new();
+    if let Some(name) = &life.viewer_name
         && life.bond >= 0.3
     {
-        (
-            format!("Song for {name}"),
-            format!("{name}에게 바치는 노래"),
-        )
-    } else if world.weather.sky == super::Sky::Rain {
-        ("Rain Song".to_owned(), "비의 노래".to_owned())
+        inspirations.push(vec![
+            (
+                format!("Song for {name}"),
+                format!("{name}에게 바치는 노래"),
+            ),
+            (format!("{name}'s Lullaby"), format!("{name}의 자장가")),
+            (
+                format!("A Tune for {name} at the Glass"),
+                format!("유리 너머 {name}에게"),
+            ),
+            (
+                format!("{name}, Come Back Soon"),
+                format!("{name}, 또 와 줘"),
+            ),
+        ]);
+    }
+    if world.weather.sky == super::Sky::Rain {
+        inspirations.push(titles(&[
+            ("Rain Song", "비의 노래"),
+            ("Raindrops on the Pane", "창문의 빗방울"),
+            ("Puddle Waltz", "물웅덩이 왈츠"),
+        ]));
     } else if world.weather.sky == super::Sky::Snow {
-        ("Snow Song".to_owned(), "눈의 노래".to_owned())
-    } else if let Some(friend) = &life.friend
+        inspirations.push(titles(&[
+            ("Snow Song", "눈의 노래"),
+            ("Snowflake Waltz", "눈송이 왈츠"),
+            ("The Quiet After Snow", "눈 온 뒤의 고요"),
+        ]));
+    }
+    if let Some(friend) = &life.friend
         && super::creation::elapsed_days(life.last_friend_visit.as_deref(), world.date)
             .is_some_and(|days| (0..=1).contains(&days))
     {
-        (
-            format!("{}'s Waltz", friend.name),
-            format!("{}의 왈츠", friend.name),
-        )
-    } else if world.is_night() {
-        ("Moon Song".to_owned(), "달의 노래".to_owned())
-    } else if life.bird_trust >= 0.5 {
-        ("Bird Song".to_owned(), "새의 노래".to_owned())
-    } else if world.hour < 10.0 {
-        ("Morning Song".to_owned(), "아침의 노래".to_owned())
-    } else {
-        match world.season() {
-            super::Season::Spring => ("Blossom Song".to_owned(), "봄꽃의 노래".to_owned()),
-            super::Season::Autumn => ("Autumn Song".to_owned(), "가을의 노래".to_owned()),
-            super::Season::Winter => ("Winter Song".to_owned(), "겨울의 노래".to_owned()),
-            super::Season::Summer => ("Little Song".to_owned(), "작은 노래".to_owned()),
-        }
+        let name = &friend.name;
+        inspirations.push(vec![
+            (format!("{name}'s Waltz"), format!("{name}의 왈츠")),
+            (
+                format!("Tag with {name}"),
+                format!("{name}의 술래잡기 노래"),
+            ),
+            (
+                format!("Moon Gazing with {name}"),
+                format!("{name}의 달맞이"),
+            ),
+        ]);
+    }
+    if world.is_night() {
+        inspirations.push(titles(&[
+            ("Moon Song", "달의 노래"),
+            ("Lamplight Lullaby", "램프 불빛 자장가"),
+            ("Starry Window", "별빛 창문"),
+        ]));
+    }
+    if life.bird_trust >= 0.5 {
+        inspirations.push(titles(&[
+            ("Bird Song", "새의 노래"),
+            ("Song for the Sill", "창턱의 노래"),
+            ("Feather Waltz", "깃털 왈츠"),
+        ]));
+    }
+    if world.hour < 10.0 {
+        inspirations.push(titles(&[
+            ("Morning Song", "아침의 노래"),
+            ("Sunrise Stretch", "해돋이 기지개"),
+        ]));
+    }
+    inspirations.push(titles(match world.season() {
+        super::Season::Spring => &[("Blossom Song", "봄꽃의 노래"), ("Petal Dance", "꽃잎 춤")],
+        super::Season::Summer => &[
+            ("Little Song", "작은 노래"),
+            ("Firefly Song", "반딧불이 노래"),
+        ],
+        super::Season::Autumn => &[
+            ("Autumn Song", "가을의 노래"),
+            ("Falling Leaves", "떨어지는 잎새"),
+        ],
+        super::Season::Winter => &[
+            ("Winter Song", "겨울의 노래"),
+            ("Warm Cushion Song", "따뜻한 방석의 노래"),
+        ],
+    }));
+    let taken = |title: &(String, String)| {
+        life.compositions
+            .iter()
+            .any(|known| known.title == title.0 || known.korean_title == title.1)
     };
+    let rounds = inspirations.iter().map(Vec::len).max().unwrap_or(0);
+    if let Some(title) = (0..rounds)
+        .flat_map(|round| {
+            inspirations
+                .iter()
+                .filter_map(move |titles| titles.get(round))
+        })
+        .find(|title| !taken(title))
+    {
+        return title.clone();
+    }
+    let (english, korean) = inspirations[0][0].clone();
     let mut title = (english.clone(), korean.clone());
     let mut repeats = 0;
-    while life
-        .compositions
-        .iter()
-        .any(|known| known.title == title.0 || known.korean_title == title.1)
-    {
+    while taken(&title) {
         repeats += 1;
         title = if repeats == 1 {
             (format!("{english} Again"), format!("{korean} 또"))
@@ -313,6 +382,13 @@ pub fn composition_title(world: &World) -> (String, String) {
         };
     }
     title
+}
+
+fn titles(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(english, korean)| ((*english).to_owned(), (*korean).to_owned()))
+        .collect()
 }
 
 pub fn own_song_requested(text: &str) -> bool {
@@ -906,9 +982,11 @@ mod tests {
         assert_eq!(composition_title(&world).0, "Snow Song");
         world.weather.sky = crate::world::Sky::Rain;
         world.life.compositions.push(my_song());
+        // The rain's first title is taken, so the friend's turn comes before
+        // the rain's second title.
         assert_eq!(
             composition_title(&world),
-            ("Rain Song Again".to_owned(), "비의 노래 또".to_owned())
+            ("Pell's Waltz".to_owned(), "Pell의 왈츠".to_owned())
         );
         world.life.viewer_name = Some("Mina".to_owned());
         world.life.bond = 0.3;
@@ -923,6 +1001,32 @@ mod tests {
         world.weather.sky = crate::world::Sky::Clear;
         world.date = world.date.checked_add(jiff::Span::new().days(2)).unwrap();
         assert_eq!(composition_title(&world).0, "Moon Song");
+    }
+
+    #[test]
+    fn a_beloved_viewer_shares_the_titles_with_the_moment() {
+        let mut world = World::new(7, 23.0);
+        world.life.viewer_name = Some("Mina".to_owned());
+        world.life.bond = 0.8;
+        let mut seen = Vec::new();
+        for _ in 0..9 {
+            let (title, korean_title) = composition_title(&world);
+            assert!(!seen.contains(&title), "{title} repeats");
+            seen.push(title.clone());
+            world.life.compositions.push(Composition {
+                tune: my_song().tune,
+                title,
+                korean_title,
+                day: "2026-06-21".to_owned(),
+            });
+        }
+        let named = seen.iter().filter(|title| title.contains("Mina")).count();
+        assert_eq!(&seen[..2], ["Song for Mina", "Moon Song"]);
+        assert!(named <= 4, "{seen:?}");
+        assert!(
+            !seen.iter().any(|title| title.contains("Again")),
+            "{seen:?}"
+        );
     }
 
     #[test]
