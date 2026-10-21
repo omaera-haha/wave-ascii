@@ -570,7 +570,9 @@ impl Mind {
         }
         // It tells what it did while the viewer was away once nothing else
         // it says is still showing.
-        let speaking = (world.asking.is_some() || world.awaiting_plan_answer())
+        let speaking = (world.asking.is_some()
+            || world.awaiting_plan_answer()
+            || world.awaiting_break_reply())
             || world.telling.is_some()
             || world
                 .ghost
@@ -860,6 +862,7 @@ impl Mind {
         }
         if world.asking.is_none()
             && !world.awaiting_plan_answer()
+            && !world.awaiting_break_reply()
             && !reflection.say.is_empty()
             && world.ghost.asleep < 0.3
         {
@@ -890,6 +893,7 @@ impl Mind {
         }
         if world.asking.is_none()
             && !world.awaiting_plan_answer()
+            && !world.awaiting_break_reply()
             && !world.reading_viewer_letter()
             && world.comforting.is_none()
             && !reflection.write.is_empty()

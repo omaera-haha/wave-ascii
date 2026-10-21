@@ -142,7 +142,8 @@ impl World {
         if self.ghost.asleep >= 0.3 {
             return false;
         }
-        if self.telling.is_some() || (open && !self.fresh_air_is_fair()) {
+        // A story or a treasure hunt keeps the ghost from the window.
+        if self.telling.is_some() || self.hunt.is_some() || (open && !self.fresh_air_is_fair()) {
             self.window_refused_at = Some(self.time);
             return false;
         }

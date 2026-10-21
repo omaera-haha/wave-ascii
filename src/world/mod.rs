@@ -2185,7 +2185,11 @@ impl World {
             self.goodnight_together();
         } else if !matches!(
             heard.understanding,
-            Understanding::Tidying | Understanding::Showing | Understanding::Cared
+            Understanding::Tidying
+                | Understanding::Showing
+                | Understanding::Cared
+                | Understanding::Folding
+                | Understanding::Bubbles { .. }
         ) {
             self.notice_late_night(heard.korean || self.speaks_korean());
         }
@@ -2209,6 +2213,7 @@ impl World {
         // Only the very next message answers a wellbeing question, even if
         // another direct handler consumes that message first.
         let feeling_follow_up = self.feeling_follow_up.take();
+        let break_reply = self.rhythm.reply_until.take();
         // Kind words for a ghost with a cold are never an answer to
         // something else it asked.
         if let Some(heard) = self.hear_cold_care(text, korean) {
@@ -2223,7 +2228,7 @@ impl World {
         if let Some(heard) = self.answer_plan(text, korean) {
             return heard;
         }
-        if let Some(heard) = self.hear_break_reply(text, korean) {
+        if let Some(heard) = self.hear_break_reply(text, korean, break_reply) {
             return heard;
         }
         if let Some(heard) = self.answer_viewer(text, korean) {

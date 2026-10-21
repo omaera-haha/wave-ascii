@@ -535,6 +535,15 @@ mod tests {
     }
 
     #[test]
+    fn the_window_waits_for_the_hunt_to_end() {
+        let mut world = World::new(1, 12.0);
+        world.start_hiding().unwrap();
+        world.hide_treasure(glam::Vec3::new(-1.8, 0.0, -1.2));
+        assert!(!world.ask_window(true));
+        assert_eq!(world.ghost.plan.activity, Activity::Seek);
+    }
+
+    #[test]
     fn hiding_closes_earlier_answer_windows_and_a_lesson_waits_for_the_hunt() {
         let mut world = World::new(1, 12.0);
         world.rhythm.reply_until = Some(world.time + 100.0);

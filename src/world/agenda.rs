@@ -766,6 +766,8 @@ impl World {
             || super::bubbles::requested(text)
             || super::tidy::requested(text)
             || super::show::requested(text)
+            || super::promise::promised(text, self.date, self.hour).is_some()
+            || planned(text, self.date).is_some()
             || super::quirks::yawn_message(text)
             || super::vocabulary::introduced_name(text).is_some()
             || super::vocabulary::given_name(text).is_some()
@@ -930,6 +932,20 @@ mod tests {
         world.follow_up_agenda();
         assert!(world.awaiting_plan_answer());
         world
+    }
+
+    #[test]
+    fn a_promise_or_a_new_plan_is_not_taken_as_the_answer() {
+        let mut world = fresh_world();
+        world.agenda_answer = Some((Errand::Exam, today().to_string(), world.time + 180.0));
+        assert!(world.answer_plan("I'll be back tomorrow", false).is_none());
+        assert!(world.awaiting_plan_answer());
+        assert!(
+            world
+                .answer_plan("I have a meeting tomorrow", false)
+                .is_none()
+        );
+        assert!(world.awaiting_plan_answer());
     }
 
     #[test]

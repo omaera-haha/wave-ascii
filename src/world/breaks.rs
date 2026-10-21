@@ -169,7 +169,7 @@ impl World {
     }
 
     /// Whether a break suggestion still waits for the viewer's reply.
-    pub(super) fn awaiting_break_reply(&self) -> bool {
+    pub fn awaiting_break_reply(&self) -> bool {
         self.rhythm
             .reply_until
             .is_some_and(|until| self.time <= until)
@@ -277,8 +277,15 @@ impl World {
         }
     }
 
-    pub(super) fn hear_break_reply(&mut self, text: &str, korean: bool) -> Option<Heard> {
-        let until = self.rhythm.reply_until.take()?;
+    /// The very next message after a suggestion, whose reply window
+    /// `hear` took as the message arrived, may answer it.
+    pub(super) fn hear_break_reply(
+        &mut self,
+        text: &str,
+        korean: bool,
+        window: Option<f64>,
+    ) -> Option<Heard> {
+        let until = window?;
         if self.time > until {
             return None;
         }
@@ -496,6 +503,29 @@ mod tests {
         world.time += 25.0 * 60.0;
         world.notice_viewer();
         world.end_focus();
+    }
+
+    #[test]
+    fn only_the_very_next_message_can_answer_a_suggestion_and_requests_spare_sleepers() {
+        let mut world = sitting();
+        world.suggest_break(false);
+        assert!(world.awaiting_break_reply());
+        world.hear("show me something");
+        assert!(!world.awaiting_break_reply());
+        assert_ne!(
+            world.hear("no").understanding,
+            Understanding::BreakReply { agreed: false }
+        );
+
+        for request in ["fold a crane", "bubbles!"] {
+            let mut world = present();
+            world.hour = 1.0;
+            world.tuck_in();
+            world.step(30.0);
+            assert!(world.ghost.asleep > 0.5);
+            world.hear(request);
+            assert!(world.ghost.asleep > 0.5, "{request}");
+        }
     }
 
     #[test]
