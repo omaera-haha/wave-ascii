@@ -3,7 +3,7 @@ use std::f32::consts::{PI, TAU};
 use glam::{Vec2, Vec3};
 
 use crate::sdf::{capsule, coverage, mix, smoothstep};
-use crate::world::Season;
+use crate::world::{BirdPicture, Season};
 
 pub const WINDOW_LOW: Vec2 = Vec2::new(-0.75, 1.0);
 pub const WINDOW_HIGH: Vec2 = Vec2::new(0.75, 2.0);
@@ -22,6 +22,7 @@ pub struct Outside {
     pub moon_phase: f32,
     pub fireworks: bool,
     pub time: f64,
+    pub bird: Option<BirdPicture>,
 }
 
 impl Outside {
@@ -40,6 +41,7 @@ impl Outside {
             moon_phase: 0.5,
             fireworks: false,
             time,
+            bird: None,
         }
     }
 }
@@ -252,6 +254,9 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     if outside.season == Season::Summer {
         color += fireflies(coordinates, footprint, outside.time) * night;
     }
+    if let Some(bird) = outside.bird {
+        color = visiting_bird(color, coordinates, footprint, bird, outside.season);
+    }
     if snow > 0.0 {
         color = snowfall(color, coordinates, footprint, outside.time, snow);
     }
@@ -267,6 +272,59 @@ fn landscape(coordinates: Vec2, footprint: f32, outside: &Outside) -> Vec3 {
     let along = (fraction.y - 0.5).abs() / 7.0 - 0.035;
     let streak = coverage(across.max(along), footprint * 0.5);
     color + Vec3::splat(0.36) * streak * rain
+}
+
+fn visiting_bird(
+    color: Vec3,
+    coordinates: Vec2,
+    footprint: f32,
+    bird: BirdPicture,
+    season: Season,
+) -> Vec3 {
+    let mut point = (coordinates - bird.position) * Vec2::new(1.5, 1.0);
+    point.x *= bird.facing;
+    point.y -= if bird.singing {
+        0.006 * bird.flap.sin()
+    } else {
+        0.0
+    };
+    let head = Vec2::new(0.025 + bird.peck * 0.012, 0.025 - bird.peck * 0.03);
+    let body = (point / Vec2::new(1.15, 1.0)).length() - 0.033;
+    let mut distance = body
+        .min(point.distance(head) - 0.021)
+        .min(capsule(
+            point,
+            Vec2::new(-0.02, -0.01),
+            Vec2::new(-0.065, 0.004),
+            0.009,
+        ))
+        .min(capsule(
+            point,
+            head + Vec2::new(0.012, 0.0),
+            head + Vec2::new(0.036, -0.005),
+            0.004,
+        ));
+    if bird.flying {
+        let wing = Vec2::new(-0.015, bird.flap.sin() * 0.07);
+        distance = distance.min(capsule(point, Vec2::ZERO, wing, 0.012));
+        distance = distance.min(capsule(
+            point,
+            Vec2::new(0.005, 0.0),
+            Vec2::new(0.045, -wing.y * 0.75),
+            0.009,
+        ));
+    }
+    let breast = coverage(
+        (point - Vec2::new(0.019, -0.009)).length() - 0.022,
+        footprint * 0.5,
+    );
+    let warm = if season == Season::Winter {
+        Vec3::new(0.72, 0.25, 0.13)
+    } else {
+        Vec3::new(0.52, 0.39, 0.29)
+    };
+    let feather = Vec3::new(0.22, 0.2, 0.19).lerp(warm, breast);
+    color.lerp(feather, coverage(distance, footprint * 0.5))
 }
 
 fn lightning(coordinates: Vec2, footprint: f32, last_flash: f64) -> f32 {
@@ -537,6 +595,38 @@ mod tests {
 
     fn point(across: f32, up: f32) -> Vec2 {
         WINDOW_LOW + (WINDOW_HIGH - WINDOW_LOW) * Vec2::new(across, up)
+    }
+
+    #[test]
+    fn window_samples_stay_finite_with_a_flying_or_perched_bird_in_every_season() {
+        use crate::world::{Random, visitor::Bird};
+
+        let bird = Bird::new(0.0, &mut Random::new(1));
+        for season in [
+            Season::Spring,
+            Season::Summer,
+            Season::Autumn,
+            Season::Winter,
+        ] {
+            for time in [0.0, 1.5, 3.0, 20.0, 1e9, f64::MAX] {
+                let outside = Outside {
+                    season,
+                    bird: Some(bird.picture(time)),
+                    ..Outside::clear(12.0, time)
+                };
+                for row in 0..=20 {
+                    for column in 0..=30 {
+                        let hit = window(
+                            point(column as f32 / 30.0, row as f32 / 20.0),
+                            0.02,
+                            &outside,
+                        )
+                        .unwrap();
+                        assert!(hit.sky.is_finite() && hit.frame.is_finite());
+                    }
+                }
+            }
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ use glam::{Vec2, Vec3};
 
 use crate::face::Face;
 use crate::frame::{Frame, Grid, Shade};
-use crate::sdf::{coverage, mix, smoothstep};
+use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
 use ghost::{Aura, BOUNDS, Pose};
 use shapes::{Furniture, Material, decoration_light, sphere_span};
@@ -218,6 +218,27 @@ fn trace(
                 };
         }
     }
+    if let Some(moth) = &world.visitors.moth
+        && let Some((distance, local)) = scene.view.billboard(direction, moth.position)
+        && distance < limit
+    {
+        let point = local * GHOST_SCALE;
+        let pixel = (distance * spread).max(1e-5);
+        let coverage = moth_coverage(point, pixel, moth.flap(world.time));
+        if coverage > 0.0 {
+            let warm = if world.lamp.on {
+                (1.0 - moth.position.distance(world.lamp.bulb()) / 0.7).max(0.0)
+            } else {
+                0.0
+            };
+            let albedo = Vec3::new(0.72, 0.72, 0.68);
+            let light = lights.at(moth.position, -direction).max(Vec3::splat(0.35));
+            color = color.lerp(albedo * light + LAMP_LIGHT * warm * 0.45, coverage);
+            if coverage > 0.5 {
+                limit = distance;
+            }
+        }
+    }
 
     // The glass, with whatever is drawn on it, lies over what is behind it,
     // and under the ghost when the ghost is nearer.
@@ -262,6 +283,17 @@ fn trace(
             LAMP_LIGHT * sprite(eye, direction, world.lamp.bulb(), limit + 0.3, spread, 0.12) * 0.3;
     }
     color
+}
+
+fn moth_coverage(point: Vec2, pixel: f32, flap: f32) -> f32 {
+    let wing_width = (0.025 + 0.035 * flap.abs()).max(pixel.min(0.09) * 0.8);
+    let mut distance = capsule(point, Vec2::new(0.0, -0.023), Vec2::new(0.0, 0.023), 0.014);
+    for side in [-1.0, 1.0] {
+        let center = Vec2::new(side * wing_width * 0.7, flap * 0.022);
+        let wing = ((point - center) / Vec2::new(wing_width, 0.028)).length() - 1.0;
+        distance = distance.min(wing * wing_width.min(0.028));
+    }
+    coverage(distance, pixel * 0.6)
 }
 
 fn mote_color(world: &World) -> Vec3 {

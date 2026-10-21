@@ -1,7 +1,7 @@
 use glam::Vec3;
 use serde_json::{Value, json};
 
-use crate::world::{Activity, Plant, Seen, Sky, Thing, World, calendar::moon_words, flat};
+use crate::world::{Activity, Perch, Plant, Seen, Sky, Thing, World, calendar::moon_words, flat};
 
 /// What the ghost knows of its situation, in words. Both minds read it:
 /// System One models judge words more reliably than numbers, and Claude
@@ -200,6 +200,17 @@ fn thing(world: &World, thing: Thing) -> String {
             .map_or("a decoration", |decoration| decoration.words())
             .to_owned(),
         Thing::Mote(_) => "a light mote".to_owned(),
+        Thing::Bird => {
+            let place = match world.visitors.bird.as_ref() {
+                Some(bird) if bird.perched(world.time) => match bird.perch {
+                    Perch::Tree => "perched on the tree",
+                    Perch::Sill => "on the sill",
+                },
+                _ => "flying",
+            };
+            format!("a little bird outside the window, {place}")
+        }
+        Thing::Moth => "a moth fluttering around the lamp".to_owned(),
     }
 }
 
@@ -489,6 +500,60 @@ mod tests {
         assert!(
             !text.chars().any(|character| character.is_ascii_digit()),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn visitors_and_their_events_are_described_only_in_words() {
+        use crate::world::{
+            Event, EventKind, Random,
+            visitor::{Bird, Moth},
+        };
+
+        let mut world = World::new(1, 12.0);
+        let mut random = Random::new(1);
+        let mut bird = Bird::new(0.0, &mut random);
+        for (time, perch, words) in [
+            (1.0, Perch::Tree, "flying"),
+            (5.0, Perch::Tree, "perched on the tree"),
+            (5.0, Perch::Sill, "on the sill"),
+        ] {
+            bird.perch = perch;
+            world.visitors.bird = Some(bird);
+            world.time = time;
+            world.ghost.heading = (bird.position(time) - world.ghost.position).normalize();
+            let observation = observe(&world).to_string();
+            assert!(observation.contains(&format!("a little bird outside the window, {words}")));
+            assert!(
+                !observation
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+        let mut moth = Moth::new(world.time, &mut random);
+        moth.position = world.lamp.bulb() + Vec3::new(0.3, 0.15, 0.3);
+        world.visitors.moth = Some(moth);
+        world.ghost.heading = (moth.position - world.ghost.position).normalize();
+        for kind in [
+            EventKind::BirdLanded,
+            EventKind::BirdSang,
+            EventKind::BirdFlewOff { startled: true },
+            EventKind::MothArrived,
+            EventKind::MothLeft,
+            EventKind::Noticed("a moth at the lamp".to_owned()),
+        ] {
+            world.events.push(Event {
+                time: world.time,
+                kind,
+            });
+        }
+        let observation = observe(&world).to_string();
+        assert!(observation.contains("a moth fluttering around the lamp"));
+        assert!(
+            !observation
+                .chars()
+                .any(|character| character.is_ascii_digit()),
+            "{observation}"
         );
     }
 

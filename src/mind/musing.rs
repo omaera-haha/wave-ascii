@@ -61,6 +61,15 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Doodle => vec!["Let me draw something.", "Hm, what shall I draw?"],
         Activity::Dance => vec!["I feel like dancing.", "Wheee!"],
         Activity::Window if world.morning() => morning(world),
+        Activity::Window
+            if world
+                .visitors
+                .bird
+                .as_ref()
+                .is_some_and(|bird| bird.perched(world.time)) =>
+        {
+            vec!["Hello, little bird.", "Don't fly away…"]
+        }
         Activity::Window => match world.weather.sky {
             Sky::Rainbow => vec!["Look, a rainbow!", "All the colors at once."],
             Sky::Rain if world.weather.storm => vec!["Whoa, look at that!"],
@@ -105,6 +114,14 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     }
     if world.bedtime() && present {
         lines.extend(["I should be asleep…", "Just a little longer."]);
+    }
+    if world
+        .visitors
+        .moth
+        .as_ref()
+        .is_some_and(|moth| moth.noticed)
+    {
+        lines.extend(["A moth! It loves the lamp.", "Fly carefully, little moth."]);
     }
     match world.occasion() {
         Some(Occasion::Halloween) => lines.extend([
@@ -255,6 +272,9 @@ pub fn dreams(world: &World) -> Vec<&'static str> {
             "…a whole sky of light motes, and all of them mine…",
             "…chasing a mote that keeps getting bigger…",
         ]);
+    }
+    if today.birds > 0 {
+        lines.push("…a little bird, singing…");
     }
     if today.nudges > 0 || today.fetches > 0 {
         lines.push("…the ball rolls on and on, out into the hills…");

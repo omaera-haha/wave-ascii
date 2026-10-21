@@ -25,11 +25,13 @@ pub enum Thing {
     Cushion,
     Decoration,
     Mote(u32),
+    Bird,
+    Moth,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 8] = [
+    pub const NAMES: [&str; 10] = [
         "viewer",
         "window",
         "plant",
@@ -38,6 +40,8 @@ impl Thing {
         "cushion",
         "light mote",
         "decoration",
+        "bird",
+        "moth",
     ];
 
     pub fn name(self) -> &'static str {
@@ -50,6 +54,8 @@ impl Thing {
             Self::Cushion => "cushion",
             Self::Decoration => "decoration",
             Self::Mote(_) => "light mote",
+            Self::Bird => "bird",
+            Self::Moth => "moth",
         }
     }
 }
@@ -97,6 +103,8 @@ impl World {
                 Decoration::POSITION + Vec3::Y * decoration.height() * 0.5
             }
             Thing::Mote(id) => self.motes.iter().find(|mote| mote.id == id)?.position,
+            Thing::Bird => self.visitors.bird.as_ref()?.position(self.time),
+            Thing::Moth => self.visitors.moth.as_ref()?.position,
         })
     }
 
@@ -114,6 +122,8 @@ impl World {
             Thing::Lamp,
             Thing::Cushion,
             Thing::Decoration,
+            Thing::Bird,
+            Thing::Moth,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -171,6 +181,8 @@ impl World {
                 Thing::Lamp,
                 Thing::Cushion,
                 Thing::Decoration,
+                Thing::Bird,
+                Thing::Moth,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -255,7 +267,7 @@ impl World {
         }
 
         // Motes it sees become known to it, and the first sight of a
-        // rainbow or snowfall is an event.
+        // rainbow, snowfall, or visitor is an event.
         let sight = self.sight();
         for seen in &sight.in_view {
             match seen.thing {
@@ -282,6 +294,23 @@ impl World {
                     self.record(EventKind::Noticed(
                         "the rainbow through the window".to_owned(),
                     ));
+                }
+                Thing::Bird if seen.hidden_behind.is_none() => {
+                    if let Some(bird) = &mut self.visitors.bird
+                        && bird.perched(time)
+                        && !bird.noticed
+                    {
+                        bird.noticed = true;
+                        self.record(EventKind::Noticed("a bird at the window".to_owned()));
+                    }
+                }
+                Thing::Moth if seen.hidden_behind.is_none() => {
+                    if let Some(moth) = &mut self.visitors.moth
+                        && !moth.noticed
+                    {
+                        moth.noticed = true;
+                        self.record(EventKind::Noticed("a moth at the lamp".to_owned()));
+                    }
                 }
                 _ => {}
             }
@@ -435,6 +464,14 @@ mod tests {
         let mut world = World::new(1, 12.0);
         world.date = jiff::civil::Date::constant(2026, 10, 31);
         world.drop_mote(Vec3::ONE);
+        world.visitors.bird = Some(super::super::visitor::Bird::new(
+            0.0,
+            &mut super::super::Random::new(1),
+        ));
+        world.visitors.moth = Some(super::super::visitor::Moth::new(
+            0.0,
+            &mut super::super::Random::new(1),
+        ));
         for name in Thing::NAMES {
             world.ghost.attention = None;
             world.attend(name, 5.0);

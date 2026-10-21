@@ -592,6 +592,7 @@ impl App {
             .events
             .iter()
             .filter(|event| world.time - event.time < REACTION_WINDOW)
+            .filter(|event| event.kind != crate::world::EventKind::BirdSang || ghost.asleep <= 0.5)
             .filter_map(|event| {
                 face::mood::reaction(&event.kind).map(|reaction| (event.time, reaction))
             })
@@ -642,6 +643,11 @@ impl App {
                     snow_cover: world.weather.snow_cover,
                     moon_phase: world.moon_phase(),
                     fireworks: world.fireworks(),
+                    bird: world
+                        .visitors
+                        .bird
+                        .as_ref()
+                        .map(|bird| bird.picture(world.time)),
                     time: world.time,
                 },
                 view,
