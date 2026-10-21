@@ -245,7 +245,6 @@ impl App {
         }
         if self.live_clock {
             (self.world.date, self.world.hour) = local_time();
-            self.world.life.begin_day(&self.world.date.to_string());
         }
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);

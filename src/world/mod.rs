@@ -7,6 +7,7 @@ mod needs;
 pub mod occasion;
 mod pounce;
 mod random;
+mod routine;
 mod sight;
 mod sleep;
 mod things;
@@ -100,6 +101,8 @@ pub enum EventKind {
     Said(String),
     ViewerArrived,
     ViewerLeft,
+    ExpectedArrival,
+    MissedVisit,
     /// The viewer dropped a mote into the room.
     DroppedMote,
     /// The viewer flicked the ball.
@@ -170,6 +173,10 @@ impl EventKind {
             Self::Said(text) => format!("you said: {text}"),
             Self::ViewerArrived => "the viewer came to the glass".to_owned(),
             Self::ViewerLeft => "the viewer went away".to_owned(),
+            Self::ExpectedArrival => {
+                "the viewer came at their usual time, just as you hoped".to_owned()
+            }
+            Self::MissedVisit => "the viewer didn't come at their usual time".to_owned(),
             Self::DroppedMote => "the viewer dropped a light mote into the room".to_owned(),
             Self::KickedBall => "the viewer flicked the ball".to_owned(),
             Self::Returned { away } => {
@@ -352,6 +359,7 @@ pub struct World {
     drowsy_until: f64,
     /// When it last woke naturally from an overnight rest.
     morning_at: Option<f64>,
+    routine: routine::Routine,
 }
 
 impl World {
@@ -421,12 +429,15 @@ impl World {
             push: Vec3::X,
             drowsy_until: 0.0,
             morning_at: None,
+            routine: routine::Routine::default(),
         }
     }
 
     /// Moves the world forward by `seconds`, at most a tenth of a second at
     /// a time.
     pub fn step(&mut self, seconds: f32) {
+        self.advance_routine();
+        self.life.begin_day(&self.date.to_string());
         self.celebrate();
         let mut remaining = seconds.max(0.0);
         while remaining > 0.0 {
@@ -496,13 +507,10 @@ impl World {
         let present = self.viewer_present();
         if present != self.viewer_present {
             self.viewer_present = present;
-            self.record(if present {
-                EventKind::ViewerArrived
-            } else {
-                EventKind::ViewerLeft
-            });
             if present {
-                self.greet();
+                self.viewer_arrived();
+            } else {
+                self.record(EventKind::ViewerLeft);
             }
         }
         if let Some(milestone) = self.life.pass(seconds, present) {
@@ -564,6 +572,7 @@ impl World {
                 Activity::Rest => self.ghost.needs.energy < 0.85 || self.bedtime(),
                 Activity::Tend => self.plant.thirst > 0.25,
                 Activity::Visit => self.viewer_present() || self.ghost.needs.company < 0.6,
+                Activity::Wait => self.wait_is_open(),
                 // The viewer threw the ball, or is there to bring it to.
                 Activity::Fetch => {
                     self.ghost.asleep < 0.3
@@ -631,6 +640,10 @@ impl World {
             Activity::Visit => "Go up to the glass to be near the viewer and look at them. Fits \
                                 when the viewer is around, or when lonely."
                 .to_owned(),
+            Activity::Wait => "Go to the glass and wait for the viewer, who usually comes \
+                               around this time. Fits when the viewer is expected but hasn't \
+                               come yet."
+                .to_owned(),
             Activity::Pounce => "Chase the viewer's darting finger along the inside of the \
                                  glass and pounce on it. Fits when playful and full of energy."
                 .to_owned(),
@@ -686,6 +699,7 @@ impl World {
         let length = match activity {
             Activity::Float => self.random.range(5.0, 11.0),
             Activity::Visit => self.random.range(8.0, 15.0),
+            Activity::Wait => self.random.range(60.0, 120.0),
             Activity::Window => self.random.range(10.0, 18.0),
             Activity::Fetch => 6.0,
             Activity::Dance => self.random.range(5.0, 7.0),
@@ -699,6 +713,7 @@ impl World {
             Activity::Tend => self.plant.top() + Vec3::new(0.0, 0.25, 0.3),
             Activity::Lamp => self.lamp.bulb() + Vec3::new(0.35, -0.15, 0.25),
             Activity::Visit => self.glass_spot(),
+            Activity::Wait => Vec3::new(0.0, 1.2, ROOM_MAX.z - 0.45),
             Activity::Pounce => self.glass_spot(),
             Activity::Window => WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.55),
             Activity::Fetch => self.ball.position + Vec3::Y * 0.42,
@@ -724,6 +739,9 @@ impl World {
         }
         if activity == Activity::Doodle {
             plan.sketch = Some(self.choose_sketch());
+        }
+        if activity == Activity::Wait {
+            self.begin_wait();
         }
         self.ghost.plan = plan;
         self.record(EventKind::Began(activity));
@@ -1259,10 +1277,11 @@ impl World {
         if arrived_now && plan.arrived.is_none() {
             self.ghost.plan.arrived = Some(time);
         }
-        // Resting and hiding have their own waits after arrival; on the way
-        // there they give up like any plan.
-        let waiting = matches!(self.ghost.plan.activity, Activity::Rest | Activity::Hide)
-            && self.ghost.plan.arrived.is_some();
+        // Waiting at the glass keeps its full length. Resting and hiding
+        // have their own waits after arrival, but give up on the way there.
+        let waiting = self.ghost.plan.activity == Activity::Wait
+            || (matches!(self.ghost.plan.activity, Activity::Rest | Activity::Hide)
+                && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.drop_ball();
             self.ghost.plan.done = true;
@@ -1398,6 +1417,28 @@ impl World {
                     self.ghost.plan.done = true;
                 }
             }
+            Activity::Wait => {
+                if arrived_now {
+                    self.ghost.plan.count += 1;
+                    let side = if self.ghost.plan.count % 2 == 1 {
+                        0.35
+                    } else {
+                        -0.35
+                    };
+                    self.ghost.plan.target = self.ghost.plan.anchor + Vec3::X * side;
+                }
+                look = Some(if self.ghost.plan.elapsed(time) % 20.0 >= 17.0 {
+                    WINDOW_CENTER
+                } else {
+                    self.ghost.plan.target + Vec3::Z * 3.0
+                });
+                if self.ghost.plan.elapsed(time) >= self.ghost.plan.length
+                    || self.viewer_present()
+                    || self.bedtime()
+                {
+                    self.ghost.plan.done = true;
+                }
+            }
             Activity::Pounce => look = self.pounce(seconds),
             Activity::Fetch => {
                 if self.ghost.plan.count == 0 {
@@ -1529,6 +1570,7 @@ impl World {
         let speed = match ghost.plan.activity {
             Activity::Chase => 1.3,
             Activity::Float => 0.35,
+            Activity::Wait => 0.3,
             Activity::Rest => 0.5,
             Activity::Explore => 0.7,
             Activity::Dance => 1.5,
@@ -1666,12 +1708,16 @@ impl World {
                     | EventKind::Pounced
                     | EventKind::Milestone(_)
                     | EventKind::LearnedWord { .. }
+                    | EventKind::ExpectedArrival
             )
         }) {
             return Mood::Excited;
         }
         if recent(12.0).any(|event| event.kind == EventKind::Praised) {
             return Mood::Cheerful;
+        }
+        if recent(12.0).any(|event| event.kind == EventKind::MissedVisit) {
+            return Mood::Lonely;
         }
         if self.weather.rainbow(self.time) > 0.3 && ghost.saw_rainbow {
             return Mood::Excited;
@@ -2007,7 +2053,8 @@ mod tests {
             world.drop_mote(Vec3::new(1.0, 1.0, 0.0));
             world.ghost.needs.energy = 0.5;
             world.begin(activity);
-            run(&mut world, 70.0);
+            let duration = world.ghost.plan.length.max(60.0) + 10.0;
+            run(&mut world, duration);
             assert!(world.needs_decision(), "{activity:?} never finished");
         }
     }

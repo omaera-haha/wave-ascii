@@ -48,6 +48,8 @@ const FADING: f32 = 0.03;
 /// Times an activity counts as done before the first, so a new ghost has no
 /// habits and a few choices don't make one.
 const PRIOR: f32 = 3.0;
+/// How much yesterday's visiting routine still counts today.
+const ROUTINE_DECAY: f32 = 0.9;
 
 /// What the ghost did and what happened to it over some span of time.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -98,6 +100,10 @@ pub struct Tally {
     /// Visits it saw at the window and the lamp.
     pub birds: u32,
     pub moths: u32,
+    #[serde(default)]
+    pub expected: u32,
+    #[serde(default)]
+    pub missed: u32,
 }
 
 impl Tally {
@@ -147,6 +153,8 @@ impl Tally {
                 }
             }
             EventKind::Poked { .. } => self.pokes += 1,
+            EventKind::ExpectedArrival => self.expected += 1,
+            EventKind::MissedVisit => self.missed += 1,
             _ => {}
         }
     }
@@ -223,6 +231,12 @@ impl Tally {
         if self.moths > 0 {
             deeds.push("saw a moth at the lamp".to_owned());
         }
+        if self.expected > 0 {
+            deeds.push("you came at your usual time".to_owned());
+        }
+        if self.missed > 0 {
+            deeds.push("waited for you at your usual time, but you didn't come".to_owned());
+        }
         if self.storms > 0 {
             deeds.push("sat out a thunderstorm".to_owned());
         }
@@ -244,7 +258,7 @@ impl Tally {
         } else {
             format!("{}.", capitalized(&listed(&deeds)))
         };
-        if self.together < 60.0 && self.heard == 0 {
+        if self.together < 60.0 && self.heard == 0 && self.expected == 0 {
             text.push_str(" You didn't come by.");
         } else {
             let talked = if self.heard > 0 {
@@ -301,6 +315,22 @@ pub struct Life {
     pub alone: f64,
     /// The viewer's words it has picked up, and what it thinks they mean.
     pub vocabulary: Vocabulary,
+    /// Arrivals at each local hour, with older days gradually fading.
+    #[serde(default)]
+    pub arrivals: [f32; 24],
+    /// Hours counted today, at most once each.
+    #[serde(default)]
+    pub arrived_hours: u32,
+    /// Different days on which the viewer has arrived.
+    #[serde(default)]
+    pub days_seen: u32,
+    /// Days of learning, decayed in step with the arrivals.
+    #[serde(default)]
+    pub routine_days: f32,
+    /// The last arrival's local day and hour, including an early arrival
+    /// while the ghost was already waiting.
+    #[serde(default)]
+    pub last_arrival: Option<(String, f32)>,
 }
 
 impl Life {
@@ -375,12 +405,86 @@ impl Life {
             * (1.0 + 0.4 * (nature.shy - 0.5) - 0.2 * (nature.tender - 0.5)).clamp(0.75, 1.35)
     }
 
+    /// Learns an arrival at this local hour, once per hour per day. Returns
+    /// the moment it first learns the viewer's routine, if reached.
+    pub fn arrive(&mut self, hour: f32) -> Option<String> {
+        if !hour.is_finite() {
+            return None;
+        }
+        let hour = hour.rem_euclid(24.0);
+        self.last_arrival = Some((self.day.clone(), hour));
+        let mask = 1 << hour as usize;
+        if self.arrived_hours & mask != 0 {
+            return None;
+        }
+        if self.arrived_hours == 0 {
+            self.days_seen = self.days_seen.saturating_add(1);
+        }
+        self.arrived_hours |= mask;
+        self.arrivals[hour as usize] += 1.0;
+        self.routine_days = self.routine_days.max(1.0);
+        self.usual_time()?;
+        self.reach("I've learned when you usually come.".to_owned())
+    }
+
+    /// How strongly the viewer is expected at this hour, with half of
+    /// each neighboring hour's evidence, wrapping around midnight.
+    pub fn expectation(&self, hour: f32) -> f32 {
+        if self.days_seen < 3 || self.routine_days <= 0.0 || !hour.is_finite() {
+            return 0.0;
+        }
+        let hour = hour.rem_euclid(24.0) as usize;
+        let weight = self.arrivals[hour]
+            + 0.5 * (self.arrivals[(hour + 23) % 24] + self.arrivals[(hour + 1) % 24]);
+        (weight / self.routine_days).clamp(0.0, 1.0)
+    }
+
+    /// The part of day the viewer most often comes, once it has seen them
+    /// on enough different days to know a routine.
+    pub fn usual_time(&self) -> Option<&'static str> {
+        if self.days_seen < 3 {
+            return None;
+        }
+        let (hour, _) = self
+            .arrivals
+            .iter()
+            .enumerate()
+            .filter(|(_, weight)| **weight > 0.0)
+            .max_by(|first, second| first.1.total_cmp(second.1))?;
+        Some(match hour {
+            5..8 => "in the early morning",
+            8..11 => "in the morning",
+            11..14 => "around midday",
+            14..17 => "in the afternoon",
+            17..22 => "in the evening",
+            _ => "late at night",
+        })
+    }
+
     /// Starts counting `day`, a local date as YYYY-MM-DD. When it is a new
     /// day, the last one goes into the diary, unless nothing happened in it.
     pub fn begin_day(&mut self, day: &str) {
         if self.day == day {
             return;
         }
+        let days = self
+            .day
+            .parse::<jiff::civil::Date>()
+            .ok()
+            .zip(day.parse::<jiff::civil::Date>().ok())
+            .map_or(0, |(before, after)| {
+                (after - before).get_days().clamp(0, 365)
+            });
+        let decay = ROUTINE_DECAY.powi(days);
+        for weight in &mut self.arrivals {
+            *weight *= decay;
+        }
+        self.routine_days = if self.day.is_empty() {
+            1.0
+        } else {
+            self.routine_days * decay + (1.0 - decay) / (1.0 - ROUTINE_DECAY)
+        };
+        self.arrived_hours = 0;
         if !self.day.is_empty() && !self.today.is_empty() {
             self.diary.push(Entry {
                 day: self.day.clone(),
@@ -464,6 +568,24 @@ impl Life {
             self.alone = 0.0;
         }
         self.vocabulary = self.vocabulary.sanitized();
+        self.routine_days = if self.routine_days.is_finite() {
+            self.routine_days.clamp(0.0, 11.0)
+        } else {
+            0.0
+        };
+        for weight in &mut self.arrivals {
+            *weight = if weight.is_finite() {
+                weight.clamp(0.0, self.routine_days)
+            } else {
+                0.0
+            };
+        }
+        self.arrived_hours &= (1 << 24) - 1;
+        self.last_arrival = self.last_arrival.filter(|(day, hour)| {
+            day.parse::<jiff::civil::Date>().is_ok()
+                && hour.is_finite()
+                && (0.0..24.0).contains(hour)
+        });
         self
     }
 
@@ -613,6 +735,165 @@ fn capitalized(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn visits(life: &mut Life, hour: f32, days: std::ops::RangeInclusive<i8>) {
+        for day in days {
+            life.begin_day(&format!("2026-06-{day:02}"));
+            life.arrive(hour);
+        }
+    }
+
+    #[test]
+    fn three_days_of_arrivals_teach_the_hour_and_its_neighbors() {
+        let mut life = Life::default();
+        visits(&mut life, 20.25, 1..=2);
+        assert_eq!(life.expectation(20.0), 0.0);
+        assert_eq!(life.usual_time(), None);
+        life.begin_day("2026-06-03");
+        assert_eq!(
+            life.arrive(20.75).as_deref(),
+            Some("I've learned when you usually come.")
+        );
+        assert!((life.expectation(20.0) - 1.0).abs() < 1e-5);
+        assert!((life.expectation(19.0) - 0.5).abs() < 1e-5);
+        assert!((life.expectation(21.0) - 0.5).abs() < 1e-5);
+        assert_eq!(life.expectation(12.0), 0.0);
+        life.begin_day("2026-06-04");
+        assert!(life.expectation(20.0) >= 0.5);
+        assert_eq!(life.arrive(20.0), None);
+        assert_eq!(life.milestones.len(), 1);
+    }
+
+    #[test]
+    fn an_hour_counts_once_each_day_and_a_day_seen_counts_once() {
+        let mut life = Life::default();
+        life.begin_day("2026-06-01");
+        for hour in [20.0, 20.5, 20.9, 21.0, 21.5] {
+            life.arrive(hour);
+        }
+        assert_eq!(life.arrivals[20], 1.0);
+        assert_eq!(life.arrivals[21], 1.0);
+        assert_eq!(life.days_seen, 1);
+        life.begin_day("2026-06-01");
+        life.arrive(20.0);
+        assert_eq!(life.arrivals[20], 1.0);
+        life.begin_day("2026-06-02");
+        life.arrive(20.0);
+        assert_eq!(life.days_seen, 2);
+        assert!((life.arrivals[20] - 1.9).abs() < 1e-5);
+    }
+
+    #[test]
+    fn expectations_wrap_around_midnight() {
+        let mut life = Life::default();
+        visits(&mut life, 0.1, 1..=3);
+        assert!((life.expectation(23.9) - 0.5).abs() < 1e-5);
+        assert!((life.expectation(24.0) - 1.0).abs() < 1e-5);
+        assert!((life.expectation(1.0) - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn daily_decay_lets_a_new_routine_overtake_the_old_one() {
+        let mut life = Life::default();
+        visits(&mut life, 20.0, 1..=14);
+        assert_eq!(life.usual_time(), Some("in the evening"));
+        visits(&mut life, 9.0, 15..=28);
+        assert_eq!(life.usual_time(), Some("in the morning"));
+        assert!(life.expectation(9.0) > 0.75);
+        assert!(life.expectation(20.0) < 0.25);
+    }
+
+    #[test]
+    fn days_away_decay_as_if_each_new_day_had_been_seen() {
+        let mut daily = Life::default();
+        visits(&mut daily, 20.0, 1..=3);
+        let mut away = daily.clone();
+        for day in 4..=17 {
+            daily.begin_day(&format!("2026-06-{day:02}"));
+        }
+        away.begin_day("2026-06-17");
+        assert!((away.arrivals[20] - daily.arrivals[20]).abs() < 1e-5);
+        assert!((away.routine_days - daily.routine_days).abs() < 1e-5);
+        assert!(away.expectation(20.0) < 0.1);
+        assert_eq!(away.arrived_hours, 0);
+        away.begin_day("9999-12-31");
+        assert!(away.routine_days.is_finite());
+        assert!((away.routine_days - 10.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn usual_times_name_the_part_of_day_in_words() {
+        for (hour, words) in [
+            (6.0, "in the early morning"),
+            (9.0, "in the morning"),
+            (12.0, "around midday"),
+            (15.0, "in the afternoon"),
+            (20.0, "in the evening"),
+            (23.0, "late at night"),
+        ] {
+            let mut life = Life::default();
+            visits(&mut life, hour, 1..=3);
+            assert_eq!(life.usual_time(), Some(words));
+        }
+    }
+
+    #[test]
+    fn saved_routines_round_trip_and_older_lives_start_without_one() {
+        let mut life = Life::default();
+        visits(&mut life, 20.0, 1..=3);
+        life.note(&EventKind::ExpectedArrival);
+        life.note(&EventKind::MissedVisit);
+        let saved = serde_json::to_string(&life).unwrap();
+        let mut loaded: Life = serde_json::from_str(&saved).unwrap();
+        assert_eq!(loaded, life);
+        loaded.arrive(20.5);
+        assert_eq!(loaded.arrivals, life.arrivals);
+        assert!(
+            loaded
+                .today
+                .words()
+                .to_lowercase()
+                .contains("you came at your usual time")
+        );
+        assert!(
+            loaded
+                .today
+                .words()
+                .contains("waited for you at your usual time, but you didn't come")
+        );
+        let old: Life = serde_json::from_str(r#"{"bond":0.5,"day":"2026-06-03"}"#).unwrap();
+        assert_eq!(old.arrivals, [0.0; 24]);
+        assert_eq!(old.days_seen, 0);
+        assert_eq!(old.usual_time(), None);
+        assert_eq!(old.expectation(20.0), 0.0);
+        assert_eq!(old.last_arrival, None);
+    }
+
+    #[test]
+    fn loaded_routine_values_are_kept_in_range() {
+        let mut life = Life {
+            routine_days: f32::INFINITY,
+            arrived_hours: u32::MAX,
+            last_arrival: Some(("2026-06-03".to_owned(), f32::NAN)),
+            ..Life::default()
+        };
+        life.arrivals[0] = f32::NAN;
+        life.arrivals[1] = -1.0;
+        life.arrivals[2] = 1000.0;
+        let clean = life.sanitized();
+        assert_eq!(clean.arrivals, [0.0; 24]);
+        assert_eq!(clean.routine_days, 0.0);
+        assert_eq!(clean.arrived_hours, (1 << 24) - 1);
+        assert_eq!(clean.last_arrival, None);
+        let clean = Life {
+            routine_days: 1000.0,
+            arrivals: [1000.0; 24],
+            ..Life::default()
+        }
+        .sanitized();
+        assert_eq!(clean.routine_days, 11.0);
+        assert_eq!(clean.arrivals, [11.0; 24]);
+    }
 
     #[test]
     fn mornings_count_nights_and_remember_the_first_one_once() {

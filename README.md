@@ -235,6 +235,14 @@ whatever it was idly doing to come to the glass when you arrive, and it seeks
 you out more often. Both minds hear how close it feels to you, and Claude lets
 that color its words: shy with a stranger, warm with a friend.
 
+After seeing you arrive on several different days, it learns the hours you
+usually come. Around then, if you're away and it is awake, it drifts to the
+glass and waits, shifting from side to side and glancing at the window.
+Come at your usual time and it lights up: "There you are!" If it waited and
+you didn't come, it feels a little lonely and notes that in its diary.
+Older days gradually fade from its routine, so it learns when your hours
+change. Press `l` to see when it usually expects you. This needs no model.
+
 It keeps its firsts and landmarks as moments to remember: its first light
 mote, its first rainbow, the first time you found it hiding, its hundredth
 mote, an hour together, the first word it learns from you, and each time it
