@@ -131,7 +131,15 @@ cargo run --release
 cargo run --release -- --style blocks
 cargo run --release -- --offline        # never call a model
 cargo run --release -- --fps 30         # frames per second (default 60)
+wave-ascii --peek                       # one line: what your ghost is up to
 ```
+
+`--peek` prints a single line about the saved ghost without opening the
+room or changing anything, such as `☾ Pip is asleep` or
+`♥ Pip is waiting for you at the glass · ✉` (✉ when a letter waits), in the
+language you last spoke to it. Put it in a shell prompt or a tmux status
+bar (`set -g status-right '#(wave-ascii --peek)'`) to keep the ghost in
+the corner of your eye.
 
 In terminals that report focus, it draws at most 24 frames a second while
 another window has the focus, so a ghost kept beside your work stays light.

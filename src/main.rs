@@ -8,6 +8,7 @@ mod draft;
 mod face;
 mod frame;
 mod mind;
+mod peek;
 mod postcard;
 mod render;
 mod sdf;
@@ -61,6 +62,8 @@ Options:
   --hour HOUR                    when piped: the hour of day (default 12)
   --date YYYY-MM-DD              when piped: the date (default 2026-06-21)
   --born YYYY-MM-DD              when piped: the ghost's birth date (optional)
+  --peek                         print one line about what the saved ghost is
+                                 probably doing, for a prompt or status bar
   -h, --help                     show this help
 
 Keys:
@@ -98,6 +101,7 @@ struct Options {
     hour: f32,
     date: jiff::civil::Date,
     born: Option<jiff::civil::Date>,
+    peek: bool,
 }
 
 fn main() -> ExitCode {
@@ -142,6 +146,7 @@ fn parse_options() -> io::Result<Option<Options>> {
         hour: 12.0,
         date: jiff::civil::Date::constant(2026, 6, 21),
         born: None,
+        peek: false,
     };
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -200,6 +205,7 @@ fn parse_options() -> io::Result<Option<Options>> {
                 })?)
             }
             "--offline" => options.offline = true,
+            "--peek" => options.peek = true,
             other => {
                 return Err(invalid_input(format!(
                     "unknown argument {other:?}; see --help"
@@ -216,11 +222,15 @@ fn run() -> io::Result<()> {
         return Ok(());
     };
 
+    let paths = Paths::from_environment();
+    if options.peek {
+        return print_peek(paths.as_ref());
+    }
+
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return print_frame(&options);
     }
 
-    let paths = Paths::from_environment();
     let config = match &paths {
         Some(paths) => Config::load(&paths.config)?,
         None => Config::default(),
@@ -326,6 +336,24 @@ fn print_frame(options: &Options) -> io::Result<()> {
     }
     let canvas = app.frame(size.columns, size.rows);
     io::stdout().lock().write_all(canvas.ansi(color).as_bytes())
+}
+
+// One line about the saved ghost, read without touching anything.
+fn print_peek(paths: Option<&Paths>) -> io::Result<()> {
+    let save: Option<Save> = match paths {
+        Some(paths) => store::load_json(&paths.save)?,
+        None => None,
+    };
+    let line = match save {
+        Some(save) => {
+            let now = jiff::Zoned::now();
+            let away = now.timestamp().as_second() - save.last_seen;
+            peek::glance(&save, now.datetime(), away.max(0))
+        }
+        None => peek::nobody().to_owned(),
+    };
+    println!("{line}");
+    Ok(())
 }
 
 fn seed() -> u64 {
