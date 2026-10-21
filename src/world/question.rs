@@ -39,6 +39,7 @@ pub enum Question {
     Reading,
     FavoriteBook,
     ReadAloud,
+    OwnBook,
     Music,
     Songs,
     Wish,
@@ -109,6 +110,13 @@ const ENGLISH: &[(Question, &[&[&str]])] = &[
         &[
             &["what", "are", "you", "wearing"],
             &["whats", "that", "youre", "wearing"],
+        ],
+    ),
+    (
+        Question::OwnBook,
+        &[
+            &["read", "me", "your", "book"],
+            &["read", "the", "book", "you", "wrote"],
         ],
     ),
     (
@@ -408,6 +416,7 @@ const KOREAN: &[(Question, &[&str], bool)] = &[
         &["뭐입었어", "뭐입고있어", "그거뭐야"],
         true,
     ),
+    (Question::OwnBook, &["네가쓴책읽어줘", "네책읽어줘"], false),
     (
         Question::ReadAloud,
         &["책읽어줘", "책읽어줄래", "책읽어주라"],

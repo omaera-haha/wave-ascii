@@ -456,6 +456,9 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
             "Snow falling beyond my window.".to_owned(),
             Some("snow".to_owned()),
         ),
+        EventKind::Composed(title) => (format!("I made up a song: {title}."), None),
+        EventKind::SangMySong(title) => (format!("You sang my song back to me: {title}."), None),
+        EventKind::WroteBook(title) => (format!("I wrote a picture book: {title}."), None),
         EventKind::RecognizedSelf => ("The ghost in the mirror is me!".to_owned(), None),
         EventKind::ShootingStar => ("I wished on a shooting star.".to_owned(), None),
         EventKind::FinishedBook(title) => (format!("I finished reading {title}."), None),
@@ -826,6 +829,9 @@ mod tests {
     #[test]
     fn only_the_selected_memorable_events_make_album_captions() {
         for kind in [
+            EventKind::Composed("Rain Song".to_owned()),
+            EventKind::SangMySong("Rain Song".to_owned()),
+            EventKind::WroteBook("The Little Ghost and the Bird".to_owned()),
             EventKind::ShootingStar,
             EventKind::WishGranted(crate::world::Wish::Rainbow),
             EventKind::RecognizedSelf,

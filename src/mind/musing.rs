@@ -174,6 +174,26 @@ fn babble<Line: From<&'static str>>(world: &World, lines: &mut Vec<Line>, korean
 
 /// Gives remembered friends and star pictures their names in the thought pools.
 pub fn named_friend_line(world: &World, line: &str) -> String {
+    let line = line
+        .replace(
+            "{own_song}",
+            world
+                .life
+                .compositions
+                .last()
+                .map_or("my little song", |song| &song.title),
+        )
+        .replace(
+            "{own_book}",
+            world
+                .life
+                .written
+                .iter()
+                .rev()
+                .find(|book| book.finished)
+                .map_or("my little book", |book| &book.title.0),
+        );
+    let line = line.as_str();
     if line.contains("{animal}") || line.contains("{food}") {
         return line
             .replace(
@@ -225,6 +245,13 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let needs = ghost.needs;
     let present = world.viewer_present();
     let mut lines = Vec::new();
+    if !world.life.compositions.is_empty() {
+        lines.push("I made up {own_song}. It sounds like my room.");
+    }
+    if world.life.written.iter().any(|book| book.finished) {
+        lines.push("My book, {own_book}, keeps a little piece of my life.");
+    }
+
     if ghost.plan.activity == Activity::Mirror && !ghost.plan.done {
         lines.extend(world.mirror_thoughts());
     }
@@ -509,6 +536,13 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if !world.life.compositions.is_empty() {
+        lines.push("…my song, {own_song}, turns into golden notes…");
+    }
+    if world.life.written.iter().any(|book| book.finished) {
+        lines.push("…the pages of my book, {own_book}, float through the clouds…");
+    }
+
     if today.mirror_visits > 0 || today.met_reflection {
         lines.push(if world.life.mirror.recognizes_self() {
             "…my own ghost waves back from a silver room…"
@@ -713,6 +747,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::Airing { .. }
             | Understanding::Undressing
             | Understanding::Music { .. }
+            | Understanding::OwnSong
             | Understanding::Answered(_)
             | Understanding::Unanswered(_)
     ) && heard.learned_name.is_none()
@@ -732,7 +767,7 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
     };
     if matches!(
         heard.understanding,
-        Understanding::Answered(_) | Understanding::Unanswered(_)
+        Understanding::Answered(_) | Understanding::Unanswered(_) | Understanding::OwnSong
     ) {
         return world
             .ghost
@@ -978,8 +1013,21 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
             ),
         },
         Question::ReadAloud => Vec::new(),
+        Question::OwnBook => world
+            .ghost
+            .speech
+            .as_ref()
+            .map(|line| vec![line.text.clone()])
+            .unwrap_or_default(),
         Question::Reading => match world.current_book() {
             Some(index) => {
+                if index >= crate::world::books::LIBRARY.len() {
+                    return vec![if korean {
+                        format!("《{}》, 내가 쓴 책이야.", world.book_title(index, true))
+                    } else {
+                        format!("{}. I wrote it myself.", world.book_title(index, false))
+                    }];
+                }
                 let book = crate::world::books::LIBRARY[index];
                 vec![if korean {
                     format!("《{}》, {}.", book.title(true), book.about(true))
@@ -989,13 +1037,13 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
             }
             None => lines(&["My book pile is waiting."], &["책들이 기다리고 있어."]),
         },
-        Question::FavoriteBook => match world.life.books.favorite() {
+        Question::FavoriteBook => match world.favorite_book() {
             Some(index) => {
-                let book = crate::world::books::LIBRARY[index];
+                let title = world.book_title(index, korean);
                 vec![if korean {
-                    format!("《{}》! 자꾸 다시 읽게 돼.", book.title(true))
+                    format!("《{}》! 자꾸 다시 읽게 돼.", title)
                 } else {
-                    format!("{}! I keep coming back to it.", book.title(false))
+                    format!("{}! I keep coming back to it.", title)
                 }]
             }
             None => lines(
@@ -1009,6 +1057,14 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
         ),
         Question::Songs => {
             let learned = world.learned_tune_words();
+            let own = world.composition_words(korean);
+            let own = if own.is_empty() {
+                String::new()
+            } else if korean {
+                format!(" 내가 만든 노래도 있어: {own}.")
+            } else {
+                format!(" I made my own songs too: {own}.")
+            };
             if korean {
                 let extra = if world.life.tunes.is_empty() {
                     "아직 네게 배운 곡은 없어.".to_owned()
@@ -1016,7 +1072,7 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
                     format!("네가 가르쳐 준 곡도 알아: {learned}.")
                 };
                 vec![format!(
-                    "작은 자장가, 빙글 왈츠, 꼬마 행진곡, 빛 알갱이 반짝임을 알아. {extra}"
+                    "작은 자장가, 빙글 왈츠, 꼬마 행진곡, 빛 알갱이 반짝임을 알아. {extra}{own}"
                 )]
             } else {
                 let extra = if world.life.tunes.is_empty() {
@@ -1025,7 +1081,7 @@ fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bo
                     format!("And the tunes you taught me: {learned}.")
                 };
                 vec![format!(
-                    "I know little lullaby, turning waltz, tiny march, and mote sparkle. {extra}"
+                    "I know little lullaby, turning waltz, tiny march, and mote sparkle. {extra}{own}"
                 )]
             }
         }

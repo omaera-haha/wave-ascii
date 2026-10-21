@@ -218,6 +218,16 @@ pub struct Tally {
     pub books_received: u32,
     pub tunes_played: u32,
     #[serde(default)]
+    pub compositions: u32,
+    #[serde(default)]
+    pub composition_titles: Vec<String>,
+    #[serde(default)]
+    pub songs_sung_back: u32,
+    #[serde(default)]
+    pub books_written: u32,
+    #[serde(default)]
+    pub written_titles: Vec<String>,
+    #[serde(default)]
     pub tunes_learned: u32,
     #[serde(default)]
     pub lullaby_sleeps: u32,
@@ -250,6 +260,21 @@ impl Tally {
 
     fn note(&mut self, kind: &EventKind) {
         match kind {
+            EventKind::Composed(title) => {
+                self.compositions = self.compositions.saturating_add(1);
+                if self.composition_titles.len() < 8 {
+                    self.composition_titles.push(title.clone());
+                }
+            }
+            EventKind::SangMySong(_) => {
+                self.songs_sung_back = self.songs_sung_back.saturating_add(1)
+            }
+            EventKind::WroteBook(title) => {
+                self.books_written = self.books_written.saturating_add(1);
+                if self.written_titles.len() < 6 {
+                    self.written_titles.push(title.clone());
+                }
+            }
             EventKind::VisitedMirror => self.mirror_visits = self.mirror_visits.saturating_add(1),
             EventKind::MetReflection => self.met_reflection = true,
             EventKind::RecognizedSelf => self.recognized_self = true,
@@ -476,6 +501,24 @@ impl Tally {
                 .filter(|count| **count > 0)
                 .map(|count| (Salience::Small, kind.diary(*count)))
         }));
+        for title in &self.composition_titles {
+            deeds.push((
+                Salience::Special,
+                format!("made up a tune called “{title}”"),
+            ));
+        }
+        for title in &self.written_titles {
+            deeds.push((
+                Salience::Momentous,
+                format!("wrote my own picture book, “{title}”"),
+            ));
+        }
+        if self.songs_sung_back > 0 {
+            deeds.push((
+                Salience::Special,
+                "heard you sing my own song back to me".to_owned(),
+            ));
+        }
         if self.letters_written > 0 {
             deeds.push((Salience::Special, "wrote you a letter".to_owned()));
         }
@@ -1059,6 +1102,16 @@ pub struct Life {
     #[serde(default)]
     pub tunes: Vec<super::music::Tune>,
     #[serde(default)]
+    pub compositions: Vec<super::music::Composition>,
+    #[serde(default)]
+    pub composition_day: Option<String>,
+    #[serde(default)]
+    pub written: Vec<super::creation::WrittenBook>,
+    #[serde(default)]
+    pub written_day: Option<String>,
+    #[serde(default)]
+    pub last_friend_visit: Option<String>,
+    #[serde(default)]
     pub wish: Option<super::Wishing>,
     #[serde(default)]
     pub granted: Vec<super::Granted>,
@@ -1165,6 +1218,9 @@ impl Life {
     /// Counts what happened, and lets it warm or cool the bond. Returns the
     /// milestone this reached, if any.
     pub fn note(&mut self, kind: &EventKind) -> Option<String> {
+        if matches!(kind, EventKind::FriendArrived(_)) {
+            self.last_friend_visit = Some(self.day.clone());
+        }
         self.skills.migrate(&self.total);
         self.total.note(kind);
         self.today.note(kind);
@@ -1219,6 +1275,7 @@ impl Life {
             } => 0.01,
             EventKind::ToldStory | EventKind::ReadLetter => 0.005,
             EventKind::LearnedAboutViewer(_) => 0.005,
+            EventKind::SangMySong(_) => 0.01,
             EventKind::LearnedTune(_) => 0.005,
             EventKind::WordGame { .. } => 0.003,
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
@@ -1454,6 +1511,7 @@ impl Life {
     /// The life as saved, with values kept within their ranges, so a
     /// hand-edited or damaged save can't break the world.
     pub fn sanitized(mut self) -> Self {
+        super::creation::sanitize(&mut self);
         self.mirror.sanitize(&self.day);
         self.total.met_reflection |= self.mirror.sessions > 0 || self.mirror.recognizes_self();
         self.total.recognized_self |= self.mirror.recognizes_self();
@@ -1572,6 +1630,17 @@ impl Life {
             tally.pages = tally.pages.min(100_000_000);
             tally.books_finished = tally.books_finished.min(100_000_000);
             tally.books_received = tally.books_received.min(12);
+            tally.compositions = tally.compositions.min(100_000_000);
+            tally.books_written = tally.books_written.min(100_000_000);
+            tally.songs_sung_back = tally.songs_sung_back.min(100_000_000);
+            tally
+                .composition_titles
+                .retain(|title| super::creation::valid_text(title, 80));
+            tally.composition_titles.truncate(8);
+            tally
+                .written_titles
+                .retain(|title| super::creation::valid_text(title, 80));
+            tally.written_titles.truncate(6);
             tally.tunes_played = tally.tunes_played.min(100_000_000);
             tally.tunes_learned = tally.tunes_learned.min(100_000_000);
             tally.mirror_visits = tally.mirror_visits.min(100_000_000);
@@ -1761,6 +1830,15 @@ impl Life {
         let text = match kind {
             EventKind::WordGame { solved: true, .. } if total.words_guessed == 1 => {
                 "You guessed my secret word for the first time.".to_owned()
+            }
+            EventKind::Composed(title) if total.compositions == 1 => {
+                format!("I made up a tune of my own: {title}.")
+            }
+            EventKind::SangMySong(_) if total.songs_sung_back == 1 => {
+                "You sang my song back to me.".to_owned()
+            }
+            EventKind::WroteBook(title) if total.books_written == 1 => {
+                format!("I wrote a picture book of my own: {title}.")
             }
             EventKind::FinishedBook(_) if total.books_finished == 1 => {
                 "I finished my first picture book.".to_owned()

@@ -226,11 +226,19 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         0.0
     };
     let held_book = world.held_book();
+    let mut book_pile: Vec<_> = world
+        .life
+        .written
+        .iter()
+        .enumerate()
+        .map(|(index, _)| crate::world::books::OwnedBook {
+            index: crate::world::books::LIBRARY.len() + index,
+            ..Default::default()
+        })
+        .collect();
+    book_pile.extend(world.life.books.owned.iter().cloned());
     let mut furniture = vec![
-        Furniture::Books(
-            &world.life.books.owned,
-            held_book.map(|(index, _, _)| index),
-        ),
+        Furniture::Books(&book_pile, held_book.map(|(index, _, _)| index)),
         Furniture::Curtain(-1.0, curtain_gust),
         Furniture::Curtain(1.0, curtain_gust),
         Furniture::Lamp(world.lamp),
@@ -263,6 +271,20 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             size: world.size(),
             rotation: glam::Quat::from_rotation_y(-scene.view.right.z.atan2(scene.view.right.x)),
             turning,
+            ink: (index >= crate::world::books::LIBRARY.len()).then(|| {
+                if let Some(reading) = &world.reading
+                    && reading.writing
+                {
+                    let started = reading
+                        .turned_at
+                        .or(world.ghost.plan.arrived)
+                        .unwrap_or(world.time);
+                    let ends = reading.next_at.unwrap_or(started + 20.0);
+                    ((world.time - started) / (ends - started).max(0.1)).clamp(0.0, 1.0) as f32
+                } else {
+                    1.0
+                }
+            }),
         });
     }
     if let Some(decoration) = world.decoration() {

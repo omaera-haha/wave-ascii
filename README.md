@@ -69,6 +69,13 @@ panel. Repeating a lesson keeps one copy. Later it may play your tune on its
 own or dream of it. Ask “do you like music?” or “what songs do you know?”
 (“음악 좋아해?” / “무슨 노래 알아?”) to hear about them.
 
+After newbornhood and twenty completed tunes, it may hum a song of its own
+before winding the box. Its mood shapes the melody and its memories name it;
+it keeps its newest eight, making at most one every three local days. Ask
+“sing me your song”, “play your song”, “do you have your own song?”,
+“네 노래 불러줘”, or “네가 만든 노래” to hear its newest. Sing its notes back
+and it recognizes its own song. Its titles stay in the life panel and memories.
+
 During focus sessions the box stays quiet and lessons wait until work ends.
 You can explicitly ask for `play a lullaby` or `자장가 들려줘` during work;
 it plays without drawing the ghost away from its quiet company. Lessons
@@ -261,6 +268,14 @@ spent together, including early endings. Quitting silently ends the timer.
   sentence at a time in your language. A poke or a no puts the book down;
   pages already read stay remembered. Finished books can become retold
   stories, and the life panel lists its library.
+
+  After finishing every book it owns and gathering eight milestones, it may
+  spend a quiet evening writing its own five-page picture book from its life.
+  Drafts survive interruptions and resume later; unfinished ones lapse after
+  seven days. It keeps up to six books, at least ten local days apart. Ask
+  “read me your book”, “read the book you wrote”, or “네가 쓴 책 읽어줘” to hear
+  the newest. Its own books join quiet reading, the life panel, and the journal,
+  which keeps their full English and Korean pages, your language first.
 - **Stories.** Ask "tell me a story" or "이야기 들려줘" and it tells a little tale
   from its life, a sentence at a time; at bedtime it says goodnight and
   floats to its cushion to sleep. Poking it or saying no stops the tale.

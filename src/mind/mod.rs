@@ -414,7 +414,7 @@ impl Mind {
         if matches!(
             heard.understanding,
             Understanding::Asked {
-                question: Question::ReadAloud,
+                question: Question::ReadAloud | Question::OwnBook,
                 ..
             }
         ) {
@@ -433,6 +433,7 @@ impl Mind {
             heard.understanding,
             Understanding::WordGame
                 | Understanding::Yawning
+                | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
         ) {
@@ -901,6 +902,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::Yawning
                 | Understanding::Undressing
                 | Understanding::Music { .. }
+                | Understanding::OwnSong
                 | Understanding::Answered(_)
                 | Understanding::Unanswered(_)
         )
@@ -1136,6 +1138,92 @@ mod tests {
         mind.reflecting_story = Some((9, false));
         mind.apply(super::Answer::Reflected(Ok(None)), &mut world);
         assert!(!world.telling.as_ref().unwrap().lines.is_empty());
+    }
+
+    #[test]
+    fn creations_reach_questions_observations_reflections_and_named_offline_memories() {
+        use crate::world::{
+            Nature, Random, Season,
+            creation::compose_book,
+            music::{Composition, Tune, compose},
+        };
+        let mut world = World::new(7, 12.0);
+        let notes = compose(
+            &mut Random::new(9),
+            crate::world::Mood::Cheerful,
+            Nature::default(),
+        );
+        world.life.compositions.push(Composition {
+            tune: Tune {
+                name: "Rain Song".to_owned(),
+                notes,
+            },
+            title: "Rain Song".to_owned(),
+            korean_title: "비의 노래".to_owned(),
+            day: world.date.to_string(),
+        });
+        let mut book = compose_book(
+            &mut Random::new(4),
+            &world.life,
+            Season::Summer,
+            world.date.to_string(),
+        );
+        book.pages = std::mem::take(&mut book.outline);
+        book.finished = true;
+        let title = book.title.0.clone();
+        world.life.written.push(book);
+        let observation = observation::observe(&world);
+        assert_eq!(observation["room"]["own_songs"], "Rain Song");
+        assert!(
+            observation["room"]["own_books"]
+                .as_str()
+                .unwrap()
+                .contains(&title)
+        );
+        let request = reflection::request(&observation, &[], &world.life, &[], None, None, None);
+        let prompt = request
+            .system
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(prompt.contains("Rain Song") && prompt.contains(&title));
+        for pool in [musing::idle(&world), musing::dreams(&world)] {
+            let named: Vec<_> = pool
+                .iter()
+                .map(|line| musing::named_friend_line(&world, line))
+                .collect();
+            assert!(named.iter().any(|line| line.contains("Rain Song")));
+            assert!(named.iter().any(|line| line.contains(&title)));
+        }
+        for (question, expected) in [
+            ("what songs do you know?", "Rain Song"),
+            ("무슨 노래 알아?", "비의 노래"),
+            ("what's your favorite book?", title.as_str()),
+        ] {
+            let heard = world.hear(question);
+            assert!(!routes_to_jev(&heard));
+            assert!(
+                musing::reply(&world, &heard, None)
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "{question}"
+            );
+        }
+        let mut mind = offline();
+        mind.hear(&mut world, "sing me your song");
+        assert!(world.ghost.speech.as_ref().unwrap().text.starts_with('♪'));
+        assert!(
+            mind.journal
+                .conversation
+                .last()
+                .unwrap()
+                .text
+                .starts_with('♪')
+        );
+        mind.hear(&mut world, "read me your book");
+        assert!(world.telling.is_some());
+        assert!(mind.pending_story.is_none());
     }
 
     #[test]

@@ -5,6 +5,7 @@ pub mod blocks;
 pub mod books;
 pub mod breeze;
 pub mod calendar;
+pub mod creation;
 mod doodle;
 pub mod dream;
 pub mod focus;
@@ -274,6 +275,9 @@ pub enum EventKind {
         tune: String,
     },
     LearnedTune(String),
+    Composed(String),
+    SangMySong(String),
+    WroteBook(String),
     LullabySleep,
     MadeWish(Wish),
     WishFaded(Wish),
@@ -302,6 +306,9 @@ impl EventKind {
             Self::PutOn(accessory) => format!("put on {}", accessory.words()),
             Self::TookOff(accessory) => format!("took off {}", accessory.words()),
             Self::NewBook(title) => format!("a new picture book arrived: {title}"),
+            Self::Composed(title) => format!("made up a tune called “{title}”"),
+            Self::SangMySong(title) => format!("heard the viewer sing my song, “{title}”"),
+            Self::WroteBook(title) => format!("wrote my own picture book, “{title}”"),
             Self::ReadPage => "read a page of a picture book".to_owned(),
             Self::FinishedBook(title) => format!("finished reading {title}"),
             Self::PlayedMusic { tune } => format!("played {tune} on the music box"),
@@ -528,6 +535,7 @@ pub enum Understanding {
     WordGame,
     Yawning,
     Undressing,
+    OwnSong,
     Music {
         lullaby: bool,
     },
@@ -720,6 +728,7 @@ pub struct World {
     pub music_notes: Vec<music::RisingNote>,
     queued_tune: Option<music::Tune>,
     pending_tune: Option<music::Tune>,
+    compose_on_arrival: bool,
     pending_wish: Option<Wish>,
     mirror_visit: Option<mirror::Visit>,
     pub asking: Option<(acquaintance::Topic, f64)>,
@@ -850,6 +859,7 @@ impl World {
             music_notes: Vec::new(),
             queued_tune: None,
             pending_tune: None,
+            compose_on_arrival: false,
             pending_wish: None,
             mirror_visit: None,
             asking: None,
@@ -1897,6 +1907,9 @@ impl World {
                     self.begin(Activity::Visit);
                 }
             }
+        }
+        if question == Some(Question::OwnBook) && !scolded {
+            self.read_own_book_aloud(korean);
         }
         if question == Some(Question::ReadAloud) && !scolded {
             self.read_aloud(korean);

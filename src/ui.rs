@@ -800,6 +800,37 @@ impl JournalPanel {
             append(&format!("  {}  ", entry.day), &entry.text, TEXT);
         }
         append("", "", TEXT);
+        append("", "Its own picture books", ACCENT);
+        let korean = app.world.speaks_korean();
+        for book in &app.world.life.written {
+            let (first_title, second_title) = if korean {
+                (&book.title.1, &book.title.0)
+            } else {
+                (&book.title.0, &book.title.1)
+            };
+            append(
+                "  ",
+                &format!(
+                    "{first_title} / {second_title}{}",
+                    if book.finished {
+                        ""
+                    } else {
+                        " (unfinished draft)"
+                    }
+                ),
+                ACCENT,
+            );
+            for page in &book.pages {
+                let (first, second) = if korean {
+                    (&page.1, &page.0)
+                } else {
+                    (&page.0, &page.1)
+                };
+                append("    ", first, TEXT);
+                append("    ", second, DIM);
+            }
+        }
+        append("", "", TEXT);
         append("", "Letters", ACCENT);
         for letter in &app.world.life.letters {
             append(&format!("  {}  ", letter.day), &letter.lines[0], TEXT);
@@ -1164,9 +1195,15 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     if life.mirror.sessions > 0 || life.total.met_reflection {
         header.extend(labeled("Mirror", life.mirror.words().to_owned()));
     }
-    header.extend(labeled("Books", life.books.words()));
-    if !life.tunes.is_empty() {
-        header.extend(labeled("Tunes", app.world.learned_tune_words()));
+    header.extend(labeled("Books", app.world.books_words()));
+    if !life.tunes.is_empty() || !life.compositions.is_empty() {
+        let own = app.world.composition_words(false);
+        let words = if own.is_empty() {
+            app.world.learned_tune_words()
+        } else {
+            format!("{}; made up {own}", app.world.learned_tune_words())
+        };
+        header.extend(labeled("Tunes", words));
     }
     let garden = labeled("Garden", app.world.garden_words());
     let sky = if life.constellations.is_empty() {

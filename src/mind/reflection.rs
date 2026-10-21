@@ -46,7 +46,7 @@ with it there, and type to it. The ghost stays in the box, but can reach through
 to take the bird's gifts from the outer sill and carry them to its shelf of keepsakes. On some \
 evenings its friend, another smaller ghost, drifts in through the window to play for a while.
 
-Music has no audio: golden notes show the tune and the ghost sways to its beat. The person can teach a tune in solfège; these lessons teach no activity words. `Tunes the viewer taught it` lists its learned melodies.
+Music has no audio: golden notes show the tune and the ghost sways to its beat. The person can teach a tune in solfège; these lessons teach no activity words. `Tunes the viewer taught it` lists its learned melodies. With practice it can compose its own songs and write paired English and Korean picture books from its memories. Code chooses, saves, and finishes these creations; you may recall their titles and invite the viewer to hear them.
 
 The ghost learns the person's words the way a pet does, from what it was doing when it heard them, what the person did next, and whether they sounded pleased; `Words it has learned` lists the ones it knows and what it takes them to mean.
 
@@ -265,6 +265,31 @@ pub fn request(
         "{wish}\nWishes that came true recently:\n{}",
         bullets(&granted)
     );
+    let creations = format!(
+        "\n\nSongs you composed yourself:\n{}\n\nPicture books you wrote:\n{}",
+        bullets(
+            &life
+                .compositions
+                .iter()
+                .map(|song| song.title.clone())
+                .collect::<Vec<_>>()
+        ),
+        bullets(
+            &life
+                .written
+                .iter()
+                .map(|book| format!(
+                    "{}{}",
+                    book.title.0,
+                    if book.finished {
+                        ""
+                    } else {
+                        " (unfinished draft)"
+                    }
+                ))
+                .collect::<Vec<_>>()
+        )
+    );
     let block = |text: String| Block { text, cache };
     Request {
         system: vec![
@@ -276,7 +301,7 @@ pub fn request(
                  Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
-                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}",
+                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}{creations}",
                 life.nature.unwrap_or_default().words(),
                 life.bond_words(),
                 life.bird_words(),

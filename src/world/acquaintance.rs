@@ -1081,6 +1081,7 @@ mod tests {
                 11 => world.viewer.typing = true,
                 12 => {
                     world.reading = Some(super::super::books::Reading {
+                        writing: false,
                         index: 0,
                         next_at: None,
                         remaining: 1,
