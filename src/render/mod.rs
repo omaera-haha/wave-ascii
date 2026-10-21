@@ -178,6 +178,19 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         ));
     }
     furniture.extend(world.blocks.iter().copied().map(Furniture::Block));
+    furniture.extend(world.seedlings.iter().enumerate().map(|(index, plant)| {
+        Furniture::Seedling(plant, crate::world::garden::SPOTS[index], world.season())
+    }));
+    furniture.extend(
+        world
+            .petals
+            .iter()
+            .copied()
+            .map(|petal| Furniture::Petal(petal, world.time)),
+    );
+    if let Some(seed) = world.carried_seed() {
+        furniture.push(Furniture::Seed(seed));
+    }
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
     Frame::sample(grid, |point| {

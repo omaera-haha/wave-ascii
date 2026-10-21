@@ -895,6 +895,11 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     if let Some(name) = &life.viewer_name {
         header.push((format!("You: {name}"), TEXT));
     }
+    let garden = format!("Garden: {}", app.world.garden_words());
+    let garden = wrap(&garden, columns.saturating_sub(10).clamp(20, 56))
+        .into_iter()
+        .map(|line| (line, TEXT))
+        .collect::<Vec<_>>();
     let total = &life.total;
     let mut bird = vec![(format!("The bird: {}", life.bird_words()), TEXT)];
     let room = columns.saturating_sub(10).clamp(20, 56);
@@ -977,6 +982,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     // runs short.
     let sections = [
         (header, 0),
+        (garden, 2),
         (bird, 2),
         (counts, 4),
         (latest, 3),
@@ -984,7 +990,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         (footer, 5),
     ];
     let mut room = rows.saturating_sub(2);
-    let mut kept = [false; 6];
+    let mut kept = [false; 7];
     let mut by_need: Vec<usize> = (0..sections.len()).collect();
     by_need.sort_by_key(|index| sections[*index].1);
     for index in by_need {

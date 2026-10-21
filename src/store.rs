@@ -183,6 +183,8 @@ pub struct Save {
     /// from before there was a life start a fresh one.
     #[serde(default)]
     pub life: Life,
+    #[serde(default)]
+    pub seedlings: Vec<crate::world::Seedling>,
 }
 
 impl Save {
@@ -366,6 +368,16 @@ mod tests {
         let save = load_json::<Save>(&path).unwrap().unwrap();
         assert_eq!(save.name, "Pip");
         assert_eq!(save.life, Life::default());
+        assert!(save.seedlings.is_empty());
+        assert_eq!(
+            (
+                save.plant.blossom,
+                save.plant.bloom_age,
+                save.plant.droop,
+                save.plant.seeds
+            ),
+            (0.0, 0.0, 0.0, 0)
+        );
         let mut world = crate::world::World::new(1, 12.0);
         crate::app::restore(&mut world, &save, save.last_seen);
         assert_eq!(

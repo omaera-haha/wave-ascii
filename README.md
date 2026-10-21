@@ -25,6 +25,19 @@ your words and your name, learns when you usually come and waits for you,
 befriends the bird, which brings it little gifts, forms habits, keeps a
 diary, and marks its special days.
 
+The plant flowers in spells: buds open over about an hour, flowers last
+about a day, petals drift down, and a ripe seed is left behind. After half a
+day's rest it can bloom again. The ghost sometimes carries a seed to one of
+three little pots below the window and plants it. Daisies, tulips,
+sunflowers, bluebells, and poppies sprout, leaf out, bud, and flower with
+care over about four to six days (roughly twenty-five waterings). Repeated
+watering cannot rush a flower into bloom before four days. The ghost waters
+the thirstiest pot first. Spring helps growth; winter is a rest from flowers.
+Neglected plants only droop, and lift their heads again after watering;
+nothing dies. Its garden and first seeds, sprouts, and flowers are in its
+life panel (`l`), thoughts, and diary. Pots and their ages are saved, and
+the garden ages while the app is closed, bounded to a week per absence.
+
 Two models give it a mind:
 
 - **Jev**, TypeSafe's System One model, makes its quick choices. Each time

@@ -219,6 +219,7 @@ fn run() -> io::Result<()> {
         None => None,
     };
     let mut world = World::new(seed(), app::local_hour());
+    world.date = jiff::Zoned::now().date();
     let now = mind::now();
     let (journal, born) = match &save {
         Some(save) => (app::restore(&mut world, save, now), save.born),

@@ -1,7 +1,10 @@
 use glam::{Vec2, Vec3};
 
 use crate::sdf::{star, trapezoid};
-use crate::world::{Block, Decoration, Keepsake, Lamp, Nook, Occasion, Plant, SHELF_POSITION};
+use crate::world::{
+    Block, Decoration, Flower, Keepsake, Lamp, Nook, Occasion, Petal, Plant, SHELF_POSITION,
+    Season, Seedling,
+};
 
 /// What a surface is made of, which sets its color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +33,10 @@ pub enum Material {
     AutumnLeaf,
     Berry,
     Pebble,
+    Soil,
+    Flower(Flower),
+    Center(Flower),
+    Seed,
 }
 
 impl Material {
@@ -54,6 +61,18 @@ impl Material {
                 Vec3::new(0.35, 0.82, 0.42).lerp(Vec3::new(0.78, 0.72, 0.32), plant.thirst)
             }
             Self::Petal => Vec3::new(1.0, 0.56, 0.76),
+            Self::Soil => Vec3::new(0.49, 0.36, 0.28),
+            Self::Flower(kind) => match kind {
+                Flower::Daisy => Vec3::new(1.0, 0.97, 0.85),
+                Flower::Tulip => Vec3::new(1.0, 0.32, 0.42),
+                Flower::Sunflower => Vec3::new(1.0, 0.85, 0.24),
+                Flower::Bluebell => Vec3::new(0.46, 0.57, 1.0),
+                Flower::Poppy => Vec3::new(1.0, 0.42, 0.27),
+            },
+            Self::Center(Flower::Daisy) => Vec3::new(1.0, 0.8, 0.25),
+            Self::Center(Flower::Poppy) => Vec3::new(0.38, 0.3, 0.42),
+            Self::Center(_) => Vec3::new(0.58, 0.39, 0.27),
+            Self::Seed => Vec3::new(1.0, 0.85, 0.5),
             Self::Cushion => Vec3::new(0.64, 0.57, 0.96),
             Self::Pumpkin => Vec3::new(1.0, 0.5, 0.16),
             Self::Fir => Vec3::new(0.35, 0.78, 0.48),
@@ -80,6 +99,7 @@ impl Material {
     pub fn emission(self, time: f64, plant: &Plant) -> Vec3 {
         let strength = match self {
             Self::Ember => 1.4 * flicker(time),
+            Self::Seed => 0.5,
             Self::TreeLight(index) => {
                 0.9 + 0.5 * ((time.rem_euclid(3600.0) as f32) * 2.1 + f32::from(index) * 1.7).sin()
             }
@@ -100,11 +120,20 @@ pub enum Furniture<'a> {
     Decoration(Decoration, f64),
     Shelf(&'a [Keepsake]),
     Keepsake(Keepsake, Vec3),
+    Seedling(&'a Seedling, Vec3, Season),
+    Petal(Petal, f64),
+    Seed(Vec3),
 }
 
 impl Furniture<'_> {
     pub fn bounds(&self) -> (Vec3, f32) {
         match self {
+            Self::Seedling(plant, position, _) => {
+                let height = plant.height();
+                (*position + Vec3::Y * height * 0.5, height * 0.5 + 0.14)
+            }
+            Self::Petal(petal, _) => (petal.position, 0.035),
+            Self::Seed(position) => (*position, 0.025),
             Self::Block(block) => (block.position, crate::world::blocks::RADIUS),
             Self::Lamp(lamp) => (lamp.position + Vec3::Y * 0.72, 0.78),
             Self::Plant(plant) => {
@@ -141,6 +170,25 @@ impl Furniture<'_> {
             }
             Self::Lamp(lamp) => lamp_distance(point - lamp.position),
             Self::Plant(plant) => plant_distance(point - plant.position, plant),
+            Self::Seedling(plant, position, season) => {
+                seedling_distance(point - *position, plant, *season)
+            }
+            Self::Seed(position) => (point.distance(*position) - 0.018, Material::Seed),
+            Self::Petal(petal, time) => {
+                let local = point - petal.position;
+                let (sine, cosine) = petal.spin.sin_cos();
+                let turned = Vec3::new(
+                    local.x * cosine + local.z * sine,
+                    local.y,
+                    local.z * cosine - local.x * sine,
+                );
+                let fade =
+                    ((Petal::LIFETIME - (*time - petal.dropped)) / 15.0).clamp(0.0, 1.0) as f32;
+                (
+                    ellipsoid(turned, Vec3::new(0.027, 0.006, 0.014) * fade.max(0.001)),
+                    Material::Petal,
+                )
+            }
             Self::Shelf(keepsakes) => shelf_distance(point - SHELF_POSITION, keepsakes),
             Self::Keepsake(gift, position) => keepsake_distance(point - *position, *gift),
             Self::Nook(nook) => (
@@ -321,7 +369,7 @@ fn plant_distance(point: Vec3, plant: &Plant) -> (f32, Material) {
         Plant::POT_RADIUS,
         pot_half,
     ) - 0.01;
-    let top = Vec3::Y * plant.height();
+    let top = plant.top() - plant.position;
     let base = Vec3::Y * (Plant::POT_HEIGHT - 0.03);
     let stem = capsule(point, base, top, 0.018);
 
@@ -336,7 +384,7 @@ fn plant_distance(point: Vec3, plant: &Plant) -> (f32, Material) {
         let attach = base.lerp(top, along);
         let angle = index as f32 * 2.4;
         let outward = Vec3::new(angle.cos(), 0.0, angle.sin());
-        let droop = Vec3::Y * (0.03 - 0.07 * plant.thirst);
+        let droop = Vec3::Y * (0.03 - 0.07 * plant.thirst - 0.1 * plant.droop);
         let center = attach + outward * 0.09 + droop;
         // Turn the point into the leaf's own frame, long along `outward`.
         let local = point - center;
@@ -348,15 +396,160 @@ fn plant_distance(point: Vec3, plant: &Plant) -> (f32, Material) {
         }
     }
 
-    if plant.blooming() {
-        let bloom = ((plant.growth - Plant::BLOOM) / (1.0 - Plant::BLOOM)).clamp(0.3, 1.0);
+    if plant.growth >= Plant::BLOOM {
+        let opening = plant.blossom;
+        let head = top - Vec3::Y * (0.08 * plant.droop);
+        let bud = ellipsoid(point - head, Vec3::new(0.025, 0.045, 0.025));
+        if bud < nearest.0 {
+            nearest = (bud, Material::Petal);
+        }
         for index in 0..5 {
             let angle = index as f32 * std::f32::consts::TAU / 5.0;
-            let center = top + Vec3::new(angle.cos(), 0.15, angle.sin()) * 0.05 * bloom;
-            let petal = point.distance(center) - 0.035 * bloom;
+            let center = head
+                + Vec3::new(
+                    angle.cos() * 0.065 * opening,
+                    0.025 * (1.0 - opening),
+                    angle.sin() * 0.065 * opening,
+                );
+            let petal = ellipsoid(
+                point - center,
+                Vec3::new(
+                    0.025 + 0.012 * opening,
+                    0.012 + 0.02 * (1.0 - opening),
+                    0.025 + 0.012 * opening,
+                ),
+            );
             if petal < nearest.0 {
                 nearest = (petal, Material::Petal);
             }
+        }
+        if plant.seeds > 0 {
+            let seed = point.distance(head + Vec3::Y * 0.06) - 0.025;
+            if seed < nearest.0 {
+                nearest = (seed, Material::Seed);
+            }
+        }
+    }
+    nearest
+}
+
+// Each little pot has its own bounded field; stages share the same stem
+// and leaves, with the flower head chosen by kind.
+fn seedling_distance(point: Vec3, plant: &Seedling, season: Season) -> (f32, Material) {
+    let half = Seedling::POT_HEIGHT * 0.5;
+    let radial = Vec2::new(point.x, point.z).length();
+    let pot = trapezoid(
+        Vec2::new(radial, point.y - half),
+        0.075,
+        Seedling::POT_RADIUS,
+        half,
+    ) - 0.006;
+    let hollow = (radial - 0.092).max(Seedling::POT_HEIGHT - 0.032 - point.y);
+    let pot = pot.max(-hollow);
+    let soil = rounded_cylinder(
+        point - Vec3::Y * (Seedling::POT_HEIGHT - 0.013),
+        0.092,
+        0.014,
+        0.003,
+    );
+    let mut nearest = if soil < pot {
+        (soil, Material::Soil)
+    } else {
+        (pot, Material::Pot)
+    };
+    if plant.growth < Seedling::SPROUT {
+        return nearest;
+    }
+    let base = Vec3::Y * Seedling::POT_HEIGHT;
+    let top = Vec3::new(
+        0.12 * plant.droop,
+        plant.height() - 0.15 * plant.droop * plant.growth,
+        0.0,
+    );
+    let stem = capsule(point, base, top, 0.009);
+    if stem < nearest.0 {
+        nearest = (stem, Material::Stem);
+    }
+    let leaves = if plant.growth < 0.35 { 2 } else { 4 };
+    for index in 0..leaves {
+        let attach = base.lerp(top, 0.2 + index as f32 * 0.15);
+        let outward = if index % 2 == 0 { -1.0 } else { 1.0 };
+        let center = attach + Vec3::new(outward * 0.045, 0.015 - plant.droop * 0.035, 0.0);
+        let leaf = ellipsoid(point - center, Vec3::new(0.055, 0.012, 0.024));
+        if leaf < nearest.0 {
+            nearest = (leaf, Material::Stem);
+        }
+    }
+    if plant.growth >= Seedling::BUD {
+        let flower = if plant.flowering(season) {
+            flower_distance(point - top, plant.kind)
+        } else {
+            (
+                ellipsoid(point - top, Vec3::new(0.022, 0.035, 0.022)),
+                Material::Stem,
+            )
+        };
+        if flower.0 < nearest.0 {
+            nearest = flower;
+        }
+    }
+    nearest
+}
+
+fn flower_distance(point: Vec3, kind: Flower) -> (f32, Material) {
+    if kind == Flower::Tulip {
+        let outside = ellipsoid(point, Vec3::new(0.06, 0.075, 0.06));
+        let inside = ellipsoid(point - Vec3::Y * 0.032, Vec3::new(0.043, 0.068, 0.043));
+        return (
+            outside.max(-inside).max(point.y - 0.055),
+            Material::Flower(kind),
+        );
+    }
+    if kind == Flower::Bluebell {
+        let mut nearest = (f32::INFINITY, Material::Stem);
+        let mut previous = Vec3::ZERO;
+        for index in 0..3 {
+            let along = index as f32 + 1.0;
+            let end = Vec3::new(along * 0.035, 0.06 - (along - 1.0).powi(2) * 0.022, 0.0);
+            let stem = capsule(point, previous, end, 0.007);
+            if stem < nearest.0 {
+                nearest = (stem, Material::Stem);
+            }
+            let local = point - end + Vec3::Y * 0.035;
+            let bell = trapezoid(
+                Vec2::new(Vec2::new(local.x, local.z).length(), local.y),
+                0.025,
+                0.012,
+                0.03,
+            );
+            if bell < nearest.0 {
+                nearest = (bell, Material::Flower(kind));
+            }
+            previous = end;
+        }
+        return nearest;
+    }
+    let (petals, reach, radius) = match kind {
+        Flower::Sunflower => (10, 0.075, 0.033),
+        Flower::Poppy => (4, 0.045, 0.045),
+        _ => (8, 0.055, 0.03),
+    };
+    let mut nearest = (
+        ellipsoid(point, Vec3::new(radius, 0.022, radius)),
+        Material::Center(kind),
+    );
+    for index in 0..petals {
+        let angle = index as f32 * std::f32::consts::TAU / petals as f32;
+        let outward = Vec3::new(angle.cos(), 0.0, angle.sin());
+        let local = point - outward * reach;
+        let turned = Vec3::new(
+            local.dot(outward),
+            local.y,
+            local.dot(outward.cross(Vec3::Y)),
+        );
+        let petal = ellipsoid(turned, Vec3::new(radius, 0.012, radius * 0.6));
+        if petal < nearest.0 {
+            nearest = (petal, Material::Flower(kind));
         }
     }
     nearest
@@ -560,6 +753,7 @@ mod tests {
                 position: Vec3::ZERO,
                 growth: 1.0,
                 thirst: 0.0,
+                ..Plant::default()
             }),
             Furniture::Nook(Nook {
                 position: Vec3::ZERO,
@@ -573,24 +767,6 @@ mod tests {
             let (distance, _) = hit.unwrap();
             assert!(distance < 4.0, "{piece:?} {distance}");
         }
-    }
-
-    #[test]
-    fn the_plant_flowers_only_once_it_blooms() {
-        let mut plant = Plant {
-            position: Vec3::ZERO,
-            growth: 0.5,
-            thirst: 0.0,
-        };
-        let top = Vec3::Y * plant.height();
-        let petal_at = |plant: &Plant| plant_distance(top + Vec3::new(0.05, 0.01, 0.0), plant).1;
-        assert_ne!(petal_at(&plant), Material::Petal);
-        plant.growth = 1.0;
-        let top = Vec3::Y * plant.height();
-        assert_eq!(
-            plant_distance(top + Vec3::new(0.05, 0.007, 0.0), &plant).1,
-            Material::Petal
-        );
     }
 
     #[test]

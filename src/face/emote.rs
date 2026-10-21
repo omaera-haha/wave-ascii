@@ -120,6 +120,10 @@ pub fn puffs(world: &World) -> Vec<Puff> {
 
     if ghost.asleep <= 0.5 {
         for (index, event) in world.events.iter().enumerate() {
+            if event.kind == EventKind::Tended && world.garden_recovering() {
+                add(event.time, Emote::Heart);
+                continue;
+            }
             if event.kind == EventKind::BirdSang {
                 let watching = world.sight().in_view.iter().any(|seen| {
                     seen.thing == Thing::Bird
@@ -205,6 +209,8 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::GameOver(Outcome::GhostWon { .. })
         | EventKind::AteMote
         | EventKind::Bloomed
+        | EventKind::Sprouted(_)
+        | EventKind::Flowered(_)
         | EventKind::Fetched
         | EventKind::Kept(_)
         | EventKind::Pounced
@@ -213,6 +219,8 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         | EventKind::Celebrated(_)
         | EventKind::Morning
         | EventKind::Milestone(_) => Emote::Sparkle,
+        EventKind::Planted(_) => Emote::Note,
+        EventKind::Drooped => Emote::Sigh,
         EventKind::Tended | EventKind::NudgedBall | EventKind::Danced => Emote::Note,
         EventKind::Doodled(_) | EventKind::Wrote { .. } if bond >= 0.3 => Emote::Heart,
         EventKind::Doodled(_) | EventKind::Wrote { .. } => Emote::Note,
