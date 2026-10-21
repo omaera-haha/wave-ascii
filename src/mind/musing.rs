@@ -24,6 +24,7 @@ pub fn returned(world: &World, korean: bool) -> Vec<String> {
 pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
     let present = world.viewer_present();
     let mut lines = match activity {
+        Activity::Letter => vec!["They wrote to me...", "A whole page, just for me."],
         Activity::Mirror => world.mirror_thoughts(),
         Activity::Read => vec!["Just one more page.", "I wonder what happens next."],
         Activity::Friend => vec![
@@ -227,6 +228,17 @@ pub fn idle(world: &World) -> Vec<&'static str> {
     let mut lines = Vec::new();
     if ghost.plan.activity == Activity::Mirror && !ghost.plan.done {
         lines.extend(world.mirror_thoughts());
+    }
+    if world.waiting_letter().is_some() {
+        lines.push("A letter, just for me.");
+    }
+    if world
+        .life
+        .received
+        .iter()
+        .any(|letter| letter.reply.is_some())
+    {
+        lines.push("How shall I answer their letter?");
     }
     if world.unread_letter().is_some() {
         lines.push("I hope they find my letter.");
@@ -464,6 +476,7 @@ pub fn idle(world: &World) -> Vec<&'static str> {
             Activity::Air => "A breeze makes the room feel new.",
             Activity::Company => "I like working quietly beside you.",
             Activity::Read => "A book is a little window too.",
+            Activity::Letter => "I kept their words close.",
             Activity::Mirror => "I wonder what the mirror ghost is doing.",
         });
     }
@@ -509,6 +522,9 @@ fn morning(world: &World) -> Vec<&'static str> {
 pub fn dreams(world: &World) -> Vec<&'static str> {
     let today = &world.life.today;
     let mut lines = Vec::new();
+    if world.life.today.viewer_letters_read > 0 {
+        lines.push("…your letter folded into a little paper heart…");
+    }
     if today.mirror_visits > 0 || today.met_reflection {
         lines.push(if world.life.mirror.recognizes_self() {
             "…my own ghost waves back from a silver room…"
@@ -953,7 +969,12 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
 // mood, needs, plan, name, age, habits, the viewer's name, and the weather,
 // in Korean when it was asked in Korean. `doing` is what it was doing when
 // asked, or `None` if the question woke it.
-fn answer(world: &World, question: Question, doing: Option<Activity>, korean: bool) -> Vec<String> {
+pub(crate) fn answer(
+    world: &World,
+    question: Question,
+    doing: Option<Activity>,
+    korean: bool,
+) -> Vec<String> {
     let lines = |english: &[&str], hangul: &[&str]| {
         let items = if korean { hangul } else { english };
         items.iter().map(|line| (*line).to_owned()).collect()
@@ -1687,6 +1708,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Puzzle => "유리에 낱말 맞추기 하는 중",
         Activity::Read => "그림책 읽는 중",
         Activity::Music => "오르골 음악을 듣는 중",
+        Activity::Letter => "네 편지를 읽는 중",
         Activity::Mirror => "거울 보는 중",
     }
 }
@@ -1718,6 +1740,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Puzzle => "낱말 맞추기",
         Activity::Read => "그림책 읽기",
         Activity::Music => "오르골 듣기",
+        Activity::Letter => "네 편지 읽기",
         Activity::Mirror => "거울 보기",
     }
 }

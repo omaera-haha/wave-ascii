@@ -45,6 +45,18 @@ an accessory helps it make the connection sooner. Later it makes faces,
 admires what it wears, and practices little twirls. Ask “who is in the
 mirror?” or “거울 속에 누구야?” to hear what it thinks.
 
+You can be pen pals. Press `e` to open the paper panel, then `w` to write
+(or start writing immediately if there are no letters yet). Enter adds a line;
+Ctrl+S sends, and Esc keeps the draft in memory until you quit; `w` in the
+letters reopens it. Paste keeps
+line breaks, including Korean text, up to twelve lines and six hundred
+characters. The ghost takes your letter from the glass, reads quietly with
+little reactions, and keeps it near the shelf. Sleep and focus sessions defer
+reading. It writes back after twenty to forty minutes together, on an arrival
+at least an hour later, or the next morning. Replies remember simple questions,
+known words, names, and feelings; a Claude key can enrich an unopened reply.
+Your sent letters appear in the journal and under `v` in the letter panel.
+
 Little involuntary quirks follow the room: hiccups after too many motes or
 much delight, sneezes around spring blossom or dusty corners, sleepy yawns,
 cold shivers, and contented sighs after a long stroke or settling on the
@@ -137,7 +149,9 @@ the next requests use them at once.
 | `l`             | Its life: age, growth, skills, bond, today so far           |
 | `p`             | Save a postcard of the moment                             |
 | `b`             | Open the album of moments the ghost kept                  |
-| `e`             | Read letters; Left/Right browse older/newer                |
+| `e`             | Read letters, or write when none; Left/Right browse        |
+| `w` (in letters) | Write a letter; Ctrl+S sends, Esc keeps the draft          |
+| `v` (in letters) | Toggle browsing your sent letters                         |
 | `o`             | Focus together for twenty-five minutes; `o` again ends it |
 | `g`             | Invite it to noughts and crosses on the glass              |
 | `f`             | Toggle finger drawing in the fog; `f` or Esc stops         |
@@ -215,13 +229,14 @@ local timestamp names and run-length encoded truecolor cells. Older pages
 are deleted as new ones arrive; missing, damaged, and foreign files are
 skipped. Without a saved life, including piped previews, no pictures are kept.
 
-### Letters from the ghost
+### Letters with the ghost
 
 After at least six hours away, a ghost past its first day leaves a letter
 by the front glass. Click the little envelope or press `e` to read it.
 Left/Right browse older/newer letters, ↑/↓ scroll a long one on a small
 screen; Esc, Enter, or `e` closes the paper,
-and `q` quits. The status bar shows `✉ e` while a letter waits unread.
+and `q` quits while reading. Press `w` to write, `v` to browse sent letters;
+Ctrl+S sends a draft and Esc keeps it until you quit. The status bar shows `✉ e` while a letter waits unread.
 The newest twenty letters stay with its saved life, and the journal lists
 their dates and opening lines after the diary.
 

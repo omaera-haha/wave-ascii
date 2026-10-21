@@ -35,11 +35,12 @@ pub enum Thing {
     Books,
     MusicBox,
     Mirror,
+    ViewerLetter,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 18] = [
+    pub const NAMES: [&str; 19] = [
         "viewer",
         "window",
         "plant",
@@ -58,6 +59,7 @@ impl Thing {
         "books",
         "music box",
         "mirror",
+        "letter",
     ];
 
     pub fn name(self) -> &'static str {
@@ -79,6 +81,7 @@ impl Thing {
             Self::Seedlings => "pots",
             Self::Books => "books",
             Self::MusicBox => "music box",
+            Self::ViewerLetter => "letter",
             Self::Mirror => "mirror",
         }
     }
@@ -140,6 +143,7 @@ impl World {
                         .position
                 }
             },
+            Thing::ViewerLetter => self.viewer_paper()?,
             Thing::Books => super::books::POSITION + Vec3::Y * 0.1,
             Thing::Cushion => self.nook.position + Vec3::Y * 0.1,
             Thing::Decoration => {
@@ -194,6 +198,7 @@ impl World {
             Thing::Books,
             Thing::MusicBox,
             Thing::Mirror,
+            Thing::ViewerLetter,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -261,6 +266,7 @@ impl World {
                 Thing::Books,
                 Thing::MusicBox,
                 Thing::Mirror,
+                Thing::ViewerLetter,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -651,6 +657,7 @@ mod tests {
         world
             .seedlings
             .push(super::super::Seedling::new(super::super::Flower::Daisy));
+        world.receive_letter("Hello!", false);
         for name in Thing::NAMES {
             world.ghost.attention = None;
             world.attend(name, 5.0);

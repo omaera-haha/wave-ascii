@@ -43,7 +43,7 @@ pub fn draw(app: &mut App, screen: &mut Canvas, scene_rows: usize) {
         Mode::Journal => journal_panel(app, screen),
         Mode::Life => life_panel(app, screen),
         Mode::Album => album_panel(app, screen),
-        Mode::Letter => letter_panel(app, screen),
+        Mode::Letter | Mode::Writing => letter_panel(app, screen),
         Mode::Watching | Mode::Talking => {}
     }
 }
@@ -475,27 +475,59 @@ fn panel(screen: &mut Canvas, title: &str, lines: &[(String, Rgb)]) {
 }
 
 fn letter_panel(app: &App, screen: &mut Canvas) {
-    let Some(letter) = app.world.life.letters.get(app.letter_index) else {
-        return;
-    };
     if screen.columns() < 5 || screen.rows() < 4 {
         return;
     }
     let paper = Rgb([250, 240, 215]);
     let ink = Rgb([70, 56, 62]);
     let inner = 40.min(screen.columns().saturating_sub(6)).max(1);
-    let mut lines = vec![letter.date_words(), String::new()];
-    for line in &letter.lines {
-        lines.extend(wrap(line, inner));
-    }
-    let height = (lines.len() + 4).min(screen.rows());
+    let writing = app.mode == Mode::Writing;
+    let (mut lines, cursor) = if writing {
+        let heading = if app.world.speaks_korean() {
+            format!("{}에게", app.world.ghost.name)
+        } else {
+            format!("Dear {},", app.world.ghost.name)
+        };
+        let (body, (row, column)) = draft_lines(&app.draft, inner);
+        let mut lines = wrap(&heading, inner);
+        lines.push(String::new());
+        let heading_lines = lines.len();
+        lines.extend(body);
+        (lines, Some((row + heading_lines, column)))
+    } else if app.sent_letters {
+        let Some(letter) = app.world.life.received.get(app.letter_index) else {
+            return;
+        };
+        let mut lines = vec![format!("{} · from you", letter.date_words()), String::new()];
+        for line in &letter.lines {
+            lines.extend(wrap(line, inner));
+        }
+        (lines, None)
+    } else {
+        let Some(letter) = app.world.life.letters.get(app.letter_index) else {
+            return;
+        };
+        let mut lines = vec![letter.date_words(), String::new()];
+        for line in &letter.lines {
+            lines.extend(wrap(line, inner));
+        }
+        (lines, None)
+    };
+    let height = if writing {
+        screen.rows().min(20)
+    } else {
+        (lines.len() + 4).min(screen.rows())
+    };
     let visible = height.saturating_sub(3);
-    let scroll = app.letter_scroll.min(lines.len().saturating_sub(visible));
-    let hint = match (app.world.life.letters.len() > 1, lines.len() > visible) {
-        (true, true) => "↑↓ · older ←  → newer · Esc close",
-        (true, false) => "older ←  → newer · Esc, Enter, e close",
-        (false, true) => "↑↓ more · Esc, Enter, e close",
-        (false, false) => "Esc, Enter, e close",
+    let scroll = if let Some((row, _)) = cursor {
+        row.saturating_sub(visible.saturating_sub(1))
+    } else {
+        app.letter_scroll.min(lines.len().saturating_sub(visible))
+    };
+    let hint = if writing {
+        "Enter ↵ · Ctrl+S send · Esc keep draft"
+    } else {
+        "←→ · ↑↓ · w write · v sent · Esc close"
     };
     let box_width = (inner + 4).min(screen.columns());
     let left = (screen.columns() - box_width) / 2;
@@ -515,6 +547,30 @@ fn letter_panel(app: &App, screen: &mut Canvas) {
             Some(paper),
         );
     }
+    if let Some((row, column)) = cursor {
+        let under = lines
+            .get_mut(row)
+            .map(|line| {
+                let mut used = 0;
+                line.chars()
+                    .find(|character| {
+                        let at = used;
+                        used += character.width().unwrap_or(0);
+                        at == column
+                    })
+                    .unwrap_or(' ')
+            })
+            .unwrap_or(' ');
+        write(
+            screen,
+            left + 2 + column,
+            top + 1 + row - scroll,
+            end,
+            &under.to_string(),
+            paper,
+            Some(ink),
+        );
+    }
     write(
         screen,
         left + 2,
@@ -524,6 +580,37 @@ fn letter_panel(app: &App, screen: &mut Canvas) {
         ink,
         Some(paper),
     );
+}
+
+/// Hard-wrap editable text without losing spaces or explicit empty lines.
+/// The cursor is a character boundary; returned columns are terminal cells.
+fn draft_lines(draft: &crate::draft::Draft, columns: usize) -> (Vec<String>, (usize, usize)) {
+    let columns = columns.max(1);
+    let mut lines = vec![String::new()];
+    let mut column = 0;
+    let mut cursor = (0, 0);
+    let length = draft.text().chars().count();
+    for (index, character) in draft.text().chars().chain(std::iter::once(' ')).enumerate() {
+        let cells = character.width().unwrap_or(0);
+        if character != '\n' && column + cells > columns {
+            lines.push(String::new());
+            column = 0;
+        }
+        if index == draft.cursor() {
+            cursor = (lines.len() - 1, column);
+        }
+        if index == length {
+            break;
+        }
+        if character == '\n' {
+            lines.push(String::new());
+            column = 0;
+        } else {
+            lines.last_mut().unwrap().push(character);
+            column += cells;
+        }
+    }
+    (lines, cursor)
 }
 
 struct PanelBounds {
@@ -625,10 +712,8 @@ fn help_panel(screen: &mut Canvas) {
 /// words around them.
 fn help_lines(rows: usize) -> Vec<&'static str> {
     let introduction = [
-        "A ghost lives in this glass box. Jev (System One) makes its quick",
-        "choices, and Claude (System Two) gives it thoughts and words; without",
-        "keys (k) it lives on instinct. Speak Korean and it answers in Korean.",
-        "",
+        "A ghost lives here. Jev chooses; Claude gives thoughts and words.",
+        "Without keys (k), instinct guides it. Speak Korean to hear Korean.",
     ];
     let keys = [
         "t, Enter   talk to it           click ghost   poke or find it",
@@ -649,7 +734,9 @@ fn help_lines(rows: usize) -> Vec<&'static str> {
         "Ask for a word game; type a letter to guess in talk mode.",
         "In the journal: PgUp/PgDn, Home/End · Esc, Enter, j close it.",
         "Click the music box to wind a tune; teach it do re mi.",
-        "Album: ←/→, Home/End; letters: ←/→ · Esc, b/e close.",
+        "Letters: ←/→ browse · w write · v sent · Esc close",
+        "Writing: Enter newline · Ctrl+S send · Esc keep draft",
+        "Album: ←/→, Home/End · Esc, b close",
     ];
     let room = rows.saturating_sub(3);
     let mut lines = keys.to_vec();
@@ -802,7 +889,18 @@ impl JournalPanel {
         append("", "", TEXT);
         append("", "Letters", ACCENT);
         for letter in &app.world.life.letters {
-            append(&format!("  {}  ", letter.day), &letter.lines[0], TEXT);
+            append(
+                &format!("  {}  ", letter.date_words()),
+                &letter.lines[0],
+                TEXT,
+            );
+        }
+        for letter in &app.world.life.received {
+            append(
+                &format!("  {} · from you  ", letter.date_words()),
+                &letter.lines[0],
+                TEXT,
+            );
         }
         append("", "", TEXT);
         append("", "Said lately", ACCENT);
@@ -1364,6 +1462,22 @@ mod tests {
             Style::Ascii,
             ColorMode::Plain,
         )
+    }
+
+    #[test]
+    fn editable_wrapping_keeps_spaces_blank_lines_and_counts_wide_cursor_cells() {
+        let mut draft = crate::draft::Draft::default();
+        draft.insert("안녕 ab\n\n x");
+        let (lines, cursor) = draft_lines(&draft, 4);
+        assert_eq!(lines, ["안녕", " ab", "", " x"]);
+        assert_eq!(cursor, (3, 2));
+        draft.edit(&crate::terminal::Key::Up);
+        assert_eq!(draft_lines(&draft, 4).1, (2, 0));
+        draft.edit(&crate::terminal::Key::Up);
+        assert_eq!(draft_lines(&draft, 4).1, (1, 0));
+        assert_eq!(draft_lines(&draft, 20).1, (0, 4));
+        draft.edit(&crate::terminal::Key::End);
+        assert_eq!(draft_lines(&draft, 4).1, (1, 3));
     }
 
     #[test]

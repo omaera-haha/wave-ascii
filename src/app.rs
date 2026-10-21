@@ -57,6 +57,7 @@ pub enum Mode {
     /// Leafing through the pictures the ghost kept.
     Album,
     Letter,
+    Writing,
 }
 
 /// The most characters a line holds; more is cut off as it is typed or
@@ -205,6 +206,8 @@ pub struct App {
     drawing_right: bool,
     pub album: Album,
     pub letter_index: usize,
+    pub draft: crate::draft::Draft,
+    pub sent_letters: bool,
     /// Lines scrolled past in an open letter taller than the screen.
     pub letter_scroll: usize,
     letter_read: bool,
@@ -212,7 +215,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(world: World, mind: Mind, config: Config, style: Style, color: ColorMode) -> Self {
+    pub fn new(
+        world: World,
+        mut mind: Mind,
+        config: Config,
+        style: Style,
+        color: ColorMode,
+    ) -> Self {
         mind.write_letter(&world);
         let aura = mood_color(world.ghost.mood);
         Self {
@@ -249,6 +258,8 @@ impl App {
             drawing_right: false,
             album: Album::default(),
             letter_index: 0,
+            draft: crate::draft::Draft::default(),
+            sent_letters: false,
             letter_scroll: 0,
             letter_read: false,
             letter_reply_at: None,
@@ -287,7 +298,7 @@ impl App {
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
         self.mind.think(&mut self.world);
-        if self.mode != Mode::Letter
+        if !matches!(self.mode, Mode::Letter | Mode::Writing)
             && self
                 .letter_reply_at
                 .is_some_and(|time| self.world.time >= time)
@@ -298,6 +309,7 @@ impl App {
                 && self.world.focus.is_none()
                 && self.world.telling.is_none()
                 && self.world.asking.is_none()
+                && !self.world.reading_viewer_letter()
             {
                 self.world.attend("viewer", 8.0);
                 self.world.say(if self.world.speaks_korean() {
@@ -365,6 +377,7 @@ impl App {
             Input::Paste(text) => {
                 match self.mode {
                     Mode::Talking => self.talk.insert(&text),
+                    Mode::Writing => self.draft.insert(&text),
                     Mode::Settings => self.settings.paste(&text),
                     _ => {}
                 }
@@ -458,7 +471,7 @@ impl App {
     pub fn wants_mouse(&self) -> bool {
         !matches!(
             self.mode,
-            Mode::Journal | Mode::Help | Mode::Life | Mode::Album | Mode::Letter
+            Mode::Journal | Mode::Help | Mode::Life | Mode::Album | Mode::Letter | Mode::Writing
         )
     }
 
@@ -522,8 +535,44 @@ impl App {
                 }
                 Response::Continue
             }
+            Mode::Writing => {
+                match key {
+                    Key::Escape => self.mode = Mode::Watching,
+                    Key::Control('s') if !self.draft.is_empty() => {
+                        let korean = crate::world::penpal::korean(self.draft.text())
+                            || (!self.draft.text().chars().any(char::is_alphabetic)
+                                && self.world.speaks_korean());
+                        if self.world.receive_letter(self.draft.text(), korean) {
+                            self.draft = crate::draft::Draft::default();
+                            self.mode = Mode::Watching;
+                        }
+                    }
+                    key => self.draft.edit(&key),
+                }
+                Response::Continue
+            }
             Mode::Letter => {
                 match key {
+                    Key::Character('w') => {
+                        self.mode = Mode::Writing;
+                        self.letter_reply_at = None;
+                    }
+                    Key::Character('v')
+                        if !self.world.life.received.is_empty()
+                            && !self.world.life.letters.is_empty() =>
+                    {
+                        self.sent_letters = !self.sent_letters;
+                        self.letter_index = if self.sent_letters {
+                            self.world.life.received.len()
+                        } else {
+                            self.world.life.letters.len()
+                        }
+                        .saturating_sub(1);
+                        self.letter_scroll = 0;
+                        if !self.sent_letters {
+                            self.letter_read |= self.world.read_letter(self.letter_index);
+                        }
+                    }
                     Key::Character('q') => return Response::Quit,
                     Key::Escape | Key::Enter | Key::Character('e') => {
                         self.mode = Mode::Watching;
@@ -533,14 +582,21 @@ impl App {
                         }
                     }
                     Key::Left | Key::Right => {
-                        let newest = self.world.life.letters.len().saturating_sub(1);
+                        let newest = if self.sent_letters {
+                            self.world.life.received.len()
+                        } else {
+                            self.world.life.letters.len()
+                        }
+                        .saturating_sub(1);
                         self.letter_index = if key == Key::Left {
                             self.letter_index.saturating_sub(1)
                         } else {
                             (self.letter_index + 1).min(newest)
                         };
                         self.letter_scroll = 0;
-                        self.letter_read |= self.world.read_letter(self.letter_index);
+                        if !self.sent_letters {
+                            self.letter_read |= self.world.read_letter(self.letter_index);
+                        }
                     }
                     // Drawing clamps the scroll to what the screen can show.
                     Key::Up => self.letter_scroll = self.letter_scroll.saturating_sub(1),
@@ -619,9 +675,10 @@ impl App {
             .unread_letter()
             .or_else(|| self.world.life.letters.len().checked_sub(1))
         else {
-            self.post("No letters yet.");
+            self.mode = Mode::Writing;
             return;
         };
+        self.sent_letters = false;
         self.letter_index = index;
         self.letter_scroll = 0;
         self.letter_read = self.world.read_letter(index);
@@ -1050,6 +1107,9 @@ impl App {
         {
             reactions.push((spell.pulse_started(world.time), expression));
         }
+        if let Some(expression) = world.letter_expression() {
+            reactions.push(expression);
+        }
         if let Some(expression) = world.mirror_expression() {
             reactions.push(expression);
         }
@@ -1103,7 +1163,11 @@ impl App {
             world.breeze_at(ghost.position).dot(view.right),
             world.window_shake(),
         )
-        .with_quirk(quirk, world.time);
+        .with_quirk(quirk, world.time)
+        .with_letter(matches!(
+            world.letter_expression(),
+            Some((_, Expression::Glance { .. }))
+        ));
         let friend =
             world
                 .friend
@@ -1395,6 +1459,7 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
         }
         world.record_return(away);
     }
+    world.deliver_replies(true, 0.0);
     world.restore_wardrobe();
     Journal {
         memories: save.memories.clone(),
@@ -1411,6 +1476,66 @@ mod tests {
             read,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn sent_letters_follow_the_written_language_even_after_other_language_conversations() {
+        for (text, established, expected) in [
+            ("Hello!", 1.0, false),
+            ("안녕!", 0.0, true),
+            ("♥", 1.0, true),
+        ] {
+            let mut app = app();
+            app.world.life.korean = established;
+            app.input(Input::Key(Key::Character('e')));
+            app.input(Input::Paste(text.to_owned()));
+            app.input(Input::Key(Key::Control('s')));
+            assert_eq!(app.world.life.received[0].korean, expected);
+        }
+    }
+
+    #[test]
+    fn writing_routes_q_enter_paste_send_and_cancel_and_keeps_the_unsaved_draft() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('e')));
+        assert_eq!(app.mode, Mode::Writing);
+        assert!(!app.wants_mouse());
+        assert_eq!(
+            app.input(Input::Key(Key::Character('q'))),
+            Response::Continue
+        );
+        app.input(Input::Key(Key::Enter));
+        app.input(Input::Paste("안녕\nfriend\u{1b}".to_owned()));
+        assert_eq!(app.draft.text(), "q\n안녕\nfriend");
+        app.input(Input::Key(Key::Escape));
+        assert_eq!(app.mode, Mode::Watching);
+        assert!(app.world.life.received.is_empty());
+        // While watching, `w` still turns the view; the letters reopen it.
+        app.input(Input::Key(Key::Character('w')));
+        assert_eq!(app.mode, Mode::Watching);
+        app.input(Input::Key(Key::Character('e')));
+        assert_eq!(app.mode, Mode::Writing);
+        assert_eq!(app.draft.text(), "q\n안녕\nfriend");
+        app.input(Input::Key(Key::Control('s')));
+        assert_eq!(app.mode, Mode::Watching);
+        assert!(app.draft.is_empty());
+        assert_eq!(app.world.life.received[0].lines, ["q", "안녕", "friend"]);
+        assert!(app.world.life.received[0].korean);
+        app.input(Input::Key(Key::Character('e')));
+        app.input(Input::Key(Key::Control('s')));
+        assert_eq!(app.mode, Mode::Writing);
+        assert_eq!(app.world.life.received.len(), 1);
+        app.input(Input::Key(Key::Escape));
+        app.world.life.letters.push(letter("2026-06-21", true));
+        app.input(Input::Key(Key::Character('e')));
+        app.input(Input::Key(Key::Character('v')));
+        assert!(app.sent_letters);
+        let count = app.world.life.total.letters_read;
+        app.input(Input::Key(Key::Right));
+        assert_eq!(app.world.life.total.letters_read, count);
+        app.input(Input::Key(Key::Character('w')));
+        assert_eq!(app.mode, Mode::Writing);
+        assert!(!app.wants_mouse());
     }
 
     #[test]
@@ -1506,12 +1631,12 @@ mod tests {
     }
 
     #[test]
-    fn the_letter_key_posts_a_notice_until_there_are_letters() {
+    fn the_letter_key_opens_a_writing_page_when_there_are_no_letters() {
         let mut app = app();
         app.input(Input::Key(Key::Character('e')));
-        assert_eq!(app.mode, Mode::Watching);
-        assert_eq!(app.notice(), Some("No letters yet."));
-        assert!(app.wants_mouse());
+        assert_eq!(app.mode, Mode::Writing);
+        assert_eq!(app.notice(), None);
+        assert!(!app.wants_mouse());
     }
 
     #[test]
@@ -1596,6 +1721,36 @@ mod tests {
             restore(&mut app.world, &saved, returned + 30);
             assert_eq!(app.world.life.letters.len(), expected);
         }
+    }
+
+    #[test]
+    fn restoring_delivers_a_due_penpal_reply_once_and_resumes_an_unread_paper() {
+        let mut world = World::new(11, 12.0);
+        world.receive_letter("How are you?", false);
+        world.ghost.position = crate::world::penpal::APPROACH;
+        world.step(0.1);
+        world.step(6.1);
+        world.ghost.position = world.ghost.plan.target;
+        world.step(0.1);
+        assert!(world.life.received[0].read);
+        let save = garden_save(&world);
+        let mut restored = World::new(11, 12.0);
+        restore(&mut restored, &save, save.last_seen + 3600);
+        assert!(restored.life.received[0].answered);
+        assert_eq!(restored.life.letters.len(), 1);
+        assert!(restored.life.letters[0].reply_to.is_some());
+        let mut saved_again = garden_save(&restored);
+        saved_again.last_seen = save.last_seen + 3600;
+        restore(&mut restored, &saved_again, saved_again.last_seen + 1);
+        assert_eq!(restored.life.letters.len(), 1);
+        let mut waiting = World::new(11, 12.0);
+        waiting.receive_letter("Hello!", false);
+        let save = garden_save(&waiting);
+        restore(&mut restored, &save, save.last_seen + 1);
+        assert!(restored.waiting_letter().is_some());
+        restored.ghost.plan.done = true;
+        restored.step(0.1);
+        assert!(restored.reading_viewer_letter());
     }
 
     #[test]

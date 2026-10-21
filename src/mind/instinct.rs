@@ -16,6 +16,13 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
     let weights: Vec<f32> = options
         .iter()
         .map(|activity| match activity {
+            Activity::Letter => {
+                if world.letter_is_open() {
+                    20.0
+                } else {
+                    0.0
+                }
+            }
             Activity::Mirror => {
                 if world.ghost.asleep >= 0.3 {
                     0.0

@@ -181,6 +181,9 @@ mod tests {
             if activity == Activity::Friend {
                 world.invite_friend();
             }
+            if activity == Activity::Letter {
+                world.receive_letter("Hello!", false);
+            }
             world.begin(activity);
             wiggle(&mut world);
             assert_eq!(

@@ -449,6 +449,7 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
         EventKind::FriendArrived(name) => (format!("{name} came to visit me."), None),
         EventKind::Bloomed => ("My plant opened its flowers.".to_owned(), None),
         EventKind::Flowered(flower) => (format!("My {} opened its flowers.", flower.name()), None),
+        EventKind::ReadViewerLetter => ("I read your letter.".to_owned(), None),
         EventKind::ReadLetter => ("You read my letter.".to_owned(), None),
         EventKind::ToldStory => ("I told you a whole story.".to_owned(), None),
         EventKind::FocusEnded {

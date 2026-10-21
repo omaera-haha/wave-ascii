@@ -10,7 +10,7 @@ pub const HALF_WIDTH: f32 = 0.19;
 pub const HALF_DEPTH: f32 = 0.12;
 pub const KEPT: usize = 20;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Letter {
     pub day: String,
@@ -19,6 +19,7 @@ pub struct Letter {
     pub read: bool,
     #[serde(default)]
     pub claude: bool,
+    pub reply_to: Option<Box<super::penpal::ViewerLetter>>,
 }
 
 impl Letter {
@@ -27,6 +28,7 @@ impl Letter {
             .parse::<Date>()
             .is_ok_and(|date| date.to_string() == self.day)
             && Self::valid_lines(&self.lines)
+            && self.reply_to.as_ref().is_none_or(|letter| letter.valid())
     }
 
     pub fn valid_lines(lines: &[String]) -> bool {
@@ -101,7 +103,7 @@ pub fn hit(point: Vec3) -> bool {
     offset.x.abs() <= HALF_WIDTH + 0.04 && offset.z.abs() <= HALF_DEPTH + 0.04
 }
 
-fn name_for_letter(name: &str, columns: usize) -> String {
+pub(super) fn name_for_letter(name: &str, columns: usize) -> String {
     let mut used = 0;
     name.chars()
         .filter(|character| !character.is_control() && !character.is_numeric())
@@ -265,22 +267,24 @@ impl World {
         self.deliver(lines, korean);
     }
 
-    fn deliver(&mut self, lines: Vec<String>, korean: bool) {
+    pub(super) fn deliver(&mut self, lines: Vec<String>, korean: bool) -> bool {
         let letter = Letter {
             day: self.date.to_string(),
             lines,
             korean,
             read: false,
             claude: false,
+            reply_to: None,
         };
         if !letter.valid() {
-            return;
+            return false;
         }
         self.life.letters.push(letter);
         if self.life.letters.len() > KEPT {
             self.life.letters.drain(..self.life.letters.len() - KEPT);
         }
         self.record(EventKind::WroteLetter);
+        true
     }
 
     pub fn read_letter(&mut self, index: usize) -> bool {

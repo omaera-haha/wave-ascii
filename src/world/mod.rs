@@ -23,6 +23,7 @@ mod nature;
 mod needs;
 pub mod occasion;
 pub mod passerby;
+pub mod penpal;
 mod pounce;
 pub mod puzzle;
 mod question;
@@ -283,6 +284,8 @@ pub enum EventKind {
     VisitedMirror,
     WroteLetter,
     ReadLetter,
+    GotLetter,
+    ReadViewerLetter,
     AskedViewer(acquaintance::Topic),
     LearnedAboutViewer(acquaintance::Topic),
 }
@@ -294,6 +297,8 @@ impl EventKind {
             Self::MetReflection => "met the ghost in the mirror".to_owned(),
             Self::RecognizedSelf => "learned the ghost in the mirror is me".to_owned(),
             Self::VisitedMirror => "looked in the mirror".to_owned(),
+            Self::GotLetter => "The viewer wrote me a letter.".to_owned(),
+            Self::ReadViewerLetter => "I read your letter.".to_owned(),
             Self::WroteLetter => "wrote you a letter".to_owned(),
             Self::ReadLetter => "you read my letter".to_owned(),
             Self::AskedViewer(topic) => format!("asked about your {}", topic.name()),
@@ -722,6 +727,7 @@ pub struct World {
     pending_tune: Option<music::Tune>,
     pending_wish: Option<Wish>,
     mirror_visit: Option<mirror::Visit>,
+    viewer_letter: Option<penpal::Reading>,
     pub asking: Option<(acquaintance::Topic, f64)>,
     last_message_at: Option<f64>,
     last_question_at: Option<f64>,
@@ -852,6 +858,7 @@ impl World {
             pending_tune: None,
             pending_wish: None,
             mirror_visit: None,
+            viewer_letter: None,
             asking: None,
             last_message_at: None,
             last_question_at: None,
@@ -1009,6 +1016,7 @@ impl World {
         self.advance_fog();
         self.advance_story();
         self.advance_quirks();
+        self.advance_letters(seconds);
         self.carry_out(seconds);
         self.advance_dream();
         let hiding = !self.ghost.plan.done
@@ -1094,6 +1102,7 @@ impl World {
                         && self.ghost.needs.energy >= 0.22
                         && self.ghost.needs.fun >= 0.08
                 }
+                Activity::Letter => self.letter_is_open(),
                 Activity::Mirror => self.ghost.asleep < 0.3 && self.ghost.needs.energy > 0.2,
                 Activity::Read => {
                     !self.life.books.owned.is_empty()
@@ -1179,6 +1188,7 @@ impl World {
     /// choosing among the options.
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
+            Activity::Letter => "Take the viewer's letter from the glass, read quietly, and keep it on the shelf. Wait until awake and after work.".to_owned(),
             Activity::Mirror => "Visit the mirror on the right wall, study the ghost that copies you, or make faces once you recognize yourself. Quiet enough during work.".to_owned(),
             Activity::Read => "Read a few pages of a picture book on the cushion or under the lamp. Quiet company during work, or a page before bed.".to_owned(),
             Activity::Music => "Wind the little music box and sway or dance to a tune. Fits when bored or in the evening; keep it quiet during work.".to_owned(),
@@ -1288,6 +1298,9 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if activity == Activity::Letter && !self.letter_is_open() {
+            return;
+        }
         if activity == Activity::Music && (self.focus.is_some() || self.ghost.asleep >= 0.3) {
             return;
         }
@@ -1321,6 +1334,7 @@ impl World {
         self.put_keepsake_away();
         self.reading = None;
         self.mirror_visit = None;
+        self.viewer_letter = None;
         self.drop_ball();
         self.drop_block();
         self.building = None;
@@ -1330,6 +1344,9 @@ impl World {
         self.queued_tune = None;
         let position = self.ghost.position;
         let length = match activity {
+            Activity::Letter => self.waiting_letter().map_or(6.0, |index| {
+                (self.life.received[index].lines.len() as f32 * 2.0).clamp(6.0, 24.0)
+            }),
             Activity::Mirror => self.random.range(15.0, 30.0),
             Activity::Company => {
                 self.focus
@@ -1356,6 +1373,7 @@ impl World {
             _ => 0.0,
         };
         let target = match activity {
+            Activity::Letter => penpal::APPROACH,
             Activity::Mirror => mirror::VISIT,
             Activity::Read => {
                 if self.bedtime() || self.random.unit() < 0.5 {
@@ -1424,6 +1442,9 @@ impl World {
             self.begin_wait();
         }
         self.ghost.plan = plan;
+        if activity == Activity::Letter {
+            self.begin_viewer_letter();
+        }
         if activity == Activity::Mirror {
             self.begin_mirror();
         }
@@ -1999,6 +2020,9 @@ impl World {
     }
 
     pub fn say(&mut self, text: &str) {
+        if self.reading_viewer_letter() {
+            return;
+        }
         if let Some(wish) = self.pending_wish.take() {
             if wish.with_viewer() && self.ghost.asleep < 0.3 {
                 self.say(&format!("{text} {}", wish.joy(self)));
@@ -2027,8 +2051,11 @@ impl World {
 
     /// Records that the viewer did something.
     pub fn notice_viewer(&mut self) {
+        let returned = self.viewer.looked_away_at.take().is_some();
         self.viewer.active_at = self.time.max(f64::MIN_POSITIVE);
-        self.viewer.looked_away_at = None;
+        if returned {
+            self.deliver_replies(true, 0.0);
+        }
     }
 
     /// The terminal lost or regained the focus: the viewer turned to
@@ -2410,6 +2437,7 @@ impl World {
                     | Activity::Read
                     | Activity::Music
                     | Activity::Mirror
+                    | Activity::Letter
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -2424,6 +2452,7 @@ impl World {
 
         let mut look = None;
         match self.ghost.plan.activity {
+            Activity::Letter => look = self.carry_out_letter(),
             Activity::Mirror => look = self.carry_out_mirror(),
             Activity::Read => look = self.carry_out_read(),
             Activity::Music => look = self.carry_out_music(),

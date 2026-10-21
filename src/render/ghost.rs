@@ -60,6 +60,13 @@ impl Pose {
         }
     }
 
+    pub fn with_letter(mut self, curious: bool) -> Self {
+        if curious {
+            self.lean += 0.12;
+        }
+        self
+    }
+
     pub fn to_music(mut self, beat: Option<f32>) -> Self {
         if let Some(beat) = beat {
             let phase = beat * TAU as f32;

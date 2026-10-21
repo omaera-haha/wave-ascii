@@ -89,6 +89,7 @@ pub fn read_request(answers: &Answers) -> Option<Activity> {
 
 fn request(activity: Activity) -> &'static str {
     match activity {
+        Activity::Letter => "Asks it to read the letter waiting on the glass.",
         Activity::Mirror => "Asks it to visit or look in the mirror, or look at its reflection.",
         Activity::Read => {
             "Asks it to read a picture book, settle down with a book, or enjoy reading."
