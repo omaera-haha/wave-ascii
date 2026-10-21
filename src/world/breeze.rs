@@ -4,6 +4,12 @@ use super::{
     Activity, EventKind, Mood, Petal, ROOM_MAX, ROOM_MIN, Random, Season, Sky, WINDOW_CENTER, World,
 };
 
+/// The wind under which opening the window seems fair again.
+const CALM_ENOUGH: f32 = 0.6;
+/// Seconds after the sash last moved before the ghost thinks of opening it
+/// on its own again.
+const AIRING_PAUSE: f64 = 1200.0;
+
 /// Wind has its own stream so its spells never change the sky's draws.
 #[derive(Clone, Debug)]
 pub struct Wind {
@@ -41,7 +47,7 @@ impl Wind {
     ) {
         if time >= self.until {
             self.target = self.random.unit();
-            self.until = time + f64::from(self.random.range(90.0, 240.0));
+            self.until = time + f64::from(self.random.range(600.0, 2400.0));
         }
         let target = if storm {
             0.8 + self.target * 0.2
@@ -105,8 +111,14 @@ impl World {
             || self.wind.strength >= 0.75
     }
 
+    /// Wind that would make it shut the sash must also ease well below
+    /// that before opening it seems fair, so a gusty spell doesn't swing it
+    /// back and forth.
     pub fn fresh_air_is_fair(&self) -> bool {
-        !self.wants_window_shut() && !self.is_night() && self.season() != Season::Winter
+        !self.wants_window_shut()
+            && self.wind.strength < CALM_ENOUGH
+            && !self.is_night()
+            && self.season() != Season::Winter
     }
 
     pub(super) fn air_is_open(&self) -> bool {
@@ -115,6 +127,9 @@ impl World {
                 self.wants_window_shut()
             } else {
                 self.fresh_air_is_fair()
+                    && self
+                        .window_moved_at
+                        .is_none_or(|at| self.time - at >= AIRING_PAUSE)
             }
     }
 
@@ -184,6 +199,7 @@ impl World {
         } else if self.ghost.plan.stayed(self.time) >= 0.9 {
             if open != self.window_open {
                 self.window_open = open;
+                self.window_moved_at = Some(self.time);
                 self.record(if open {
                     EventKind::OpenedWindow
                 } else {
@@ -404,6 +420,29 @@ mod tests {
         world.ghost.velocity = Vec3::ZERO;
         world.step(1.2);
         assert!(world.ghost.plan.done);
+    }
+
+    #[test]
+    fn a_gusty_spell_or_a_freshly_moved_sash_keeps_it_from_reopening_the_window() {
+        let mut world = World::new(5, 12.0);
+        world.wind.strength = 0.0;
+        assert!(world.options().contains(&Activity::Air));
+        world.wind.strength = 0.65;
+        assert!(!world.wants_window_shut());
+        assert!(!world.options().contains(&Activity::Air));
+        world.wind.strength = 0.0;
+        world.begin(Activity::Air);
+        finish_air(&mut world);
+        assert!(world.window_open);
+        world.wind.strength = 0.8;
+        assert!(world.options().contains(&Activity::Air));
+        world.begin(Activity::Air);
+        finish_air(&mut world);
+        assert!(!world.window_open);
+        world.wind.strength = 0.0;
+        assert!(!world.options().contains(&Activity::Air));
+        world.time += AIRING_PAUSE;
+        assert!(world.options().contains(&Activity::Air));
     }
 
     #[test]

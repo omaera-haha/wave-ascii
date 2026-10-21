@@ -634,6 +634,8 @@ pub struct World {
     pub leaves: Vec<Leaf>,
     saw_puddle: bool,
     window_refused_at: Option<f64>,
+    /// When the ghost last opened or shut the sash.
+    window_moved_at: Option<f64>,
     next_windfall_at: f64,
     windfall_random: Random,
     seen_passersby: [Option<u64>; Passerby::ALL.len()],
@@ -745,6 +747,7 @@ impl World {
             leaves: Vec::new(),
             saw_puddle: false,
             window_refused_at: None,
+            window_moved_at: None,
             next_windfall_at: 8.0,
             windfall_random: Random::new(seed ^ 0x6c65_6176_6573),
             seen_passersby: [None; Passerby::ALL.len()],
