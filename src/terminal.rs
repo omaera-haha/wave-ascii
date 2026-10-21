@@ -3,8 +3,9 @@ use std::io::{self, Write};
 use std::time::Duration;
 
 use crossterm::event::{
-    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+    self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableFocusChange, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton,
+    MouseEventKind,
 };
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, SetTitle};
 use crossterm::{cursor, execute};
@@ -87,6 +88,9 @@ pub enum Input {
     Mouse(Mouse),
     /// The terminal changed size.
     Resize,
+    /// The terminal window gained (true) or lost (false) the focus, in
+    /// terminals that report it.
+    Focus(bool),
 }
 
 impl Input {
@@ -136,6 +140,8 @@ impl Input {
             }
             Event::Paste(text) => Some(Self::Paste(text)),
             Event::Resize(..) => Some(Self::Resize),
+            Event::FocusGained => Some(Self::Focus(true)),
+            Event::FocusLost => Some(Self::Focus(false)),
             _ => None,
         }
     }
@@ -167,6 +173,7 @@ impl Terminal {
             cursor::Hide,
             EnableMouseCapture,
             EnableBracketedPaste,
+            EnableFocusChange,
             terminal::Clear(terminal::ClearType::All),
         )?;
         Ok(terminal)
@@ -242,6 +249,7 @@ impl Drop for Terminal {
     fn drop(&mut self) {
         let _ = execute!(
             io::stdout(),
+            DisableFocusChange,
             DisableBracketedPaste,
             DisableMouseCapture,
             cursor::Show,
@@ -330,6 +338,18 @@ mod tests {
         assert_eq!(
             Input::from_event(Event::Resize(80, 24)),
             Some(Input::Resize)
+        );
+    }
+
+    #[test]
+    fn focus_changes_come_through() {
+        assert_eq!(
+            Input::from_event(Event::FocusGained),
+            Some(Input::Focus(true))
+        );
+        assert_eq!(
+            Input::from_event(Event::FocusLost),
+            Some(Input::Focus(false))
         );
     }
 }

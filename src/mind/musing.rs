@@ -385,6 +385,19 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             ]
         };
     }
+    if let Some(name) = &heard.given_name {
+        return if heard.korean {
+            vec![
+                format!("{name}? 마음에 들어!"),
+                format!("{name}! 이제 내 이름이야."),
+            ]
+        } else {
+            vec![
+                format!("{name}? I love it!"),
+                format!("{name}! That's me now."),
+            ]
+        };
+    }
     if let Some((word, _)) = heard.learned.last() {
         return vec![
             format!("So “{word}” means this!"),

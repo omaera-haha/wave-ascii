@@ -195,6 +195,8 @@ pub struct App {
     hint_claude_at: Option<f64>,
     /// The last watching frame's scene and words, before its status bar.
     postcard: Option<Postcard>,
+    /// Whether the terminal has the focus, as far as it reports.
+    focused: bool,
 }
 
 impl App {
@@ -229,6 +231,7 @@ impl App {
             hinted_claude: false,
             hint_claude_at: None,
             postcard: None,
+            focused: true,
         }
     }
 
@@ -309,7 +312,18 @@ impl App {
             }
             Input::Mouse(mouse) => self.mouse(mouse),
             Input::Resize => Response::Restyle,
+            Input::Focus(focused) => {
+                self.focused = focused;
+                self.world.look_away(!focused);
+                Response::Continue
+            }
         }
+    }
+
+    /// Whether the terminal has the focus; while it is elsewhere, frames
+    /// can come more slowly.
+    pub fn focused(&self) -> bool {
+        self.focused
     }
 
     /// Reading panels leave mouse selection and the wheel to the terminal.
@@ -1424,6 +1438,36 @@ mod tests {
         }));
         assert!(app.camera.zoom > 1.0);
         assert_eq!(app.input(Input::Resize), Response::Restyle);
+    }
+
+    #[test]
+    fn a_terminal_left_in_the_background_soon_counts_the_viewer_away() {
+        let mut app = app();
+        app.input(Input::Key(Key::Character('r')));
+        app.advance(1.0);
+        assert!(app.world.viewer_present());
+        assert_eq!(app.input(Input::Focus(false)), Response::Continue);
+        assert!(!app.focused());
+        app.advance(10.0);
+        assert!(app.world.viewer_present(), "a glance away is no leaving");
+        app.advance(15.0);
+        assert!(!app.world.viewer_present());
+        assert!(
+            app.world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::ViewerLeft)
+        );
+        app.input(Input::Focus(true));
+        assert!(app.focused());
+        assert!(app.world.viewer_present());
+        // A key while elsewhere, such as a wheel turned over the window,
+        // brings the viewer back too.
+        app.input(Input::Focus(false));
+        app.advance(25.0);
+        assert!(!app.world.viewer_present());
+        app.input(Input::Key(Key::Character('r')));
+        assert!(app.world.viewer_present());
     }
 
     #[test]

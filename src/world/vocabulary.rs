@@ -342,14 +342,145 @@ pub fn introduced_name(text: &str) -> Option<String> {
     None
 }
 
+// Words after "call you" that make a promise to phone or a pet name, not a name.
+const NOT_NAMES: &[&str] = &[
+    "later",
+    "tomorrow",
+    "tonight",
+    "today",
+    "soon",
+    "back",
+    "sometime",
+    "after",
+    "before",
+    "maybe",
+    "cute",
+    "silly",
+    "sweet",
+    "sweetie",
+    "honey",
+    "buddy",
+    "friend",
+    "mine",
+    "names",
+    "something",
+    "anything",
+    "nothing",
+    "whatever",
+    "뭐",
+    "뭐야",
+    "뭐니",
+    "뭐에요",
+    "뭐예요",
+    "뭘까",
+    "무엇",
+    "누구",
+    "누구야",
+    "뭐라고",
+];
+
+/// Finds the viewer giving the ghost a name ("your name is Pip", "I'll call
+/// you Pip", "너의 이름은 뽀삐야", "뽀삐라고 부를게") without guessing one
+/// from an ordinary sentence. A question about its name gives none.
+pub fn given_name(text: &str) -> Option<String> {
+    let original: Vec<&str> = text
+        .split_whitespace()
+        .map(|word| {
+            word.trim_matches(|character: char| {
+                !character.is_alphanumeric() && !matches!(character, '\'' | '’')
+            })
+        })
+        .filter(|word| !word.is_empty())
+        .collect();
+    let words: Vec<String> = original
+        .iter()
+        .map(|word| word.to_lowercase().replace('’', "'"))
+        .collect();
+    let asking = text.contains('?');
+    for index in 0..words.len() {
+        let tail = &words[index..];
+        let starts = |phrase: &[&str]| {
+            tail.iter()
+                .map(String::as_str)
+                .take(phrase.len())
+                .eq(phrase.iter().copied())
+        };
+        // "Can I call you Pip?" asks to name it; "your name is Pip?" asks
+        // what its name is.
+        let offset = if starts(&["call", "you"])
+            || starts(&["name", "you"])
+            || starts(&["naming", "you"])
+            || starts(&["you're", "called"])
+            || starts(&["you're", "named"])
+        {
+            2
+        } else if starts(&["you", "are", "called"]) || starts(&["you", "are", "named"]) {
+            3
+        } else if tail.first().is_some_and(|word| word.ends_with("라고"))
+            && tail.get(1).is_some_and(|word| {
+                [
+                    "부를게",
+                    "부를께",
+                    "부를래",
+                    "부를거야",
+                    "부르자",
+                    "불러줄게",
+                    "할게",
+                ]
+                .contains(&word.as_str())
+                    || (word.starts_with("불러도") && asking)
+            })
+        {
+            0
+        } else if asking {
+            continue;
+        } else if starts(&["your", "name", "is"]) {
+            3
+        } else if starts(&["your", "new", "name", "is"]) {
+            4
+        } else if starts(&["your", "name's"])
+            || ["너의", "네", "니", "너"]
+                .iter()
+                .any(|you| starts(&[you, "이름은"]))
+            || starts(&["넌", "이제"])
+            || starts(&["너는", "이제"])
+            || starts(&["이제", "넌"])
+            || starts(&["이제부터", "넌"])
+            || starts(&["넌", "이제부터"])
+        {
+            2
+        } else {
+            continue;
+        };
+        let Some(&candidate) = original.get(index + offset) else {
+            continue;
+        };
+        let lower = candidate.to_lowercase();
+        if ORDINARY.contains(&lower.as_str())
+            || LITTLE.contains(&lower.as_str())
+            || NOT_NAMES.contains(&lower.as_str())
+        {
+            continue;
+        }
+        if let Some(name) = clean_name(candidate)
+            && !NOT_NAMES.contains(&name.to_lowercase().as_str())
+        {
+            return Some(name);
+        }
+    }
+    None
+}
+
 /// A single name, kept safe for saves, milestones, and terminal text.
 pub(super) fn clean_name(text: &str) -> Option<String> {
     let mut name = text.trim_matches(|character: char| !character.is_alphanumeric());
     for particle in ["이에요", "이라고", "입니다", "예요", "이야", "라고", "야"] {
-        if let Some(stem) = name.strip_suffix(particle) {
-            if stem.chars().count() >= 2 {
-                name = stem;
-            }
+        // A one-syllable stem keeps the "이" of a shorter particle, as in
+        // "콩이야" for 콩이.
+        if let Some(stem) = name.strip_suffix(particle)
+            && stem.chars().count() >= 2
+        {
+            name = stem;
             break;
         }
     }
@@ -774,6 +905,59 @@ mod tests {
             "내 이름은 민1수",
         ] {
             assert_eq!(introduced_name(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn the_viewer_can_name_the_ghost_in_english_and_korean() {
+        for (text, expected) in [
+            ("your name is pip", "Pip"),
+            ("Your name is Pip!", "Pip"),
+            ("your new name is Mochi.", "Mochi"),
+            ("your name's Wisp", "Wisp"),
+            ("I'll call you pip", "Pip"),
+            ("i will call you Bean", "Bean"),
+            ("let's call you Pip", "Pip"),
+            ("Can I call you Pip?", "Pip"),
+            ("I name you Mochi", "Mochi"),
+            ("i'm naming you Mochi", "Mochi"),
+            ("you're called Pip now", "Pip"),
+            ("you are named Wisp", "Wisp"),
+            ("너의 이름은 뽀삐야", "뽀삐"),
+            ("네 이름은 콩이야!", "콩이"),
+            ("너 이름은 모찌", "모찌"),
+            ("넌 이제 뽀삐야", "뽀삐"),
+            ("이제부터 넌 콩이야", "콩이"),
+            ("뽀삐라고 부를게", "뽀삐"),
+            ("모찌라고 할게!", "모찌"),
+            ("콩이라고 불러도 돼?", "콩이"),
+        ] {
+            assert_eq!(given_name(text).as_deref(), Some(expected), "{text}");
+        }
+    }
+
+    #[test]
+    fn questions_promises_and_introductions_do_not_name_the_ghost() {
+        for text in [
+            "what is your name?",
+            "your name is Pip?",
+            "is your name Boo",
+            "I'll call you later",
+            "I'll call you tomorrow!",
+            "call you back soon",
+            "I'll call you cute",
+            "my name is Mina",
+            "call me Sam",
+            "너 이름이 뭐야?",
+            "너의 이름은 뭐야",
+            "너의 이름은?",
+            "민수라고 불러",
+            "넌 바보야",
+            "your name is",
+            "your name is Pip123",
+            "you are cute",
+        ] {
+            assert_eq!(given_name(text), None, "{text}");
         }
     }
 }

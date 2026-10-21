@@ -26,6 +26,9 @@ use store::{Config, Paths, Save};
 use terminal::{Size, Terminal};
 use world::World;
 
+/// Frames per second while the terminal is in the background.
+const BACKGROUND_FPS: f64 = 24.0;
+
 const HELP: &str = "\
 Usage: wave-ascii [OPTIONS]
 
@@ -239,6 +242,8 @@ fn run() -> io::Result<()> {
 fn run_loop(app: &mut App, frames_per_second: f64) -> io::Result<()> {
     let mut terminal = Terminal::open()?;
     let frame_duration = Duration::from_secs_f64(1.0 / frames_per_second);
+    // A terminal in the background still shows the ghost, at a calmer pace.
+    let background_duration = frame_duration.max(Duration::from_secs_f64(1.0 / BACKGROUND_FPS));
     let mut last_frame = Instant::now();
     let mut next_frame = last_frame;
     // Whether the next draw must be complete; it waits for the next frame.
@@ -272,7 +277,11 @@ fn run_loop(app: &mut App, frames_per_second: f64) -> io::Result<()> {
 
         // Frames start on a fixed beat. When drawing falls behind, the beat
         // starts over rather than rushing to catch up.
-        next_frame += frame_duration;
+        next_frame += if app.focused() {
+            frame_duration
+        } else {
+            background_duration
+        };
         if next_frame < Instant::now() {
             next_frame = Instant::now();
         }

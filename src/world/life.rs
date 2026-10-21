@@ -566,6 +566,7 @@ impl Life {
         let warmth = match kind {
             EventKind::Heard(_) => 0.015,
             EventKind::Praised | EventKind::LearnedWord { .. } | EventKind::LearnedName(_) => 0.005,
+            EventKind::Named(_) => 0.01,
             EventKind::Fetched => 0.01,
             EventKind::Petted => 0.004,
             EventKind::Pounced => 0.003,
@@ -908,6 +909,14 @@ impl Life {
                     .any(|milestone| milestone.text.starts_with("I learned your name: ")) =>
             {
                 format!("I learned your name: {name}.")
+            }
+            EventKind::Named(name)
+                if !self
+                    .milestones
+                    .iter()
+                    .any(|milestone| milestone.text.starts_with("You gave me my name: ")) =>
+            {
+                format!("You gave me my name: {name}.")
             }
             EventKind::Bloomed if total.blooms == 1 => {
                 "My plant flowered for the first time.".to_owned()

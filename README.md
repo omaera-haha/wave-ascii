@@ -52,7 +52,11 @@ terminal that reports the mouse; most do.
 cargo run --release
 cargo run --release -- --style blocks
 cargo run --release -- --offline        # never call a model
+cargo run --release -- --fps 30         # frames per second (default 60)
 ```
+
+In terminals that report focus, it draws at most 24 frames a second while
+another window has the focus, so a ghost kept beside your work stays light.
 
 Press `k` in the app to open the settings and paste API keys, or set
 `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` in the environment, which take
@@ -181,7 +185,10 @@ piped output never saves them.
   lists the words it knows, and Claude hears them. It learns your name without
   a model too: say "my name is Mina", "call me Sam", or "내 이름은 민수야".
   It remembers the name between visits, greets you by it sometimes, and shows
-  it in the life panel. A later "call me …" changes it.
+  it in the life panel. A later "call me …" changes it. You can name the
+  ghost too: "your name is Pip", "I'll call you Pip", "너의 이름은 뽀삐야",
+  or "뽀삐라고 부를게". It takes the name gladly, and the first name you give
+  it becomes a moment to remember.
 - **Asking it things.** Without keys it still answers simple questions about
   itself, in English or Korean: how it feels ("how are you?", "기분 어때?"),
   what it's doing ("뭐해?"), its name, your name once you've told it, its
@@ -282,7 +289,8 @@ A shy one takes longer to come and greet you, but holds on to your bond.
 Its nature also colors its thoughts and words. Press `l` to see it.
 
 The ghost grows close to you over time. Each minute you spend with it (it
-knows you're there while you use the keys or the mouse) deepens its bond with
+knows you're there while you use the keys or the mouse, and in terminals that
+report focus, twenty seconds in another window count as away) deepens its bond with
 you, quickly at first and then more slowly: about a third of the way after an
 hour together, most of the way after a dozen. Talking to it, dropping it light
 motes, and flicking it the ball warm it a little; poking it again and again

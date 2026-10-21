@@ -479,15 +479,7 @@ impl Mind {
             });
             trim(&mut self.journal.memories, MEMORIES_KEPT);
         }
-        let name: String = reflection
-            .name
-            .chars()
-            .filter(|character| !character.is_control())
-            .take(24)
-            .collect();
-        if !name.is_empty() {
-            world.ghost.name = name;
-        }
+        world.take_name(&reflection.name);
         if !reflection.write.is_empty() {
             world.write(&reflection.write);
         }

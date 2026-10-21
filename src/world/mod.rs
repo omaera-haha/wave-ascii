@@ -54,6 +54,9 @@ const GIVE_UP: f32 = 60.0;
 const PRESENT_FOR: f64 = 90.0;
 /// Pokes closer together than this many seconds count as one streak.
 const POKE_STREAK: f64 = 1.5;
+/// Seconds after the terminal loses the focus before the viewer counts as
+/// away.
+const LOOKED_AWAY_FOR: f64 = 20.0;
 /// Recent events kept for the face and the minds.
 const EVENTS_KEPT: usize = 80;
 /// How close the ghost must feel to the viewer to come and greet them.
@@ -180,6 +183,8 @@ pub enum EventKind {
     MothLeft,
     GiftLeft(Keepsake),
     Kept(Keepsake),
+    /// The viewer gave the ghost a name.
+    Named(String),
 }
 
 impl EventKind {
@@ -279,6 +284,7 @@ impl EventKind {
             Self::MothLeft => "the moth fluttered away".to_owned(),
             Self::GiftLeft(gift) => format!("the bird left {} on the sill outside", gift.name()),
             Self::Kept(gift) => format!("put {} on the shelf of keepsakes", gift.name()),
+            Self::Named(name) => format!("the viewer named you {name}"),
         }
     }
 }
@@ -295,6 +301,8 @@ pub struct Heard {
     /// Whether being told no made it stop what it was doing.
     pub stopped: bool,
     pub learned_name: Option<String>,
+    /// A new name the viewer just gave the ghost.
+    pub given_name: Option<String>,
     pub korean: bool,
 }
 
@@ -391,6 +399,8 @@ pub struct Viewer {
     pub active_at: f64,
     /// While the viewer is typing a message.
     pub typing: bool,
+    /// When the terminal lost the focus, while it is elsewhere.
+    pub looked_away_at: Option<f64>,
 }
 
 /// The glass box and everything in it. `step` moves it forward in time;
@@ -647,9 +657,15 @@ impl World {
         }
     }
 
-    /// Whether the viewer did anything recently.
+    /// Whether the viewer did anything recently and hasn't turned to
+    /// another window for long.
     pub fn viewer_present(&self) -> bool {
-        self.viewer.active_at > 0.0 && self.time - self.viewer.active_at < PRESENT_FOR
+        self.viewer.active_at > 0.0
+            && self.time - self.viewer.active_at < PRESENT_FOR
+            && self
+                .viewer
+                .looked_away_at
+                .is_none_or(|at| self.time - at < LOOKED_AWAY_FOR)
     }
 
     pub fn is_night(&self) -> bool {
@@ -1061,15 +1077,19 @@ impl World {
     /// about their last words, teach it what words mean.
     pub fn hear(&mut self, text: &str) -> Heard {
         let introduction = vocabulary::introduced_name(text);
+        let naming = introduction
+            .is_none()
+            .then(|| vocabulary::given_name(text))
+            .flatten();
         let mut reading = vocabulary::read(text, &self.ghost.name);
-        if introduction.is_some() {
+        if introduction.is_some() || naming.is_some() {
             reading.words.clear();
             reading.tone = None;
         }
         // A question's words ask about the ghost rather than for something
         // to do, so it learns nothing from them, and "do you love me?" is
         // no praise.
-        let question = question::ask(text);
+        let question = naming.is_none().then(|| question::ask(text)).flatten();
         if question.is_some() {
             reading.words.clear();
             if reading.tone == Some(Tone::Praise) {
@@ -1108,6 +1128,7 @@ impl World {
             self.record(EventKind::LearnedName(name.clone()));
             self.think(&format!("Your name is {name}. I'll remember."));
         }
+        let given_name = naming.filter(|name| self.take_name(name));
         self.life.vocabulary.hear(&reading.words);
 
         let mut learned = Vec::new();
@@ -1214,10 +1235,28 @@ impl World {
             learned,
             stopped,
             learned_name,
+            given_name,
             korean: text
                 .chars()
                 .any(|character| ('가'..='힣').contains(&character)),
         }
+    }
+
+    /// Takes the name the viewer gave it, keeping it safe for saves and the
+    /// terminal; returns whether the name changed.
+    pub fn take_name(&mut self, name: &str) -> bool {
+        let name: String = name
+            .trim()
+            .chars()
+            .filter(|character| !character.is_control())
+            .take(24)
+            .collect();
+        if name.is_empty() || name == self.ghost.name {
+            return false;
+        }
+        self.ghost.name = name.clone();
+        self.record(EventKind::Named(name));
+        true
     }
 
     /// Without a mind to ask, the ghost tries out what the viewer's latest
@@ -1296,6 +1335,17 @@ impl World {
     /// Records that the viewer did something.
     pub fn notice_viewer(&mut self) {
         self.viewer.active_at = self.time.max(f64::MIN_POSITIVE);
+        self.viewer.looked_away_at = None;
+    }
+
+    /// The terminal lost or regained the focus: the viewer turned to
+    /// another window, or came back to this one.
+    pub fn look_away(&mut self, away: bool) {
+        if !away {
+            self.notice_viewer();
+        } else if self.viewer.looked_away_at.is_none() {
+            self.viewer.looked_away_at = Some(self.time);
+        }
     }
 
     /// The nearest mote the ghost knows of.
@@ -3759,6 +3809,40 @@ mod tests {
             1
         );
         assert!(world.life.today.words().contains("learned your name: Sam"));
+    }
+
+    #[test]
+    fn the_viewer_names_the_ghost_and_only_the_first_name_is_a_milestone() {
+        let mut world = World::new(5, 12.0);
+        world.begin(Activity::Dance);
+        let heard = world.hear("your name is Pip");
+        assert_eq!(heard.given_name.as_deref(), Some("Pip"));
+        assert_eq!(heard.understanding, Understanding::Nothing);
+        assert!(world.life.vocabulary.words.is_empty());
+        assert_eq!(world.ghost.name, "Pip");
+        assert_eq!(world.hear("your name is Pip").given_name, None);
+        assert_eq!(
+            world.hear("뽀삐라고 부를게").given_name.as_deref(),
+            Some("뽀삐")
+        );
+        assert_eq!(world.ghost.name, "뽀삐");
+        // A mind passing on the same name changes nothing.
+        assert!(!world.take_name("뽀삐"));
+        assert!(!world.take_name(" \u{7} "));
+        let named = world
+            .events
+            .iter()
+            .filter(|event| matches!(event.kind, EventKind::Named(_)))
+            .count();
+        assert_eq!(named, 2);
+        let milestones: Vec<_> = world
+            .life
+            .milestones
+            .iter()
+            .filter(|entry| entry.text.starts_with("You gave me my name:"))
+            .collect();
+        assert_eq!(milestones.len(), 1);
+        assert_eq!(milestones[0].text, "You gave me my name: Pip.");
     }
 
     #[test]
