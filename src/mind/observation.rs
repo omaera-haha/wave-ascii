@@ -380,6 +380,7 @@ fn thing(world: &World, thing: Thing) -> String {
                 Some(bird) if bird.perched(world.time) => match bird.perch {
                     Perch::Tree => "perched on the tree",
                     Perch::Sill => "on the sill",
+                    Perch::Birdbath => "splashing in the birdbath in the yard",
                 },
                 _ => "flying",
             };

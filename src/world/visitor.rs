@@ -110,6 +110,8 @@ impl Visitors {
 pub enum Perch {
     Tree,
     Sill,
+    /// On the birdbath's rim out in the yard, for a splash.
+    Birdbath,
 }
 
 /// A bird outside in the yard: it flies in, perches on the tree's low
@@ -169,6 +171,7 @@ impl Bird {
         let anchor = match self.perch {
             Perch::Tree => super::home::PERCH + Vec3::new(0.06, 0.12, 0.0),
             Perch::Sill => super::home::SILL + Vec3::new(-0.42, 0.1, 0.0),
+            Perch::Birdbath => super::home::BIRDBATH + Vec3::new(0.27, 0.92, -0.12),
         };
         let hop = hopping.sin().max(0.0).powi(18);
         let perched = anchor + Vec3::new(0.02 * hopping.sin(), hop * 0.04, 0.0);
@@ -184,9 +187,12 @@ impl Bird {
             let progress = (1.0 - (self.arrived_at - time) / BIRD_FLIGHT).clamp(0.0, 1.0) as f32;
             (arc(away, anchor, progress), true, -self.side)
         } else {
+            // In the birdbath it flutters its wings now and then, splashing.
+            let splashing = self.perch == Perch::Birdbath
+                && (phase(time, 0.9) + self.phase).sin() > 0.72;
             (
                 perched,
-                false,
+                splashing,
                 if (phase(time, 0.34) + self.phase).sin() > 0.0 {
                     1.0
                 } else {
@@ -336,7 +342,12 @@ impl World {
                     self.life.bird_trust,
                 ));
             if daytime && bird_weather {
-                self.visitors.bird = Some(Bird::new(time, self.life.bird_trust, &mut self.random));
+                let mut bird = Bird::new(time, self.life.bird_trust, &mut self.random);
+                // With the ghost out in the yard, it may come for a bath.
+                if !super::home::in_house(self.ghost.position) && self.random.unit() < 0.5 {
+                    bird.perch = Perch::Birdbath;
+                }
+                self.visitors.bird = Some(bird);
             }
         }
         if let Some(mut bird) = self.visitors.bird.take() {
@@ -909,6 +920,7 @@ mod tests {
                         let perch = match bird.perch {
                             Perch::Tree => super::super::home::PERCH,
                             Perch::Sill => super::super::home::SILL,
+                            Perch::Birdbath => super::super::home::BIRDBATH + Vec3::Y * 0.8,
                         };
                         assert!(position.distance(perch) < 0.6);
                     }

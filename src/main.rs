@@ -380,10 +380,10 @@ fn print_frame(options: &Options) -> io::Result<()> {
     if let Ok(perch) = env::var("WAVE_ASCII_BIRD") {
         let mut random = world::Random::new(3);
         let mut bird = world::visitor::Bird::new(-10.0, 1.0, &mut random);
-        bird.perch = if perch == "sill" {
-            world::Perch::Sill
-        } else {
-            world::Perch::Tree
+        bird.perch = match perch.as_str() {
+            "sill" => world::Perch::Sill,
+            "bath" => world::Perch::Birdbath,
+            _ => world::Perch::Tree,
         };
         world.visitors.bird = Some(bird);
     }

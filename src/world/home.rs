@@ -62,7 +62,7 @@ pub const BIRDBATH: Vec3 = Vec3::new(6.85, 0.0, 0.55);
 pub const BENCH: Vec3 = Vec3::new(7.2, 0.0, -2.75);
 pub const LANTERN: Vec3 = Vec3::new(2.75, 0.0, 1.75);
 pub const LANTERN_HEIGHT: f32 = 1.25;
-pub const MAILBOX: Vec3 = Vec3::new(6.3, 0.0, 2.7);
+pub const MAILBOX: Vec3 = Vec3::new(8.0, 0.0, 2.95);
 /// Clothesline posts in the left yard.
 pub const CLOTHESLINE: [Vec3; 2] = [Vec3::new(-5.6, 0.0, -1.0), Vec3::new(-3.0, 0.0, -2.1)];
 pub const CLOTHESLINE_HEIGHT: f32 = 1.55;
