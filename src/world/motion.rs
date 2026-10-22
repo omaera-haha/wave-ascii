@@ -240,7 +240,22 @@ impl World {
             .look
             .map(|look| look - footing.body)
             .filter(|offset| flat(*offset).length() > 0.05);
-        let toward = if pace > 0.15 {
+        // Settled somewhere, as on the swing, it keeps facing what it looks
+        // at however it is carried; on its way or at play, where it goes.
+        let travelling = ghost.plan.arrived.is_none()
+            || matches!(
+                ghost.plan.activity,
+                Activity::Together
+                    | Activity::Dance
+                    | Activity::Chase
+                    | Activity::Play
+                    | Activity::Pounce
+                    | Activity::Explore
+                    | Activity::Fetch
+                    | Activity::Tidy
+                    | Activity::Build
+            );
+        let toward = if pace > 0.15 && travelling {
             Some(Vec3::new(
                 ghost.velocity.x,
                 0.0,
