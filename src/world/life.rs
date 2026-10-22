@@ -538,6 +538,9 @@ impl Tally {
                 if *activity == Activity::Seek {
                     self.hunts = self.hunts.saturating_add(1);
                 }
+                if *activity == Activity::Yard {
+                    self.outings = self.outings.saturating_add(1);
+                }
                 let count = self
                     .activities
                     .entry(activity.name().to_owned())
@@ -651,7 +654,6 @@ impl Tally {
             EventKind::Noticed(thing) if thing == "a moth at the lamp" => {
                 self.moths = self.moths.saturating_add(1)
             }
-            EventKind::Began(Activity::Yard) => self.outings = self.outings.saturating_add(1),
             EventKind::CatArrived => self.cats = self.cats.saturating_add(1),
             EventKind::Heard(_) => self.heard = self.heard.saturating_add(1),
             EventKind::Scolded => self.scolds = self.scolds.saturating_add(1),

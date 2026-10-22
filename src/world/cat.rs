@@ -5,7 +5,7 @@
 
 use std::f32::consts::TAU;
 
-use glam::{Vec2, Vec3};
+use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use super::home::{self, BENCH, GARDEN, GARDEN_HALF, LOT_MAX, LOT_MIN};
@@ -469,7 +469,7 @@ mod tests {
             }
             let (end, _) = along(&cat.path(), 1e6);
             assert!(end.distance(cat.rest.position()) < 1e-4);
-            let flat = Vec2::new(end.x, end.z);
+            let flat = glam::Vec2::new(end.x, end.z);
             assert!(flat.cmpge(LOT_MIN).all() && flat.cmple(LOT_MAX).all());
         }
     }
