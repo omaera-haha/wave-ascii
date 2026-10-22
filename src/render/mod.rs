@@ -1550,7 +1550,6 @@ fn daylight(hour: f32) -> Vec3 {
 mod tests {
     use super::*;
     use crate::canvas::Style;
-    use crate::face::Face;
 
     fn grid() -> Grid {
         Style::Ascii.grid(100, 30)
