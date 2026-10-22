@@ -69,6 +69,8 @@ pub struct Adoption {
     pub naming: Option<Line>,
     /// Whether it is the stranger at the glass being named, not a newcomer.
     pub stranger: bool,
+    /// The coat chosen for it while naming, if one was.
+    pub coat: Option<u8>,
     /// How many cards fit across, as last drawn, for moving up and down.
     pub across: usize,
 }
@@ -907,6 +909,12 @@ impl App {
                 .min(limit);
                 Response::Continue
             }
+            // Tab leafs through each creature's life without closing it.
+            Mode::Life if matches!(key, Key::Tab | Key::BackTab) => {
+                self.select_next(key == Key::Tab);
+                self.life_scroll = 0;
+                Response::Continue
+            }
             Mode::Help | Mode::Life => {
                 if matches!(key, Key::Character('q')) {
                     return Response::Quit;
@@ -1031,17 +1039,40 @@ impl App {
                         }
                         return;
                     }
+                    let coat = self.adoption.coat.take();
                     match self.adopt(species, Some(&name)) {
-                        Some(name) => self.post(format!(
-                            "{name} the {} is at the door! Tab turns to them.",
-                            species.noun()
-                        )),
+                        Some(name) => {
+                            if let Some(coat) = coat
+                                && let Some(id) = self.world.roster().last().copied()
+                            {
+                                self.world.with_creature(id, |world| {
+                                    world.ghost.genome.coat =
+                                        coat.min(species.coats().saturating_sub(1));
+                                });
+                            }
+                            self.post(format!(
+                                "{name} the {} is at the door! Tab turns to them.",
+                                species.noun()
+                            ));
+                        }
                         None => self.post("The cottage is full."),
                     }
                 }
                 Key::Escape => {
                     self.adoption.naming = None;
                     self.adoption.stranger = false;
+                    self.adoption.coat = None;
+                }
+                // Up and down try on its coats; a stranger keeps its own.
+                Key::Up | Key::Down if !self.adoption.stranger => {
+                    let species = crate::world::Species::ALL[self.adoption.index.min(kinds - 1)];
+                    let coats = species.coats().max(1);
+                    let coat = self.adoption.coat.unwrap_or(0);
+                    self.adoption.coat = Some(if key == Key::Up {
+                        (coat + coats - 1) % coats
+                    } else {
+                        (coat + 1) % coats
+                    });
                 }
                 key => {
                     name.edit(&key);
@@ -1066,6 +1097,7 @@ impl App {
                 let mut random = crate::world::Random::new(mind::now() as u64 ^ index as u64);
                 let suggestion = crate::world::species::pick_name(&mut random, &taken);
                 self.adoption.naming = Some(Line::from(suggestion.as_str()));
+                self.adoption.coat = Some(0);
             }
             _ => {}
         }
@@ -1349,6 +1381,10 @@ impl App {
     fn scroll_journal(&mut self, key: Key) -> Response {
         match key {
             Key::Character('q') => return Response::Quit,
+            Key::Tab | Key::BackTab => {
+                self.select_next(key == Key::Tab);
+                self.journal_scroll = 0;
+            }
             Key::Escape | Key::Enter | Key::Character('j') => self.mode = Mode::Watching,
             Key::Up | Key::Down | Key::PageUp | Key::PageDown | Key::Home | Key::End => {
                 let journal = ui::JournalPanel::new(self, self.screen_size.0, self.screen_size.1);

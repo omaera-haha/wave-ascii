@@ -988,11 +988,12 @@ fn adopt_panel(app: &mut App, screen: &mut Canvas) {
             let picked = kind == index;
             let left = bounds.left + 2 + slot * (card_width + 1);
             let top = bounds.top + 1 + (line - first_line) * card_height;
-            // The picked one turns and shows off its coats.
-            let coat = if picked {
-                ((time / 2.0) as u64 % u64::from(species.coats())) as u8
-            } else {
-                0
+            // The picked one turns and shows off its coats, or the one
+            // chosen for it while naming.
+            let coat = match (picked, app.adoption.coat) {
+                (true, Some(coat)) => coat.min(species.coats().saturating_sub(1)),
+                (true, None) => ((time / 2.0) as u64 % u64::from(species.coats())) as u8,
+                _ => 0,
             };
             let figure = Figure {
                 id: kind as u32,
@@ -1129,7 +1130,11 @@ fn adopt_panel(app: &mut App, screen: &mut Canvas) {
                 next + 2,
                 below + 3,
                 right,
-                "Enter welcomes them · Esc goes back",
+                if app.adoption.stranger {
+                    "Enter welcomes them · Esc goes back"
+                } else {
+                    "↑↓ coat · Enter welcomes them · Esc goes back"
+                },
                 DIM,
                 Some(PANEL),
             );
