@@ -428,7 +428,7 @@ impl<'a> Yard<'a> {
             wet: setting.wet,
             view: setting.view,
             door: setting.door,
-            smoke: setting.smoke,
+            smoke: setting.smoke && !setting.roofless,
             lights: matches!(
                 setting.occasion,
                 Some(Occasion::WinterHolidays | Occasion::NewYear)
