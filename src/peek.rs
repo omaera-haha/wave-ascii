@@ -104,6 +104,7 @@ mod tests {
             life: world.saved_life(),
             seedlings: Vec::new(),
             room: None,
+            household: Default::default(),
         }
     }
 

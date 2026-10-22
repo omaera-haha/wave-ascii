@@ -529,10 +529,12 @@ impl World {
 
     /// Where the ghost sleeps: in its bed at night, else on the cushion.
     pub fn sleeping_spot(&self) -> Vec3 {
+        // Housemates each keep a spot of their own beside the others.
+        let berth = self.berth();
         if self.bedtime() {
-            BED + Vec3::new(0.0, BED_HALF.y * 2.0 + 0.38 * self.size(), -0.18)
+            BED + Vec3::new(berth.x, BED_HALF.y * 2.0 + 0.38 * self.size(), -0.18 + berth.y * 0.8)
         } else {
-            self.nook.bed(self.size())
+            self.nook.bed(self.size()) + Vec3::new(berth.x * 0.8, 0.0, berth.y * 0.6)
         }
     }
 

@@ -1,4 +1,4 @@
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Mode, mood_color};
@@ -7,7 +7,9 @@ use crate::color::Rgb;
 use crate::face::emote;
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::Status;
-use crate::render::{GHOST_SCALE, View};
+use crate::render::View;
+use crate::render::creature::{Figure, Model, signature};
+use crate::world::EventKind;
 use crate::settings::{Field, cache_name, effort_name};
 use crate::store::{Speaker, mask};
 use crate::world::Skill;
@@ -29,9 +31,93 @@ const THOUGHT_SHOWS: f64 = 30.0;
 
 /// Draws the scene's words and symbols, without a status bar or panel.
 pub fn draw_moment(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) {
-    let bubble_right = speech_bubble(app, screen, view, scene_rows);
+    name_tags(app, screen, view, scene_rows);
+    let mut taken = Vec::new();
+    // Housemates first, so the one the viewer is with talks on top.
+    for figure in app.shown().iter().rev() {
+        if figure.id == app.world.host() {
+            continue;
+        }
+        if let Some(creature) = app.world.creature(figure.id) {
+            speech_bubble(app, screen, view, scene_rows, creature, figure, &mut taken);
+        }
+    }
+    let bubble_right = app
+        .shown()
+        .iter()
+        .find(|figure| figure.id == app.world.host())
+        .and_then(|figure| {
+            speech_bubble(app, screen, view, scene_rows, &app.world.ghost, figure, &mut taken)
+        });
     emote_puffs(app, screen, view, scene_rows, bubble_right);
     words_line(app, screen, scene_rows);
+}
+
+/// Where the top of a creature's head lands on the screen, in cells.
+fn crown_cell(figure: &Figure, view: &View, columns: usize, rows: usize) -> Option<Vec2> {
+    let crown = Model::of(figure).crown;
+    let point = view.project(crown)?;
+    Some(
+        Grid::new(columns, rows, CELL_ASPECT)
+            .to_pixels()
+            .transform_point2(point),
+    )
+}
+
+// Each creature's name over its head while the pointer rests on it, for a
+// moment after the viewer turns to it, and for a newcomer's first minutes.
+fn name_tags(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) {
+    let columns = screen.columns();
+    let scene_rows = scene_rows.min(screen.rows());
+    if columns == 0 || scene_rows == 0 || app.world.household_size() < 2 {
+        return;
+    }
+    let host = app.world.host();
+    for figure in app.shown() {
+        let Some(creature) = app.world.creature(figure.id) else {
+            continue;
+        };
+        let fresh = app
+            .world
+            .events
+            .iter()
+            .rev()
+            .take_while(|event| app.world.time - event.time < 60.0)
+            .any(|event| matches!(&event.kind, EventKind::Newcomer { name, .. } if *name == creature.name));
+        let shown = app.hover == Some(figure.id)
+            || (figure.id == host && app.world.time - app.selected_at < 3.0)
+            || fresh;
+        let speaking = creature
+            .speech
+            .as_ref()
+            .is_some_and(|line| app.world.time - line.time < SPEECH_SHOWS);
+        if !shown || speaking {
+            continue;
+        }
+        let Some(cell) = crown_cell(figure, view, columns, scene_rows) else {
+            continue;
+        };
+        let label = if figure.id == host {
+            format!("▾ {}", creature.name)
+        } else {
+            creature.name.clone()
+        };
+        let row = cell.y.round() as isize - 1;
+        let left = cell.x.round() as isize - width(&label) as isize / 2;
+        if row < 0 || row as usize >= scene_rows || left < 0 {
+            continue;
+        }
+        let color = signature(figure.species, figure.genome.coat);
+        write(
+            screen,
+            left as usize,
+            row as usize,
+            columns,
+            &label,
+            rgb(color),
+            Some(BAR),
+        );
+    }
 }
 
 /// Draws the status bar and any open panel over the scene.
@@ -44,6 +130,7 @@ pub fn draw(app: &mut App, screen: &mut Canvas, scene_rows: usize) {
         Mode::Life => life_panel(app, screen),
         Mode::Album => album_panel(app, screen),
         Mode::Letter | Mode::Writing => letter_panel(app, screen),
+        Mode::Adopt => adopt_panel(app, screen),
         Mode::Watching | Mode::Talking => {}
     }
 }
@@ -157,25 +244,34 @@ fn rgb(color: Vec3) -> Rgb {
     Rgb::from_vec3(color)
 }
 
-// The ghost's latest words in a bubble above its head. Returns the column
-// just beyond the box when any of it is visible.
-fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) -> Option<usize> {
+// A creature's latest words in a bubble above its head, clear of the
+// bubbles in `taken`. Returns the column just beyond the box when any of it
+// is visible.
+#[allow(clippy::too_many_arguments)]
+fn speech_bubble(
+    app: &App,
+    screen: &mut Canvas,
+    view: &View,
+    scene_rows: usize,
+    creature: &crate::world::Ghost,
+    figure: &Figure,
+    taken: &mut Vec<(usize, usize, usize, usize)>,
+) -> Option<usize> {
     let world = &app.world;
-    let speech = world.ghost.speech.as_ref()?;
-    if world.time - speech.time > SPEECH_SHOWS {
+    let speech = creature.speech.as_ref()?;
+    let host = creature.id == world.host();
+    let shows = if host { SPEECH_SHOWS } else { SPEECH_SHOWS * 0.5 };
+    if world.time - speech.time > shows {
         return None;
     }
-    let head = world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE * world.size();
-    let point = view.project(head)?;
     let columns = screen.columns();
     let scene_rows = scene_rows.min(screen.rows());
     if columns == 0 || scene_rows == 0 {
         return None;
     }
-    let pixel = Grid::new(columns, scene_rows, CELL_ASPECT)
-        .to_pixels()
-        .transform_point2(point);
-    let lines = wrap(&speech.text, 34.min(columns.saturating_sub(4)));
+    let pixel = crown_cell(figure, view, columns, scene_rows)?;
+    let limit = if host { 34 } else { 24 };
+    let lines = wrap(&speech.text, limit.min(columns.saturating_sub(4)));
     let inner = lines.iter().map(|line| width(line)).max().unwrap_or(0);
     let box_width = inner + 2;
     if lines.is_empty() || box_width > columns {
@@ -192,6 +288,20 @@ fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize)
     let left = anchor
         .saturating_sub(box_width / 2)
         .min(columns - box_width);
+    let bottom = top + lines.len();
+    let overlaps = |(other_left, other_top, other_right, other_bottom): &(usize, usize, usize, usize)| {
+        left < *other_right && *other_left < left + box_width && top <= *other_bottom && *other_top <= bottom
+    };
+    // A housemate's words give way to anyone already speaking there.
+    if !host && taken.iter().any(overlaps) {
+        return None;
+    }
+    taken.push((left, top, left + box_width, bottom));
+    let tail_color = if host {
+        BUBBLE
+    } else {
+        rgb(signature(figure.species, figure.genome.coat))
+    };
     for (offset, line) in lines.iter().enumerate() {
         let row = top + offset;
         if row >= scene_rows {
@@ -215,7 +325,7 @@ fn speech_bubble(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize)
             tail_row as usize,
             columns,
             "▾",
-            BUBBLE,
+            tail_color,
             None,
         );
     }
@@ -235,13 +345,16 @@ fn emote_puffs(
     if columns == 0 || scene_rows == 0 {
         return;
     }
-    let head = app.world.ghost.position + Vec3::Y * 0.8 * GHOST_SCALE * app.world.size();
-    let Some(point) = view.project(head) else {
+    let Some(figure) = app
+        .shown()
+        .iter()
+        .find(|figure| figure.id == app.world.host())
+    else {
         return;
     };
-    let pixel = Grid::new(columns, scene_rows, CELL_ASPECT)
-        .to_pixels()
-        .transform_point2(point);
+    let Some(pixel) = crown_cell(figure, view, columns, scene_rows) else {
+        return;
+    };
     if !(0.0..columns as f32).contains(&pixel.x) || !(0.0..scene_rows as f32).contains(&pixel.y) {
         return;
     }
@@ -364,67 +477,12 @@ fn idle_tip(time: f64) -> &'static str {
     TIPS[1 + turn % (TIPS.len() - 1)]
 }
 
-// The status bar: the ghost's name, mood, and needs, what it is doing, the
-// state of its minds, and where to find help.
+// The status bar: the creature the viewer is with, its mood, needs, and
+// what it is doing, then each housemate in a word, the state of the minds,
+// and where to find help.
 fn status_line(app: &App, screen: &mut Canvas, row: usize) {
     let columns = screen.columns();
     fill(screen, row, 0, columns, BAR);
-    let ghost = &app.world.ghost;
-    let mut column = write(screen, 1, row, columns, &ghost.name, TITLE, Some(BAR));
-    column = write(screen, column, row, columns, " · ", DIM, Some(BAR));
-    column = write(
-        screen,
-        column,
-        row,
-        columns,
-        "● ",
-        rgb(mood_color(ghost.mood)),
-        Some(BAR),
-    );
-    column = write(
-        screen,
-        column,
-        row,
-        columns,
-        ghost.mood.name(),
-        TEXT,
-        Some(BAR),
-    );
-    for (label, level) in [
-        ("energy", ghost.needs.energy),
-        ("fun", ghost.needs.fun),
-        ("company", ghost.needs.company),
-    ] {
-        column = write(
-            screen,
-            column,
-            row,
-            columns,
-            &format!("  {label} "),
-            DIM,
-            Some(BAR),
-        );
-        column = write(
-            screen,
-            column,
-            row,
-            columns,
-            &meter(level),
-            meter_color(level),
-            Some(BAR),
-        );
-    }
-    let doing = app.doing();
-    column = write(
-        screen,
-        column,
-        row,
-        columns,
-        &format!(" · {doing}"),
-        TEXT,
-        Some(BAR),
-    );
-
     // The right end: the minds and the help key, kept when the rest is cut.
     let mut right = vec![
         (" jev ".to_owned(), DIM),
@@ -444,7 +502,102 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
     if app.paused {
         right.push(("  paused".to_owned(), ACCENT));
     }
+    if app.world.household_size() > 1 {
+        right.push(("  Tab ⇄".to_owned(), DIM));
+    }
     right.push(("  ? help ".to_owned(), DIM));
+    let world = &app.world;
+    let ghost = &world.ghost;
+    let host_color = |id: u32| {
+        app.shown()
+            .iter()
+            .find(|figure| figure.id == id)
+            .map_or(TITLE, |figure| rgb(signature(figure.species, figure.genome.coat)))
+    };
+    // Housemates in a word each, on the right of the creature in view.
+    let mates: Vec<(String, Rgb, String, Rgb)> = world
+        .roster()
+        .into_iter()
+        .filter(|id| *id != ghost.id)
+        .filter_map(|id| world.creature(id))
+        .map(|mate| {
+            let doing = if mate.asleep > 0.5 {
+                "zz".to_owned()
+            } else if mate.plan.activity == crate::world::Activity::Together && !mate.plan.done {
+                mate.plan
+                    .pastime
+                    .map_or("together", |pastime| pastime.name())
+                    .to_owned()
+            } else {
+                mate.plan.activity.name().to_owned()
+            };
+            (mate.name.clone(), host_color(mate.id), doing, rgb(mood_color(mate.mood)))
+        })
+        .collect();
+    let mates_width: usize = mates
+        .iter()
+        .map(|(name, _, doing, _)| width(name) + width(doing) + 6)
+        .sum();
+    let marker = if mates.is_empty() { "" } else { "▸ " };
+    let mut column = write(screen, 1, row, columns, marker, ACCENT, Some(BAR));
+    column = write(screen, column, row, columns, &ghost.name, host_color(ghost.id), Some(BAR));
+    column = write(screen, column, row, columns, " ● ", rgb(mood_color(ghost.mood)), Some(BAR));
+    column = write(
+        screen,
+        column,
+        row,
+        columns,
+        ghost.mood.name(),
+        TEXT,
+        Some(BAR),
+    );
+    // The right end's minds and help, kept whatever else must go.
+    let right_width: usize = right.iter().map(|(text, _)| width(text)).sum::<usize>() + 1;
+    let doing = app.doing();
+    let wordy = column + 3 * 14 + width(&doing) + 3 + mates_width + right_width < columns;
+    let meters = column + 3 * 7 + mates_width + right_width < columns;
+    for (label, level) in [
+        ("energy", ghost.needs.energy),
+        ("fun", ghost.needs.fun),
+        ("company", ghost.needs.company),
+    ] {
+        if !meters {
+            break;
+        }
+        let gap = if wordy { format!("  {label} ") } else { " ".to_owned() };
+        column = write(screen, column, row, columns, &gap, DIM, Some(BAR));
+        column = write(
+            screen,
+            column,
+            row,
+            columns,
+            &meter(level),
+            meter_color(level),
+            Some(BAR),
+        );
+    }
+    if wordy || mates.is_empty() {
+        column = write(
+            screen,
+            column,
+            row,
+            columns,
+            &format!(" · {doing}"),
+            TEXT,
+            Some(BAR),
+        );
+    }
+    let end = columns.saturating_sub(right_width);
+    for (name, color, doing, mood) in &mates {
+        if column + width(name) + width(doing) + 6 > end {
+            break;
+        }
+        column = write(screen, column, row, end, "  │ ", BORDER, Some(BAR));
+        column = write(screen, column, row, end, name, *color, Some(BAR));
+        column = write(screen, column, row, end, " ●", *mood, Some(BAR));
+        column = write(screen, column, row, end, &format!(" {doing}"), DIM, Some(BAR));
+    }
+
     let right_width: usize = right.iter().map(|(text, _)| width(text)).sum();
     if column + right_width <= columns {
         let mut column = columns - right_width;
@@ -722,6 +875,150 @@ fn draw_panel(
         right,
         bottom: top + height - 1,
     })
+}
+
+/// Cards for each kind of creature that could come to live here, each with
+/// a little turning portrait, and the name being typed once one is picked.
+fn adopt_panel(app: &mut App, screen: &mut Canvas) {
+    use crate::render::creature::{Motion, study};
+    use crate::world::{Genome, Species};
+    let columns = screen.columns();
+    let rows = screen.rows();
+    let kinds = Species::ALL.len();
+    let card_width = 16usize;
+    let image_rows = if rows >= 34 { 6 } else if rows >= 24 { 4 } else { 3 };
+    let card_height = image_rows + 1;
+    let across = (columns.saturating_sub(6) / (card_width + 1)).clamp(1, 7);
+    app.adoption.across = across;
+    let index = app.adoption.index.min(kinds - 1);
+    let lines_of_cards = kinds.div_ceil(across);
+    // Only the rows of cards that fit, with the picked card among them.
+    let room = rows.saturating_sub(9) / card_height;
+    let shown_lines = room.clamp(1, lines_of_cards);
+    let first_line = (index / across)
+        .saturating_sub(shown_lines - 1)
+        .min(lines_of_cards - shown_lines);
+    let inner = across * (card_width + 1) + 1;
+    let height = shown_lines * card_height + 6;
+    if inner + 4 > columns || height > rows {
+        let lines = vec![("Make the window bigger to choose.".to_owned(), TEXT)];
+        panel(screen, "Adopt a housemate", &lines);
+        return;
+    }
+    let blank: Vec<(String, Rgb)> = (0..height - 2).map(|_| (String::new(), TEXT)).collect();
+    let Some(bounds) = draw_panel(screen, "Adopt a housemate", &blank, inner) else {
+        return;
+    };
+    let time = app.world.time;
+    let full = app.world.household_size() >= crate::world::household::MOST;
+    for line in first_line..first_line + shown_lines {
+        for slot in 0..across {
+            let kind = line * across + slot;
+            if kind >= kinds {
+                break;
+            }
+            let species = Species::ALL[kind];
+            let picked = kind == index;
+            let left = bounds.left + 2 + slot * (card_width + 1);
+            let top = bounds.top + 1 + (line - first_line) * card_height;
+            // The picked one turns and shows off its coats.
+            let coat = if picked {
+                ((time / 2.0) as u64 % u64::from(species.coats())) as u8
+            } else {
+                0
+            };
+            let figure = Figure {
+                id: kind as u32,
+                species,
+                genome: Genome {
+                    coat,
+                    build: 0.0,
+                    seed: 7,
+                },
+                position: glam::Vec3::ZERO,
+                facing: 0.0,
+                size: 1.0,
+                face: crate::face::Face {
+                    smile: if picked { 0.8 } else { 0.0 },
+                    ..crate::face::Face::REST
+                },
+                glow: glam::Vec3::new(0.4, 0.9, 0.85),
+                opacity: 1.0,
+                accessory: None,
+                motion: Motion {
+                    time,
+                    energy: 1.0,
+                    perk: if picked { 1.0 } else { 0.3 },
+                    wag: if picked { 0.9 } else { 0.3 },
+                    dance: if picked { 1.0 } else { 0.0 },
+                    ..Motion::default()
+                },
+            };
+            let backdrop = if picked {
+                glam::Vec3::new(0.2, 0.22, 0.32)
+            } else {
+                glam::Vec3::new(0.1, 0.11, 0.16)
+            };
+            let turn = if picked { (time * 0.9) as f32 } else { 0.45 };
+            let grid = app.style.grid(card_width, image_rows);
+            let frame = study(&figure, grid, backdrop, turn);
+            screen.paste(&app.style.canvas(&frame, app.color), left, top);
+            let label = species.noun();
+            let label = if picked { format!("▸ {label}") } else { label.to_owned() };
+            let pad = card_width.saturating_sub(width(&label)) / 2;
+            fill(screen, top + image_rows, left, left + card_width, if picked { ACCENT } else { PANEL });
+            write(
+                screen,
+                left + pad,
+                top + image_rows,
+                left + card_width,
+                &label,
+                if picked { PANEL } else { TEXT },
+                Some(if picked { ACCENT } else { PANEL }),
+            );
+        }
+    }
+    let species = Species::ALL[index];
+    let below = bounds.top + 1 + shown_lines * card_height;
+    let right = bounds.right;
+    write(screen, bounds.left + 2, below, right, &format!("A {}.", species.portrait()), TEXT, Some(PANEL));
+    let count = format!(
+        "{} of {} live here: {}",
+        app.world.household_size(),
+        crate::world::household::MOST,
+        crate::world::together::list(
+            &app.world.creatures().map(|ghost| ghost.name.clone()).collect::<Vec<_>>()
+        )
+    );
+    write(screen, bounds.left + 2, below + 1, right, &count, DIM, Some(PANEL));
+    match &app.adoption.naming {
+        Some(name) => {
+            let column = write(screen, bounds.left + 2, below + 3, right, "Name: ", ACCENT, Some(PANEL));
+            let text: Vec<char> = name.text().chars().collect();
+            let cursor = name.cursor().min(text.len());
+            let before: String = text[..cursor].iter().collect();
+            let column = write(screen, column, below + 3, right, &before, TITLE, Some(PANEL));
+            let under: String = text.get(cursor).map_or(" ".to_owned(), |character| character.to_string());
+            let next = write(screen, column, below + 3, right, &under, PANEL, Some(ACCENT));
+            let after: String = text.iter().skip(cursor + 1).collect();
+            let next = write(screen, next, below + 3, right, &after, TITLE, Some(PANEL));
+            write(screen, next + 2, below + 3, right, "Enter welcomes them · Esc goes back", DIM, Some(PANEL));
+        }
+        None if full => {
+            write(screen, bounds.left + 2, below + 3, right, "The cottage is full. Esc closes.", BAD, Some(PANEL));
+        }
+        None => {
+            write(
+                screen,
+                bounds.left + 2,
+                below + 3,
+                right,
+                "arrows choose · Enter names them · Esc closes",
+                DIM,
+                Some(PANEL),
+            );
+        }
+    }
 }
 
 fn help_panel(screen: &mut Canvas) {
@@ -1630,7 +1927,8 @@ mod tests {
         app.world.ghost.asleep = 1.0;
         app.world.say("A few words beside the rising symbols.");
         let view = crate::render::Camera::default().view(Grid::cells(80, 24));
-        let position = app.world.ghost.position;
+        let figure = app.figures(&view)[0];
+        let position = figure.position;
         for head in [
             position,
             position + Vec3::X * 100.0,
@@ -1638,12 +1936,21 @@ mod tests {
             position - Vec3::Y * 100.0,
             view.eye - view.forward,
         ] {
-            app.world.ghost.position = head;
+            let mut figure = figure;
+            figure.position = head;
             for columns in [0, 1, 2, 5, 80] {
                 for rows in [0, 1, 2, 5, 24] {
                     let mut screen = Canvas::blank(columns, rows);
                     let scene_rows = rows.saturating_sub(2).max(1);
-                    let bubble_right = speech_bubble(&app, &mut screen, &view, scene_rows);
+                    let bubble_right = speech_bubble(
+                        &app,
+                        &mut screen,
+                        &view,
+                        scene_rows,
+                        &app.world.ghost,
+                        &figure,
+                        &mut Vec::new(),
+                    );
                     emote_puffs(&app, &mut screen, &view, scene_rows, bubble_right);
                 }
             }

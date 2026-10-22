@@ -11,7 +11,6 @@ use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
 
-use crate::face::Face;
 use crate::frame::{Frame, Grid, Shade};
 use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::home::{self, Area, DOOR_HIGH, DOOR_LOW, INNER_HIGH, INNER_LOW};
@@ -1620,6 +1619,7 @@ fn daylight(hour: f32) -> Vec3 {
 mod tests {
     use super::*;
     use crate::canvas::Style;
+    use crate::face::Face;
     use ghost::Pose;
 
     fn grid() -> Grid {

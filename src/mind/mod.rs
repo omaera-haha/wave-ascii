@@ -53,6 +53,9 @@ const SPEECH_SETTLES: f64 = 8.0;
 /// Seconds a thought stays before a musing may replace it.
 const THOUGHT_HOLDS: f64 = crate::world::dream::HOLDS;
 const MEMORIES_KEPT: usize = 60;
+/// How much less often a creature thinks things over while the viewer is
+/// with another.
+const COMPANION_FACTOR: f64 = 4.0;
 const REMARKS_KEPT: usize = 40;
 
 /// How one of the minds is doing, for the status line.
@@ -100,7 +103,8 @@ struct HeardMessage {
 /// goals, and talks. Without keys the ghost lives on instinct alone. Requests
 /// run in the background, so the world never waits on them.
 pub struct Mind {
-    runtime: Option<Runtime>,
+    /// Shared by every creature's mind.
+    runtime: Option<std::sync::Arc<Runtime>>,
     jev: Option<Jev>,
     claude: Option<Claude>,
     sender: Sender<Answer>,
@@ -188,6 +192,53 @@ impl Mind {
         mind
     }
 
+    /// A mind for another creature of the household, with `journal` and the
+    /// same models, keys, and background runtime as this one.
+    pub fn sibling(&self, journal: Journal) -> Self {
+        let (sender, receiver) = mpsc::channel();
+        Self {
+            runtime: self.runtime.clone(),
+            jev: self.jev.clone(),
+            claude: self.claude.clone(),
+            sender,
+            receiver,
+            one: if self.jev.is_some() {
+                Status::Ready
+            } else {
+                Status::Off
+            },
+            two: if self.claude.is_some() {
+                Status::Ready
+            } else {
+                Status::Off
+            },
+            journal,
+            reflect_every: self.reflect_every,
+            effort: self.effort,
+            cache: self.cache,
+            offline: self.offline,
+            deciding: None,
+            next_id: 0,
+            reflecting: false,
+            last_reflection: None,
+            mused_at: 0.0,
+            thought_at: HashMap::new(),
+            next_musing: f64::from(MUSES_EVERY.0) * 0.4,
+            dreaming: false,
+            heard: VecDeque::new(),
+            latest_request: 0,
+            renamed: 0,
+            reflection_renamed: 0,
+            musing_focus: false,
+            reflecting_for_viewer: false,
+            pending_story: None,
+            reflecting_story: None,
+            said_through: None,
+            requested_letters: Vec::new(),
+            viewer_letters_read: 0,
+        }
+    }
+
     /// Starts using the keys, models, and settings in `config`, for example
     /// after the viewer changes them. Requests already out finish as they
     /// were sent.
@@ -217,7 +268,8 @@ impl Mind {
                 .worker_threads(2)
                 .enable_all()
                 .build()
-                .ok();
+                .ok()
+                .map(std::sync::Arc::new);
         }
         if self.runtime.is_none() {
             self.jev = None;
@@ -302,7 +354,10 @@ impl Mind {
             }
             self.viewer_letters_read = world.life.total.viewer_letters_read;
         }
-        self.write_letter(world);
+        // Letters are the household's, written by the one the viewer is with.
+        if !world.companion {
+            self.write_letter(world);
+        }
         if world.telling.is_none() {
             self.pending_story = None;
         }
@@ -375,7 +430,7 @@ impl Mind {
                 self.reflect_every
             } else {
                 self.reflect_every * ALONE_FACTOR
-            };
+            } * if world.companion { COMPANION_FACTOR } else { 1.0 };
             let due = match self.last_reflection {
                 None => world.time > FIRST_REFLECTION,
                 Some(last) => world.time - last > interval,
@@ -940,7 +995,9 @@ impl Drop for Mind {
     fn drop(&mut self) {
         // Requests still out are abandoned rather than awaited, so quitting
         // is immediate.
-        if let Some(runtime) = self.runtime.take() {
+        if let Some(runtime) = self.runtime.take()
+            && let Ok(runtime) = std::sync::Arc::try_unwrap(runtime)
+        {
             runtime.shutdown_background();
         }
     }

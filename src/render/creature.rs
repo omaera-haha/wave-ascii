@@ -56,7 +56,6 @@ pub struct Motion {
     pub wag: f32,
     /// Ears from drooping at -1 to pricked at 1.
     pub perk: f32,
-    pub petting: f32,
     pub blush: f32,
     /// From still to dancing at 1.
     pub dance: f32,
@@ -64,12 +63,17 @@ pub struct Motion {
     pub lean: f32,
     /// Its energy, from 0 to 1, for how brightly what it has of light glows.
     pub energy: f32,
-}
-
-/// Where on a creature its words come from and things are held.
-pub struct Anchors {
-    /// The top of its head, in the world.
-    pub crown: Vec3,
+    /// A little extra rise, as with pride or a yawn, in its own units.
+    pub lift: f32,
+    /// A little extra roll to one side, as to music or in a sneeze.
+    pub sway: f32,
+    /// From 0 to 1, how far it stretches up tall.
+    pub reach: f32,
+    /// From 0 to 1, how hard it shivers.
+    pub shiver: f32,
+    /// A deep slow breath, while it keeps someone company in their mood:
+    /// where in the breath it is, from -1 to 1.
+    pub calm: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -684,6 +688,83 @@ impl Model {
     }
 }
 
+/// A creature on its own against `backdrop`, as on a card: seen from a
+/// little above and in front, turned by `turn`, under a soft studio light.
+pub fn study(figure: &Figure, grid: crate::frame::Grid, backdrop: Vec3, turn: f32) -> crate::frame::Frame {
+    let model = Model::of(figure);
+    let (center, radius) = model.bounds();
+    let around = Vec3::new(turn.sin(), 0.32, turn.cos()).normalize();
+    let eye = center + around * radius * 3.4;
+    let forward = (center - eye).normalize();
+    let right = forward.cross(Vec3::Y).normalize();
+    let up = right.cross(forward);
+    let light = Vec3::new(0.5, 0.8, 0.6).normalize();
+    let spread = grid.scale() / super::FOCAL;
+    crate::frame::Frame::sample(grid, |point| {
+        let direction = (forward * super::FOCAL + right * point.x + up * point.y).normalize();
+        let color = match model.trace(eye, direction, f32::INFINITY, spread, 0.0) {
+            Some(hit) => {
+                let lit = Vec3::splat(0.42)
+                    + Vec3::new(1.0, 0.96, 0.9) * hit.normal.dot(light).max(0.0) * 0.75
+                    + Vec3::new(0.5, 0.6, 0.8) * (1.0 - hit.normal.dot(-direction).max(0.0)).powi(3) * 0.4;
+                let half = (-direction + light).normalize();
+                let glint = hit.sheen * hit.normal.dot(half).max(0.0).powi(24) * 0.7;
+                let shaded = hit.albedo * lit + hit.emission + Vec3::splat(glint);
+                backdrop.lerp(shaded, 1.0 - hit.clear * 0.5)
+            }
+            None => backdrop,
+        };
+        let color = color.clamp(Vec3::ZERO, Vec3::ONE);
+        let roots = Vec3::new(color.x.sqrt(), color.y.sqrt(), color.z.sqrt());
+        crate::frame::Shade::from_rgb(color * 0.7 + roots * 0.3)
+    })
+}
+
+/// The color a creature is known by in words and marks: its coat, kept
+/// bright enough to read against the dark.
+pub fn signature(species: Species, coat: u8) -> Vec3 {
+    let color = match (species, coat) {
+        (Species::Fox, 1) => Vec3::new(0.85, 0.9, 1.0),
+        (Species::Fox, 2) => Vec3::new(0.7, 0.7, 0.8),
+        (Species::Fox, _) => Vec3::new(1.0, 0.6, 0.25),
+        (Species::Bunny, 1) => Vec3::new(0.85, 0.65, 0.5),
+        (Species::Bunny, 2) => Vec3::new(0.78, 0.78, 0.85),
+        (Species::Bunny, _) => Vec3::new(1.0, 0.85, 0.9),
+        (Species::Penguin, _) => Vec3::new(0.6, 0.75, 1.0),
+        (Species::Frog, 2) => Vec3::new(0.4, 0.65, 1.0),
+        (Species::Frog, 3) => Vec3::new(1.0, 0.65, 0.75),
+        (Species::Frog, _) => Vec3::new(0.55, 0.9, 0.45),
+        (Species::Slime, 1) => Vec3::new(1.0, 0.6, 0.8),
+        (Species::Slime, 2) => Vec3::new(0.55, 0.8, 1.0),
+        (Species::Slime, 3) => Vec3::new(1.0, 0.92, 0.5),
+        (Species::Slime, _) => Vec3::new(0.5, 1.0, 0.8),
+        (Species::Owl, 1) => Vec3::new(0.95, 0.95, 1.0),
+        (Species::Owl, _) => Vec3::new(0.85, 0.7, 0.55),
+        (Species::Robot, 1) => Vec3::new(1.0, 0.45, 0.4),
+        (Species::Robot, 2) => Vec3::new(1.0, 0.85, 0.35),
+        (Species::Robot, _) => Vec3::new(0.4, 0.9, 0.9),
+        (Species::Hedgehog, 1) => Vec3::new(0.95, 0.92, 0.85),
+        (Species::Hedgehog, _) => Vec3::new(0.8, 0.65, 0.5),
+        (Species::Mushroom, 1) => Vec3::new(0.85, 0.65, 0.45),
+        (Species::Mushroom, 2) => Vec3::new(0.75, 0.55, 1.0),
+        (Species::Mushroom, _) => Vec3::new(1.0, 0.4, 0.38),
+        (Species::Axolotl, 1) => Vec3::new(1.0, 0.85, 0.5),
+        (Species::Axolotl, 2) => Vec3::new(0.7, 0.65, 0.6),
+        (Species::Axolotl, _) => Vec3::new(1.0, 0.7, 0.8),
+        (Species::Dragon, 1) => Vec3::new(0.75, 0.6, 1.0),
+        (Species::Dragon, 2) => Vec3::new(1.0, 0.5, 0.4),
+        (Species::Dragon, _) => Vec3::new(0.5, 0.9, 0.55),
+        (Species::Ghost, 1) => Vec3::new(0.8, 1.0, 0.9),
+        (Species::Ghost, 2) => Vec3::new(0.9, 0.85, 1.0),
+        (Species::Ghost, _) => Vec3::new(0.9, 0.95, 1.0),
+        (Species::Jelly, 1) => Vec3::new(0.6, 0.8, 1.0),
+        (Species::Jelly, 2) => Vec3::new(0.85, 0.75, 1.0),
+        (Species::Jelly, 3) => Vec3::new(1.0, 0.8, 0.65),
+        (Species::Jelly, _) => Vec3::new(1.0, 0.7, 0.88),
+    };
+    color
+}
+
 /// Where a ray meets a sphere: the distances it enters and leaves at.
 fn sphere_span(origin: Vec3, direction: Vec3, center: Vec3, radius: f32) -> Option<(f32, f32)> {
     let offset = origin - center;
@@ -734,7 +815,8 @@ struct Rig {
     perched: f32,
     energy: f32,
     build: f32,
-    hop: f32,
+    lift: f32,
+    sway: f32,
 }
 
 impl Rig {
@@ -753,12 +835,20 @@ impl Rig {
             motion.look.y.clamp(-0.5, 0.45),
         ) * (1.0 - motion.asleep);
         let nod = -0.45 * motion.asleep;
+        let breath = match motion.calm {
+            Some(calm) => calm.clamp(-1.0, 1.0) * 2.0,
+            None => (time * if motion.asleep > 0.5 { 1.3 } else { 2.2 }).sin(),
+        };
+        let stretch = stretch * (1.0 + 0.14 * motion.reach.clamp(0.0, 1.0));
         Self {
             time,
             stride: motion.stride * TAU,
             walk,
-            breath: (time * if motion.asleep > 0.5 { 1.3 } else { 2.2 }).sin(),
+            breath,
             stretch,
+            lift: motion.lift.clamp(-0.2, 0.2),
+            sway: motion.sway.clamp(-0.6, 0.6)
+                + 0.05 * motion.shiver.clamp(0.0, 1.0) * (time * 47.0).sin(),
             air: if motion.airborne { 1.0 } else { 0.0 },
             sleep: motion.asleep.clamp(0.0, 1.0),
             perk: motion.perk.clamp(-1.0, 1.0),
@@ -769,7 +859,6 @@ impl Rig {
             perched: motion.perched.clamp(0.0, 1.0),
             energy: motion.energy.clamp(0.0, 1.0),
             build: 1.0 + 0.07 * figure.genome.build.clamp(-1.0, 1.0),
-            hop: smoothstep(0.03, 0.4, motion.pace),
         }
     }
 
@@ -778,9 +867,9 @@ impl Rig {
     fn body(&self, sink: f32) -> Frame {
         let bob = 0.012 * (self.stride * 2.0).sin().abs() * self.walk
             + 0.004 * self.breath * (1.0 - self.walk);
-        let roll = 0.12 * self.lean + 0.1 * self.dance * (self.time * 6.0).sin();
+        let roll = 0.12 * self.lean + 0.1 * self.dance * (self.time * 6.0).sin() + self.sway;
         Frame {
-            origin: Vec3::new(0.0, bob - sink * self.sleep, 0.0),
+            origin: Vec3::new(0.0, bob - sink * self.sleep + self.lift, 0.0),
             axes: Mat3::from_rotation_z(roll)
                 * Mat3::from_diagonal(Vec3::new(
                     1.0 / self.stretch.sqrt(),
@@ -1374,8 +1463,8 @@ fn slime(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<Pl
     let squash = rig.stretch * wobble * (1.0 - 0.25 * rig.sleep);
     let flat = 1.0 / squash.sqrt();
     let body = Frame {
-        origin: Vec3::new(0.0, (squash - 1.0) * 0.1, 0.0),
-        axes: Mat3::from_rotation_z(0.1 * rig.lean),
+        origin: Vec3::new(0.0, (squash - 1.0) * 0.1 + rig.lift, 0.0),
+        axes: Mat3::from_rotation_z(0.1 * rig.lean + rig.sway),
     };
     sculpt.within(body, |sculpt| {
         sculpt.melted(0.07, |sculpt| {
@@ -1550,8 +1639,8 @@ fn robot(sculpt: &mut Sculpt, rig: &Rig, coat: u8, glow: Vec3, look: &mut Look) 
     let tilt = Mat3::from_rotation_x(0.12 * (rig.walk - 0.5 * rig.sleep))
         * Mat3::from_rotation_z(0.12 * rig.lean);
     let body = Frame {
-        origin: Vec3::new(0.0, 0.006 * rig.breath - 0.04 * rig.sleep, 0.0),
-        axes: tilt,
+        origin: Vec3::new(0.0, 0.006 * rig.breath - 0.04 * rig.sleep + rig.lift, 0.0),
+        axes: tilt * Mat3::from_rotation_z(rig.sway),
     };
     sculpt.within(body, |sculpt| {
         sculpt.melted(0.02, |sculpt| {
@@ -2011,10 +2100,11 @@ fn ghost(sculpt: &mut Sculpt, rig: &Rig, coat: u8, glow: Vec3, look: &mut Look) 
         _ => Vec3::new(0.97, 0.98, 1.0),
     };
     let bob = 0.02 * (rig.time * 2.1).sin() * (1.0 - 0.6 * rig.sleep);
-    let lean = 0.15 * rig.lean + 0.25 * rig.hop.min(1.0) * 0.0;
     let body = Frame {
-        origin: Vec3::new(0.0, bob, 0.0),
-        axes: Mat3::from_rotation_z(lean) * Mat3::from_rotation_x(0.12 * rig.walk),
+        origin: Vec3::new(0.0, bob + rig.lift, 0.0),
+        axes: Mat3::from_rotation_z(0.15 * rig.lean + rig.sway)
+            * Mat3::from_rotation_x(0.12 * rig.walk)
+            * Mat3::from_diagonal(Vec3::new(1.0, rig.stretch, 1.0)),
     };
     let head = body.child(Vec3::new(0.0, 0.06, 0.0), rig.head);
     sculpt.within(body, |sculpt| {
@@ -2062,8 +2152,8 @@ fn jelly(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look) -
     // The bell pulses, and the ribbons trail behind its motion.
     let pulse = (rig.time * 2.4).sin();
     let body = Frame {
-        origin: Vec3::new(0.0, 0.015 * pulse, 0.0),
-        axes: Mat3::from_rotation_z(0.12 * rig.lean) * Mat3::from_rotation_x(0.2 * rig.walk),
+        origin: Vec3::new(0.0, 0.015 * pulse + rig.lift, 0.0),
+        axes: Mat3::from_rotation_z(0.12 * rig.lean + rig.sway) * Mat3::from_rotation_x(0.2 * rig.walk),
     };
     sculpt.within(body, |sculpt| {
         sculpt.melted(0.05, |sculpt| {

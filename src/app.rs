@@ -10,10 +10,10 @@ use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::postcard::{self, Postcard};
 use crate::portrait::{self, Handling};
-use crate::render::creature::Figure;
+use crate::render::creature::{Figure, Model};
 use crate::render::ghost::{Aura, Body, Pose, friend_color};
 use crate::render::sky::Outside;
-use crate::render::{self, Camera, FRIEND_SCALE, GHOST_SCALE, Scene, View};
+use crate::render::{self, Camera, FRIEND_SCALE, Scene, View};
 use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
 use crate::terminal::{Input, Key, Mouse, MouseAction};
@@ -58,6 +58,18 @@ pub enum Mode {
     Album,
     Letter,
     Writing,
+    /// Choosing a newcomer to come and live in the cottage.
+    Adopt,
+}
+
+/// The adoption panel: which kind is picked, and its name once chosen.
+#[derive(Clone, Debug, Default)]
+pub struct Adoption {
+    pub index: usize,
+    /// The name being typed, once a kind is chosen.
+    pub naming: Option<Line>,
+    /// How many cards fit across, as last drawn, for moving up and down.
+    pub across: usize,
 }
 
 /// The most characters a line holds; more is cut off as it is typed or
@@ -155,7 +167,14 @@ impl From<&str> for Line {
 /// and what the keys and mouse are doing.
 pub struct App {
     pub world: World,
+    /// The mind of the creature the viewer is with.
     pub mind: Mind,
+    /// The minds of its housemates.
+    pub minds: Vec<(u32, Mind)>,
+    /// When each housemate came to live here, in Unix seconds.
+    borns: Vec<(u32, i64)>,
+    /// When the viewer last turned to another creature, for showing whom.
+    pub selected_at: f64,
     pub camera: Camera,
     pub style: Style,
     pub color: ColorMode,
@@ -221,6 +240,11 @@ pub struct App {
     /// The creatures as the last frame showed them, for finding them under
     /// the pointer.
     shown: Vec<Figure>,
+    pub adoption: Adoption,
+    /// The creature under the pointer, if any.
+    pub hover: Option<u32>,
+    /// Whether the camera stays close on the creature the viewer is with.
+    pub follow: bool,
 }
 
 impl App {
@@ -233,9 +257,20 @@ impl App {
     ) -> Self {
         mind.write_letter(&world);
         let aura = mood_color(world.ghost.mood);
+        let host = world.host();
+        let others: Vec<u32> = world.roster().into_iter().filter(|id| *id != host).collect();
+        let minds = others
+            .iter()
+            .map(|id| (*id, mind.sibling(Journal::default())))
+            .collect();
+        let now = mind::now();
+        let borns = others.iter().map(|id| (*id, now)).collect();
         Self {
             world,
             mind,
+            minds,
+            borns,
+            selected_at: f64::NEG_INFINITY,
             camera: Camera::default(),
             style,
             color,
@@ -276,6 +311,9 @@ impl App {
             letter_reply_at: None,
             glows: Vec::new(),
             shown: Vec::new(),
+            adoption: Adoption::default(),
+            hover: None,
+            follow: false,
         }
     }
 
@@ -326,9 +364,17 @@ impl App {
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
         self.mind.think(&mut self.world);
-        // The view follows the ghost out to the yard and back in.
-        self.camera
-            .follow(self.world.view_focus(render::Camera::home()), seconds);
+        for (id, mind) in &mut self.minds {
+            self.world.with_creature(*id, |world| mind.think(world));
+        }
+        // The view follows the creature out to the yard and back in, or stays
+        // close on it.
+        let focus = if self.follow {
+            self.world.ghost.body() + Vec3::Y * 0.25 * self.world.size()
+        } else {
+            self.world.view_focus(render::Camera::home())
+        };
+        self.camera.follow(focus, seconds);
         if !matches!(self.mode, Mode::Letter | Mode::Writing)
             && self
                 .letter_reply_at
@@ -413,8 +459,159 @@ impl App {
             life: world.saved_life(),
             seedlings: world.seedlings.clone(),
             room: Some(world.saved_room()),
+            household: self.household(),
         };
         crate::store::save_json(&paths.save, &save)
+    }
+
+    /// Everyone but the creature the viewer is with, as a save keeps them.
+    fn household(&self) -> crate::store::Household {
+        let world = &self.world;
+        crate::store::Household {
+            id: world.ghost.id,
+            species: world.ghost.species,
+            genome: world.ghost.genome,
+            housemates: world
+                .kept_housemates()
+                .into_iter()
+                .map(|kept| {
+                    let journal = self
+                        .minds
+                        .iter()
+                        .find(|(id, _)| *id == kept.id)
+                        .map(|(_, mind)| mind.journal.clone())
+                        .unwrap_or_default();
+                    crate::store::Housemate {
+                        id: kept.id,
+                        name: kept.name,
+                        species: kept.species,
+                        genome: kept.genome,
+                        born: self
+                            .borns
+                            .iter()
+                            .find(|(id, _)| *id == kept.id)
+                            .map_or(self.born, |(_, born)| *born),
+                        needs: kept.needs,
+                        goal: kept.goal,
+                        memories: journal.memories,
+                        conversation: journal.conversation,
+                        personal: kept.personal,
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    /// Turns to creature `id`: the camera, the talk, the games, and the
+    /// status line follow it. Returns whether there is such a creature.
+    pub fn select(&mut self, id: u32) -> bool {
+        let host = self.world.host();
+        if id == host {
+            return true;
+        }
+        let Some(index) = self.minds.iter().position(|(other, _)| *other == id) else {
+            return false;
+        };
+        if !self.world.select(id) {
+            return false;
+        }
+        let (_, mind) = self.minds.remove(index);
+        let previous = std::mem::replace(&mut self.mind, mind);
+        self.minds.push((host, previous));
+        self.minds.sort_by_key(|(id, _)| *id);
+        if let Some(index) = self.borns.iter().position(|(other, _)| *other == id) {
+            let (_, born) = self.borns.remove(index);
+            self.borns.push((host, std::mem::replace(&mut self.born, born)));
+        }
+        let glow = self
+            .glows
+            .iter()
+            .find(|(other, _)| *other == id)
+            .map_or(mood_color(self.world.ghost.mood), |(_, glow)| *glow);
+        self.glows.retain(|(other, _)| *other != id);
+        self.glows.push((host, std::mem::replace(&mut self.aura, glow)));
+        self.selected_at = self.world.time;
+        self.stroke = None;
+        self.drawing_mode = false;
+        true
+    }
+
+    /// Turns to the next creature in the household, or the one before.
+    pub fn select_next(&mut self, forward: bool) {
+        let roster = self.world.roster();
+        if roster.len() < 2 {
+            return;
+        }
+        let at = roster
+            .iter()
+            .position(|&id| id == self.world.host())
+            .unwrap_or(0);
+        let next = if forward {
+            (at + 1) % roster.len()
+        } else {
+            (at + roster.len() - 1) % roster.len()
+        };
+        self.select(roster[next]);
+    }
+
+    /// A new creature of `species` comes to live here. Returns its name, or
+    /// `None` when the cottage is full.
+    pub fn adopt(&mut self, species: crate::world::Species, name: Option<&str>) -> Option<String> {
+        let taken: Vec<String> = self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+        let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(name) => name.chars().filter(|character| !character.is_control()).take(24).collect(),
+            None => {
+                let mut random = crate::world::Random::new(
+                    self.world.time.to_bits() ^ u64::from(self.world.household_size() as u32) << 40,
+                );
+                crate::world::species::pick_name(&mut random, &taken)
+            }
+        };
+        let seed = mind::now() as u64 ^ self.world.time.to_bits();
+        let id = self.world.adopt(species, &name, seed)?;
+        self.minds.push((id, self.mind.sibling(Journal::default())));
+        self.borns.push((id, mind::now()));
+        Some(name)
+    }
+
+    /// Two newcomers arrive at the door for a creature that has lived alone,
+    /// as in a life saved before there were households.
+    pub fn welcome_newcomers(&mut self) {
+        let mut random = crate::world::Random::new(mind::now() as u64);
+        let host = self.world.ghost.species;
+        let kinds: Vec<_> = crate::world::Species::starters(&mut random)
+            .into_iter()
+            .filter(|species| *species != host)
+            .take(2)
+            .collect();
+        let mut names = Vec::new();
+        for species in kinds {
+            if let Some(name) = self.adopt(species, None) {
+                names.push(format!("{name} the {}", species.noun()));
+            }
+        }
+        if !names.is_empty() {
+            let host = self.world.ghost.name.clone();
+            self.post(format!(
+                "New friends came to live with {host}: {}. Tab turns to each.",
+                crate::world::together::list(&names)
+            ));
+        }
+    }
+
+    /// Sets each housemate's journal from its saved life, and when it came.
+    pub fn remember_housemates(&mut self, saved: &[crate::store::Housemate]) {
+        for housemate in saved {
+            if let Some((_, mind)) = self.minds.iter_mut().find(|(id, _)| *id == housemate.id) {
+                mind.journal = Journal {
+                    memories: housemate.memories.clone(),
+                    conversation: housemate.conversation.clone(),
+                };
+            }
+            if let Some((_, born)) = self.borns.iter_mut().find(|(id, _)| *id == housemate.id) {
+                *born = housemate.born;
+            }
+        }
     }
 
     pub fn input(&mut self, input: Input) -> Response {
@@ -551,6 +748,10 @@ impl App {
                         let text = self.talk.take();
                         self.mode = Mode::Watching;
                         if !text.is_empty() {
+                            // Calling a housemate by name turns to it.
+                            if let Some(id) = self.world.addressed(&text) {
+                                self.select(id);
+                            }
                             self.mind.hear(&mut self.world, &text);
                             // Its own few words answer right away; the
                             // hint about Claude comes once, after them.
@@ -690,12 +891,73 @@ impl App {
                 }
                 Response::Continue
             }
+            Mode::Adopt => {
+                self.press_adopt(key);
+                Response::Continue
+            }
             Mode::Watching => self.command(key),
+        }
+    }
+
+    fn press_adopt(&mut self, key: Key) {
+        let kinds = crate::world::Species::ALL.len();
+        if let Some(name) = &mut self.adoption.naming {
+            match key {
+                Key::Enter => {
+                    let name = name.take();
+                    let species = crate::world::Species::ALL[self.adoption.index.min(kinds - 1)];
+                    self.mode = Mode::Watching;
+                    self.adoption.naming = None;
+                    match self.adopt(species, Some(&name)) {
+                        Some(name) => self.post(format!(
+                            "{name} the {} is at the door! Tab turns to them.",
+                            species.noun()
+                        )),
+                        None => self.post("The cottage is full."),
+                    }
+                }
+                Key::Escape => self.adoption.naming = None,
+                key => {
+                    name.edit(&key);
+                }
+            }
+            return;
+        }
+        let across = self.adoption.across.max(1);
+        let index = self.adoption.index.min(kinds - 1);
+        match key {
+            Key::Escape | Key::Character('n') => self.mode = Mode::Watching,
+            Key::Left => self.adoption.index = index.saturating_sub(1),
+            Key::Right | Key::Tab => self.adoption.index = (index + 1).min(kinds - 1),
+            Key::Up => self.adoption.index = index.saturating_sub(across),
+            Key::Down => self.adoption.index = (index + across).min(kinds - 1),
+            Key::Enter if self.world.household_size() < crate::world::household::MOST => {
+                let taken: Vec<String> =
+                    self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+                let mut random = crate::world::Random::new(mind::now() as u64 ^ index as u64);
+                let suggestion = crate::world::species::pick_name(&mut random, &taken);
+                self.adoption.naming = Some(Line::from(suggestion.as_str()));
+            }
+            _ => {}
         }
     }
 
     fn command(&mut self, key: Key) -> Response {
         match key {
+            Key::Tab | Key::Character(']') => self.select_next(true),
+            Key::BackTab | Key::Character('[') => self.select_next(false),
+            Key::Character('n') => {
+                self.adoption.naming = None;
+                self.mode = Mode::Adopt;
+            }
+            Key::Character('v') => {
+                self.follow = !self.follow;
+                self.post(if self.follow {
+                    "The view stays close on them (v to step back)."
+                } else {
+                    "The view steps back to the room."
+                });
+            }
             Key::Character('x') => self.toggle_hiding(),
             Key::Escape if self.world.hunt_counting() => self.toggle_hiding(),
             Key::Character('f') => self.toggle_drawing(),
@@ -888,6 +1150,19 @@ impl App {
             self.world.air_doing().to_owned()
         } else if self.world.ghost.plan.activity == crate::world::Activity::Yard {
             self.world.outing_words().to_owned()
+        } else if self.world.ghost.plan.activity == crate::world::Activity::Together
+            && !self.world.ghost.plan.done
+            && let Some(partner) = self
+                .world
+                .ghost
+                .plan
+                .with
+                .and_then(|id| self.world.creature(id))
+        {
+            match self.world.ghost.plan.pastime {
+                Some(pastime) => pastime.doing(&partner.name),
+                None => format!("with {}", partner.name),
+            }
         } else {
             self.world.ghost.plan.activity.doing().to_owned()
         }
@@ -1002,11 +1277,8 @@ impl App {
                         return false;
                     }
                     self.view.is_some_and(|view| {
-                        view.touches_ghost(
-                            *point,
-                            self.world.ghost.position,
-                            GHOST_SCALE * self.world.size(),
-                        ) && !self.touches_friend(view, *point)
+                        self.creature_at(view, *point) == Some(self.world.host())
+                            && !self.touches_friend(view, *point)
                     })
                 });
             }
@@ -1029,11 +1301,7 @@ impl App {
                     if point != last {
                         self.dragged = true;
                         self.stroke = Some(point);
-                        if view.touches_ghost(
-                            point,
-                            self.world.ghost.position,
-                            GHOST_SCALE * self.world.size(),
-                        ) {
+                        if self.creature_at(view, point) == Some(self.world.host()) {
                             self.world.pet(point.distance(last));
                             let across = point.x - last.x;
                             self.stroke_side = if across.abs() > 1e-4 {
@@ -1072,6 +1340,9 @@ impl App {
         }
 
         self.pointer = point.map(|point| (point, self.world.time));
+        self.hover = point
+            .zip(self.view)
+            .and_then(|(point, view)| self.creature_at(view, point));
         let pointer = point
             .zip(self.view)
             .and_then(|(point, view)| view.on_glass(point));
@@ -1083,11 +1354,39 @@ impl App {
         self.world.friend.as_ref().is_some_and(|friend| {
             friend.visibility() > 0.0
                 && view.touches_ghost(point, friend.position, FRIEND_SCALE)
-                && (!view.touches_ghost(
-                    point,
-                    self.world.ghost.position,
-                    GHOST_SCALE * self.world.size(),
-                ) || (friend.position - self.world.ghost.position).dot(view.forward) < 0.0)
+                && (self.creature_at(view, point).is_none()
+                    || (friend.position - self.world.ghost.body()).dot(view.forward) < 0.0)
+        })
+    }
+
+    /// The creature under `point` on the screen, the nearest if several are,
+    /// allowing half a cell either way since they are small.
+    pub fn creature_at(&self, view: View, point: Vec2) -> Option<u32> {
+        if self.shown.is_empty() {
+            return None;
+        }
+        let models: Vec<Model> = self.shown.iter().map(Model::of).collect();
+        let (columns, rows) = self.area;
+        let cell = Grid::new(columns.max(1), rows.max(1), CELL_ASPECT).scale();
+        [
+            Vec2::ZERO,
+            Vec2::new(cell, 0.0),
+            Vec2::new(-cell, 0.0),
+            Vec2::new(0.0, cell * 1.5),
+            Vec2::new(0.0, -cell * 1.5),
+        ]
+        .into_iter()
+        .find_map(|offset| {
+            let direction = view.ray(point + offset * 0.5);
+            models
+                .iter()
+                .filter_map(|model| {
+                    model
+                        .trace(view.eye, direction, f32::INFINITY, 0.004, 0.0)
+                        .map(|hit| (model.id, hit.distance))
+                })
+                .min_by(|first, second| first.1.total_cmp(&second.1))
+                .map(|(id, _)| id)
         })
     }
 
@@ -1121,12 +1420,12 @@ impl App {
             self.world.poke_friend();
             return;
         }
-        if view.touches_ghost(
-            point,
-            self.world.ghost.position,
-            GHOST_SCALE * self.world.size(),
-        ) {
-            self.world.poke();
+        if let Some(id) = self.creature_at(view, point) {
+            if id == self.world.host() {
+                self.world.poke();
+            } else {
+                self.select(id);
+            }
             return;
         }
         if self.world.pop_bubble(view.eye, view.ray(point)) {
@@ -1341,7 +1640,8 @@ impl App {
                             friend.velocity.dot(view.right) / FRIEND_SCALE,
                             friend.velocity.dot(view.up) / FRIEND_SCALE,
                             0.0,
-                        ),
+                        )
+                        .in_breeze(world.breeze_at(friend.position).dot(view.right), 0.0),
                         face: face::Face {
                             shut: [blink; 2],
                             widen: poked,
@@ -1457,6 +1757,11 @@ impl App {
         let grid = crate::frame::Grid::new(width, height, 1.0);
         let view = self.camera.view(grid);
         render::render(&self.compose(view), grid, 1)
+    }
+
+    /// The creatures as the last frame showed them.
+    pub fn shown(&self) -> &[Figure] {
+        &self.shown
     }
 
     pub fn born(&self) -> i64 {
@@ -1605,6 +1910,65 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
     Journal {
         memories: save.memories.clone(),
         conversation: save.conversation.clone(),
+    }
+}
+
+/// Brings back the rest of the household from a save made `now`, after
+/// `restore` brought back the creature it is mostly about. Each housemate
+/// catches up on the time away by itself. A life saved before there were
+/// households gains two newcomers at the door.
+pub fn restore_household(world: &mut World, save: &Save, now: i64) {
+    let household = &save.household;
+    world.ghost.id = household.id;
+    world.ghost.species = household.species;
+    world.ghost.genome = household.genome.sanitized(household.species);
+    let timezone = jiff::tz::TimeZone::system();
+    let local = |seconds: i64| {
+        jiff::Timestamp::from_second(seconds)
+            .ok()
+            .map(|stamp| stamp.to_zoned(timezone.clone()))
+    };
+    let away = now.saturating_sub(save.last_seen).max(0) as f32;
+    for housemate in &household.housemates {
+        let birthday = local(housemate.born).map(|zoned| zoned.date());
+        let Some(id) = world.welcome_back(
+            housemate.id,
+            &housemate.name,
+            housemate.species,
+            housemate.genome,
+            birthday,
+            housemate.needs,
+            housemate.goal.clone(),
+            housemate.personal.clone(),
+        ) else {
+            continue;
+        };
+        let left = local(save.last_seen).map(|zoned| zoned.datetime());
+        let today = local(now).map(|zoned| zoned.datetime());
+        let seed = (housemate.born as u64).rotate_left(17) ^ save.last_seen as u64;
+        world.with_creature(id, |world| {
+            if let (Some(left), Some(today)) = (left, today) {
+                let story =
+                    crate::world::away::story(left, today, seed, &world.life, world.birthday);
+                world.begin_day();
+                story.write_diary(&mut world.life, left.date(), today.date());
+            }
+            let routine = (world.life.arrivals, world.life.routine_days);
+            world.life.miss_at(away, world.hour);
+            (world.life.arrivals, world.life.routine_days) = routine;
+            world.elapse_cold(f64::from(away), false);
+            world
+                .ghost
+                .needs
+                .change(0.0, 0.0, -(away / 3600.0 * 0.1).min(0.5));
+            if away > 1800.0 {
+                world
+                    .ghost
+                    .needs
+                    .change(0.0, -(away / 86_400.0 * 0.15).min(0.5), 0.0);
+                world.record_return(away);
+            }
+        });
     }
 }
 
@@ -2051,6 +2415,7 @@ mod tests {
             life: world.saved_life(),
             seedlings: Vec::new(),
             room: None,
+            household: Default::default(),
         };
         let save: Save = serde_json::from_str(&serde_json::to_string(&save).unwrap()).unwrap();
         let mut restored = World::new(2, 12.0);
@@ -3039,6 +3404,7 @@ mod tests {
             last_seen: local_seconds("2026-10-20T12:00:00"),
             seedlings: Vec::new(),
             room: None,
+            household: Default::default(),
             needs: crate::world::Needs::default(),
             plant: crate::world::Plant {
                 position: world.plant.position,
@@ -3101,6 +3467,7 @@ mod tests {
             last_seen: 1000,
             seedlings: Vec::new(),
             room: None,
+            household: Default::default(),
             needs: crate::world::Needs {
                 energy: 99.0,
                 fun: -3.0,
@@ -3413,6 +3780,7 @@ mod tests {
             life: world.life.clone(),
             seedlings: world.seedlings.clone(),
             room: Some(world.saved_room()),
+            household: Default::default(),
         }
     }
 

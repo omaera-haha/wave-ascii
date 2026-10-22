@@ -3758,6 +3758,7 @@ impl World {
             _ if near_cat => 0.3,
             _ => 0.8,
         } * (0.6 + 0.4 * ghost.needs.energy)
+            * ghost.species.pace()
             // It slows down to enjoy being stroked.
             * (1.0 - 0.75 * self.petting);
 

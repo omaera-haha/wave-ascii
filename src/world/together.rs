@@ -61,13 +61,14 @@ impl Pastime {
         }
     }
 
-    pub fn doing(self) -> &'static str {
+    /// Doing it with `name`, as the status line says.
+    pub fn doing(self, name: &str) -> String {
         match self {
-            Self::Tag => "playing tag with a housemate",
-            Self::Chat => "chatting with a housemate",
-            Self::Nuzzle => "nuzzling a housemate",
-            Self::Dance => "dancing in a ring with a housemate",
-            Self::Gaze => "gazing out with a housemate",
+            Self::Tag => format!("playing tag with {name}"),
+            Self::Chat => format!("chatting with {name}"),
+            Self::Nuzzle => format!("nuzzling {name}"),
+            Self::Dance => format!("dancing in a ring with {name}"),
+            Self::Gaze => format!("gazing out with {name}"),
         }
     }
 }

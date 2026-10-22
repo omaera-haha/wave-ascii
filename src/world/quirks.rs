@@ -1174,6 +1174,9 @@ mod tests {
                 let spell = world.quirk.unwrap();
                 for step in 0..24 {
                     let time = started + (spell.ends - started) * f64::from(step) / 24.0;
+                    let motion = spell.motion(time);
+                    assert!(motion.lift.is_finite() && motion.lean.is_finite());
+                    assert!(motion.stretch.is_finite());
                     let face = mood::reaction(&EventKind::Quirk(quirk))
                         .map_or(Face::REST, |expression| {
                             expression.at((time - spell.pulse_started(time)) as f32)
@@ -1182,8 +1185,7 @@ mod tests {
                         position: world.ghost.position,
                         scale: 1.0,
                         pose: Pose::new(time, 3.0, world.ghost.velocity.y, 0.0)
-                            .in_breeze(1.0, 1.0)
-                            .with_quirk(Some(spell), time),
+                            .in_breeze(1.0, 1.0),
                         face,
                         aura: Aura {
                             color: Vec3::ONE,

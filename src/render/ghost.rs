@@ -62,70 +62,9 @@ impl Pose {
         }
     }
 
-    pub fn with_show(mut self, pride: f32) -> Self {
-        self.lift += 0.06 * pride;
-        self.swell += 0.025 * pride;
-        self
-    }
-
-    pub fn with_bubbles(mut self, breath: f32) -> Self {
-        self.swell += 0.05 * breath;
-        self.lean += 0.12 * breath;
-        self.stretch -= 0.02 * breath;
-        self
-    }
-
-    pub fn with_letter(mut self, curious: bool) -> Self {
-        if curious {
-            self.lean += 0.12;
-        }
-        self
-    }
-
-    pub fn with_comfort(mut self, breath: Option<f32>) -> Self {
-        if let Some(breath) = breath {
-            self.lift = 0.04 * breath;
-            self.swell = 1.0 + 0.035 * breath;
-            self.stretch = 0.02 + 0.06 * breath;
-            self.lean *= 0.3;
-        }
-        self
-    }
-
-    pub fn to_music(mut self, beat: Option<f32>) -> Self {
-        if let Some(beat) = beat {
-            let phase = beat * TAU as f32;
-            self.lift = 0.07 * phase.cos();
-            self.lean += 0.08 * (phase / 2.0).sin();
-            self.ripple = phase;
-        }
-        self
-    }
-
     pub fn in_breeze(mut self, sideways: f32, shake: f32) -> Self {
         self.trail = (self.trail - sideways * 0.6).clamp(-0.44, 0.44);
         self.lean += shake * 0.08;
-        self
-    }
-
-    pub fn with_quirk(mut self, spell: Option<crate::world::quirks::Spell>, time: f64) -> Self {
-        if let Some(spell) = spell {
-            let motion = spell.motion(time);
-            self.lift += motion.lift;
-            self.lean += motion.lean;
-            self.stretch += motion.stretch;
-        }
-        self
-    }
-
-    pub fn with_stretch(mut self, amount: f32) -> Self {
-        let amount = if amount.is_finite() {
-            amount.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        self.lift += 0.025 * amount;
-        self.stretch += 0.065 * amount;
         self
     }
 
@@ -662,25 +601,5 @@ mod tests {
         let faint = shade(middle, 0.02, 3.0, &pose, &Face::REST, &hidden);
         assert!(faint.cover < full.cover * 0.2);
         assert!(faint.light.length() < full.light.length() * 0.2);
-    }
-
-    #[test]
-    fn stretching_keeps_pose_math_finite_and_bounded_for_damaged_inputs() {
-        for amount in [
-            f32::NAN,
-            f32::NEG_INFINITY,
-            -1.0,
-            0.0,
-            0.5,
-            1.0,
-            f32::INFINITY,
-        ] {
-            let pose = Pose::new(3.0, 0.0, 0.0, 0.0).with_stretch(amount);
-            for point in [Vec2::ZERO, Vec2::ONE, -Vec2::ONE] {
-                let local = pose.place(point);
-                assert!(local.is_finite() && pose.silhouette(local).is_finite());
-                assert!(local.length() < 3.0);
-            }
-        }
     }
 }

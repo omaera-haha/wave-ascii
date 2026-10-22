@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::mind::claude::{Cache, Effort};
-use crate::world::{Life, Needs, Plant};
+use crate::world::{Genome, Life, Needs, Personal, Plant, Species};
 
 const APP: &str = "wave-ascii";
 
@@ -191,6 +191,40 @@ pub struct Save {
     pub seedlings: Vec<crate::world::Seedling>,
     #[serde(default)]
     pub room: Option<crate::world::Room>,
+    /// Who else lives in the cottage, beside the creature above.
+    #[serde(default)]
+    pub household: Household,
+}
+
+/// The household beside the creature a save is mostly about, which is the
+/// one the viewer was with when it was saved.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Household {
+    /// The saved creature's own id, kind, and look. A life saved before
+    /// there were households is a ghost's.
+    pub id: u32,
+    pub species: Species,
+    pub genome: Genome,
+    pub housemates: Vec<Housemate>,
+}
+
+/// One of the other creatures of the household.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Housemate {
+    pub id: u32,
+    pub name: String,
+    pub species: Species,
+    pub genome: Genome,
+    /// Unix seconds when it came to live here.
+    pub born: i64,
+    pub needs: Needs,
+    pub goal: Option<String>,
+    pub memories: Vec<Memory>,
+    pub conversation: Vec<Remark>,
+    /// Its own part of a life: its bond with the viewer, its days, its words.
+    pub personal: Personal,
 }
 
 impl Save {

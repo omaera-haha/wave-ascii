@@ -284,15 +284,27 @@ fn run() -> io::Result<()> {
     world.date = jiff::Zoned::now().date();
     let now = mind::now();
     let (journal, born) = match &save {
-        Some(save) => (app::restore(&mut world, save, now), save.born),
+        Some(save) => {
+            let journal = app::restore(&mut world, save, now);
+            app::restore_household(&mut world, save, now);
+            (journal, save.born)
+        }
         None => {
             world.begin_life(&jiff::Zoned::now().date().to_string());
+            let mut random = world::Random::new(seed());
+            world.found_household(&world::Species::starters(&mut random));
             (Journal::default(), now)
         }
     };
     let mind = Mind::new(&config, journal, options.offline);
     let color = options.color.unwrap_or_else(ColorMode::detect);
     let mut app = App::new(world, mind, config, options.style, color).live(paths, born);
+    if let Some(save) = &save {
+        app.remember_housemates(&save.household.housemates);
+        if save.household.housemates.is_empty() {
+            app.welcome_newcomers();
+        }
+    }
 
     let result = run_loop(&mut app, options.frames_per_second);
     let saved = app.save();
@@ -630,6 +642,7 @@ mod tests {
             life: world.saved_life(),
             seedlings: Vec::new(),
             room: None,
+            household: Default::default(),
         };
         store::save_json(&paths.save, &save).unwrap();
         for number in 0..pages {

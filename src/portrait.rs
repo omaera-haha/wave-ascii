@@ -206,6 +206,30 @@ pub fn figure(world: &World, view: &View, handling: &Handling) -> Figure {
         Mood::Cheerful | Mood::Excited => 0.45,
         _ => 0.0,
     });
+    // Quirks, music, pride, and stretches move the body as they moved the
+    // ghost's.
+    let quirk = world.active_quirk();
+    let twitch = quirk.map(|spell| spell.motion(world.time)).unwrap_or_default();
+    let shiver = quirk
+        .filter(|spell| spell.kind == crate::world::Quirk::Shiver)
+        .map_or(0.0, |spell| spell.envelope(world.time));
+    let beat = world
+        .music
+        .as_ref()
+        .filter(|_| ghost.plan.activity == Activity::Music && ghost.plan.count > 0)
+        .map(|playing| playing.beat(world.time) * TAU);
+    let (pride, calm, shake) = if world.companion {
+        (0.0, None, 0.0)
+    } else {
+        (world.show_bob(), world.comfort_breath(), world.window_shake())
+    };
+    let lift = twitch.lift + 0.05 * pride + beat.map_or(0.0, |beat| 0.025 * beat.cos());
+    let sway = twitch.lean * 1.5
+        + beat.map_or(0.0, |beat| 0.12 * (beat * 0.5).sin())
+        + shake * 0.12;
+    let reach = (twitch.stretch * 8.0)
+        .max(world.stretch_amount())
+        .max(world.cold_stretch());
     Figure {
         id: ghost.id,
         species: ghost.species,
@@ -233,11 +257,15 @@ pub fn figure(world: &World, view: &View, handling: &Handling) -> Figure {
             look,
             wag: wag.min(1.0),
             perk,
-            petting: world.petting(),
             blush: blush.min(1.0),
             dance: if dancing { 1.0 } else { 0.0 },
             lean: handling.stroke_side * world.petting(),
             energy: ghost.needs.energy,
+            lift,
+            sway,
+            reach,
+            shiver,
+            calm,
         },
     }
 }

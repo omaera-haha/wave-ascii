@@ -76,6 +76,11 @@ personal! {
 }
 
 impl Personal {
+    /// Puts this part into `life`, taking out what was there.
+    pub fn trade(&mut self, life: &mut Life) {
+        self.exchange(life);
+    }
+
     /// Brought back in range, the way a whole saved life is.
     pub fn sanitized(mut self) -> Self {
         let mut life = Life::default();
@@ -153,6 +158,18 @@ soul! {
     born_at: Option<f64>,
     last_outing: Option<f64>,
     chill: cold::Chill,
+}
+
+/// What a save keeps of a housemate.
+#[derive(Clone, Debug)]
+pub struct Kept {
+    pub id: u32,
+    pub name: String,
+    pub species: Species,
+    pub genome: super::Genome,
+    pub needs: super::Needs,
+    pub goal: Option<String>,
+    pub personal: Personal,
 }
 
 /// Another creature of the household, as the one in the world sees it.
@@ -257,6 +274,51 @@ pub fn exclusive(activity: Activity) -> bool {
 }
 
 impl World {
+    /// The creature a message calls by name at its start, as in "Pip, come
+    /// here", "hey Pip", or "핍아 이리 와".
+    pub fn addressed(&self, text: &str) -> Option<u32> {
+        let lower = text.trim().to_lowercase();
+        let words: Vec<&str> = lower
+            .split(|character: char| {
+                character.is_whitespace() || ",.!?~:;".contains(character)
+            })
+            .filter(|word| !word.is_empty())
+            .take(2)
+            .collect();
+        for word in words {
+            for ghost in self.creatures() {
+                let name = ghost.name.to_lowercase();
+                if name.is_empty() {
+                    continue;
+                }
+                let called = word == name
+                    || ["아", "야", "이", "님", "씨", "이야"]
+                        .iter()
+                        .any(|ending| word.strip_prefix(name.as_str()) == Some(ending));
+                if called {
+                    return Some(ghost.id);
+                }
+            }
+        }
+        None
+    }
+
+    /// What a save keeps of each housemate.
+    pub fn kept_housemates(&self) -> Vec<Kept> {
+        self.housemates
+            .iter()
+            .map(|soul| Kept {
+                id: soul.ghost.id,
+                name: soul.ghost.name.clone(),
+                species: soul.ghost.species,
+                genome: soul.ghost.genome,
+                needs: soul.ghost.needs,
+                goal: soul.ghost.goal.clone(),
+                personal: soul.personal.clone(),
+            })
+            .collect()
+    }
+
     /// Every creature's id, in the order they came to live here.
     pub fn roster(&self) -> Vec<u32> {
         let mut ids: Vec<u32> = std::iter::once(self.ghost.id)
@@ -419,6 +481,52 @@ impl World {
         });
         let name = name.to_owned();
         self.record(EventKind::Newcomer { name, species });
+        self.look_at_housemates();
+        Some(id)
+    }
+
+    /// Brings back a housemate from a saved life: `id`, `name` and its own
+    /// part of a life, and how it was. Returns its id, or `None` when that id
+    /// is taken or the house is full.
+    #[allow(clippy::too_many_arguments)]
+    pub fn welcome_back(
+        &mut self,
+        id: u32,
+        name: &str,
+        species: Species,
+        genome: super::Genome,
+        birthday: Option<jiff::civil::Date>,
+        needs: super::Needs,
+        goal: Option<String>,
+        personal: Personal,
+    ) -> Option<u32> {
+        if self.household_size() >= MOST || self.creature(id).is_some() {
+            return None;
+        }
+        let mut returning = World::new(u64::from(id) * 7919 + 17, self.hour);
+        returning.date = self.date;
+        returning.time = self.time;
+        returning.birthday = birthday;
+        returning.ghost.id = id;
+        returning.ghost.species = species;
+        returning.ghost.genome = genome.sanitized(species);
+        returning.ghost.name = name.to_owned();
+        returning.ghost.needs = super::Needs {
+            energy: needs.energy.clamp(0.0, 1.0),
+            fun: needs.fun.clamp(0.0, 1.0),
+            company: needs.company.clamp(0.0, 1.0),
+        };
+        returning.ghost.goal = goal;
+        let mut personal = personal.sanitized();
+        personal.trade(&mut returning.life);
+        // Each one sleeps and wakes in its own spot, a little apart.
+        let spot = Vec3::new(-1.0 + 0.55 * (id % 4) as f32, 1.0, 0.4 - 0.25 * (id % 3) as f32);
+        returning.ghost.position = spot;
+        returning.ghost.plan = Plan::new(Activity::Float, self.time, spot, 3.0);
+        returning.restore_wardrobe();
+        self.housemates.push(returning.into_soul());
+        self.housemates.sort_by_key(|soul| soul.ghost.id);
+        self.next_creature = self.next_creature.max(id + 1);
         self.look_at_housemates();
         Some(id)
     }
@@ -690,6 +798,20 @@ mod tests {
         }
         let other = world.creature(1).unwrap().position;
         assert!(world.ghost.position.distance(other) > 0.2);
+    }
+
+    #[test]
+    fn a_message_that_starts_with_a_name_is_for_that_creature() {
+        let mut world = household();
+        world.ghost.name = "Mochi".to_owned();
+        world.with_creature(1, |world| world.ghost.name = "Pip".to_owned());
+        world.with_creature(2, |world| world.ghost.name = "핍".to_owned());
+        assert_eq!(world.addressed("Pip, come here!"), Some(1));
+        assert_eq!(world.addressed("hey pip"), Some(1));
+        assert_eq!(world.addressed("mochi"), Some(0));
+        assert_eq!(world.addressed("핍아 이리 와"), Some(2));
+        assert_eq!(world.addressed("I like Pip"), None);
+        assert_eq!(world.addressed("Pipe dreams"), None);
     }
 
     #[test]
