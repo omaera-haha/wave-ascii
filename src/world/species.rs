@@ -163,9 +163,10 @@ impl Species {
         self.gait() == Gait::Float
     }
 
-    /// How big its body is drawn, next to the others.
+    /// How big its body is drawn, next to the others: a little larger than
+    /// life in the room, so a few dots of terminal still read as a face.
     pub fn scale(self) -> f32 {
-        match self {
+        1.15 * match self {
             Self::Fox => 0.86,
             Self::Dragon => 0.92,
             Self::Penguin => 1.08,
