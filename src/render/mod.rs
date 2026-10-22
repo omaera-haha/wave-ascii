@@ -31,7 +31,7 @@ const FOCAL: f32 = 2.1;
 const FRAME_COLOR: Vec3 = Vec3::new(0.62, 0.46, 0.32);
 /// The room's walls, floor, and ceiling are drawn dimmer than the things in
 /// it, so they stand out in glyphs.
-const ROOM_EXPOSURE: f32 = 0.7;
+const ROOM_EXPOSURE: f32 = 0.8;
 const TRIM_COLOR: Vec3 = Vec3::new(0.86, 0.84, 0.78);
 const MOTE_COLOR: Vec3 = Vec3::new(1.0, 0.9, 0.58);
 const LAMP_LIGHT: Vec3 = Vec3::new(1.0, 0.78, 0.5);
@@ -456,6 +456,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         flag: world.unread_letter().is_some(),
         gust: world.wind.gust(world.time),
         wet: scene.outside.rain.clamp(0.0, 1.0),
+        door: world.door_open(),
+        smoke: match world.season() {
+            crate::world::Season::Winter => true,
+            crate::world::Season::Autumn => !(8.0..17.0).contains(&world.hour),
+            _ => false,
+        },
     });
     let tracer = Tracer {
         scene,
@@ -463,6 +469,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         furniture: &indoor,
         yard: &yard,
         door: world.door_open(),
+        solid: !home::in_house(world.ghost.position),
         bodies: [bodies, reflected_bodies],
         spread,
         bubbles: &shells,
@@ -483,6 +490,10 @@ struct Tracer<'a> {
     yard: &'a yard::Yard<'a>,
     /// How far the door stands open, 0 to 1.
     door: f32,
+    /// While the ghost is out, the walls stand whole and only the glass
+    /// front, the window, and the open door show inside; while it is in,
+    /// the near walls are cut away to watch it.
+    solid: bool,
     bodies: [[Option<Body>; 2]; 2],
     spread: f32,
     bubbles: &'a [bubbles::Shell],
@@ -514,7 +525,7 @@ impl Tracer<'_> {
             direction,
             0.0,
             before,
-            room.is_some(),
+            room.is_some() && !self.solid,
             traveled,
             spread,
         );
@@ -748,6 +759,7 @@ impl Tracer<'_> {
                 * 0.3;
         }
         color += self.yard.sparkles(eye, direction, limit, traveled, spread);
+        color = self.yard.smoke(eye, direction, limit, traveled, spread, color);
         let shelter = match (front, room) {
             (None, Some(hit)) => hit.enter,
             _ => 0.0,
@@ -1209,6 +1221,8 @@ mod tests {
             flag: false,
             gust: 0.0,
             wet: 0.0,
+            door: 0.0,
+            smoke: false,
         })
     }
 
@@ -1299,6 +1313,7 @@ mod tests {
             furniture: &furniture,
             yard: &yard,
             door: 1.0,
+            solid: false,
             bodies: [bodies, bodies],
             spread: 0.01,
         };
@@ -1356,6 +1371,7 @@ mod tests {
                         furniture: &furniture,
                         yard: &yard,
                         door: 0.0,
+                        solid: false,
                         bodies: [bodies, bodies],
                         spread: 0.003,
                     };
@@ -1394,6 +1410,7 @@ mod tests {
                 furniture: &[],
                 yard: &yard,
                 door: 0.0,
+                solid: false,
                 bodies: [[None; 2]; 2],
                 spread: 0.01,
             };

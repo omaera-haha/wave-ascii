@@ -14,10 +14,12 @@ use super::shapes::{
 use super::sky::{self, Outside, Sky, noise, phase, weather_color};
 use crate::sdf::{coverage, mix, smooth_min, smoothstep};
 use crate::world::home::{
-    self, BENCH, BIRDBATH, BUSHES, CLOTHESLINE, CLOTHESLINE_HEIGHT, GARDEN, GARDEN_HALF,
-    HOUSE_MAX, HOUSE_MIN, LANTERN, LANTERN_HEIGHT, LOT_MAX, LOT_MIN, MAILBOX, PERCH, SILL,
-    SILL_HALF, SWING_HALF_WIDTH, SWING_TOP, TREE, TREE_CROWN, TREE_CROWN_RADIUS,
+    self, BENCH, BIRDBATH, BUSHES, CHIMNEY, CHIMNEY_HALF, CHIMNEY_TOP, CLOTHESLINE,
+    CLOTHESLINE_HEIGHT, DOOR_HIGH, DOOR_LOW, EAVE, EAVE_DROP, GABLE, GARDEN, GARDEN_HALF,
+    HOUSE_MAX, HOUSE_MIN, LANTERN, LANTERN_HEIGHT, LOT_MAX, LOT_MIN, MAILBOX, PERCH, RIDGE,
+    SILL, SILL_HALF, SWING_HALF_WIDTH, SWING_TOP, TREE, TREE_CROWN, TREE_CROWN_RADIUS,
 };
+use crate::world::{ROOM_MAX, ROOM_MIN};
 use crate::world::passerby::{Passerby, Passing};
 use crate::world::stars::hash;
 use crate::world::{BirdPicture, Plant, Season};
@@ -64,6 +66,9 @@ enum Surface {
     Carrot,
     Scarf,
     Siding,
+    Shingle,
+    Brick,
+    Door,
     Trim,
     /// The cut edge of the walls around the glass front.
     Section,
@@ -86,6 +91,9 @@ enum Piece {
     Bush(Vec3, f32),
     Sill,
     Snowman(f32),
+    /// The door swung out by this many radians.
+    Door(f32),
+    Chimney,
 }
 
 impl Piece {
@@ -142,8 +150,24 @@ impl Piece {
             ),
             Self::Sill => box_span(origin, direction, SILL, SILL_HALF + Vec3::splat(0.02)),
             Self::Snowman(_) => sphere_span(origin, direction, SNOWMAN + Vec3::Y * 0.65, 0.75),
+            Self::Door(_) => sphere_span(origin, direction, door_hinge() + Vec3::Y * 0.9, 1.15),
+            Self::Chimney => box_span(
+                origin,
+                direction,
+                CHIMNEY + Vec3::Y * ((CHIMNEY_TOP + 2.55) * 0.5),
+                Vec3::new(
+                    CHIMNEY_HALF + 0.05,
+                    (CHIMNEY_TOP - 2.55) * 0.5 + 0.05,
+                    CHIMNEY_HALF + 0.05,
+                ),
+            ),
         }
     }
+}
+
+/// The door's hinge foot, at its front edge on the outside of the wall.
+fn door_hinge() -> Vec3 {
+    Vec3::new(HOUSE_MAX.x, 0.0, DOOR_HIGH.x)
 }
 
 /// A point light outdoors.
@@ -184,6 +208,8 @@ pub struct Yard<'a> {
     wind: f32,
     wet: f32,
     view: View,
+    door: f32,
+    smoke: bool,
 }
 
 /// What the scene tells the yard each frame.
@@ -200,6 +226,10 @@ pub struct Setting<'a> {
     pub flag: bool,
     pub gust: f32,
     pub wet: f32,
+    /// How far the door stands open, 0 to 1.
+    pub door: f32,
+    /// Whether smoke curls from the chimney.
+    pub smoke: bool,
 }
 
 impl<'a> Yard<'a> {
@@ -228,7 +258,11 @@ impl<'a> Yard<'a> {
             Piece::Mailbox,
             Piece::Clothesline,
             Piece::Sill,
+            Piece::Chimney,
         ];
+        if setting.door > 0.02 {
+            pieces.push(Piece::Door(setting.door * 1.35));
+        }
         pieces.extend(BUSHES.iter().map(|&(center, radius)| Piece::Bush(center, radius)));
         let mut critters = Vec::new();
         for passing in outside.passersby.iter().flatten() {
@@ -290,6 +324,8 @@ impl<'a> Yard<'a> {
             wind: outside.wind,
             wet: setting.wet,
             view: setting.view,
+            door: setting.door,
+            smoke: setting.smoke,
         }
     }
 
@@ -323,6 +359,12 @@ impl<'a> Yard<'a> {
             }
         }
 
+        if !cut && let Some((distance, normal, surface)) = self.roof(origin, direction, from, limit)
+        {
+            limit = distance;
+            let point = origin + direction * distance;
+            hit = Some((distance, self.shade(surface, point, normal, direction)));
+        }
         if !cut && let Some((distance, normal, surface)) = self.shell(origin, direction, from, limit)
         {
             limit = distance;
@@ -478,6 +520,45 @@ impl<'a> Yard<'a> {
         color
     }
 
+    /// Puffs of smoke curling up from the chimney and drifting off with the
+    /// wind, laid over `color` where they are nearer than `limit`.
+    pub fn smoke(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        limit: f32,
+        traveled: f32,
+        spread: f32,
+        mut color: Vec3,
+    ) -> Vec3 {
+        if !self.smoke {
+            return color;
+        }
+        let top = CHIMNEY + Vec3::Y * (CHIMNEY_TOP + 0.08);
+        let gray = Vec3::new(0.78, 0.78, 0.8) * (self.ambient * 1.2 + Vec3::splat(0.08));
+        for index in 0..6 {
+            let age = (phase(self.outside.time, 0.11, 1.0) + index as f32 / 6.0).fract();
+            let wobble = (phase(self.outside.time, 0.9, TAU) + index as f32 * 2.1).sin();
+            let center = top
+                + Vec3::new(
+                    (self.wind * 1.4 + 0.25) * age + wobble * 0.04 * age,
+                    1.1 * age,
+                    -0.15 * age,
+                );
+            let radius = 0.07 + 0.2 * age;
+            let along = (center - origin).dot(direction);
+            if along <= 0.0 || along >= limit {
+                continue;
+            }
+            let miss = (origin + direction * along).distance(center);
+            let pixel = (traveled + along) * spread;
+            let puff = coverage(miss - radius, pixel + radius * 0.5);
+            let fade = smoothstep(0.0, 0.08, age) * (1.0 - age);
+            color = color.lerp(gray, puff * fade * 0.55);
+        }
+        color
+    }
+
     /// Glowing specks outdoors: fireflies on summer nights, and the
     /// lantern's halo.
     pub fn sparkles(
@@ -550,11 +631,111 @@ impl<'a> Yard<'a> {
             .unwrap_or(0);
         let mut normal = Vec3::ZERO;
         normal[axis] = offset[axis].signum();
-        let surface = match (axis, normal[axis] > 0.0) {
-            (2, true) => Surface::Section,
+        let high = normal[axis] > 0.0;
+        let surface = match (axis, high) {
+            (2, true) => {
+                // The glass front lets the ray in.
+                if point.x > ROOM_MIN.x && point.x < ROOM_MAX.x && point.y < ROOM_MAX.y {
+                    return None;
+                }
+                Surface::Section
+            }
+            (2, false) => {
+                let at = Vec2::new(point.x, point.y);
+                let low = super::window::WINDOW_LOW;
+                let top = super::window::WINDOW_HIGH;
+                if at.cmpgt(low).all() && at.cmplt(top).all() {
+                    match super::window::pane(at, 0.01, self.outside.window_lift) {
+                        Some(pane) if pane.frame < 0.5 => return None,
+                        _ => Surface::Trim,
+                    }
+                } else if at.cmpgt(low - Vec2::splat(0.09)).all()
+                    && at.cmplt(top + Vec2::splat(0.09)).all()
+                {
+                    Surface::Trim
+                } else if point.y < 0.14 {
+                    Surface::Stone
+                } else {
+                    Surface::Siding
+                }
+            }
+            (0, true) => {
+                let at = Vec2::new(point.z, point.y);
+                if at.cmpgt(DOOR_LOW).all() && at.cmplt(DOOR_HIGH).all() {
+                    if self.door > 0.02 {
+                        return None;
+                    }
+                    Surface::Door
+                } else if at.cmpgt(DOOR_LOW - Vec2::new(0.08, 0.0)).all()
+                    && at.cmplt(DOOR_HIGH + Vec2::splat(0.08)).all()
+                {
+                    Surface::Trim
+                } else if point.y < 0.14 {
+                    Surface::Stone
+                } else {
+                    Surface::Siding
+                }
+            }
             (1, true) => Surface::Cap,
             _ if point.y < 0.14 => Surface::Stone,
             _ => Surface::Siding,
+        };
+        Some((enter, normal, surface))
+    }
+
+    /// The low gable roof: slopes down to the eaves front and back, gable
+    /// ends left and right, and the soffit underneath.
+    fn roof(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        from: f32,
+        to: f32,
+    ) -> Option<(f32, Vec3, Surface)> {
+        let ridge_z = (HOUSE_MIN.z + HOUSE_MAX.z) * 0.5;
+        let reach = (HOUSE_MAX.z - HOUSE_MIN.z) * 0.5 + EAVE;
+        let slope = (RIDGE - EAVE_DROP) / reach;
+        let rise = Vec3::new(0.0, 1.0, slope).normalize();
+        let fall = Vec3::new(0.0, 1.0, -slope).normalize();
+        // Each side as an outward normal and the plane's offset.
+        let planes = [
+            (Vec3::X, HOUSE_MAX.x + GABLE),
+            (-Vec3::X, -(HOUSE_MIN.x - GABLE)),
+            (-Vec3::Y, -EAVE_DROP),
+            (rise, rise.dot(Vec3::new(0.0, RIDGE, ridge_z))),
+            (fall, fall.dot(Vec3::new(0.0, RIDGE, ridge_z))),
+        ];
+        let mut enter = f32::NEG_INFINITY;
+        let mut exit = f32::INFINITY;
+        let mut normal = Vec3::Y;
+        for (outward, offset) in planes {
+            let toward = outward.dot(direction);
+            let gap = offset - outward.dot(origin);
+            if toward.abs() < 1e-8 {
+                if gap < 0.0 {
+                    return None;
+                }
+                continue;
+            }
+            let crossing = gap / toward;
+            if toward < 0.0 {
+                if crossing > enter {
+                    enter = crossing;
+                    normal = outward;
+                }
+            } else {
+                exit = exit.min(crossing);
+            }
+        }
+        if enter > exit || enter <= 1e-4 || enter < from || enter >= to {
+            return None;
+        }
+        let surface = if normal.y > 0.5 {
+            Surface::Shingle
+        } else if normal.y < -0.5 {
+            Surface::Trim
+        } else {
+            Surface::Siding
         };
         Some((enter, normal, surface))
     }
@@ -573,6 +754,38 @@ impl<'a> Yard<'a> {
             Piece::Bush(center, radius) => bush(point - center, radius),
             Piece::Sill => (box_distance(point - SILL, SILL_HALF), Surface::Trim),
             Piece::Snowman(melt) => snowman(point - SNOWMAN, melt),
+            Piece::Door(angle) => {
+                let local = point - door_hinge();
+                let (sine, cosine) = angle.sin_cos();
+                // Turn back to where the leaf lies when shut, along -z.
+                let turned = Vec3::new(
+                    local.x * cosine + local.z * sine,
+                    local.y,
+                    local.z * cosine - local.x * sine,
+                );
+                let width = DOOR_HIGH.x - DOOR_LOW.x;
+                let leaf = box_distance(
+                    turned - Vec3::new(0.03, DOOR_HIGH.y * 0.5, -width * 0.5),
+                    Vec3::new(0.025, DOOR_HIGH.y * 0.5, width * 0.5),
+                );
+                (leaf, Surface::Door)
+            }
+            Piece::Chimney => {
+                let local = point - CHIMNEY;
+                let stack = box_distance(
+                    local - Vec3::Y * ((CHIMNEY_TOP + 2.55) * 0.5),
+                    Vec3::new(CHIMNEY_HALF, (CHIMNEY_TOP - 2.55) * 0.5, CHIMNEY_HALF),
+                );
+                let cap = box_distance(
+                    local - Vec3::Y * (CHIMNEY_TOP - 0.02),
+                    Vec3::new(CHIMNEY_HALF + 0.035, 0.035, CHIMNEY_HALF + 0.035),
+                );
+                if cap < stack {
+                    (cap, Surface::Stone)
+                } else {
+                    (stack, Surface::Brick)
+                }
+            }
         }
     }
 
@@ -810,7 +1023,7 @@ impl<'a> Yard<'a> {
         let mut albedo = self.albedo(surface, point);
         let snowy = !matches!(
             surface,
-            Surface::Water | Surface::Glass | Surface::Thing(_) | Surface::Snow
+            Surface::Water | Surface::Glass | Surface::Thing(_) | Surface::Snow | Surface::Door
         );
         if snowy && self.outside.snow_cover > 0.0 {
             let cover = self.outside.snow_cover.clamp(0.0, 1.0) * smoothstep(0.45, 0.85, normal.y);
@@ -916,6 +1129,21 @@ impl<'a> Yard<'a> {
                 Vec3::new(0.58, 0.7, 0.66) * if seam { 0.75 } else { 1.0 }
             }
             Surface::Cap => Vec3::new(0.62, 0.5, 0.44),
+            Surface::Shingle => {
+                // Rows of shingles down the slope, staggered.
+                let row = (point.y / 0.07).floor();
+                let across = point.x / 0.22 + row * 0.5;
+                let seam = ((point.y / 0.07).fract() < 0.18) || (across.fract() < 0.08);
+                let tone = 0.88 + 0.2 * hash(Vec2::new(across.floor(), row));
+                Vec3::new(0.66, 0.36, 0.3) * tone * if seam { 0.72 } else { 1.0 }
+            }
+            Surface::Brick => {
+                let row = (point.y / 0.08).floor();
+                let across = (point.x + point.z) / 0.16 + row * 0.5;
+                let seam = ((point.y / 0.08).fract() < 0.15) || (across.fract() < 0.1);
+                Vec3::new(0.7, 0.4, 0.32) * if seam { 0.65 } else { 1.0 }
+            }
+            Surface::Door => Vec3::new(0.62, 0.42, 0.3),
             Surface::Section => Vec3::new(0.78, 0.66, 0.52),
             Surface::Thing(material) => material.albedo(self.plant),
         }
@@ -1031,6 +1259,8 @@ fn piece_center(piece: &Piece) -> Vec3 {
         Piece::Bush(center, _) => center,
         Piece::Sill => SILL,
         Piece::Snowman(_) => SNOWMAN,
+        Piece::Door(_) => door_hinge(),
+        Piece::Chimney => CHIMNEY + Vec3::Y * 3.0,
     }
 }
 
@@ -1314,6 +1544,8 @@ mod tests {
             flag: true,
             gust: 1.0,
             wet: 1.0,
+            door: 1.0,
+            smoke: true,
         })
     }
 

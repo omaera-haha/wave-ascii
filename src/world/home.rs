@@ -17,6 +17,18 @@ pub const WALL: f32 = 0.12;
 pub const HOUSE_MIN: Vec3 = Vec3::new(ROOM_MIN.x - WALL, 0.0, ROOM_MIN.z - WALL);
 pub const HOUSE_MAX: Vec3 = Vec3::new(ROOM_MAX.x + WALL, ROOM_MAX.y + WALL, ROOM_MAX.z);
 
+/// A low gable roof over it all: its ridge runs left to right.
+pub const RIDGE: f32 = 3.0;
+pub const EAVE_DROP: f32 = 2.47;
+/// How far the roof reaches past the walls at the front and back, and at
+/// the gable ends.
+pub const EAVE: f32 = 0.26;
+pub const GABLE: f32 = 0.18;
+/// The chimney on the back slope: its middle, half width, and top.
+pub const CHIMNEY: Vec3 = Vec3::new(-1.25, 0.0, -0.78);
+pub const CHIMNEY_HALF: f32 = 0.17;
+pub const CHIMNEY_TOP: f32 = 3.42;
+
 /// Door in the right wall, (z, y) corners.
 pub const DOOR_LOW: Vec2 = Vec2::new(0.42, 0.0);
 pub const DOOR_HIGH: Vec2 = Vec2::new(1.12, 1.78);
