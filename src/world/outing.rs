@@ -33,9 +33,28 @@ impl World {
                     .is_some_and(|cat| cat.noticed && cat.settled(self.time)))
     }
 
+    /// Whether there's snow enough, and a snowfall it hasn't yet made a
+    /// snow ghost for.
+    fn snow_ghost_due(&self) -> bool {
+        self.weather.snow_cover > 0.4
+            && self.weather.settled_snow.is_some_and(|spell| {
+                self.snow_ghost.is_none_or(|(made, progress)| made != spell || progress < 1.0)
+            })
+    }
+
+    /// How the snow ghost on the lawn stands: how built and how melted.
+    pub fn snow_ghost_shape(&self) -> Option<(f32, f32)> {
+        let (spell, progress) = self.snow_ghost?;
+        (self.weather.settled_snow == Some(spell) && self.weather.snow_cover > 0.05)
+            .then(|| (progress, (1.0 - self.weather.snow_cover).clamp(0.0, 1.0)))
+    }
+
     /// Where to go first: the lawn for the stars at night, else a spot that
     /// suits the season and the hour.
     pub(super) fn first_spot(&mut self) -> Spot {
+        if self.snow_ghost_due() && self.random.unit() < 0.8 {
+            return Spot::SnowGhost;
+        }
         let dark = meteor::dark(self.hour);
         if dark {
             let clear = self.weather.sky == Sky::Clear && !self.weather.storm;
@@ -110,6 +129,32 @@ impl World {
             self.arrive_at(spot);
         }
         let stayed = self.ghost.plan.stayed(self.time);
+        if spot == Spot::SnowGhost
+            && arrived.is_some()
+            && let Some(spell) = self.weather.settled_snow
+        {
+            // Pat by pat, it shapes a little ghost out of snow.
+            let (made, progress) = self.snow_ghost.unwrap_or((spell, 0.0));
+            let before = if made == spell { progress } else { 0.0 };
+            let progress = (before + seconds / 22.0).min(1.0);
+            self.snow_ghost = Some((spell, progress));
+            self.ghost.plan.length = self.ghost.plan.length.max(stayed + 1.0);
+            if before < 1.0 && progress >= 1.0 {
+                self.ghost.plan.length = stayed + 6.0;
+                let korean = self.speaks_korean();
+                self.think(if korean {
+                    "나랑 똑같은 눈 유령이야!"
+                } else {
+                    "A snow ghost, just like me!"
+                });
+                if let Some(milestone) = self.life.reach(
+                    "Made my first snow ghost.".to_owned(),
+                    "처음으로 눈 유령을 만들었어.",
+                ) {
+                    self.record(EventKind::Milestone(milestone));
+                }
+            }
+        }
         if spot == Spot::Swing && arrived.is_some() {
             // Ride the seat as it swings.
             let seat = self.swing_seat() + Vec3::Y * (0.34 * self.size());
@@ -140,7 +185,12 @@ impl World {
         let next = loop {
             let index = (self.random.unit() * Spot::ALL.len() as f32) as usize;
             let choice = Spot::ALL[index.min(Spot::ALL.len() - 1)];
-            if Some(choice) != from && (choice != Spot::Roof || dark) {
+            let fits = match choice {
+                Spot::Roof => dark,
+                Spot::SnowGhost => self.snow_ghost_due(),
+                _ => true,
+            };
+            if Some(choice) != from && fits {
                 break choice;
             }
         };
@@ -222,6 +272,8 @@ impl World {
             (Spot::Fence, true) => "언덕이 끝없이 이어져.",
             (Spot::Roof, false) => "The roof is the best seat for the stars.",
             (Spot::Roof, true) => "지붕은 별 보기 제일 좋은 자리야.",
+            (Spot::SnowGhost, false) => "I'll make a ghost out of snow!",
+            (Spot::SnowGhost, true) => "눈으로 유령을 만들 거야!",
         };
         self.think(thought);
     }

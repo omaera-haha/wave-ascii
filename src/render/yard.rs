@@ -31,8 +31,7 @@ const SHELL_EXPOSURE: f32 = 0.7;
 const SNOW: Vec3 = Vec3::new(0.9, 0.94, 1.0);
 /// The jack-o'-lantern on the step by the door at Halloween.
 const PUMPKIN: Vec3 = Vec3::new(2.32, 0.0, 1.66);
-/// Where the snowman stands when there is one.
-const SNOWMAN: Vec3 = Vec3::new(-2.8, 0.0, 1.7);
+use crate::world::home::{SNOWMAN, SNOW_GHOST};
 /// Stepping stones from the door to the mailbox, (x, z) and radius.
 const STONES: [(Vec2, f32); 7] = [
     (Vec2::new(2.45, 0.8), 0.2),
@@ -97,6 +96,8 @@ enum Piece {
     Door(f32),
     Chimney,
     Pumpkin,
+    /// The ghost's snow sculpture, how built and how melted.
+    SnowGhost(f32, f32),
 }
 
 impl Piece {
@@ -138,6 +139,7 @@ impl Piece {
             Self::Snowman(_) => ball(SNOWMAN + Vec3::Y * 0.65, 0.75),
             Self::Door(_) => ball(door_hinge() + Vec3::Y * 0.9, 1.15),
             Self::Pumpkin => ball(PUMPKIN + Vec3::Y * 0.15, 0.24),
+            Self::SnowGhost(..) => ball(SNOW_GHOST + Vec3::Y * 0.3, 0.42),
             Self::Chimney => (
                 CHIMNEY + Vec3::Y * ((CHIMNEY_TOP + 2.55) * 0.5),
                 Vec3::new(
@@ -204,6 +206,7 @@ impl Piece {
             Self::Snowman(_) => sphere_span(origin, direction, SNOWMAN + Vec3::Y * 0.65, 0.75),
             Self::Door(_) => sphere_span(origin, direction, door_hinge() + Vec3::Y * 0.9, 1.15),
             Self::Pumpkin => sphere_span(origin, direction, PUMPKIN + Vec3::Y * 0.15, 0.24),
+            Self::SnowGhost(..) => sphere_span(origin, direction, SNOW_GHOST + Vec3::Y * 0.3, 0.42),
             Self::Chimney => box_span(
                 origin,
                 direction,
@@ -302,6 +305,8 @@ pub struct Setting<'a> {
     pub occasion: Option<Occasion>,
     /// Lift the roof off, as when looking down into the room from above.
     pub roofless: bool,
+    /// The ghost's snow sculpture: how built and how melted.
+    pub snow_ghost: Option<(f32, f32)>,
 }
 
 impl<'a> Yard<'a> {
@@ -333,6 +338,9 @@ impl<'a> Yard<'a> {
         ];
         if !setting.roofless {
             pieces.push(Piece::Chimney);
+        }
+        if let Some((built, melt)) = setting.snow_ghost.filter(|(built, _)| *built > 0.02) {
+            pieces.push(Piece::SnowGhost(built, melt));
         }
         if setting.door > 0.02 {
             pieces.push(Piece::Door(setting.door * 1.35));
@@ -972,6 +980,7 @@ impl<'a> Yard<'a> {
                 );
                 (leaf, Surface::Door)
             }
+            Piece::SnowGhost(built, melt) => snow_ghost(point - SNOW_GHOST, built, melt),
             Piece::Pumpkin => {
                 let local = point - PUMPKIN - Vec3::Y * 0.13;
                 let ribs = (local.z.atan2(local.x) * 8.0).cos() * 0.008;
@@ -1570,6 +1579,7 @@ fn piece_center(piece: &Piece) -> Vec3 {
         Piece::Door(_) => door_hinge(),
         Piece::Chimney => CHIMNEY + Vec3::Y * 3.0,
         Piece::Pumpkin => PUMPKIN,
+        Piece::SnowGhost(..) => SNOW_GHOST,
     }
 }
 
@@ -1700,6 +1710,31 @@ fn bush(local: Vec3, radius: f32) -> (f32, Surface) {
     let bumps =
         ((local.x * 9.0).sin() + (local.y * 8.0 + 1.0).sin() + (local.z * 9.5 + 2.0).sin()) * 0.025;
     ((shape + bumps) * 0.85, Surface::Hedge)
+}
+
+/// A little ghost of packed snow: a round head on a flared skirt with a
+/// wavy hem, coal eyes, growing as it is built and slumping as it melts.
+fn snow_ghost(local: Vec3, built: f32, melt: f32) -> (f32, Surface) {
+    let size = (0.25 + 0.75 * built.clamp(0.0, 1.0)) * (1.0 - 0.35 * melt.clamp(0.0, 1.0));
+    let local = local / size;
+    let head = (local - Vec3::Y * 0.42).length() - 0.17;
+    let radial = Vec2::new(local.x, local.z).length();
+    let angle = local.z.atan2(local.x);
+    // The skirt widens toward its wavy hem on the snow.
+    let flare = 0.16 + 0.1 * (1.0 - (local.y / 0.42).clamp(0.0, 1.0));
+    let hem = 0.025 * (angle * 5.0).sin();
+    let skirt = Vec2::new(radial - flare, (local.y - 0.21).abs() - 0.21 - hem).max_element();
+    let body = smooth_min(head, skirt, 0.08);
+    let mut nearest = (body * size, Surface::Snow);
+    if built > 0.8 {
+        for side in [-1.0, 1.0] {
+            let eye = (local - Vec3::new(side * 0.06, 0.45, 0.15)).length() - 0.025;
+            if eye * size < nearest.0 {
+                nearest = (eye * size, Surface::Coal);
+            }
+        }
+    }
+    nearest
 }
 
 fn snowman(local: Vec3, melt: f32) -> (f32, Surface) {
@@ -2043,6 +2078,7 @@ mod tests {
             spill: Vec3::splat(0.2),
             occasion: Some(Occasion::Halloween),
             roofless: false,
+            snow_ghost: Some((0.6, 0.2)),
         })
     }
 

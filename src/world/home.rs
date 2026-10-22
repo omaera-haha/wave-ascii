@@ -63,6 +63,10 @@ pub const BENCH: Vec3 = Vec3::new(7.2, 0.0, -2.75);
 pub const LANTERN: Vec3 = Vec3::new(3.05, 0.0, 2.2);
 pub const LANTERN_HEIGHT: f32 = 1.25;
 pub const MAILBOX: Vec3 = Vec3::new(8.0, 0.0, 2.95);
+/// Where a snowman stands after a snowfall, and where the ghost sculpts
+/// its snow ghost beside it.
+pub const SNOWMAN: Vec3 = Vec3::new(-2.8, 0.0, 1.7);
+pub const SNOW_GHOST: Vec3 = Vec3::new(-3.65, 0.0, 2.1);
 /// Clothesline posts in the left yard.
 pub const CLOTHESLINE: [Vec3; 2] = [Vec3::new(-5.6, 0.0, -1.0), Vec3::new(-3.0, 0.0, -2.1)];
 pub const CLOTHESLINE_HEIGHT: f32 = 1.55;
@@ -87,10 +91,12 @@ pub enum Spot {
     Fence,
     /// Up on the roof's ridge, for the stars.
     Roof,
+    /// Beside the snow ghost it sculpts after a snowfall.
+    SnowGhost,
 }
 
 impl Spot {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Swing,
         Self::Garden,
         Self::Birdbath,
@@ -98,6 +104,7 @@ impl Spot {
         Self::Lawn,
         Self::Fence,
         Self::Roof,
+        Self::SnowGhost,
     ];
 
     /// Where the ghost floats for this spot, for a ghost of `size`.
@@ -110,6 +117,7 @@ impl Spot {
             Self::Lawn => Vec3::new(5.3, 0.32 * size + 0.06, 1.55),
             Self::Fence => Vec3::new(7.6, 1.05, -5.2),
             Self::Roof => Vec3::new(0.55, RIDGE + 0.36 * size, (HOUSE_MIN.z + HOUSE_MAX.z) * 0.5),
+            Self::SnowGhost => SNOW_GHOST + Vec3::new(0.55, 0.38 * size + 0.12, 0.45),
         }
     }
 
@@ -123,6 +131,7 @@ impl Spot {
             Self::Lawn => Vec3::new(4.0, 7.0, -14.0),
             Self::Fence => Vec3::new(10.0, 1.6, -24.0),
             Self::Roof => Vec3::new(0.0, 9.0, -20.0),
+            Self::SnowGhost => SNOW_GHOST + Vec3::Y * 0.3,
         }
     }
 
@@ -135,6 +144,7 @@ impl Spot {
             Self::Lawn => "lying on the lawn watching the sky",
             Self::Fence => "leaning on the back fence looking at the hills",
             Self::Roof => "sitting up on the roof watching the stars",
+            Self::SnowGhost => "sculpting a little snow ghost on the lawn",
         }
     }
 }
@@ -405,8 +415,9 @@ impl World {
         if in_house(ghost) {
             return home;
         }
+        // Leaning back toward the house, so it stays in view too.
         Vec3::new(
-            (ghost.x - 0.7).clamp(home.x - 3.0, 5.6),
+            (ghost.x - 0.7 * ghost.x.signum()).clamp(home.x - 3.0, 5.6),
             home.y.max(ghost.y - 1.1),
             (ghost.z * 0.55).clamp(-1.6, 1.0),
         )

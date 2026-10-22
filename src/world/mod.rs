@@ -982,6 +982,8 @@ pub struct World {
     bubbles_finished_at: Option<f64>,
     /// When it last went out to the yard on its own.
     last_outing: Option<f64>,
+    /// The snow ghost it sculpted, for which snowfall, and how far along.
+    pub snow_ghost: Option<(f64, f32)>,
     pending_pins: Vec<gallery::Pin>,
     pub showing: Option<show::Showing>,
     show_praise_until: Option<f64>,
@@ -1144,6 +1146,7 @@ impl World {
             bubble_session: None,
             bubbles_finished_at: None,
             last_outing: None,
+            snow_ghost: None,
             pending_pins: Vec::new(),
             showing: None,
             show_praise_until: None,
