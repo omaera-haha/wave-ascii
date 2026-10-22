@@ -483,6 +483,7 @@ mod tests {
             "play in the yard",
             "마당에 나가자",
             "밖에 나가서 놀자",
+            "산책하자",
         ] {
             let mut world = World::new(3, 11.0);
             world.ghost.needs.energy = 1.0;
