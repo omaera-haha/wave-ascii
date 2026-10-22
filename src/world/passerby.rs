@@ -240,9 +240,9 @@ pub fn at(seed: u64, time: f64, date: Date, hour: f32, weather: &Weather) -> [Op
         let height = draw.unit();
         let motion = ((time - began) * 3.0).rem_euclid(f64::from(TAU)) as f32;
         let position = match kind {
-            Passerby::Geese => Vec2::new(-0.12 + across * 1.24, 0.72 + height * 0.18),
+            Passerby::Geese => Vec2::new(-0.12 + across * 1.24, 0.5 + height * 0.16),
             Passerby::Balloon => {
-                Vec2::new(-0.07 + across * 1.14, 0.55 + height * 0.12 + phase * 0.06)
+                Vec2::new(-0.07 + across * 1.14, 0.42 + height * 0.12 + phase * 0.06)
             }
             Passerby::Kite => Vec2::new(
                 0.59 + 0.035 * (motion * 0.3).sin(),
@@ -262,7 +262,7 @@ pub fn at(seed: u64, time: f64, date: Date, hour: f32, weather: &Weather) -> [Op
                     Vec2::new(0.256 - along * 0.096, 0.265 + along * 0.15)
                 }
             }
-            Passerby::Plane => Vec2::new(-0.04 + across * 1.08, 0.87 + height * 0.08),
+            Passerby::Plane => Vec2::new(-0.04 + across * 1.08, 0.62 + height * 0.08),
             Passerby::Lanterns => {
                 Vec2::new(0.54 + height * 0.2 + 0.04 * phase, 0.23 + phase * 0.88)
             }

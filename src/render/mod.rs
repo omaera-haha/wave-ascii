@@ -25,7 +25,7 @@ pub const GHOST_SCALE: f32 = 0.45;
 pub const FRIEND_SCALE: f32 = GHOST_SCALE * 0.75;
 /// The point the camera circles and looks at, unless it follows the ghost
 /// out into the yard.
-const TARGET: Vec3 = Vec3::new(0.0, 1.2, 0.0);
+const TARGET: Vec3 = Vec3::new(0.0, 1.3, 0.0);
 /// One over the tangent of half the vertical field of view, about 50 degrees.
 const FOCAL: f32 = 2.1;
 const FRAME_COLOR: Vec3 = Vec3::new(0.62, 0.46, 0.32);
@@ -50,7 +50,7 @@ impl Default for Camera {
     fn default() -> Self {
         Self {
             yaw: 0.0,
-            pitch: 0.17,
+            pitch: 0.15,
             zoom: 1.0,
             target: TARGET,
         }
@@ -82,7 +82,7 @@ impl Camera {
     /// camera back so the whole room still fits across.
     pub fn view(&self, grid: Grid) -> View {
         let fit = (1.75 / grid.half_width().max(0.1)).max(1.0);
-        let distance = 5.2 * fit / self.zoom;
+        let distance = 5.8 * fit / self.zoom;
         let around = Vec3::new(
             self.yaw.sin() * self.pitch.cos(),
             self.pitch.sin(),
@@ -462,6 +462,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             crate::world::Season::Autumn => !(8.0..17.0).contains(&world.hour),
             _ => false,
         },
+        spill: if world.lamp.on {
+            LAMP_LIGHT * 0.32 * (1.0 - sky::Sky::at_hour(world.hour).day)
+        } else {
+            Vec3::ZERO
+        },
+        occasion: world.occasion(),
     });
     let tracer = Tracer {
         scene,
@@ -1223,6 +1229,8 @@ mod tests {
             wet: 0.0,
             door: 0.0,
             smoke: false,
+            spill: Vec3::ZERO,
+            occasion: None,
         })
     }
 

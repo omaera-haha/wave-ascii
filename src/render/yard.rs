@@ -22,7 +22,7 @@ use crate::world::home::{
 use crate::world::{ROOM_MAX, ROOM_MIN};
 use crate::world::passerby::{Passerby, Passing};
 use crate::world::stars::hash;
-use crate::world::{BirdPicture, Plant, Season};
+use crate::world::{BirdPicture, Occasion, Plant, Season};
 
 const LANTERN_LIGHT: Vec3 = Vec3::new(1.0, 0.74, 0.42);
 /// Big plain surfaces are drawn dimmer than the things on them, so the
@@ -30,6 +30,8 @@ const LANTERN_LIGHT: Vec3 = Vec3::new(1.0, 0.74, 0.42);
 const GROUND_EXPOSURE: f32 = 0.55;
 const SHELL_EXPOSURE: f32 = 0.7;
 const SNOW: Vec3 = Vec3::new(0.9, 0.94, 1.0);
+/// The jack-o'-lantern on the step by the door at Halloween.
+const PUMPKIN: Vec3 = Vec3::new(2.32, 0.0, 1.66);
 /// Where the snowman stands when there is one.
 const SNOWMAN: Vec3 = Vec3::new(-2.8, 0.0, 1.7);
 /// Stepping stones from the door to the mailbox, (x, z) and radius.
@@ -66,6 +68,7 @@ enum Surface {
     Carrot,
     Scarf,
     Siding,
+    Pumpkin,
     Shingle,
     Brick,
     Door,
@@ -94,6 +97,7 @@ enum Piece {
     /// The door swung out by this many radians.
     Door(f32),
     Chimney,
+    Pumpkin,
 }
 
 impl Piece {
@@ -151,6 +155,7 @@ impl Piece {
             Self::Sill => box_span(origin, direction, SILL, SILL_HALF + Vec3::splat(0.02)),
             Self::Snowman(_) => sphere_span(origin, direction, SNOWMAN + Vec3::Y * 0.65, 0.75),
             Self::Door(_) => sphere_span(origin, direction, door_hinge() + Vec3::Y * 0.9, 1.15),
+            Self::Pumpkin => sphere_span(origin, direction, PUMPKIN + Vec3::Y * 0.15, 0.24),
             Self::Chimney => box_span(
                 origin,
                 direction,
@@ -177,11 +182,13 @@ struct Glow {
     falloff: f32,
 }
 
-/// A bird or squirrel drawn facing the viewer.
+/// A bird or squirrel drawn facing the viewer, or a leaf or petal falling
+/// from the big tree.
 #[derive(Clone, Copy, Debug)]
 enum Critter {
     Bird(BirdPicture, Vec3),
     Squirrel(Passing, Vec3),
+    Leaf(Vec3, Vec3),
 }
 
 /// The outdoors for one frame.
@@ -210,6 +217,8 @@ pub struct Yard<'a> {
     view: View,
     door: f32,
     smoke: bool,
+    /// Fairy lights along the front eave for the holidays.
+    lights: bool,
 }
 
 /// What the scene tells the yard each frame.
@@ -230,6 +239,9 @@ pub struct Setting<'a> {
     pub door: f32,
     /// Whether smoke curls from the chimney.
     pub smoke: bool,
+    /// The lamp's light spilling out the window and the glass at night.
+    pub spill: Vec3,
+    pub occasion: Option<Occasion>,
 }
 
 impl<'a> Yard<'a> {
@@ -275,6 +287,9 @@ impl<'a> Yard<'a> {
         if let Some(bird) = outside.bird {
             critters.push(Critter::Bird(bird, bird.position));
         }
+        if matches!(outside.season, Season::Spring | Season::Autumn) {
+            critters.extend(falling(outside));
+        }
         // Nearest first, so what they hide is skipped sooner.
         let eye = setting.view.eye;
         pieces.sort_by(|first, second| {
@@ -298,6 +313,29 @@ impl<'a> Yard<'a> {
                 color: LANTERN_LIGHT * 0.9,
                 falloff: 1.4,
             });
+        }
+        if setting.spill.max_element() > 1e-3 {
+            for position in [
+                Vec3::new(0.0, 1.4, HOUSE_MIN.z - 0.5),
+                Vec3::new(0.0, 1.0, HOUSE_MAX.z + 0.6),
+            ] {
+                glows.push(Glow {
+                    position,
+                    color: setting.spill,
+                    falloff: 0.9,
+                });
+            }
+        }
+        let halloween = setting.occasion == Some(Occasion::Halloween);
+        if halloween {
+            pieces.push(Piece::Pumpkin);
+            if lantern > 0.0 {
+                glows.push(Glow {
+                    position: PUMPKIN + Vec3::Y * 0.2,
+                    color: Vec3::new(1.0, 0.55, 0.2) * 0.5,
+                    falloff: 6.0,
+                });
+            }
         }
         let flash = outside.flash.clamp(0.0, 1.0);
         Self {
@@ -326,6 +364,10 @@ impl<'a> Yard<'a> {
             view: setting.view,
             door: setting.door,
             smoke: setting.smoke,
+            lights: matches!(
+                setting.occasion,
+                Some(Occasion::WinterHolidays | Occasion::NewYear)
+            ),
         }
     }
 
@@ -418,6 +460,7 @@ impl<'a> Yard<'a> {
             let (position, reach) = match critter {
                 Critter::Bird(_, position) => (*position, 0.2),
                 Critter::Squirrel(_, position) => (*position, 0.16),
+                Critter::Leaf(position, _) => (*position, 0.05),
             };
             let along = (position - origin).dot(self.view.forward)
                 / direction.dot(self.view.forward).max(1e-4);
@@ -433,6 +476,10 @@ impl<'a> Yard<'a> {
             let (cover, color) = match critter {
                 Critter::Bird(bird, _) => bird_shade(local, pixel, *bird, self.outside.season),
                 Critter::Squirrel(passing, _) => squirrel_shade(local, pixel, passing),
+                Critter::Leaf(_, tint) => (
+                    coverage((local * Vec2::new(1.0, 1.8)).length() - 0.028, pixel * 0.6),
+                    *tint,
+                ),
             };
             if cover > 0.0 {
                 let lit = color * self.lit(position, -direction, 1.0).max(Vec3::splat(0.12));
@@ -585,6 +632,36 @@ impl<'a> Yard<'a> {
                 * self.lantern;
         }
         let night = 1.0 - self.sky.day;
+        if self.lights {
+            let colors = [
+                Vec3::new(1.0, 0.35, 0.35),
+                Vec3::new(0.4, 0.8, 1.0),
+                Vec3::new(1.0, 0.85, 0.35),
+                Vec3::new(0.5, 1.0, 0.55),
+            ];
+            let left = HOUSE_MIN.x - GABLE + 0.1;
+            let right = HOUSE_MAX.x + GABLE - 0.1;
+            let count = ((right - left) / 0.26) as usize;
+            // Only bulbs near the ray are worth a look.
+            let eave = Vec3::new(0.0, EAVE_DROP - 0.04, HOUSE_MAX.z + EAVE - 0.03);
+            let along = (eave - origin).dot(direction);
+            if along > 0.0 && along < limit + 0.3 {
+                let near = origin + direction * along;
+                if (near.y - eave.y).abs() < 0.4 && (near.z - eave.z).abs() < 0.6 {
+                    for index in 0..=count {
+                        let x = left + (right - left) * index as f32 / count as f32;
+                        let sag = 0.05 * ((index as f32 * 0.5).sin() * 0.5 + 0.5);
+                        let bulb = Vec3::new(x, eave.y - sag, eave.z);
+                        let twinkle = 0.55
+                            + 0.45 * (phase(self.outside.time, 1.7, TAU) + index as f32 * 2.3).sin();
+                        light += colors[index % colors.len()]
+                            * super::sprite(origin, direction, bulb, limit + 0.1, spread, 0.025, traveled)
+                            * twinkle
+                            * (0.35 + 0.65 * night);
+                    }
+                }
+            }
+        }
         if self.outside.season == Season::Summer && night > 0.3 {
             let time = self.outside.time;
             for index in 0..8 {
@@ -769,6 +846,17 @@ impl<'a> Yard<'a> {
                     Vec3::new(0.025, DOOR_HIGH.y * 0.5, width * 0.5),
                 );
                 (leaf, Surface::Door)
+            }
+            Piece::Pumpkin => {
+                let local = point - PUMPKIN - Vec3::Y * 0.13;
+                let ribs = (local.z.atan2(local.x) * 8.0).cos() * 0.008;
+                let body = ellipsoid(local, Vec3::new(0.19, 0.13, 0.19)) + ribs;
+                let stem = capsule(local, Vec3::Y * 0.1, Vec3::new(0.02, 0.19, 0.0), 0.022);
+                if stem < body {
+                    (stem, Surface::Bark)
+                } else {
+                    (body * 0.9, Surface::Pumpkin)
+                }
             }
             Piece::Chimney => {
                 let local = point - CHIMNEY;
@@ -1046,6 +1134,16 @@ impl<'a> Yard<'a> {
                 color += self.haze * (0.25 + 0.5 * glance);
             }
             Surface::Glass => color += LANTERN_LIGHT * self.lantern * 1.2,
+            Surface::Pumpkin => {
+                // A candle glows through its face toward the yard.
+                let face = normal.dot(Vec3::new(1.0, 0.0, 0.3).normalize()).max(0.0);
+                let carved = ((point.y - PUMPKIN.y - 0.15).abs() < 0.03
+                    || (point.y - PUMPKIN.y - 0.1).abs() < 0.015)
+                    && face > 0.6;
+                if carved {
+                    color = Vec3::new(1.0, 0.7, 0.25) * (0.35 + 0.65 * self.lantern);
+                }
+            }
             _ => {}
         }
         if self.wet > 0.0 && normal.y > 0.5 && !matches!(surface, Surface::Thing(_)) {
@@ -1144,6 +1242,7 @@ impl<'a> Yard<'a> {
                 Vec3::new(0.7, 0.4, 0.32) * if seam { 0.65 } else { 1.0 }
             }
             Surface::Door => Vec3::new(0.62, 0.42, 0.3),
+            Surface::Pumpkin => Vec3::new(1.0, 0.5, 0.16),
             Surface::Section => Vec3::new(0.78, 0.66, 0.52),
             Surface::Thing(material) => material.albedo(self.plant),
         }
@@ -1261,6 +1360,7 @@ fn piece_center(piece: &Piece) -> Vec3 {
         Piece::Snowman(_) => SNOWMAN,
         Piece::Door(_) => door_hinge(),
         Piece::Chimney => CHIMNEY + Vec3::Y * 3.0,
+        Piece::Pumpkin => PUMPKIN,
     }
 }
 
@@ -1431,6 +1531,34 @@ fn snowman(local: Vec3, melt: f32) -> (f32, Surface) {
     nearest
 }
 
+/// Leaves in autumn, or blossom petals in spring, drifting down from the
+/// big tree's crown and away on the wind.
+fn falling(outside: &Outside) -> impl Iterator<Item = Critter> + '_ {
+    (0..7).map(move |index| {
+        let seed = hash(Vec2::new(index as f32, 23.0));
+        let fall = (phase(outside.time, 0.045, 1.0) + seed).fract();
+        let sway = (phase(outside.time, 0.5, TAU) + seed * TAU).sin();
+        let start = TREE_CROWN
+            + Vec3::new(
+                (seed - 0.5) * 2.4,
+                -0.6 + hash(Vec2::new(index as f32, 4.0)) * 0.8,
+                (hash(Vec2::new(index as f32, 7.0)) - 0.3) * 2.0,
+            );
+        let drop = start.y * fall;
+        let drift = Vec3::new(
+            (0.4 + outside.wind * 1.6) * fall + sway * 0.18,
+            -drop,
+            fall * 0.5 + (sway * 1.3).cos() * 0.1,
+        );
+        let tint = if outside.season == Season::Spring {
+            Vec3::new(1.0, 0.8, 0.88)
+        } else {
+            Vec3::new(0.95, 0.38, 0.18).lerp(Vec3::new(1.0, 0.78, 0.3), seed)
+        };
+        Critter::Leaf(start + drift, tint)
+    })
+}
+
 /// Where the squirrel is on the tree as it scurries up the trunk and out
 /// along the low branch, and back.
 fn squirrel_at(passing: &Passing) -> Vec3 {
@@ -1546,6 +1674,8 @@ mod tests {
             wet: 1.0,
             door: 1.0,
             smoke: true,
+            spill: Vec3::splat(0.2),
+            occasion: Some(Occasion::Halloween),
         })
     }
 

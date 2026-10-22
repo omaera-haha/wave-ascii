@@ -111,13 +111,13 @@ impl Outside {
     /// Where the sun's disc is on the chart.
     pub fn sun(&self) -> Vec2 {
         let progress = (self.hour.rem_euclid(24.0) - 6.5) / 13.0;
-        Vec2::new(-0.9 + 2.8 * progress, 0.06 + 0.72 * (progress * PI).sin())
+        Vec2::new(-0.9 + 2.8 * progress, 0.06 + 0.56 * (progress * PI).sin())
     }
 
     /// Where the moon is on the chart, crossing the sky through the night.
     pub fn moon(&self) -> Vec2 {
         let progress = (self.hour - 18.5).rem_euclid(24.0) / 12.0;
-        Vec2::new(-0.9 + 2.8 * progress, 0.08 + 0.74 * (progress * PI).sin())
+        Vec2::new(-0.9 + 2.8 * progress, 0.1 + 0.5 * (progress * PI).sin())
     }
 
     /// The way the sunlight comes from, steeper than the drawn disc so
@@ -125,7 +125,7 @@ impl Outside {
     pub fn sunlight_direction(&self) -> Vec3 {
         let sun = self.sun();
         let azimuth = (sun.x - 0.5) * CHART_WIDTH * 0.8;
-        let elevation = 0.14 + 0.94 * (sun.y / 0.78).clamp(0.0, 1.0);
+        let elevation = 0.14 + 0.94 * (sun.y / 0.62).clamp(0.0, 1.0);
         direction(azimuth, elevation)
     }
 
@@ -133,7 +133,7 @@ impl Outside {
         let moon = self.moon();
         direction(
             (moon.x - 0.5) * CHART_WIDTH * 0.8,
-            0.15 + 0.6 * (moon.y / 0.82).clamp(0.0, 1.0),
+            0.15 + 0.6 * (moon.y / 0.6).clamp(0.0, 1.0),
         )
     }
 
