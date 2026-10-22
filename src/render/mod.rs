@@ -1627,7 +1627,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn rays_through_the_room_and_out_to_the_yard_give_finite_colors() {
         let mut world = World::new(1, 12.0);
         world.found_household(&[crate::world::Species::Fox, crate::world::Species::Jelly]);
@@ -1719,8 +1718,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
-    #[test]
     fn reflected_rays_skip_front_glass_drawings() {
         use crate::world::{Doodle, Picture, Sketch};
         let mut world = World::new(1, 12.0);
@@ -1758,7 +1755,6 @@ mod tests {
         assert_eq!(empty(&world), before);
     }
 
-    #[test]
     #[test]
     fn nothing_of_the_moth_lies_beyond_the_bound_that_skips_it() {
         for pixel in [0.001, 0.01, 0.05, 0.2] {
@@ -1851,8 +1847,6 @@ mod tests {
         assert!(view.on_glass(Vec2::new(5.0, 0.0)).is_none());
     }
 
-    #[test]
-    #[test]
     #[test]
     fn night_is_darker_than_noon_and_dusk_is_warmer() {
         assert!(daylight(2.0).max_element() < daylight(12.0).max_element() * 0.3);
