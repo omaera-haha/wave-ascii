@@ -2245,8 +2245,12 @@ mod tests {
                     Style::Ascii,
                     ColorMode::Plain,
                 );
-                for _ in 0..16000 {
+                // Until the friend has come and played a little.
+                for _ in 0..24000 {
                     app.advance(0.05);
+                    if app.world.friend.is_some() && app.world.life.total.friend_games > 0 {
+                        break;
+                    }
                 }
                 app
             })
