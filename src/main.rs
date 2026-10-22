@@ -9,6 +9,7 @@ mod face;
 mod frame;
 mod mind;
 mod peek;
+mod portrait;
 mod postcard;
 mod render;
 mod sdf;
@@ -357,6 +358,21 @@ fn print_frame(options: &Options) -> io::Result<()> {
     let mut world = World::new(1, options.hour);
     world.date = options.date;
     world.birthday = options.born;
+    // For checking looks: "fox,bunny,owl" for the household, else three
+    // kinds the seed picks.
+    let species: Vec<world::Species> = match env::var("WAVE_ASCII_HOUSEHOLD") {
+        Ok(list) => list.split(',').filter_map(world::Species::parse).collect(),
+        Err(_) => world::Species::starters(&mut world::Random::new(7)).to_vec(),
+    };
+    world.found_household(&species);
+    // For checking looks: everyone in a row facing the glass.
+    if env::var_os("WAVE_ASCII_LINEUP").is_some() {
+        let count = world.household_size();
+        for (index, id) in world.roster().into_iter().enumerate() {
+            let x = (index as f32 - (count as f32 - 1.0) * 0.5) * 0.62;
+            world.with_creature(id, |world| world.line_up(Vec3::new(x, 1.0, 0.6)));
+        }
+    }
     // For checking looks: set the weather for the preview.
     if let Ok(weather) = env::var("WAVE_ASCII_WEATHER") {
         let sky = match weather.as_str() {
@@ -419,11 +435,22 @@ fn print_frame(options: &Options) -> io::Result<()> {
             app.camera.zoom = zoom;
         }
     }
+    // For checking looks: "x,y,z" for where the preview's camera looks.
+    let target = env::var("WAVE_ASCII_TARGET").ok().and_then(|target| {
+        let numbers: Vec<f32> = target
+            .split(',')
+            .filter_map(|part| part.parse().ok())
+            .collect();
+        (numbers.len() == 3).then(|| Vec3::new(numbers[0], numbers[1], numbers[2]))
+    });
     // Counted in whole steps so long previews don't drift with rounding.
     let time = f64::from(options.time);
     let steps = (time / 0.05 - 1e-9).ceil().max(0.0) as u64;
     for step in 0..steps {
         app.advance((time - step as f64 * 0.05).min(0.05) as f32);
+    }
+    if let Some(target) = target {
+        app.camera.target = target;
     }
     // For checking looks without a terminal: the raw pixels as a PPM image.
     if let Some(path) = env::var_os("WAVE_ASCII_IMAGE") {

@@ -128,14 +128,13 @@ mod tests {
                     world: &world,
                     outside: sky::Outside::clear(23.0, time),
                     view,
-                    face: Face::REST,
                     aura: Aura {
                         color: Vec3::new(0.7, 0.8, 1.0),
                         visibility: 1.0,
                         brightness: 1.0,
                         beat: 1.0,
                     },
-                    pose: Pose::new(time, 0.0, 0.0, 1.0),
+                    figures: Vec::new(),
                     friend: None,
                 };
                 for scale in [GHOST_SCALE, GHOST_SCALE * 1e-6] {

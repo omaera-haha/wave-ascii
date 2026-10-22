@@ -1,5 +1,6 @@
 mod bubbles;
 mod dream;
+pub mod creature;
 pub mod ghost;
 mod shapes;
 pub mod sky;
@@ -16,7 +17,8 @@ use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::home::{self, Area, DOOR_HIGH, DOOR_LOW, INNER_HIGH, INNER_LOW};
 use crate::world::mirror;
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
-use ghost::{Aura, BOUNDS, Body, Pose};
+use creature::{Figure, Model};
+use ghost::{Aura, BOUNDS, Body};
 use shapes::{Furniture, Material, decoration_light, sphere_span};
 
 /// World units per unit of the ghost's own space.
@@ -207,9 +209,10 @@ pub struct Scene<'a> {
     pub world: &'a World,
     pub outside: sky::Outside,
     pub view: View,
-    pub face: Face,
+    /// The glow of the creature the viewer is with.
     pub aura: Aura,
-    pub pose: Pose,
+    /// Every creature of the household, posed for the frame.
+    pub figures: Vec<Figure>,
     pub friend: Option<Body>,
 }
 
@@ -228,24 +231,9 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
 fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
     let ghost_scale = GHOST_SCALE * scene.world.size();
     let dream = dream::Bubble::new(scene, ghost_scale, grid.scale());
-    let mut bodies = [
-        Some(Body {
-            position: scene.world.ghost.position,
-            scale: ghost_scale,
-            pose: scene.pose,
-            face: scene.face,
-            aura: scene.aura,
-            opacity: 1.0,
-            accessory: scene.world.wearing,
-        }),
-        scene.friend,
-    ];
-    if let [Some(first), Some(second)] = bodies
-        && first.position.dot(scene.view.forward) < second.position.dot(scene.view.forward)
-    {
-        bodies.swap(0, 1);
-    }
-    let lights = Lights::of(scene);
+    let bodies = [scene.friend, None];
+    let models: Vec<Model> = scene.figures.iter().map(Model::of).collect();
+    let lights = Lights::of(scene, &models);
     let world = scene.world;
     let curtain_gust = if world.window_open {
         world.wind.gust(world.time)
@@ -381,7 +369,7 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
     if let Some(gift) = world.ghost.keepsake {
         furniture.push(Furniture::Keepsake(
             gift,
-            world.ghost.position - Vec3::Y * 0.5,
+            world.held_at(world.ghost.position - Vec3::Y * 0.5),
         ));
     }
     if let Some(gift) = scene.outside.sill {
@@ -445,13 +433,7 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         .partition(|piece| home::in_house(piece.bounds().0));
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
-    let mut reflected_bodies = bodies;
-    let mirrored_view = scene.view.mirrored();
-    if let [Some(first), Some(second)] = reflected_bodies
-        && first.position.dot(mirrored_view.forward) < second.position.dot(mirrored_view.forward)
-    {
-        reflected_bodies.swap(0, 1);
-    }
+    let reflected_bodies = bodies;
     let shells: Vec<_> = world
         .bubbles
         .iter()
@@ -470,14 +452,23 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
             ));
         }
     }
-    let outside_ghost = (!home::in_house(world.ghost.position)).then_some(world.ghost.position);
+    let mut shadows = Vec::new();
+    for model in &models {
+        if home::in_house(model.ground) {
+            continue;
+        }
+        if model.light.max_element() > 1e-3 {
+            glows.push((model.bounds().0, model.light * 2.0, 5.0));
+        }
+        shadows.push((model.ground, model.reach * model.opacity));
+    }
     let yard = yard::Yard::new(yard::Setting {
         outside: &scene.outside,
         plant: &world.plant,
         furniture: &outdoor,
         view: scene.view,
         glows,
-        ghost: outside_ghost,
+        shadows,
         lantern: sky::Sky::at_hour(world.hour).day < 0.5,
         swing: world.swing_angle(),
         flag: world.unread_letter().is_some(),
@@ -516,6 +507,7 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         door: world.door_open(),
         solid: !home::in_house(world.ghost.position),
         bodies: [bodies, reflected_bodies],
+        models: &models,
         spread,
         bubbles: &shells,
     };
@@ -665,6 +657,8 @@ struct Tracer<'a> {
     /// the near walls are cut away to watch it.
     solid: bool,
     bodies: [[Option<Body>; 2]; 2],
+    /// The household's creatures, solid and lit like the furniture.
+    models: &'a [Model],
     spread: f32,
     bubbles: &'a [bubbles::Shell],
 }
@@ -855,6 +849,27 @@ impl Tracer<'_> {
                     limit = distance;
                 }
             }
+        }
+
+        for model in self.models {
+            let Some(hit) = model.trace(eye, direction, limit, spread, traveled) else {
+                continue;
+            };
+            limit = hit.distance;
+            let light = if home::in_house(hit.point) {
+                lights.at(hit.point, hit.normal)
+            } else {
+                self.yard.light(hit.point, hit.normal)
+            };
+            let facing = hit.normal.dot(-direction).max(0.0);
+            let rim = (1.0 - facing).powi(3) * 0.35;
+            let half = (-direction + Vec3::Y * 0.8).normalize();
+            let glint = hit.sheen * hit.normal.dot(half).max(0.0).powi(24) * 0.6;
+            let shaded = hit.albedo * light * (1.0 + rim)
+                + hit.emission
+                + Vec3::splat(glint) * (0.4 + light.max_element());
+            let solid = color.lerp(shaded, 1.0 - hit.clear * 0.55);
+            color = color.lerp(solid, model.opacity);
         }
 
         // The glass, with whatever is drawn on it, lies over what is behind it,
@@ -1261,11 +1276,7 @@ fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32) -> Vec3 {
     let footprint = footprint.max(1e-4);
     let albedo = match (hit.axis, hit.high) {
         (1, false) => {
-            let shadow = lights.ghost.map_or(1.0, |ghost| {
-                let across = Vec2::new(hit.point.x - ghost.x, hit.point.z - ghost.z).length();
-                1.0 - 0.35 * (-(across * across) / (0.06 * ghost.y.max(0.3))).exp()
-            });
-            floorboards(hit.point, footprint, hit.area) * shadow
+            floorboards(hit.point, footprint, hit.area) * shadow_at(hit.point, &lights.shadows)
         }
         (1, true) => ceiling(hit.point, footprint),
         (0, true) if hit.area == Area::Living && door_panel(hit.point, footprint).is_some() => {
@@ -1423,8 +1434,9 @@ struct Lights {
     sun: Vec3,
     sunlight: Vec3,
     lift: f32,
-    /// The ghost floating in the room, for its soft shadow on the floor.
-    ghost: Option<Vec3>,
+    /// Creatures in the house, for their soft shadows on the floor: where
+    /// each body touches down and how far it reaches.
+    shadows: Vec<(Vec3, f32)>,
 }
 
 struct Light {
@@ -1446,7 +1458,7 @@ fn room_of(point: Vec3) -> Area {
 }
 
 impl Lights {
-    fn of(scene: &Scene) -> Self {
+    fn of(scene: &Scene, models: &[Model]) -> Self {
         let world = scene.world;
         let size = world.size();
         let mut points = Vec::new();
@@ -1482,16 +1494,21 @@ impl Lights {
                 room: Area::Living,
             });
         }
-        if home::in_house(world.ghost.position) {
-            points.push(Light {
-                position: world.ghost.position,
-                color: scene.aura.color
-                    * (0.2 + 0.25 * scene.aura.brightness)
-                    * scene.aura.visibility.clamp(0.0, 1.0)
-                    * size,
-                falloff: 5.0,
-                room: room_of(world.ghost.position),
-            });
+        let mut shadows = Vec::new();
+        for model in models {
+            if !home::in_house(model.ground) {
+                continue;
+            }
+            let (center, _) = model.bounds();
+            if model.light.max_element() > 1e-3 {
+                points.push(Light {
+                    position: center,
+                    color: model.light * size.max(0.5),
+                    falloff: 5.0,
+                    room: room_of(center),
+                });
+            }
+            shadows.push((model.ground, model.reach * model.opacity));
         }
         if let Some(body) = &scene.friend {
             points.push(Light {
@@ -1523,9 +1540,7 @@ impl Lights {
             sun: scene.outside.sunlight_direction(),
             sunlight: scene.outside.sunlight(),
             lift: scene.outside.window_lift,
-            ghost: home::in_house(world.ghost.position)
-                .then_some(world.ghost.position)
-                .filter(|_| world.ghost.fade < 0.9),
+            shadows,
         }
     }
 
@@ -1566,6 +1581,21 @@ impl Lights {
     }
 }
 
+/// How much light reaches `point` on the floor or ground past the soft
+/// shadows of creatures standing or floating over it: each is where its
+/// body touches down, or would, and how far it reaches.
+fn shadow_at(point: Vec3, shadows: &[(Vec3, f32)]) -> f32 {
+    shadows.iter().fold(1.0, |light, &(ground, reach)| {
+        let across = Vec2::new(point.x - ground.x, point.z - ground.z).length_squared();
+        let height = (ground.y - point.y).max(0.0);
+        let width = reach * reach * (1.6 + 6.0 * height);
+        if across > width * 9.0 {
+            return light;
+        }
+        light * (1.0 - 0.5 / (1.0 + 2.5 * height) * (-across / width).exp())
+    })
+}
+
 /// The little lamp on the bedroom's nightstand.
 const NIGHT_LIGHT: Vec3 = Vec3::new(home::NIGHTSTAND.x, 0.62, home::NIGHTSTAND.z);
 
@@ -1590,6 +1620,7 @@ fn daylight(hour: f32) -> Vec3 {
 mod tests {
     use super::*;
     use crate::canvas::Style;
+    use ghost::Pose;
 
     fn grid() -> Grid {
         Style::Ascii.grid(100, 30)
@@ -1600,14 +1631,13 @@ mod tests {
             world,
             outside: sky::Outside::clear(world.hour, world.time),
             view: Camera::default().view(grid()),
-            face: Face::REST,
             aura: Aura {
                 color: Vec3::ONE,
                 visibility: 1.0,
                 brightness: 0.7,
                 beat: 1.0,
             },
-            pose: Pose::new(world.time, 0.0, 0.0, 0.0),
+            figures: Vec::new(),
             friend: None,
         }
     }
@@ -1619,7 +1649,7 @@ mod tests {
             furniture: &[],
             view: scene.view,
             glows: Vec::new(),
-            ghost: None,
+            shadows: Vec::new(),
             lantern: false,
             swing: 0.0,
             flag: false,
@@ -1639,8 +1669,8 @@ mod tests {
         Body {
             position: scene.world.ghost.position,
             scale: GHOST_SCALE,
-            pose: scene.pose,
-            face: scene.face,
+            pose: Pose::new(scene.world.time, 0.0, 0.0, 0.0),
+            face: Face::REST,
             aura: scene.aura,
             opacity: 1.0,
             accessory: None,
@@ -1768,7 +1798,7 @@ mod tests {
             Furniture::Plant(world.plant),
             Furniture::Nook(world.nook),
         ];
-        let lights = Lights::of(&scene);
+        let lights = Lights::of(&scene, &[]);
         let yard = yard(&scene);
         let tracer = Tracer {
             bubbles: &[],
@@ -1780,6 +1810,7 @@ mod tests {
             door: 1.0,
             solid: false,
             bodies: [bodies, bodies],
+            models: &[],
             spread: 0.01,
         };
         for target in [
@@ -1801,7 +1832,7 @@ mod tests {
     fn reflected_small_faded_and_visiting_ghosts_are_finite() {
         let world = World::new(1, 21.0);
         let scene = mirror_scene(&world);
-        let lights = Lights::of(&scene);
+        let lights = Lights::of(&scene, &[]);
         let incoming = (mirror::CENTER - scene.view.eye).normalize();
         let position = mirror::CENTER + mirror::reflect_direction(incoming) * 0.25;
         for scale in [0.01, 0.15, GHOST_SCALE] {
@@ -1839,6 +1870,7 @@ mod tests {
                         door: 0.0,
                         solid: false,
                         bodies: [bodies, bodies],
+                        models: &[],
                         spread: 0.003,
                     };
                     for vertical in -4..=4 {
@@ -1867,7 +1899,7 @@ mod tests {
         let view = Camera::default().view(grid()).mirrored();
         let empty = |world: &World| {
             let scene = mirror_scene(world);
-            let lights = Lights::of(&scene);
+            let lights = Lights::of(&scene, &[]);
             let yard = yard(&scene);
             let tracer = Tracer {
                 bubbles: &[],
@@ -1879,6 +1911,7 @@ mod tests {
                 door: 0.0,
                 solid: false,
                 bodies: [[None; 2]; 2],
+                models: &[],
                 spread: 0.01,
             };
             tracer.trace(origin, ray, view, 1.0, None, true)
@@ -2081,14 +2114,13 @@ mod tests {
                             ..Camera::default()
                         }
                         .view(grid),
-                        face: Face::REST,
                         aura: Aura {
                             color: Vec3::ONE,
                             visibility: 0.15,
                             brightness: 0.7,
                             beat: 1.0,
                         },
-                        pose: Pose::new(time, 0.0, 0.0, 0.0),
+                        figures: Vec::new(),
                         friend: None,
                     };
                     let frame = render(&scene, grid, 1);
@@ -2135,14 +2167,13 @@ mod tests {
                             ..Camera::default()
                         }
                         .view(grid),
-                        face: Face::REST,
                         aura: Aura {
                             color: Vec3::ONE,
                             visibility: 1.0,
                             brightness: 0.7,
                             beat: 1.0,
                         },
-                        pose: Pose::new(0.0, 0.0, 0.0, 0.0),
+                        figures: Vec::new(),
                         friend: None,
                     };
                     assert!(sky::light_through(&scene.outside).is_finite());
@@ -2192,14 +2223,13 @@ mod bench {
                     ..sky::Outside::clear(hour, 10.0)
                 },
                 view: camera.view(grid),
-                face: Face::REST,
                 aura: Aura {
                     color: Vec3::ONE,
                     visibility: 1.0,
                     brightness: 0.7,
                     beat: 1.0,
                 },
-                pose: Pose::new(0.0, 0.0, 0.0, 0.0),
+                figures: Vec::new(),
                 friend: None,
             };
             let start = std::time::Instant::now();

@@ -103,6 +103,25 @@ impl Face {
         }
     }
 
+    /// Signed distance to the glints of light in open eyes, with `point`
+    /// relative to the head's center like `distance`.
+    pub fn shine(&self, point: Vec2) -> f32 {
+        let open = 1.0 - (self.smile + self.prompt).min(1.0);
+        (0..2)
+            .map(|index| {
+                let shut = self.shut[index].max(self.lid[index]);
+                let side = if index == 0 { -1.0 } else { 1.0 };
+                let center = Vec2::new(0.17 * side, -0.03) + self.gaze * Vec2::new(0.07, 0.05)
+                    - Vec2::new(0.0, 0.02 * shut);
+                let radius = 0.026 * open * (1.0 - shut).max(0.0);
+                if radius <= 0.004 {
+                    return f32::INFINITY;
+                }
+                (point - center - Vec2::new(-0.018, 0.05)).length() - radius
+            })
+            .fold(f32::INFINITY, f32::min)
+    }
+
     /// Signed distance to the left eye for `index` 0 or the right for 1.
     fn eye(&self, point: Vec2, index: usize) -> f32 {
         let side = if index == 0 { -1.0 } else { 1.0 };

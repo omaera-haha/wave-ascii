@@ -267,8 +267,9 @@ pub struct Yard<'a> {
     ambient: Vec3,
     haze: Vec3,
     glows: Vec<Glow>,
-    /// The ghost, when it is outdoors, for its soft shadow.
-    ghost: Option<Vec3>,
+    /// Creatures out in the yard, for their soft shadows: where each body
+    /// is and how far it reaches.
+    shadows: Vec<(Vec3, f32)>,
     lantern: f32,
     swing: f32,
     flag: bool,
@@ -291,7 +292,7 @@ pub struct Setting<'a> {
     pub view: View,
     /// Ghost glows that light the yard: position, color, falloff.
     pub glows: Vec<(Vec3, Vec3, f32)>,
-    pub ghost: Option<Vec3>,
+    pub shadows: Vec<(Vec3, f32)>,
     pub lantern: bool,
     pub swing: f32,
     pub flag: bool,
@@ -440,7 +441,7 @@ impl<'a> Yard<'a> {
             pieces,
             critters,
             glows,
-            ghost: setting.ghost,
+            shadows: setting.shadows,
             lantern,
             swing: setting.swing,
             flag: setting.flag,
@@ -1226,7 +1227,7 @@ impl<'a> Yard<'a> {
     }
 
     /// Light falling on an outdoor point facing `normal`.
-    fn light(&self, point: Vec3, normal: Vec3) -> Vec3 {
+    pub fn light(&self, point: Vec3, normal: Vec3) -> Vec3 {
         self.lit(point, normal, 0.0)
     }
 
@@ -1492,11 +1493,7 @@ impl<'a> Yard<'a> {
             albedo = albedo.lerp(SNOW, (cover * (0.85 + 0.3 * texture)).min(1.0));
         }
         let mut color = albedo * self.light(point, Vec3::Y);
-        if let Some(ghost) = self.ghost {
-            let offset = Vec2::new(point.x - ghost.x, point.z - ghost.z).length();
-            let height = ghost.y.max(0.2);
-            color *= 1.0 - 0.45 * (-(offset * offset) / (0.08 * height)).exp();
-        }
+        color *= super::shadow_at(point, &self.shadows);
         if self.wet > 0.0 {
             color *= 1.0 - self.wet * 0.25;
             let puddle = smoothstep(0.62, 0.7, noise(at * 0.9 + Vec2::splat(11.0))) * self.wet;
@@ -2115,7 +2112,7 @@ mod tests {
             furniture: &[],
             view: Camera::default().view(Grid::cells(100, 32)),
             glows: Vec::new(),
-            ghost: Some(Vec3::new(5.0, 1.0, 0.0)),
+            shadows: vec![(Vec3::new(5.0, 1.0, 0.0), 0.2)],
             lantern: true,
             swing: 0.4,
             flag: true,

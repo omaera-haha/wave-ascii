@@ -100,6 +100,31 @@ pub fn support(point: Vec3, nook: Vec3) -> f32 {
 }
 
 impl World {
+    /// Stands the creature at `point`, facing the glass, idle for a while:
+    /// for previews.
+    pub fn line_up(&mut self, point: Vec3) {
+        self.ghost.position = point;
+        self.ghost.velocity = Vec3::ZERO;
+        self.ghost.plan = super::Plan::new(Activity::Float, self.time, point, 600.0);
+        self.ghost.footing = Footing::default();
+        self.keep_footing(0.0);
+    }
+
+    /// Where something held at `point` near the creature's point rides
+    /// instead, beside its body.
+    pub fn held_at(&self, point: Vec3) -> Vec3 {
+        let ghost = &self.ghost;
+        let body = ghost.body();
+        let shifted = point + (body - ghost.position);
+        let ahead = Vec3::new(ghost.footing.facing.sin(), 0.0, ghost.footing.facing.cos());
+        if ghost.species.airborne() {
+            shifted
+        } else {
+            Vec3::new(shifted.x, shifted.y.max(body.y + 0.02), shifted.z)
+                + ahead * 0.16 * self.size()
+        }
+    }
+
     /// Moves the body after the point it follows, and turns it to face
     /// where it is going or what it looks at.
     pub(super) fn keep_footing(&mut self, seconds: f32) {

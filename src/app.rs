@@ -5,10 +5,12 @@ use glam::{Vec2, Vec3};
 use crate::album::Album;
 use crate::canvas::{Canvas, Style};
 use crate::color::ColorMode;
-use crate::face::{self, expression::Expression, mood::Cues};
+use crate::face;
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::postcard::{self, Postcard};
+use crate::portrait::{self, Handling};
+use crate::render::creature::Figure;
 use crate::render::ghost::{Aura, Body, Pose, friend_color};
 use crate::render::sky::Outside;
 use crate::render::{self, Camera, FRIEND_SCALE, GHOST_SCALE, Scene, View};
@@ -24,10 +26,6 @@ const HINT_AFTER: f64 = 6.0;
 // Radians per arrow key press, and per cell dragged.
 const TURN: f32 = 0.12;
 const DRAG_TURN: f32 = 0.03;
-/// Seconds the eyes keep following the pointer after it stops.
-const WATCH_POINTER: f64 = 4.0;
-/// Seconds of events the face reacts to.
-const REACTION_WINDOW: f64 = 6.0;
 /// Seconds between saves while the app runs.
 const SAVE_EVERY: f64 = 60.0;
 /// How long the ghost holds its smile before a posed picture is taken.
@@ -218,6 +216,11 @@ pub struct App {
     pub letter_scroll: usize,
     letter_read: bool,
     letter_reply_at: Option<f64>,
+    /// Each housemate's glow, eased toward the color of its mood.
+    glows: Vec<(u32, Vec3)>,
+    /// The creatures as the last frame showed them, for finding them under
+    /// the pointer.
+    shown: Vec<Figure>,
 }
 
 impl App {
@@ -271,6 +274,8 @@ impl App {
             letter_scroll: 0,
             letter_read: false,
             letter_reply_at: None,
+            glows: Vec::new(),
+            shown: Vec::new(),
         }
     }
 
@@ -368,6 +373,18 @@ impl App {
             color = color.lerp(favorite, strength);
         }
         self.aura = self.aura.lerp(color, ease);
+        let host = self.world.host();
+        self.glows.retain(|(id, _)| self.world.creature(*id).is_some());
+        for ghost in self.world.creatures() {
+            if ghost.id == host {
+                continue;
+            }
+            let color = mood_color(ghost.mood);
+            match self.glows.iter_mut().find(|(id, _)| *id == ghost.id) {
+                Some((_, glow)) => *glow = glow.lerp(color, ease),
+                None => self.glows.push((ghost.id, color)),
+            }
+        }
         if self.live_clock && self.world.time - self.last_save > SAVE_EVERY {
             self.last_save = self.world.time;
             if let Err(error) = self.save() {
@@ -1281,91 +1298,11 @@ impl App {
     }
 
     /// Everything one frame shows from `view`.
-    fn compose(&self, view: View) -> Scene<'_> {
+    fn compose(&mut self, view: View) -> Scene<'_> {
+        let figures = self.figures(&view);
         let world = &self.world;
         let ghost = &world.ghost;
-        let center = view.project(ghost.position);
-        let gaze = self.gaze(&view, center);
-        let mut reactions: Vec<_> = world
-            .events
-            .iter()
-            .filter(|event| world.time - event.time < REACTION_WINDOW)
-            .filter(|event| !matches!(event.kind, crate::world::EventKind::Quirk(_)))
-            .filter(|event| event.kind != crate::world::EventKind::BirdSang || ghost.asleep <= 0.5)
-            .filter_map(|event| {
-                let reaction = if matches!(
-                    event.kind,
-                    crate::world::EventKind::GameOver(crate::world::Outcome::ViewerWon { .. })
-                ) && world.good_sport()
-                {
-                    Some(Expression::Smile)
-                } else {
-                    face::mood::reaction(&event.kind)
-                };
-                reaction.map(|reaction| (event.time, reaction))
-            })
-            .collect();
-        if let Some(puzzle) = &world.puzzle
-            && puzzle.ended.is_none()
-            && let Some(worried) = puzzle.worried_at
-        {
-            reactions.push((worried, Expression::Worry));
-        }
-        // The first morning also earns a milestone; let the stretch take
-        // precedence over reactions recorded at that same moment.
-        reactions.sort_by(|(time, expression), (other_time, other_expression)| {
-            time.total_cmp(other_time).then_with(|| {
-                matches!(expression, Expression::Stretch)
-                    .cmp(&matches!(other_expression, Expression::Stretch))
-            })
-        });
         let quirk = world.active_quirk();
-        if let Some(spell) = quirk
-            && let Some(expression) =
-                face::mood::reaction(&crate::world::EventKind::Quirk(spell.kind))
-        {
-            reactions.push((spell.pulse_started(world.time), expression));
-        }
-        if let Some(expression) = world.letter_expression() {
-            reactions.push(expression);
-        }
-        if let Some(expression) = world.mirror_expression() {
-            reactions.push(expression);
-        }
-        if let Some(expression) = world.rhythm_expression() {
-            reactions.push(expression);
-        }
-        let mut face = face::mood::face(
-            world.time,
-            &Cues {
-                mood: ghost.mood,
-                asleep: if self.world.hunt_counting() {
-                    1.0
-                } else {
-                    ghost.asleep
-                },
-                petting: world.petting(),
-                gaze,
-                reactions,
-                focusing: world.focus.is_some(),
-            },
-        );
-        if world.music.is_some()
-            && ghost.plan.activity == crate::world::Activity::Music
-            && ghost.plan.count > 0
-            && world.life.temperament().tender > 0.55
-        {
-            face.shut = [1.0; 2];
-        }
-        let blowing = world.bubble_breath();
-        if blowing > 0.0 {
-            face.mouth = 0.35 * blowing;
-            face.widen = -0.3 * blowing;
-            face.smile *= 1.0 - blowing;
-        }
-        if world.quiet_comfort() {
-            face.lid = [0.55; 2];
-        }
         let comfort_breath = world.comfort_breath();
         let energy = ghost.needs.energy;
         let aura = Aura {
@@ -1381,35 +1318,6 @@ impl App {
                 * comfort_breath.map_or(1.0, |phase| 0.9 + 0.1 * phase),
             beat: beat(ghost.mood) * (0.6 + 0.4 * energy),
         };
-        let pose = Pose::new(
-            world.time,
-            ghost.velocity.dot(view.right) / (GHOST_SCALE * world.size())
-                + self.stroke_side * world.petting() * 1.2,
-            ghost.velocity.y / (GHOST_SCALE * world.size()),
-            ghost.asleep,
-        )
-        .to_music(
-            world
-                .music
-                .as_ref()
-                .filter(|_| {
-                    ghost.plan.activity == crate::world::Activity::Music && ghost.plan.count > 0
-                })
-                .map(|playing| playing.beat(world.time)),
-        )
-        .in_breeze(
-            world.breeze_at(ghost.position).dot(view.right),
-            world.window_shake(),
-        )
-        .with_quirk(quirk, world.time)
-        .with_letter(matches!(
-            world.letter_expression(),
-            Some((_, Expression::Glance { .. }))
-        ))
-        .with_comfort(comfort_breath)
-        .with_stretch(world.stretch_amount().max(world.cold_stretch()))
-        .with_bubbles(blowing)
-        .with_show(world.show_bob());
         let friend =
             world
                 .friend
@@ -1506,36 +1414,49 @@ impl App {
                 passersby: world.passersby(),
             },
             view,
-            face,
             aura,
-            pose,
+            figures,
             friend,
         }
     }
 
-    /// The scene as plain pixels, `width` by `height`, for checking how it
-    /// looks without a terminal.
-    pub fn picture(&self, width: usize, height: usize) -> crate::frame::Frame {
-        let grid = crate::frame::Grid::new(width, height, 1.0);
-        render::render(&self.compose(self.camera.view(grid)), grid, 1)
+    /// Every creature as it looks this frame, the one the viewer is with
+    /// first.
+    pub fn figures(&mut self, view: &View) -> Vec<Figure> {
+        let host = self.world.host();
+        let ids = self.world.roster();
+        let mut figures = Vec::with_capacity(ids.len());
+        for id in ids {
+            let handling = Handling {
+                pointer: self.pointer.filter(|_| id == host),
+                stroke_side: if id == host { self.stroke_side } else { 0.0 },
+                glow: if id == host {
+                    self.aura
+                } else {
+                    self.glows
+                        .iter()
+                        .find(|(other, _)| *other == id)
+                        .map_or(Vec3::new(0.35, 0.86, 0.8), |(_, glow)| *glow)
+                },
+            };
+            if let Some(figure) = self
+                .world
+                .with_creature(id, |world| portrait::figure(world, view, &handling))
+            {
+                figures.push(figure);
+            }
+        }
+        figures.sort_by_key(|figure| figure.id != host);
+        self.shown = figures.clone();
+        figures
     }
 
-    // Where the eyes go: to the pointer while it moves, else the way the
-    // ghost faces, so its face shows what it is looking at.
-    fn gaze(&self, view: &View, center: Option<Vec2>) -> Option<(Vec2, f32)> {
-        let center = center?;
-        let ghost = &self.world.ghost;
-        if ghost.asleep > 0.5 {
-            return None;
-        }
-        if let Some((pointer, moved)) = self.pointer
-            && self.world.focus.is_none()
-            && self.world.time - moved < WATCH_POINTER
-        {
-            return Some(((pointer - center) / 0.5, 0.85));
-        }
-        let ahead = view.project(ghost.position + ghost.heading)?;
-        Some(((ahead - center) / 0.45, 0.75))
+    /// The scene as plain pixels, `width` by `height`, for checking how it
+    /// looks without a terminal.
+    pub fn picture(&mut self, width: usize, height: usize) -> crate::frame::Frame {
+        let grid = crate::frame::Grid::new(width, height, 1.0);
+        let view = self.camera.view(grid);
+        render::render(&self.compose(view), grid, 1)
     }
 
     pub fn born(&self) -> i64 {
@@ -2972,8 +2893,13 @@ mod tests {
         let pointer = app.world.viewer.pointer.unwrap();
         assert!((pointer.z - ROOM_MAX.z).abs() < 1e-3);
         let view = app.view.unwrap();
-        let center = view.project(app.world.ghost.position);
-        let (gaze, firmness) = app.gaze(&view, center).unwrap();
+        let center = view.project(app.world.ghost.body());
+        let handling = Handling {
+            pointer: app.pointer,
+            stroke_side: 0.0,
+            glow: Vec3::ONE,
+        };
+        let (gaze, firmness) = portrait::gaze(&app.world, &view, center, &handling).unwrap();
         assert!(gaze.x > 0.0 && gaze.y > 0.0 && firmness > 0.5);
     }
 
