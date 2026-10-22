@@ -3147,7 +3147,10 @@ impl World {
             Activity::Read => look = self.carry_out_read(),
             Activity::Music => look = self.carry_out_music(),
             Activity::Air => look = self.carry_out_air(),
-            Activity::Yard => look = self.carry_out_outing(seconds),
+            Activity::Yard => {
+                look = self.carry_out_outing(seconds);
+                self.find_constellation();
+            }
             Activity::Company => look = self.keep_company(),
             Activity::Friend => {
                 self.play_with_friend();
