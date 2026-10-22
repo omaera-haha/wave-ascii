@@ -246,8 +246,10 @@ pub struct App {
     pub adoption: Adoption,
     /// The creature under the pointer, if any.
     pub hover: Option<u32>,
-    /// Whether the camera stays close on the creature the viewer is with.
+    /// Whether the camera stays close on the creature the viewer is with,
+    /// and how far in it was before.
     pub follow: bool,
+    zoom_before_follow: Option<f32>,
     /// When the stranger the viewer was last told about came.
     announced_stranger: Option<f64>,
     /// The symbols rising from each creature's head this frame.
@@ -325,6 +327,7 @@ impl App {
             adoption: Adoption::default(),
             hover: None,
             follow: false,
+            zoom_before_follow: None,
             announced_stranger: None,
             puffs: Vec::new(),
         }
@@ -1114,6 +1117,13 @@ impl App {
             }
             Key::Character('v') => {
                 self.follow = !self.follow;
+                // Close up, the view comes in nearer, and goes back after.
+                if self.follow {
+                    self.zoom_before_follow = Some(self.camera.zoom);
+                    self.camera.zoom = self.camera.zoom.max(2.6);
+                } else if let Some(zoom) = self.zoom_before_follow.take() {
+                    self.camera.zoom = zoom;
+                }
                 self.post(if self.follow {
                     "The view stays close on them (v to step back)."
                 } else {
