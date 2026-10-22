@@ -38,6 +38,21 @@ pub fn glance(save: &Save, now: DateTime, away: i64) -> String {
                         && now.day() == 28
                         && now.date().last_of_month().day() == 28))
         });
+    let others: Vec<String> = save
+        .household
+        .housemates
+        .iter()
+        .map(|mate| mate.name.trim().chars().filter(|character| !character.is_control()).take(24).collect::<String>())
+        .filter(|name| !name.is_empty())
+        .collect();
+    let household = !others.is_empty();
+    let everyone =
+        crate::world::together::list(&std::iter::once(name.clone()).chain(others).collect::<Vec<_>>());
+    let pottering = if save.household.species.airborne() {
+        "is floating about"
+    } else {
+        "is pottering about"
+    };
     let (mark, english, korean_words) = if !(6.5..22.0).contains(&hour) {
         ("☾", "is asleep", "쿨쿨 자는 중")
     } else if life
@@ -62,10 +77,25 @@ pub fn glance(save: &Save, now: DateTime, away: i64) -> String {
             "is watching the morning from the window",
             "창가에서 아침 구경 중",
         )
+    } else if hour < 17.0 && household {
+        ("~", "are playing together", "같이 노는 중")
     } else if hour < 17.0 {
-        ("~", "is floating about", "둥둥 떠다니는 중")
+        ("~", pottering, "둥둥 떠다니는 중")
     } else {
         ("☆", "is reading by the lamp", "램프 옆에서 책 읽는 중")
+    };
+    // A cold or a birthday is the one's own; the rest is everyone's.
+    let together = household && !matches!(mark, "✦") && english != "has a little cold";
+    let name = if together { everyone } else { name };
+    // Several of them are, rather than one is.
+    let english = if together {
+        english
+            .replacen("is ", "are ", 1)
+            .replace("misses", "miss")
+            .replace("has a little cold", "have a little cold")
+            .replace("is having a birthday", "are having a birthday")
+    } else {
+        english.to_owned()
     };
     let mut line = if korean {
         format!("{mark} {name}, {korean_words}")
@@ -110,6 +140,20 @@ mod tests {
 
     fn at(hour: i8) -> DateTime {
         jiff::civil::date(2026, 10, 21).at(hour, 0, 0, 0)
+    }
+
+    #[test]
+    fn a_household_glance_names_everyone_but_keeps_a_birthday_personal() {
+        let world = World::new(1, 12.0);
+        let mut save = save(&world);
+        save.household.species = crate::world::Species::Fox;
+        save.household.housemates.push(crate::store::Housemate {
+            id: 1,
+            name: "Mochi".into(),
+            ..Default::default()
+        });
+        assert_eq!(glance(&save, at(23), 60), "☾ Pip and Mochi are asleep");
+        assert_eq!(glance(&save, at(13), 60), "~ Pip and Mochi are playing together");
     }
 
     #[test]
