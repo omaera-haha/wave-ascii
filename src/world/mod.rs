@@ -9,6 +9,7 @@ pub mod breaks;
 pub mod breeze;
 pub mod bubbles;
 pub mod calendar;
+pub mod cat;
 pub mod cold;
 pub mod cranes;
 pub mod creation;
@@ -255,6 +256,10 @@ pub enum EventKind {
         activity: Activity,
     },
     BirdLanded,
+    CatArrived,
+    CatLeft {
+        startled: bool,
+    },
     BirdSang,
     BirdFlewOff {
         startled: bool,
@@ -543,6 +548,9 @@ impl EventKind {
             Self::BirdFlewOff { startled: false } => "the bird flew away".to_owned(),
             Self::BirdFlewOff { startled: true } => "the bird took fright and flew away".to_owned(),
             Self::MothArrived => "a moth fluttered in to the lamp".to_owned(),
+            Self::CatArrived => "a cat came over the fence into the yard".to_owned(),
+            Self::CatLeft { startled: false } => "the cat wandered off home".to_owned(),
+            Self::CatLeft { startled: true } => "the cat took fright and dashed off".to_owned(),
             Self::MothLeft => "the moth fluttered away".to_owned(),
             Self::GiftLeft(gift) => format!("the bird left {} on the sill outside", gift.name()),
             Self::Kept(gift) => format!("put {} on the shelf of keepsakes", gift.name()),
@@ -992,7 +1000,7 @@ impl World {
         let mut random = Random::new(seed);
         let weather = Weather::new(&mut random);
         let nature = Nature::roll(&mut random);
-        let visitors = Visitors::new(&mut random);
+        let visitors = Visitors::new(&mut random, seed);
         let mut world = Self {
             time: 0.0,
             hour,
@@ -1281,6 +1289,7 @@ impl World {
         }
         self.advance_breeze(seconds);
         self.advance_visitors(seconds);
+        self.advance_cat(seconds);
         self.advance_friend();
 
         self.advance_blocks(seconds);
@@ -1862,12 +1871,17 @@ impl World {
             Activity::Pin => gallery::APPROACH,
             Activity::Show => position,
             Activity::Tidy => position,
-            Activity::Yard => {
-                let spot = self.first_spot();
-                spot.position(self.size())
-            }
+            Activity::Yard => match self.beside_cat().filter(|_| self.random.unit() < 0.8) {
+                Some(spot) => spot,
+                None => {
+                    let spot = self.first_spot();
+                    spot.position(self.size())
+                }
+            },
         };
         let mut plan = Plan::new(activity, self.time, target, length);
+        plan.cat = activity == Activity::Yard
+            && self.beside_cat().is_some_and(|spot| spot.distance(target) < 1e-4);
         if activity == Activity::Explore
             && !self.life.gallery.is_empty()
             && self.random.unit() < 0.04
@@ -3509,6 +3523,10 @@ impl World {
                 ))
         });
         let size = self.size();
+        // Out in the yard it tiptoes past a settled cat.
+        let near_cat = self.visitors.cat.as_ref().is_some_and(|cat| {
+            cat.settled(self.time) && cat.position(self.time).distance(self.ghost.position) < 1.8
+        });
         let ghost = &mut self.ghost;
         let mut target = ghost.plan.target;
         if ghost.plan.activity == Activity::Float {
@@ -3547,6 +3565,9 @@ impl World {
             Activity::Mirror => 0.45,
             Activity::Dance | Activity::Friend => 1.5,
             Activity::Pounce => 1.6,
+            // It creeps up on the cat so as not to frighten it.
+            Activity::Yard if ghost.plan.cat && ghost.position.distance(target) < 2.4 => 0.3,
+            _ if near_cat => 0.3,
             _ => 0.8,
         } * (0.6 + 0.4 * ghost.needs.energy)
             // It slows down to enjoy being stroked.

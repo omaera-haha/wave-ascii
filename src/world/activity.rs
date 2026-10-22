@@ -193,6 +193,8 @@ pub struct Plan {
     pub overnight: bool,
     pub window: Option<bool>,
     pub gallery_visit: bool,
+    /// An outing to keep the visiting cat company.
+    pub cat: bool,
 }
 
 impl Plan {
@@ -211,6 +213,7 @@ impl Plan {
             overnight: false,
             window: None,
             gallery_visit: false,
+            cat: false,
         }
     }
 

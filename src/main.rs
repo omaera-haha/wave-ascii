@@ -374,6 +374,9 @@ fn print_frame(options: &Options) -> io::Result<()> {
             world.weather.settled_snow = Some(-100.0);
         }
     }
+    if env::var_os("WAVE_ASCII_CAT").is_some() {
+        world.visitors.next_cat = 0.0;
+    }
     if let Ok(perch) = env::var("WAVE_ASCII_BIRD") {
         let mut random = world::Random::new(3);
         let mut bird = world::visitor::Bird::new(-10.0, 1.0, &mut random);

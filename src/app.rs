@@ -1471,6 +1471,11 @@ impl App {
                         .bird
                         .as_ref()
                         .map(|bird| bird.picture(world.time)),
+                    cat: world
+                        .visitors
+                        .cat
+                        .as_ref()
+                        .map(|cat| cat.picture(world.time)),
                     time: world.time,
                     sill: world.life.sill,
                     meteor: world

@@ -64,6 +64,7 @@ pub fn observe(world: &World) -> Value {
         "anniversaries": world.anniversary_observations(),
         "outside_the_window": outside_the_window(world),
         "yard": world.yard_words(),
+        "cat": world.cat_words(),
         "sight": sight(world),
         "room": {
             "window": if world.window_open { "open" } else { "shut" },
@@ -403,6 +404,7 @@ fn thing(world: &World, thing: Thing) -> String {
             crate::world::Season::Winter => "the big bare tree behind the house",
         }
         .to_owned(),
+        Thing::Cat => world.cat_words(),
         Thing::Swing => if world.swinging().is_some() {
             "the swing in the yard, swinging with you on it".to_owned()
         } else {

@@ -75,6 +75,11 @@ impl Keepsake {
 pub struct Visitors {
     pub bird: Option<Bird>,
     pub moth: Option<Moth>,
+    pub cat: Option<super::cat::Cat>,
+    pub next_cat: f64,
+    /// The cat keeps its own draws so its visits never change the rest of
+    /// the world's.
+    pub(super) cat_random: Random,
     next_bird: f64,
     next_moth: f64,
     pub(super) next_friend: f64,
@@ -84,10 +89,14 @@ pub struct Visitors {
 }
 
 impl Visitors {
-    pub fn new(random: &mut Random) -> Self {
+    pub fn new(random: &mut Random, seed: u64) -> Self {
+        let mut cat_random = Random::new(seed ^ 0x0063_6174_6361_7473);
         Self {
             bird: None,
             moth: None,
+            cat: None,
+            next_cat: f64::from(cat_random.range(600.0, 1800.0)),
+            cat_random,
             next_bird: f64::from(random.range(300.0, 900.0)),
             next_moth: f64::from(random.range(300.0, 600.0)),
             next_friend: f64::INFINITY,

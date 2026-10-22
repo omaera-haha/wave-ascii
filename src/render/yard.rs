@@ -22,6 +22,7 @@ use crate::world::home::{
 use crate::world::{ROOM_MAX, ROOM_MIN};
 use crate::world::passerby::{Passerby, Passing};
 use crate::world::stars::hash;
+use crate::world::cat::{CatPicture, Coat, Pose};
 use crate::world::{BirdPicture, Occasion, Plant, Season};
 
 const LANTERN_LIGHT: Vec3 = Vec3::new(1.0, 0.74, 0.42);
@@ -189,6 +190,7 @@ enum Critter {
     Bird(BirdPicture, Vec3),
     Squirrel(Passing, Vec3),
     Leaf(Vec3, Vec3),
+    Cat(CatPicture, Vec3),
 }
 
 /// The outdoors for one frame.
@@ -286,6 +288,9 @@ impl<'a> Yard<'a> {
         }
         if let Some(bird) = outside.bird {
             critters.push(Critter::Bird(bird, bird.position));
+        }
+        if let Some(cat) = outside.cat {
+            critters.push(Critter::Cat(cat, cat.position + Vec3::Y * 0.24));
         }
         if matches!(outside.season, Season::Spring | Season::Autumn) {
             critters.extend(falling(outside));
@@ -461,6 +466,7 @@ impl<'a> Yard<'a> {
                 Critter::Bird(_, position) => (*position, 0.2),
                 Critter::Squirrel(_, position) => (*position, 0.16),
                 Critter::Leaf(position, _) => (*position, 0.05),
+                Critter::Cat(_, center) => (*center, 0.62),
             };
             let along = (position - origin).dot(self.view.forward)
                 / direction.dot(self.view.forward).max(1e-4);
@@ -480,6 +486,7 @@ impl<'a> Yard<'a> {
                     coverage((local * Vec2::new(1.0, 1.8)).length() - 0.028, pixel * 0.6),
                     *tint,
                 ),
+                Critter::Cat(cat, _) => cat_shade(local + Vec2::Y * 0.24, pixel, cat),
             };
             if cover > 0.0 {
                 let lit = color * self.lit(position, -direction, 1.0).max(Vec3::splat(0.12));
@@ -1633,6 +1640,100 @@ fn bird_shade(local: Vec2, pixel: f32, bird: BirdPicture, season: Season) -> (f3
         coverage(distance, footprint * 0.5),
         feather.lerp(Vec3::splat(0.05), eye),
     )
+}
+
+/// How much of a pixel the cat covers at `local`, measured from its feet
+/// in room units on its billboard, and its color there.
+fn cat_shade(local: Vec2, pixel: f32, cat: &CatPicture) -> (f32, Vec3) {
+    use crate::sdf::capsule as line;
+    // Drawn at a small size and enlarged.
+    const SCALE: f32 = 1.5;
+    let edge = (pixel * 0.5 / SCALE).max(1e-4);
+    let mut point = local / SCALE;
+    point.x *= cat.facing;
+    let blob = |point: Vec2, center: Vec2, radii: Vec2| {
+        ((point - center) / radii).length() * radii.min_element() - radii.min_element()
+    };
+    let ears = |head: Vec2, size: f32| {
+        line(point, head + Vec2::new(-0.035, 0.04) * size, head + Vec2::new(-0.045, 0.085) * size, 0.017)
+            .min(line(point, head + Vec2::new(0.025, 0.045) * size, head + Vec2::new(0.035, 0.09) * size, 0.017))
+    };
+    let (distance, head, eyes_open) = match cat.pose {
+        Pose::Walking | Pose::Running => {
+            let running = cat.pose == Pose::Running;
+            let stretch = if running { 1.2 } else { 1.0 };
+            let body = blob(point, Vec2::new(0.0, 0.16), Vec2::new(0.16 * stretch, 0.07));
+            let head = if running {
+                Vec2::new(0.2, 0.2)
+            } else {
+                Vec2::new(0.17, 0.25)
+            };
+            let mut distance = body.min(point.distance(head) - 0.065).min(ears(head, 1.0));
+            let stride = if running { 0.09 } else { 0.045 };
+            for (x, offset) in [(0.1, 0.0), (0.06, 3.1), (-0.1, 1.6), (-0.14, 4.7)] {
+                let swing = (cat.step + offset).sin() * stride;
+                distance = distance.min(line(
+                    point,
+                    Vec2::new(x * stretch, 0.13),
+                    Vec2::new(x * stretch + swing, 0.0),
+                    0.021,
+                ));
+            }
+            let tip = Vec2::new(-0.3, 0.33 + cat.tail * 0.04);
+            distance = distance
+                .min(line(point, Vec2::new(-0.15 * stretch, 0.18), Vec2::new(-0.25, 0.24), 0.019))
+                .min(line(point, Vec2::new(-0.25, 0.24), tip, 0.017));
+            (distance, head, true)
+        }
+        Pose::Sitting => {
+            let body = blob(point, Vec2::new(-0.02, 0.13), Vec2::new(0.1, 0.13))
+                .min(point.distance(Vec2::new(0.04, 0.15)) - 0.07);
+            let head = Vec2::new(0.04, 0.3);
+            let mut distance = body
+                .min(point.distance(head) - 0.068)
+                .min(ears(head, 1.0))
+                .min(line(point, Vec2::new(0.07, 0.12), Vec2::new(0.08, 0.0), 0.02));
+            let curl = Vec2::new(0.14, 0.04 + cat.tail * 0.015);
+            distance = distance
+                .min(line(point, Vec2::new(-0.1, 0.03), Vec2::new(0.1, 0.02), 0.018))
+                .min(line(point, Vec2::new(0.1, 0.02), curl, 0.016));
+            if cat.washing {
+                distance = distance.min(line(point, Vec2::new(0.07, 0.15), Vec2::new(0.1, 0.27), 0.02));
+            }
+            (distance, head, true)
+        }
+        Pose::Napping => {
+            let loaf = blob(point, Vec2::new(0.0, 0.085), Vec2::new(0.16, 0.085));
+            let head = Vec2::new(0.12, 0.11);
+            let distance = loaf
+                .min(point.distance(head) - 0.062)
+                .min(ears(head, 0.75))
+                .min(line(point, Vec2::new(-0.13, 0.03), Vec2::new(0.1, 0.015), 0.022));
+            (distance, head, false)
+        }
+    };
+    let (base, patch) = match cat.coat {
+        Coat::Ginger => (Vec3::new(0.98, 0.62, 0.32), Vec3::new(0.78, 0.4, 0.18)),
+        Coat::Gray => (Vec3::new(0.62, 0.64, 0.7), Vec3::new(0.46, 0.48, 0.54)),
+        Coat::Black => (Vec3::new(0.24, 0.24, 0.28), Vec3::new(0.16, 0.16, 0.2)),
+        Coat::Calico => (Vec3::new(0.95, 0.93, 0.88), Vec3::new(0.95, 0.55, 0.25)),
+    };
+    // Tabby stripes, or a calico's patches.
+    let marked = match cat.coat {
+        Coat::Calico => (point - Vec2::new(-0.05, 0.2)).length() < 0.09 || point.distance(head) < 0.05 && point.x < head.x,
+        _ => ((point.x * 28.0).sin() > 0.55) && point.y > 0.1,
+    };
+    let mut color = if marked { patch } else { base };
+    let eye = head + Vec2::new(0.03, 0.012);
+    if eyes_open {
+        let open = coverage(point.distance(eye) - 0.012, edge);
+        color = color.lerp(Vec3::new(0.6, 0.85, 0.3), open);
+        color = color.lerp(Vec3::splat(0.05), coverage(point.distance(eye + Vec2::X * 0.004) - 0.005, edge));
+    } else {
+        let shut = line(point, eye - Vec2::X * 0.014, eye + Vec2::new(0.012, -0.004), 0.003);
+        color = color.lerp(Vec3::splat(0.1), coverage(shut, edge));
+    }
+    (coverage(distance, edge), color)
 }
 
 fn squirrel_shade(local: Vec2, pixel: f32, passing: &Passing) -> (f32, Vec3) {

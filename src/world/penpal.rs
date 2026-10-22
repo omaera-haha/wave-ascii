@@ -246,6 +246,7 @@ pub fn understand(text: &str, life: &Life, ghost_name: &str) -> Understood {
         "갤러리",
         "나무",
         "그네",
+        "고양이",
     ]) {
         recognize(english, korean);
     }

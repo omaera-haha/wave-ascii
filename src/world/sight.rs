@@ -41,11 +41,12 @@ pub enum Thing {
     Gallery,
     Tree,
     Swing,
+    Cat,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 24] = [
+    pub const NAMES: [&str; 25] = [
         "viewer",
         "window",
         "plant",
@@ -70,6 +71,7 @@ impl Thing {
         "gallery",
         "tree",
         "swing",
+        "cat",
     ];
 
     pub fn name(self) -> &'static str {
@@ -98,6 +100,7 @@ impl Thing {
             Self::Gallery => "gallery",
             Self::Tree => "tree",
             Self::Swing => "swing",
+            Self::Cat => "cat",
         }
     }
 }
@@ -191,6 +194,7 @@ impl World {
             Thing::Gallery => super::gallery::CENTER,
             Thing::Tree => super::home::TREE_CROWN - Vec3::Y * 0.9,
             Thing::Swing => self.swing_seat(),
+            Thing::Cat => self.visitors.cat.as_ref()?.position(self.time) + Vec3::Y * 0.15,
         })
     }
 
@@ -227,6 +231,7 @@ impl World {
             Thing::Gallery,
             Thing::Tree,
             Thing::Swing,
+            Thing::Cat,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -311,6 +316,7 @@ impl World {
                 Thing::Gallery,
                 Thing::Tree,
                 Thing::Swing,
+                Thing::Cat,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),
@@ -701,6 +707,8 @@ mod tests {
             &mut super::super::Random::new(1),
         ));
         world.invite_friend();
+        world.visitors.next_cat = 0.0;
+        world.advance_cat(0.0);
         world.draw_on_glass(Vec3::new(0.0, 1.2, ROOM_MAX.z));
         world
             .seedlings

@@ -23,9 +23,14 @@ impl World {
             && !self.bedtime()
             && self.focus.is_none()
             && self.hunt.is_none()
-            && self
+            && (self
                 .last_outing
                 .is_none_or(|at| self.time - at >= PAUSE || self.time < at)
+                || self
+                    .visitors
+                    .cat
+                    .as_ref()
+                    .is_some_and(|cat| cat.noticed && cat.settled(self.time)))
     }
 
     /// Where to go first: the lawn for the stars at night, else a spot that
@@ -64,7 +69,8 @@ impl World {
 
     /// The spot an outing is at or heading to.
     pub fn yard_spot(&self) -> Option<Spot> {
-        if self.ghost.plan.activity != Activity::Yard || self.ghost.plan.done {
+        if self.ghost.plan.activity != Activity::Yard || self.ghost.plan.done || self.ghost.plan.cat
+        {
             return None;
         }
         let size = self.size();
@@ -87,6 +93,9 @@ impl World {
     }
 
     pub(super) fn carry_out_outing(&mut self, seconds: f32) -> Option<Vec3> {
+        if self.ghost.plan.cat {
+            return self.keep_cat_company(seconds);
+        }
         let spot = self.yard_spot()?;
         let arrived = self.ghost.plan.arrived;
         if arrived == Some(self.time) {
@@ -105,30 +114,66 @@ impl World {
             }
         }
         if arrived.is_some() && stayed > self.ghost.plan.length {
-            let visits = self.ghost.plan.count;
-            if visits >= VISITS
-                || self.ghost.needs.energy < 0.3
-                || self.bedtime()
-                || self.random.unit() < 0.35
-            {
-                self.ghost.plan.done = true;
-            } else {
-                let next = loop {
-                    let index = (self.random.unit() * Spot::ALL.len() as f32) as usize;
-                    let choice = Spot::ALL[index.min(Spot::ALL.len() - 1)];
-                    if choice != spot {
-                        break choice;
-                    }
-                };
-                let position = next.position(self.size());
-                self.ghost.plan.target = position;
-                self.ghost.plan.anchor = position;
-                self.ghost.plan.arrived = None;
-                self.ghost.plan.started = self.time;
-            }
+            self.move_on(Some(spot));
         }
         self.ghost.needs.change(0.0, 0.012 * seconds, 0.0);
         Some(spot.looks_at())
+    }
+
+    /// Done with a spot: on to another one, or back inside.
+    fn move_on(&mut self, from: Option<Spot>) {
+        self.ghost.plan.cat = false;
+        if self.ghost.plan.count >= VISITS
+            || self.ghost.needs.energy < 0.3
+            || self.bedtime()
+            || self.random.unit() < 0.35
+        {
+            self.ghost.plan.done = true;
+            return;
+        }
+        let next = loop {
+            let index = (self.random.unit() * Spot::ALL.len() as f32) as usize;
+            let choice = Spot::ALL[index.min(Spot::ALL.len() - 1)];
+            if Some(choice) != from {
+                break choice;
+            }
+        };
+        let position = next.position(self.size());
+        self.ghost.plan.target = position;
+        self.ghost.plan.anchor = position;
+        self.ghost.plan.arrived = None;
+        self.ghost.plan.started = self.time;
+    }
+
+    /// Sits quietly near the cat, at the distance it allows.
+    fn keep_cat_company(&mut self, seconds: f32) -> Option<Vec3> {
+        let Some(spot) = self.beside_cat() else {
+            self.move_on(None);
+            return None;
+        };
+        self.ghost.plan.target = spot;
+        self.ghost.plan.anchor = spot;
+        let arrived = self.ghost.plan.arrived;
+        if arrived == Some(self.time) {
+            self.last_outing = Some(self.time);
+            self.ghost.plan.count += 1;
+            self.ghost.plan.length = self.random.range(35.0, 70.0);
+            if self.ghost.asleep < 0.3 {
+                let korean = self.speaks_korean();
+                let friendly = self.life.cat_trust >= 0.5;
+                self.think(match (friendly, korean) {
+                    (false, false) => "Hello, kitty. I'll sit very still.",
+                    (false, true) => "안녕, 고양아. 가만히 있을게.",
+                    (true, false) => "There you are, my furry friend.",
+                    (true, true) => "왔구나, 내 털뭉치 친구.",
+                });
+            }
+        }
+        if arrived.is_some() && self.ghost.plan.stayed(self.time) > self.ghost.plan.length {
+            self.move_on(None);
+        }
+        self.ghost.needs.change(0.0, 0.01 * seconds, 0.008 * seconds);
+        self.position_of(super::Thing::Cat)
     }
 
     fn arrive_at(&mut self, spot: Spot) {
@@ -246,6 +291,8 @@ impl World {
             "passing through the door".to_owned()
         } else if home::in_house(self.ghost.position) {
             "indoors in its room".to_owned()
+        } else if self.ghost.plan.activity == Activity::Yard && self.ghost.plan.cat {
+            "out in the yard, keeping the visiting cat company".to_owned()
         } else {
             match self.yard_spot().filter(|_| self.ghost.plan.arrived.is_some()) {
                 Some(spot) => format!("out in the yard, {}", spot.words()),
@@ -272,6 +319,9 @@ impl World {
 
     /// What the ghost is doing in the yard, in words.
     pub fn outing_words(&self) -> &'static str {
+        if self.ghost.plan.cat && !self.ghost.plan.done {
+            return "keeping the cat company in the yard";
+        }
         self.yard_spot()
             .filter(|_| self.ghost.plan.arrived.is_some())
             .map_or("heading out to the yard", Spot::words)
@@ -416,5 +466,42 @@ mod tests {
         let mut world = World::new(3, 23.5);
         world.ghost.needs.energy = 1.0;
         assert!(!world.yard_is_open() || !world.bedtime());
+    }
+}
+
+#[cfg(test)]
+mod cat_tests {
+    use super::*;
+
+    #[test]
+    fn an_outing_to_a_settled_cat_sits_beside_it_without_startling_it() {
+        let mut world = World::new(3, 13.0);
+        world.ghost.needs.energy = 1.0;
+        world.visitors.next_cat = 0.0;
+        world.step(0.05);
+        let mut stayed = 0.0;
+        for step in 0..(200.0 / 0.05) as usize {
+            if step == 400 {
+                world.begin(Activity::Yard);
+            }
+            world.step(0.05);
+            if world.ghost.plan.activity == Activity::Yard
+                && world.ghost.plan.cat
+                && world.ghost.plan.arrived.is_some()
+            {
+                stayed += 0.05;
+            }
+        }
+        let startled = world
+            .events
+            .iter()
+            .any(|event| event.kind == EventKind::CatLeft { startled: true });
+        println!(
+            "stayed {stayed} startled {startled} trust {} rest {:?}",
+            world.life.cat_trust,
+            world.visitors.cat.map(|cat| cat.rest)
+        );
+        assert!(!startled);
+        assert!(stayed > 20.0);
     }
 }

@@ -40,6 +40,7 @@ pub struct Outside {
     pub fireworks: bool,
     pub time: f64,
     pub bird: Option<BirdPicture>,
+    pub cat: Option<crate::world::cat::CatPicture>,
     pub sill: Option<Keepsake>,
     /// A shooting star crossing the sky.
     pub meteor: Option<Streak>,
@@ -96,6 +97,7 @@ impl Outside {
             fireworks: false,
             time,
             bird: None,
+            cat: None,
             sill: None,
             meteor: None,
             constellations: Vec::new(),

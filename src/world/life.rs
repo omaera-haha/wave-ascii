@@ -204,6 +204,11 @@ pub struct Tally {
     /// Visits it saw at the window and the lamp.
     pub birds: u32,
     pub moths: u32,
+    /// Times it went out to play in the yard, and the cat came by.
+    #[serde(default)]
+    pub outings: u32,
+    #[serde(default)]
+    pub cats: u32,
     /// Gifts from the bird that made it onto the shelf.
     #[serde(default)]
     pub gifts: u32,
@@ -646,6 +651,8 @@ impl Tally {
             EventKind::Noticed(thing) if thing == "a moth at the lamp" => {
                 self.moths = self.moths.saturating_add(1)
             }
+            EventKind::Began(Activity::Yard) => self.outings = self.outings.saturating_add(1),
+            EventKind::CatArrived => self.cats = self.cats.saturating_add(1),
             EventKind::Heard(_) => self.heard = self.heard.saturating_add(1),
             EventKind::Scolded => self.scolds = self.scolds.saturating_add(1),
             EventKind::Praised => self.praises = self.praises.saturating_add(1),
@@ -1508,6 +1515,20 @@ impl Tally {
                 "창가에서 새를 구경했어".to_owned(),
             ));
         }
+        if self.outings > 0 {
+            deeds.push((
+                Salience::Small,
+                "went out to play in the yard".to_owned(),
+                "마당에 나가 놀았어".to_owned(),
+            ));
+        }
+        if self.cats > 0 {
+            deeds.push((
+                Salience::Notable,
+                "a cat came to visit the yard".to_owned(),
+                "고양이가 마당에 놀러 왔어".to_owned(),
+            ));
+        }
         if self.gifts > 0 {
             let gifts: Vec<String> = self
                 .keepsakes
@@ -2058,6 +2079,12 @@ pub struct Life {
     /// How safe the bird feels with the ghost, from wary to trusting.
     #[serde(default)]
     pub bird_trust: f32,
+    /// How safe the neighborhood cat feels with the ghost.
+    #[serde(default)]
+    pub cat_trust: f32,
+    /// The cat's coat, once it has first come by; it's always the same cat.
+    #[serde(default)]
+    pub cat_coat: Option<super::cat::Coat>,
     /// The shelf's newest eight gifts, oldest first.
     #[serde(default)]
     pub keepsakes: Vec<Keepsake>,
