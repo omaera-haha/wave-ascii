@@ -100,6 +100,20 @@ pub fn support(point: Vec3, nook: Vec3) -> f32 {
 }
 
 impl World {
+    /// A little jump for joy or surprise: up off the ground for a body that
+    /// keeps to it, or a bob upward for one that floats or flies.
+    pub fn hop(&mut self, strength: f32) {
+        let ghost = &mut self.ghost;
+        match ghost.species.gait() {
+            Gait::Walk | Gait::Hop if ghost.footing.grounded => {
+                ghost.footing.grounded = false;
+                ghost.footing.rise = strength;
+            }
+            Gait::Walk | Gait::Hop => {}
+            Gait::Float | Gait::Fly => ghost.velocity.y += strength * 0.3,
+        }
+    }
+
     /// Stands the creature at `point`, facing the glass, idle for a while:
     /// for previews.
     pub fn line_up(&mut self, point: Vec3) {

@@ -46,8 +46,6 @@ pub fn face(world: &World, view: &View, handling: &Handling) -> face::Face {
                 && world.good_sport()
             {
                 Some(Expression::Smile)
-            } else if matches!(event.kind, EventKind::Together { .. }) {
-                Some(Expression::Smile)
             } else {
                 face::mood::reaction(&event.kind)
             };

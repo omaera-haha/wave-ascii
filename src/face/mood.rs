@@ -83,6 +83,9 @@ pub fn face(time: f64, cues: &Cues) -> Face {
 pub fn reaction(event: &EventKind) -> Option<Expression> {
     Some(match event {
         EventKind::MetReflection => Expression::Surprise,
+        EventKind::Newcomer { .. } => Expression::Sparkle,
+        EventKind::MovedIn { .. } => Expression::LookAround,
+        EventKind::Together { .. } => Expression::Smile,
         EventKind::RecognizedSelf => Expression::Sparkle,
         EventKind::Heard(text) if crate::world::quirks::yawn_message(text) => return None,
         EventKind::Quirk(Quirk::Hiccups) => Expression::Hiccup,

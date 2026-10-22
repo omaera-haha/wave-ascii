@@ -425,7 +425,11 @@ impl World {
         self.housemates.sort_by_key(|soul| soul.ghost.id);
         self.look_at_housemates();
         // Whatever it was at as a companion goes on; it only becomes able to
-        // play with the viewer.
+        // play with the viewer, and turns to them with a little hop.
+        if self.ghost.asleep < 0.3 {
+            self.hop(1.6);
+            self.attend("viewer", 3.0);
+        }
         true
     }
 
@@ -475,10 +479,27 @@ impl World {
         let names: Vec<String> = self.creatures().map(|ghost| ghost.name.clone()).collect();
         let soul = newcomer.into_soul();
         self.housemates.push(soul);
+        let sound = species.sound();
         self.with_creature(id, |world| {
-            world.ghost.speech = None;
             world.record(EventKind::MovedIn { names });
+            let hello = if world.speaks_korean() {
+                format!(
+                    "안녕! 나는 {name}{}. {sound}",
+                    super::writing::particle(name, "이야", "야")
+                )
+            } else {
+                format!("Hello! I'm {name}. {sound}")
+            };
+            world.say(&hello);
         });
+        let welcome = if self.speaks_korean() {
+            format!("어서 와, {name}!")
+        } else {
+            format!("Welcome, {name}!")
+        };
+        if self.ghost.asleep < 0.3 {
+            self.say(&welcome);
+        }
         let name = name.to_owned();
         self.record(EventKind::Newcomer { name, species });
         self.look_at_housemates();
@@ -553,10 +574,12 @@ impl World {
             let spot = Vec3::new(-1.0 + 1.2 * index as f32, 0.9, 0.3 - 0.4 * index as f32);
             self.with_creature(id, |world| {
                 world.events.clear();
+                world.ghost.speech = None;
                 world.ghost.position = spot;
                 world.ghost.plan = Plan::new(Activity::Float, world.time, spot, 4.0);
             });
         }
+        self.ghost.speech = None;
         self.events
             .retain(|event| !matches!(event.kind, EventKind::Newcomer { .. }));
         self.look_at_housemates();

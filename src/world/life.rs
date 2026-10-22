@@ -134,6 +134,17 @@ enum Salience {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Tally {
+    /// Times it did something with a housemate, and the names of those it
+    /// played with, a few at most.
+    #[serde(default)]
+    pub pastimes: u32,
+    #[serde(default)]
+    pub playmates: Vec<String>,
+    /// Whether it came to live in the cottage, and who else came.
+    #[serde(default)]
+    pub moved_in: bool,
+    #[serde(default)]
+    pub newcomers: Vec<String>,
     /// Light motes it caught and ate.
     pub motes: u32,
     /// Times it pushed the ball.
@@ -439,6 +450,18 @@ impl Tally {
                 }
             }
             EventKind::FeltBetter => self.felt_better = self.felt_better.saturating_add(1),
+            EventKind::Together { with, .. } => {
+                self.pastimes = self.pastimes.saturating_add(1);
+                if self.playmates.len() < 4 && !self.playmates.contains(with) {
+                    self.playmates.push(with.clone());
+                }
+            }
+            EventKind::MovedIn { .. } => self.moved_in = true,
+            EventKind::Newcomer { name, .. } => {
+                if self.newcomers.len() < 4 && !self.newcomers.contains(name) {
+                    self.newcomers.push(name.clone());
+                }
+            }
             EventKind::Composed(title) => {
                 self.compositions = self.compositions.saturating_add(1);
                 if self.composition_titles.len() < 8 {
@@ -880,6 +903,43 @@ impl Tally {
                 )
             })
             .collect();
+        if self.moved_in {
+            deeds.push((
+                Salience::Momentous,
+                "came to live in the cottage".to_owned(),
+                "오두막에 살러 왔어".to_owned(),
+            ));
+        }
+        for name in &self.newcomers {
+            deeds.push((
+                Salience::Special,
+                format!("{name} came to live with us"),
+                format!(
+                    "{name}{}우리 집에 왔어",
+                    super::writing::particle(name, "이 ", "가 ")
+                ),
+            ));
+        }
+        if !self.playmates.is_empty() {
+            let names = super::together::list(&self.playmates);
+            deeds.push((
+                if self.pastimes >= 4 {
+                    Salience::Notable
+                } else {
+                    Salience::Small
+                },
+                format!("played with {names}"),
+                format!(
+                    "{}{} 놀았어",
+                    self.playmates.join(", "),
+                    super::writing::particle(
+                        self.playmates.last().map_or("", String::as_str),
+                        "이랑",
+                        "랑"
+                    )
+                ),
+            ));
+        }
         deeds.extend(self.temperament_changes.iter().map(|line| {
             (
                 Salience::Momentous,

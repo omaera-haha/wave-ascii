@@ -297,7 +297,7 @@ impl World {
                     self.within_reach(position + away * 1.1 + swerve)
                 };
                 if chasing && apart.length() < 0.32 && self.ghost.plan.count < 1000 {
-                    self.ghost.velocity.y += 0.6;
+                    self.hop(1.8);
                     self.ghost.plan.count += 2;
                     if self.ghost.speech.as_ref().is_none_or(|line| time - line.time > 4.0) {
                         let tag = self.spoken("Tag!", "잡았다!");

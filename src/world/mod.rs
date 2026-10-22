@@ -2238,6 +2238,9 @@ impl World {
         let fun = if count < 3 { 0.04 } else { -0.05 };
         self.ghost.needs.change(0.0, fun, 0.05);
         self.ghost.velocity += Vec3::new(self.random.range(-0.4, 0.4), 0.5, -0.3);
+        if !self.ghost.species.airborne() {
+            self.hop(1.5);
+        }
         self.record(EventKind::Poked { count });
         self.notice_late_night(self.speaks_korean());
     }

@@ -249,6 +249,7 @@ pub fn friend_notices_outfit(world: &World) -> Vec<&'static str> {
 /// What it muses about while nothing in particular happens.
 pub fn idle(world: &World) -> Vec<String> {
     let mut lines: Vec<_> = idle_lines(world).into_iter().map(str::to_owned).collect();
+    lines.extend(housemate_thoughts(world));
     lines.extend(crate::world::agenda::thoughts(world));
     lines.extend(world.rhythm_thoughts());
     if world.folding.is_some() {
@@ -280,6 +281,42 @@ pub fn idle(world: &World) -> Vec<String> {
             crate::world::anniversary::Span::Year(_) => "All those years, and I still remember.",
         };
         lines.push(format!("{wonder} {recalled}"));
+    }
+    lines
+}
+
+/// Idle thoughts about the creatures it lives with.
+fn housemate_thoughts(world: &World) -> Vec<String> {
+    let mut lines = Vec::new();
+    for peer in world.peers().iter().take(3) {
+        let name = &peer.name;
+        let fond = world.fondness_for(peer.id);
+        if peer.asleep > 0.5 {
+            lines.push(format!("{name} is fast asleep. Shh."));
+            if fond >= 0.35 {
+                lines.push(format!("I hope {name} has a nice dream."));
+            }
+            continue;
+        }
+        if peer.busy && peer.with.is_none() {
+            match peer.activity {
+                Activity::Read => lines.push(format!("{name} is reading. I wonder what about.")),
+                Activity::Window => lines.push(format!("What is {name} looking at out there?")),
+                Activity::Music => lines.push(format!("{name} found the music box!")),
+                Activity::Chase => lines.push(format!("Go, {name}! Catch it!")),
+                Activity::Dance => lines.push(format!("{name} dances so well.")),
+                Activity::Yard => lines.push(format!("{name} went out to the yard.")),
+                _ => {}
+            }
+        }
+        if fond >= 0.35 {
+            lines.push(format!("I like being with {name}."));
+        } else if fond < 0.05 && peer.position.distance(world.ghost.position) < 2.0 {
+            lines.push(format!("I don't know {name} very well yet."));
+        }
+    }
+    if let Some(friend) = world.best_friend() {
+        lines.push(format!("{} is my best friend.", friend.name));
     }
     lines
 }
