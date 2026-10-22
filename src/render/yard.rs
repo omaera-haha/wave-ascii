@@ -119,7 +119,7 @@ impl Piece {
             }
             Self::Swing => (
                 SWING_TOP - Vec3::Y * (SWING_TOP.y * 0.5 - 0.05),
-                Vec3::new(SWING_HALF_WIDTH + 0.35, SWING_TOP.y * 0.5 + 0.12, 0.72),
+                Vec3::new(SWING_HALF_WIDTH + 0.35, SWING_TOP.y * 0.5 + 0.12, 0.9),
             ),
             Self::Garden => ball(GARDEN + Vec3::Y * 0.12, 0.95),
             Self::Birdbath => ball(BIRDBATH + Vec3::Y * 0.45, 0.6),
@@ -176,7 +176,7 @@ impl Piece {
                 origin,
                 direction,
                 SWING_TOP - Vec3::Y * (SWING_TOP.y * 0.5 - 0.05),
-                Vec3::new(SWING_HALF_WIDTH + 0.35, SWING_TOP.y * 0.5 + 0.12, 0.72),
+                Vec3::new(SWING_HALF_WIDTH + 0.35, SWING_TOP.y * 0.5 + 0.12, 0.9),
             ),
             Self::Garden => sphere_span(origin, direction, GARDEN + Vec3::Y * 0.12, 0.95),
             Self::Birdbath => sphere_span(origin, direction, BIRDBATH + Vec3::Y * 0.45, 0.6),

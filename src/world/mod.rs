@@ -3206,10 +3206,13 @@ impl World {
                                 self.ghost.plan.count = 1;
                                 self.ghost.plan.arrived = Some(time);
                                 let direction = self.ghost.velocity.normalize_or(Vec3::X);
-                                self.ghost.plan.anchor = (mote + direction * 0.6).clamp(
-                                    ROOM_MIN + Vec3::splat(0.5),
-                                    ROOM_MAX - Vec3::splat(0.5),
-                                );
+                                let (low, high) = if home::in_house(mote) {
+                                    (ROOM_MIN + Vec3::splat(0.5), ROOM_MAX - Vec3::splat(0.5))
+                                } else {
+                                    let (low, high) = home::yard_bounds();
+                                    (low + Vec3::Y * 0.5, high)
+                                };
+                                self.ghost.plan.anchor = (mote + direction * 0.6).clamp(low, high);
                                 self.ghost.plan.target = self.ghost.plan.anchor;
                                 return;
                             }
@@ -3542,7 +3545,12 @@ impl World {
         // Out through the door and back in; the yard is past the walls.
         // A place just past a wall, as a push at the ball behind it can
         // aim for, stays in the room.
-        let target = if !home::in_house(target)
+        let toys = matches!(
+            ghost.plan.activity,
+            Activity::Play | Activity::Fetch | Activity::Build | Activity::Tidy
+        );
+        let target = if toys
+            && !home::in_house(target)
             && home::near_house(target, 0.6)
             && target.y < home::HOUSE_MAX.y
         {
@@ -3632,8 +3640,17 @@ impl World {
                 let reach = radius + 0.3;
                 let distance = offset.length();
                 if ghost.position.y < top && distance < reach && distance > 1e-4 {
-                    let push = offset / distance * (reach - distance) * 6.0;
+                    let away = offset / distance;
+                    let push = away * (reach - distance) * 6.0;
                     steer += Vec3::new(push.x, 0.0, push.y);
+                    // With the target behind it, slide around it.
+                    let toward = flat(target - ghost.position).normalize_or_zero();
+                    if toward.dot(-away) > 0.2 {
+                        let side = Vec2::new(-away.y, away.x);
+                        let side = if side.dot(toward) >= 0.0 { side } else { -side };
+                        let slide = side * (reach - distance) * 8.0;
+                        steer += Vec3::new(slide.x, 0.0, slide.y);
+                    }
                 }
             }
         }

@@ -356,6 +356,9 @@ impl World {
     }
 
     pub fn garden_thirst(&self) -> f32 {
+        if !self.garden_weather() {
+            return self.plant.thirst;
+        }
         self.seedlings
             .iter()
             .fold(self.plant.thirst, |thirst, plant| thirst.max(plant.thirst))
@@ -403,9 +406,18 @@ impl World {
         .then_some(self.ghost.position - Vec3::Y * 0.42)
     }
 
+    /// Whether the garden bed out in the yard is worth a trip now: not in a
+    /// storm, a downpour, or at bedtime.
+    fn garden_weather(&self) -> bool {
+        !self.weather.storm && self.weather.rain(self.time) < 0.45 && !self.bedtime()
+    }
+
     fn thirstiest(&self) -> Option<usize> {
         let mut thirst = self.plant.thirst;
         let mut chosen = None;
+        if !self.garden_weather() {
+            return None;
+        }
         for (index, plant) in self.seedlings.iter().enumerate() {
             if plant.thirst > thirst {
                 thirst = plant.thirst;
@@ -575,9 +587,15 @@ impl World {
             self.petals
                 .retain(|petal| self.time - petal.dropped < Petal::LIFETIME);
         }
+        // Rain waters the bed out in the yard.
+        let rain = self.weather.rain(self.time);
         for index in 0..self.seedlings.len() {
             let before = self.seedlings[index].growth;
             self.seedlings[index].advance(seconds, season, drying);
+            if rain > 0.2 {
+                let plant = &mut self.seedlings[index];
+                plant.thirst = (plant.thirst - seconds * rain / 900.0).max(0.0);
+            }
             self.note_growth(index, before);
         }
     }

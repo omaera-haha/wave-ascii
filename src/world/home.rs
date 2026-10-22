@@ -60,7 +60,7 @@ pub const GARDEN: Vec3 = Vec3::new(4.15, 0.0, 1.05);
 pub const GARDEN_HALF: Vec3 = Vec3::new(0.86, 0.12, 0.3);
 pub const BIRDBATH: Vec3 = Vec3::new(6.85, 0.0, 0.55);
 pub const BENCH: Vec3 = Vec3::new(7.2, 0.0, -2.75);
-pub const LANTERN: Vec3 = Vec3::new(2.75, 0.0, 1.75);
+pub const LANTERN: Vec3 = Vec3::new(3.05, 0.0, 2.2);
 pub const LANTERN_HEIGHT: f32 = 1.25;
 pub const MAILBOX: Vec3 = Vec3::new(8.0, 0.0, 2.95);
 /// Clothesline posts in the left yard.
@@ -106,7 +106,7 @@ impl Spot {
             Self::Swing => SWING_SEAT + Vec3::Y * (0.34 * size),
             Self::Garden => GARDEN + Vec3::new(0.0, 0.8, -0.62),
             Self::Birdbath => BIRDBATH + Vec3::new(-0.5, 0.95, 0.2),
-            Self::Bench => BENCH + Vec3::new(0.0, 0.42 + 0.34 * size, 0.08),
+            Self::Bench => BENCH + Vec3::new(-0.32, 0.42 + 0.34 * size, 0.08),
             Self::Lawn => Vec3::new(5.3, 0.32 * size + 0.06, 1.55),
             Self::Fence => Vec3::new(7.6, 1.05, -5.2),
             Self::Roof => Vec3::new(0.55, RIDGE + 0.36 * size, (HOUSE_MIN.z + HOUSE_MAX.z) * 0.5),
@@ -238,7 +238,7 @@ pub fn waypoint(from: Vec3, to: Vec3) -> Vec3 {
         return Vec3::new(from.x, DOOR_OUTSIDE.y, from.z);
     }
     if inside == in_house(to) {
-        return to;
+        return if inside { to } else { around(from, to) };
     }
     let (near, far) = if inside {
         (DOOR_INSIDE, DOOR_OUTSIDE)
@@ -248,7 +248,116 @@ pub fn waypoint(from: Vec3, to: Vec3) -> Vec3 {
     // Lined up with the door: cross. Otherwise line up first.
     let aligned = (from.z - near.z).abs() < 0.22 && (from.y - near.y).abs() < 0.45;
     let close = (from.x - near.x).abs() < 0.3 || (inside == (from.x > near.x));
-    if aligned && close { far } else { near }
+    if aligned && close {
+        far
+    } else if inside {
+        near
+    } else {
+        around(from, near)
+    }
+}
+
+/// Out in the yard, the next place on the way to `to` that skirts the
+/// cottage: `to` itself when the house isn't in the way, else the first
+/// corner of the shortest way around it.
+fn around(from: Vec3, to: Vec3) -> Vec3 {
+    let clear = HOUSE_MAX.y + 0.3;
+    if from.y > clear && to.y > clear {
+        return to;
+    }
+    // The house and its eaves with room to spare, and corners just past
+    // them, in order around it.
+    let low = Vec2::new(HOUSE_MIN.x - EAVE, HOUSE_MIN.z - EAVE);
+    let high = Vec2::new(HOUSE_MAX.x + EAVE, HOUSE_MAX.z + EAVE);
+    let start = flat(from);
+    let end = flat(to);
+    if !crosses(start, end, low, high) {
+        return to;
+    }
+    let reach = 0.25;
+    // Hugging the wall, as just out of the door: step away from it first.
+    if start.cmpgt(low).all() && start.cmplt(high).all() {
+        let gaps = [
+            start.x - low.x,
+            high.x - start.x,
+            start.y - low.y,
+            high.y - start.y,
+        ];
+        let side = (0..4)
+            .min_by(|first, second| gaps[*first].total_cmp(&gaps[*second]))
+            .unwrap_or(1);
+        let out = match side {
+            0 => Vec2::new(low.x - reach, start.y),
+            1 => Vec2::new(high.x + reach, start.y),
+            2 => Vec2::new(start.x, low.y - reach),
+            _ => Vec2::new(start.x, high.y + reach),
+        };
+        return Vec3::new(out.x, from.y, out.y);
+    }
+    let corners = [
+        Vec2::new(low.x - reach, low.y - reach),
+        Vec2::new(high.x + reach, low.y - reach),
+        Vec2::new(high.x + reach, high.y + reach),
+        Vec2::new(low.x - reach, high.y + reach),
+    ];
+    let seen = |point: Vec2, corner: Vec2| !crosses(point, corner, low, high);
+    // From each corner the start can reach, around either way to a corner
+    // that sees the end.
+    let mut best: Option<(f32, Vec2)> = None;
+    for first in 0..4 {
+        if !seen(start, corners[first]) {
+            continue;
+        }
+        for step in [1, 3] {
+            let mut cost = start.distance(corners[first]);
+            let mut index = first;
+            for _ in 0..4 {
+                if seen(corners[index], end) {
+                    let total = cost + corners[index].distance(end);
+                    if best.is_none_or(|(best, _)| total < best) {
+                        // Standing on the first corner already, aim past it.
+                        let next = if corners[first].distance(start) < 0.05 && index != first {
+                            corners[(first + step) % 4]
+                        } else {
+                            corners[first]
+                        };
+                        best = Some((total, next));
+                    }
+                    break;
+                }
+                let next = (index + step) % 4;
+                cost += corners[index].distance(corners[next]);
+                index = next;
+            }
+        }
+    }
+    best.map_or(to, |(_, corner)| {
+        if corner.distance(start) < 0.05 {
+            to
+        } else {
+            Vec3::new(corner.x, (from.y + to.y) * 0.5, corner.y)
+        }
+    })
+}
+
+/// Whether the segment from `start` to `end` passes through the inside of
+/// the rectangle from `low` to `high`.
+fn crosses(start: Vec2, end: Vec2, low: Vec2, high: Vec2) -> bool {
+    let along = end - start;
+    let (mut enter, mut exit) = (0.0_f32, 1.0_f32);
+    for axis in 0..2 {
+        if along[axis].abs() < 1e-6 {
+            if start[axis] <= low[axis] || start[axis] >= high[axis] {
+                return false;
+            }
+            continue;
+        }
+        let first = (low[axis] - start[axis]) / along[axis];
+        let second = (high[axis] - start[axis]) / along[axis];
+        enter = enter.max(first.min(second));
+        exit = exit.min(first.max(second));
+    }
+    exit - enter > 1e-4
 }
 
 /// In the doorway, where the wall lets the ghost through.
@@ -257,7 +366,7 @@ pub fn in_doorway(point: Vec3) -> bool {
         && point.z < DOOR_HIGH.x - 0.05
         && point.y < DOOR_HIGH.y
         && point.x > DOOR_INSIDE.x - 0.4
-        && point.x < DOOR_OUTSIDE.x + 0.4
+        && point.x < HOUSE_MAX.x + 0.15
 }
 
 /// Yard things the ghost steers around: center, radius, top. The garden
@@ -267,7 +376,8 @@ pub fn yard_obstacles() -> [(Vec3, f32, f32); 5] {
         (BIRDBATH, 0.36, 0.95),
         (LANTERN, 0.14, LANTERN_HEIGHT + 0.2),
         (MAILBOX, 0.2, 1.15),
-        (BENCH, 0.55, 0.85),
+        // Low enough to sit on.
+        (BENCH, 0.55, 0.5),
         (TREE, 0.4, 2.4),
     ]
 }
@@ -364,6 +474,34 @@ mod tests {
                 }
             }
             assert!(position.distance(goal) < 0.05, "{position} vs {goal}");
+        }
+    }
+
+    #[test]
+    fn trips_across_the_yard_go_around_the_house_not_through_it() {
+        let size = 1.0;
+        let left = Vec3::new(-4.5, 0.9, 1.0);
+        let behind = Vec3::new(-1.0, 0.9, -3.4);
+        for (start, goal) in [
+            (Spot::Swing.position(size), left),
+            (left, Spot::Birdbath.position(size)),
+            (behind, Spot::Lawn.position(size)),
+            (left, Vec3::new(0.0, 1.2, 0.0)),
+        ] {
+            let mut position = start;
+            for _ in 0..20000 {
+                let next = waypoint(position, goal);
+                let offset = next - position;
+                if offset.length() < 0.02 {
+                    break;
+                }
+                let was_inside = in_house(position);
+                position += offset.clamp_length_max(0.02);
+                if !was_inside && in_house(position) {
+                    assert!(in_doorway(position), "into the wall at {position}");
+                }
+            }
+            assert!(position.distance(goal) < 0.05, "{start} to {goal} stopped at {position}");
         }
     }
 

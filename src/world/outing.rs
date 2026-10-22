@@ -271,6 +271,8 @@ impl World {
                         let position = spot.position(self.size());
                         self.ghost.plan.target = position;
                         self.ghost.plan.anchor = position;
+                        self.ghost.plan.cat = false;
+                        self.ghost.plan.arrived = None;
                     }
                     self.last_outing = Some(self.time);
                     match spot {
@@ -353,7 +355,7 @@ enum Request {
 }
 
 fn requested(text: &str) -> Option<Request> {
-    let lower = text.to_lowercase();
+    let lower = text.to_lowercase().replace(['\u{2019}', '\u{2018}'], "'");
     let words: Vec<&str> = lower
         .split(|character: char| !character.is_alphanumeric() && character != '\'')
         .filter(|word| !word.is_empty())
@@ -362,37 +364,52 @@ fn requested(text: &str) -> Option<Request> {
         let phrase: Vec<&str> = phrase.split_whitespace().collect();
         words.windows(phrase.len()).any(|run| run == phrase)
     };
-    if [
-        "come in",
-        "come inside",
-        "come back in",
-        "come back inside",
-        "stay inside",
-    ]
-    .iter()
-    .any(|phrase| has(phrase))
-        || lower.contains("들어와")
+    let ends = |phrase: &str| {
+        let phrase: Vec<&str> = phrase.split_whitespace().collect();
+        words.ends_with(&phrase)
+    };
+    // Saying no, or telling of their own comings and goings, asks nothing.
+    let refused = words.iter().any(|word| {
+        matches!(
+            *word,
+            "not" | "dont" | "don't" | "never" | "can't" | "cant" | "cannot" | "won't" | "shouldn't"
+        )
+    }) || ["말자", "하지 마", "나가지", "안 돼", "안돼", "안 되", "안되"]
+        .iter()
+        .any(|word| lower.contains(word));
+    let themselves = words
+        .iter()
+        .any(|word| *word == "i" || word.starts_with("i'") || *word == "im")
+        || ["갈게", "다녀올", "갔다 올", "나갈 거", "나가볼게", "나갔다", "들어와서", "들어왔"]
+            .iter()
+            .any(|word| lower.contains(word));
+    if refused || themselves {
+        return None;
+    }
+    if ["come in", "come inside", "come back in", "come back inside", "come in now"]
+        .iter()
+        .any(|phrase| ends(phrase))
+        || has("stay inside")
+        || ["이제 들어와", "안으로 들어와", "그만 들어와", "들어와 들어와"]
+            .iter()
+            .any(|word| lower.contains(word))
+        || lower.trim_end_matches(['!', '.', '~', ' ']).ends_with("들어와")
+            && !lower.contains("잘 들어와")
     {
         return Some(Request::In);
     }
-    // Saying no, or telling of going out themselves, asks nothing of it.
-    let refused = words
-        .iter()
-        .any(|word| matches!(*word, "not" | "dont" | "don't" | "never"))
-        || ["말자", "하지 마", "나가지"]
-            .iter()
-            .any(|word| lower.contains(word));
-    let leaving = words
-        .iter()
-        .any(|word| *word == "i" || word.starts_with("i'") || *word == "im")
-        || ["갈게", "다녀올", "갔다 올", "나갈 거", "나가볼게", "나갔다"]
-            .iter()
-            .any(|word| lower.contains(word));
-    if refused || leaving {
-        return None;
-    }
-    let swing =
-        words.iter().any(|word| matches!(*word, "swing" | "swings")) || lower.contains("그네");
+    let swing = [
+        "ride the swing",
+        "on the swing",
+        "go on the swing",
+        "go swing",
+        "go swinging",
+        "swing on the swing",
+    ]
+    .iter()
+    .any(|phrase| has(phrase))
+        || lower.contains("그네 타")
+        || lower.contains("그네타");
     if swing {
         return Some(Request::Out(Some(Spot::Swing)));
     }
@@ -402,26 +419,25 @@ fn requested(text: &str) -> Option<Request> {
         "go out to play",
         "go play outside",
         "play outside",
+        "play in the yard",
         "go to the yard",
+        "go into the yard",
         "out to the yard",
-        "into the yard",
-        "in the yard",
-        "the backyard",
         "let's go out",
         "lets go out",
     ]
     .iter()
     .any(|phrase| has(phrase));
     let korean = [
-        "마당",
+        "마당에 나가",
+        "마당에서 놀",
+        "마당 가자",
+        "마당으로 가",
         "밖에 나가자",
         "밖에 나가서 놀",
-        "밖에서 놀",
-        "나가자",
-        "나가 놀",
-        "나가서 놀",
-        "산책 가자",
-        "산책하자",
+        "밖에서 놀자",
+        "나가 놀자",
+        "나가서 놀자",
     ]
     .iter()
     .any(|word| lower.contains(word));
@@ -483,7 +499,7 @@ mod tests {
             "play in the yard",
             "마당에 나가자",
             "밖에 나가서 놀자",
-            "산책하자",
+            "그네 타자",
         ] {
             let mut world = World::new(3, 11.0);
             world.ghost.needs.energy = 1.0;
@@ -505,6 +521,17 @@ mod tests {
             "I'll go out for dinner later",
             "나 밖에 나가볼게",
             "집에 들어가는 중",
+            "don\u{2019}t go outside",
+            "you can't go outside",
+            "밖에 나가면 안 돼",
+            "what's outside the window?",
+            "the cat is in the yard",
+            "mood swings",
+            "잘 들어가",
+            "집에 들어와서 너무 피곤해",
+            "can I come in?",
+            "this will come in handy",
+            "don't come in",
         ] {
             let mut world = World::new(3, 11.0);
             assert_ne!(
@@ -556,5 +583,70 @@ mod tests {
             .any(|event| event.kind == EventKind::CatLeft { startled: true });
         assert!(!startled);
         assert!(stayed > 20.0);
+    }
+
+    #[test]
+    fn motes_dropped_anywhere_on_the_lawn_get_caught_around_the_house() {
+        for spot in [
+            Vec3::new(-4.0, 0.9, 0.0),
+            Vec3::new(0.0, 0.9, -3.0),
+            Vec3::new(0.0, 0.9, 2.6),
+            Vec3::new(-1.5, 0.9, 2.8),
+            Vec3::new(2.4, 0.9, 0.0),
+            Vec3::new(0.0, 0.9, 1.75),
+            Vec3::new(6.0, 0.9, 0.0),
+        ] {
+            let mut world = World::new(3, 12.0);
+            world.ghost.needs.energy = 1.0;
+            world.motes.clear();
+            world.drop_mote(spot);
+            world.begin(Activity::Chase);
+            let mut ate = false;
+            for _ in 0..(90.0 / 0.05) as usize {
+                world.step(0.05);
+                if world.events.iter().any(|event| event.kind == EventKind::AteMote) {
+                    ate = true;
+                    break;
+                }
+                if world.ghost.plan.done && !world.motes.is_empty() {
+                    world.begin(Activity::Chase);
+                }
+            }
+            assert!(ate, "{spot}: ghost at {}", world.ghost.position);
+        }
+    }
+
+    #[test]
+    fn every_yard_spot_is_reachable_from_the_room() {
+        for spot in Spot::ALL {
+            let mut world = World::new(3, if spot == Spot::Roof { 22.0 } else { 12.0 });
+            world.ghost.needs.energy = 1.0;
+            world.begin(Activity::Yard);
+            let position = spot.position(world.size());
+            world.ghost.plan.target = position;
+            world.ghost.plan.anchor = position;
+            world.ghost.plan.cat = false;
+            let mut arrived = false;
+            for _ in 0..(60.0 / 0.05) as usize {
+                world.step(0.05);
+                if world.ghost.plan.arrived.is_some() {
+                    arrived = true;
+                    break;
+                }
+            }
+            assert!(arrived, "{spot:?}: ghost at {}", world.ghost.position);
+        }
+    }
+
+    #[test]
+    fn asking_for_the_swing_wins_over_a_visit_to_the_cat() {
+        for seed in 0..12 {
+            let mut world = World::new(seed, 13.0);
+            world.ghost.needs.energy = 1.0;
+            world.visitors.next_cat = 0.0;
+            world.step(30.0);
+            world.hear("ride the swing");
+            assert_eq!(world.yard_spot(), Some(Spot::Swing), "seed {seed}");
+        }
     }
 }
