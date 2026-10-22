@@ -42,6 +42,8 @@ pub enum Happening {
     Waited,
     CountedDays,
     MissedViewer,
+    PlayedInYard,
+    CatVisited,
 }
 
 impl Happening {
@@ -65,6 +67,8 @@ impl Happening {
             Self::CountedDays => "waited at the window, counting the days until your return",
             Self::Waited => "waited at the glass for you",
             Self::MissedViewer => "missed you",
+            Self::PlayedInYard => "played on the swing in the yard",
+            Self::CatVisited => "kept the visiting cat company",
         }
         .to_owned()
     }
@@ -239,20 +243,43 @@ impl Happening {
                     "네가 없으니 방이 조용했어.",
                 ),
             ],
+            Happening::PlayedInYard => [
+                (
+                    "I went out and swung on the swing.",
+                    "마당에 나가서 그네를 탔어.",
+                ),
+                (
+                    "I floated around the yard and looked at the garden.",
+                    "마당을 둥둥 돌아다니며 화단을 구경했어.",
+                ),
+            ],
+            Happening::CatVisited => [
+                (
+                    "The cat came by the yard, and I sat with it.",
+                    "고양이가 마당에 와서 옆에 앉아 있었어.",
+                ),
+                (
+                    "The neighborhood cat napped in the yard for a while.",
+                    "동네 고양이가 마당에서 한참 낮잠을 잤어.",
+                ),
+            ],
         };
         lines.map(|(english, hangul)| if korean { hangul } else { english })
     }
 
     fn importance(self) -> u8 {
         match self {
-            Self::BuiltTower { .. } | Self::WishedOnStar | Self::FriendVisited => 5,
+            Self::BuiltTower { .. }
+            | Self::WishedOnStar
+            | Self::FriendVisited
+            | Self::CatVisited => 5,
             Self::Drew(_)
             | Self::SawRainbow
             | Self::Waited
             | Self::CountedDays
             | Self::StarGazed => 4,
             Self::WatchedSnow | Self::WatchedStorm | Self::WatchedBird | Self::MissedViewer => 3,
-            Self::PlayedBall | Self::WateredPlant | Self::WatchedRain => 2,
+            Self::PlayedBall | Self::WateredPlant | Self::WatchedRain | Self::PlayedInYard => 2,
             Self::SleptNight | Self::Napped => 1,
         }
     }
@@ -525,6 +552,12 @@ pub fn story(
             }
             if evening && weather == 0 && life.friend.is_some() {
                 add(Happening::FriendVisited, Activity::Friend, 0.8);
+            }
+            if daylight && weather == 0 {
+                add(Happening::PlayedInYard, Activity::Yard, 0.9);
+                if life.cat_coat.is_some() {
+                    add(Happening::CatVisited, Activity::Yard, 0.4 + life.cat_trust);
+                }
             }
             if awake && life.promise.is_some_and(|promise| promise.holds(date)) {
                 add(Happening::CountedDays, Activity::Window, 2.0);
