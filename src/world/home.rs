@@ -529,12 +529,40 @@ impl World {
 
     /// Where the ghost sleeps: in its bed at night, else on the cushion.
     pub fn sleeping_spot(&self) -> Vec3 {
-        // Housemates each keep a spot of their own beside the others.
-        let berth = self.berth();
+        // Housemates each keep a spot of their own: two by two across the
+        // bed and the cushion, and the last ones curled up beside them.
+        let place = self.berth();
         if self.bedtime() {
-            BED + Vec3::new(berth.x, BED_HALF.y * 2.0 + 0.38 * self.size(), -0.18 + berth.y * 0.8)
+            let offset = match place {
+                None => Vec2::new(0.0, -0.18),
+                Some(place) => [
+                    Vec2::new(-0.24, -0.3),
+                    Vec2::new(0.24, -0.3),
+                    Vec2::new(-0.24, 0.3),
+                    Vec2::new(0.24, 0.3),
+                    Vec2::new(-0.85, 0.15),
+                    Vec2::new(0.85, 0.15),
+                ][place.min(5)],
+            };
+            let on_bed = offset.x.abs() <= BED_HALF.x;
+            BED + Vec3::new(
+                offset.x,
+                if on_bed { BED_HALF.y * 2.0 } else { 0.0 } + 0.38 * self.size(),
+                offset.y,
+            )
         } else {
-            self.nook.bed(self.size()) + Vec3::new(berth.x * 0.8, 0.0, berth.y * 0.6)
+            let offset = match place {
+                None => Vec2::ZERO,
+                Some(place) => [
+                    Vec2::new(-0.2, 0.0),
+                    Vec2::new(0.2, 0.0),
+                    Vec2::new(-0.6, 0.05),
+                    Vec2::new(0.6, 0.05),
+                    Vec2::new(0.0, 0.55),
+                    Vec2::new(0.0, -0.5),
+                ][place.min(5)],
+            };
+            self.nook.bed(self.size()) + Vec3::new(offset.x, 0.0, offset.y)
         }
     }
 

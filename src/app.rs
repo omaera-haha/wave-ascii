@@ -1974,6 +1974,66 @@ pub fn restore_household(world: &mut World, save: &Save, now: i64) {
 
 #[cfg(test)]
 mod tests {
+    /// Prints what a household does over a simulated afternoon and night,
+    /// for watching how they live together.
+    #[test]
+    #[ignore]
+    fn watch_a_household() {
+        use crate::world::{EventKind, Species};
+        let hours: f64 = std::env::var("WATCH_HOURS")
+            .ok()
+            .and_then(|hours| hours.parse().ok())
+            .unwrap_or(2.0);
+        let mut world = World::new(11, 15.0);
+        world.found_household(&[Species::Fox, Species::Bunny, Species::Owl, Species::Robot]);
+        let mind = Mind::new(&Config::default(), Journal::default(), true);
+        let mut app = App::new(world, mind, Config::default(), Style::Braille, ColorMode::Plain);
+        let mut last: Vec<(u32, String)> = Vec::new();
+        let mut counts: std::collections::BTreeMap<String, u32> = Default::default();
+        let steps = (hours * 3600.0 / 0.1) as usize;
+        for step in 0..steps {
+            app.world.hour = (15.0 + step as f32 * 0.1 / 3600.0) % 24.0;
+            app.world.viewer.active_at = if step % 6000 < 3000 { app.world.time } else { app.world.viewer.active_at };
+            app.advance(0.1);
+            for id in app.world.roster() {
+                let ghost = app.world.creature(id).unwrap();
+                let doing = if ghost.asleep > 0.5 {
+                    "asleep".to_owned()
+                } else {
+                    format!("{:?}{}", ghost.plan.activity, ghost.plan.pastime.map_or(String::new(), |p| format!("/{p:?}")))
+                };
+                match last.iter_mut().find(|(other, _)| *other == id) {
+                    Some((_, before)) if *before == doing => {}
+                    Some((_, before)) => {
+                        *before = doing.clone();
+                        *counts.entry(doing.clone()).or_default() += 1;
+                        if std::env::var_os("WATCH_VERBOSE").is_some() {
+                            println!("{:>7.0}s h{:>5.2} {} {} at {:.1?} body {:.2?}", app.world.time, app.world.hour, ghost.name, doing, ghost.position, ghost.body());
+                        }
+                    }
+                    None => last.push((id, doing)),
+                }
+            }
+        }
+        println!("{counts:#?}");
+        for id in app.world.roster() {
+            app.world.with_creature(id, |world| {
+                let together = world.events.iter().filter(|event| matches!(event.kind, EventKind::Together { .. })).count();
+                println!(
+                    "{} the {:?}: bond {:.2}, fondness {:?}, together events kept {together}, energy {:.2} fun {:.2} company {:.2}, at {:.1?}",
+                    world.ghost.name,
+                    world.ghost.species,
+                    world.life.bond,
+                    world.life.fondness.iter().map(|fondness| (fondness.name.clone(), (fondness.warmth * 100.0).round() / 100.0, fondness.times)).collect::<Vec<_>>(),
+                    world.ghost.needs.energy,
+                    world.ghost.needs.fun,
+                    world.ghost.needs.company,
+                    world.ghost.position,
+                );
+            });
+        }
+    }
+
     #[test]
     fn quitting_echoes_only_a_promise_made_this_session_in_its_original_language() {
         let mut app = app();

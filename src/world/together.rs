@@ -91,6 +91,10 @@ pub struct Fondness {
     /// From strangers at 0 to best friends at 1.
     pub warmth: f32,
     pub times: u32,
+    /// The day of their latest time together, and how many that day: a
+    /// friendship grows over days more than over one long afternoon.
+    pub day: String,
+    pub today: u32,
 }
 
 /// Lists names as "A", "A and B", "A, B, and C".
@@ -389,10 +393,11 @@ impl World {
 
     fn warm_to(&mut self, partner: &Peer, pastime: Pastime) {
         let gain = match pastime {
-            Pastime::Nuzzle => 0.06,
-            Pastime::Chat | Pastime::Gaze => 0.05,
-            Pastime::Tag | Pastime::Dance => 0.04,
+            Pastime::Nuzzle => 0.035,
+            Pastime::Chat | Pastime::Gaze => 0.03,
+            Pastime::Tag | Pastime::Dance => 0.025,
         };
+        let day = self.date.to_string();
         let fondness = match self
             .life
             .fondness
@@ -404,15 +409,20 @@ impl World {
                 self.life.fondness.push(Fondness {
                     id: partner.id,
                     name: partner.name.clone(),
-                    warmth: 0.0,
-                    times: 0,
+                    ..Fondness::default()
                 });
                 self.life.fondness.last_mut().unwrap()
             }
         };
         fondness.name = partner.name.clone();
+        if fondness.day != day {
+            fondness.day = day;
+            fondness.today = 0;
+        }
+        let gain = gain / (1.0 + fondness.today as f32 / 3.0);
         fondness.warmth = (fondness.warmth + gain * (1.0 - fondness.warmth)).min(1.0);
         fondness.times = fondness.times.saturating_add(1);
+        fondness.today = fondness.today.saturating_add(1);
         self.ghost.needs.change(0.0, 0.08, 0.1);
     }
 

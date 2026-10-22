@@ -603,14 +603,21 @@ impl World {
     /// moves aside.
     fn keep_apart(&mut self, seconds: f32) {
         let size = self.size();
+        // Sleepers, and those settling into their own spot, stay put.
+        let settled = |ghost: &Ghost| {
+            ghost.asleep > 0.5
+                || (ghost.plan.activity == Activity::Rest
+                    && !ghost.plan.done
+                    && ghost.position.distance(ghost.plan.target) < 0.45)
+        };
         let mut bodies: Vec<(Vec3, f32, bool)> = std::iter::once((
             self.ghost.position,
             body_reach(self.ghost.species, size),
-            self.ghost.asleep > 0.5,
+            settled(&self.ghost),
         ))
         .chain(self.housemates.iter().map(|soul| {
             let peer = self.soul_peer(soul);
-            (peer.position, peer.reach(), peer.asleep > 0.5)
+            (peer.position, peer.reach(), settled(&soul.ghost))
         }))
         .collect();
         let mut pushes = vec![Vec2::ZERO; bodies.len()];
@@ -622,7 +629,8 @@ impl World {
                     continue;
                 }
                 let offset = Vec2::new(a.x - b.x, a.z - b.z);
-                let room = reach_a + reach_b;
+                // Those settled in snuggle up close.
+                let room = (reach_a + reach_b) * if still_a && still_b { 0.0 } else { 1.0 };
                 let distance = offset.length();
                 if distance >= room {
                     continue;
@@ -638,7 +646,7 @@ impl World {
                 };
                 let overlap = room - distance;
                 let share = match (still_a, still_b) {
-                    (true, true) => (0.5, 0.5),
+                    (true, true) => (0.0, 0.0),
                     (true, false) => (0.0, 1.0),
                     (false, true) => (1.0, 0.0),
                     (false, false) => (0.5, 0.5),
@@ -677,22 +685,15 @@ impl World {
                 .any(|peer| peer.busy && peer.activity == activity)
     }
 
-    /// Where the creature's sleeping place is among the others': each has its
-    /// own spot in the bed or on the cushion.
-    pub fn berth(&self) -> Vec2 {
-        let place = self
-            .roster()
-            .iter()
-            .position(|&id| id == self.ghost.id)
-            .unwrap_or(0);
-        match place {
-            0 => Vec2::ZERO,
-            1 => Vec2::new(0.26, 0.24),
-            2 => Vec2::new(-0.26, 0.24),
-            3 => Vec2::new(0.0, 0.46),
-            4 => Vec2::new(0.28, -0.12),
-            _ => Vec2::new(-0.28, -0.12),
-        }
+    /// Which of the household's sleeping spots is this creature's, when it
+    /// shares them with housemates.
+    pub fn berth(&self) -> Option<usize> {
+        (!self.housemates.is_empty()).then(|| {
+            self.roster()
+                .iter()
+                .position(|&id| id == self.ghost.id)
+                .unwrap_or(0)
+        })
     }
 }
 

@@ -2696,6 +2696,7 @@ impl Life {
             // Hide-and-seek is a game for a few times a day, not a habit.
             Activity::Hide => 2.0,
             Activity::Dance | Activity::Explore | Activity::Play => 16.0,
+            Activity::Together => 8.0,
             Activity::Bubbles => 1.5,
             _ => return 1.0,
         };

@@ -1883,25 +1883,30 @@ impl World {
         if activity == Activity::Puzzle && (self.focus.is_some() || self.ghost.asleep >= 0.3) {
             return;
         }
+        // What the house shares with the viewer is the host's to end; a
+        // housemate starting something leaves it be.
+        let host = !self.companion;
         // A story keeps it at the glass; only going to bed ends one early.
-        if self.telling.is_some() {
+        if host && self.telling.is_some() {
             match activity {
                 Activity::Visit => {}
                 Activity::Rest => self.telling = None,
                 _ => return,
             }
         }
-        if activity != Activity::Visit {
+        if host && activity != Activity::Visit {
             self.agenda_visit_asked = false;
             self.agenda_visit_question = false;
             self.sebae = None;
         }
         // A question asked at the glass lapses when it goes to play a game,
         // hide, or sleep; other pastimes leave it waiting for the answer.
-        if matches!(
-            activity,
-            Activity::Game | Activity::Puzzle | Activity::Rest | Activity::Hide
-        ) {
+        if host
+            && matches!(
+                activity,
+                Activity::Game | Activity::Puzzle | Activity::Rest | Activity::Hide
+            )
+        {
             self.asking = None;
             self.agenda_answer = None;
         }
@@ -1917,16 +1922,18 @@ impl World {
         }
         self.reading = None;
         self.mirror_visit = None;
-        self.viewer_letter = None;
-        self.drop_ball();
-        self.drop_block();
-        self.building = None;
-        self.tidying = None;
-        self.tidy_rest = false;
-        if let Some(friend) = &mut self.friend {
-            friend.game = None;
+        if host {
+            self.viewer_letter = None;
+            self.drop_ball();
+            self.drop_block();
+            self.building = None;
+            self.tidying = None;
+            self.tidy_rest = false;
+            if let Some(friend) = &mut self.friend {
+                friend.game = None;
+            }
+            self.queued_tune = None;
         }
-        self.queued_tune = None;
         let position = self.ghost.position;
         let length = match activity {
             Activity::Letter => self.waiting_letter().map_or(6.0, |index| {
@@ -2080,7 +2087,7 @@ impl World {
         if activity == Activity::Fold {
             self.begin_folding();
         }
-        if activity == Activity::Rest {
+        if activity == Activity::Rest && !self.companion {
             self.prepare_lullaby();
         }
         if activity == Activity::Tend {
@@ -3255,7 +3262,8 @@ impl World {
         // Waiting at the glass keeps its full length. Resting, hiding, and
         // games have their own waits after arrival, but give up on the way
         // there.
-        let waiting = self.telling.is_some()
+        let host = !self.companion;
+        let waiting = (host && self.telling.is_some())
             || matches!(
                 self.ghost.plan.activity,
                 Activity::Wait
@@ -3264,7 +3272,7 @@ impl World {
                     | Activity::Show
                     | Activity::Tidy
             )
-            || (self.ghost.plan.activity == Activity::Visit && self.asking.is_some())
+            || (host && self.ghost.plan.activity == Activity::Visit && self.asking.is_some())
             || (self.ghost.plan.activity == Activity::Fold && self.ghost.plan.count > 0)
             || (matches!(
                 self.ghost.plan.activity,
@@ -3389,9 +3397,11 @@ impl World {
                 }
             }
             Activity::Rest => {
-                self.wind_before_sleep();
-                if self.queued_tune.is_some() {
-                    return;
+                if !self.companion {
+                    self.wind_before_sleep();
+                    if self.queued_tune.is_some() {
+                        return;
+                    }
                 }
                 if self.ghost.plan.arrived.is_some() {
                     if self.ghost.plan.count == 0 {
@@ -3472,25 +3482,31 @@ impl World {
                 self.wish_on_moon();
                 self.find_constellation();
             }
-            Activity::Visit if self.comforting.is_some() => look = self.carry_out_comfort(),
+            Activity::Visit if host && self.comforting.is_some() => {
+                look = self.carry_out_comfort()
+            }
             Activity::Visit => {
-                if self
-                    .telling
-                    .as_ref()
-                    .is_some_and(|telling| telling.lighting)
+                if host
+                    && self
+                        .telling
+                        .as_ref()
+                        .is_some_and(|telling| telling.lighting)
                 {
                     self.ghost.look = Some(self.lamp.bulb());
                     return;
                 }
-                if self.viewer.pointer.is_some() && self.sebae.is_none() {
+                let bowing = host && self.sebae.is_some();
+                if self.viewer.pointer.is_some() && !bowing {
                     self.ghost.plan.target = self.glass_spot();
                 }
-                if self.sebae.is_some() {
+                if bowing {
                     self.bow();
                 }
                 // Toward the viewer, on the other side of the glass.
                 look = Some(self.ghost.plan.target + Vec3::Z * 3.0);
-                if self.telling.is_none() && self.ghost.plan.stayed(time) > self.ghost.plan.length {
+                if (!host || self.telling.is_none())
+                    && self.ghost.plan.stayed(time) > self.ghost.plan.length
+                {
                     self.ghost.plan.done = true;
                 }
             }
