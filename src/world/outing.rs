@@ -366,24 +366,29 @@ fn requested(text: &str) -> Option<Request> {
         "come in",
         "come inside",
         "come back in",
-        "go inside",
+        "come back inside",
         "stay inside",
     ]
     .iter()
     .any(|phrase| has(phrase))
-        || ["들어와", "들어가", "안으로"]
-            .iter()
-            .any(|word| lower.contains(word))
+        || lower.contains("들어와")
     {
         return Some(Request::In);
     }
-    if words
+    // Saying no, or telling of going out themselves, asks nothing of it.
+    let refused = words
         .iter()
         .any(|word| matches!(*word, "not" | "dont" | "don't" | "never"))
-        || lower.contains("말자")
-        || lower.contains("하지 마")
-        || lower.contains("나가지")
-    {
+        || ["말자", "하지 마", "나가지"]
+            .iter()
+            .any(|word| lower.contains(word));
+    let leaving = words
+        .iter()
+        .any(|word| *word == "i" || word.starts_with("i'") || *word == "im")
+        || ["갈게", "다녀올", "갔다 올", "나갈 거", "나가볼게", "나갔다"]
+            .iter()
+            .any(|word| lower.contains(word));
+    if refused || leaving {
         return None;
     }
     let swing =
@@ -393,23 +398,30 @@ fn requested(text: &str) -> Option<Request> {
     }
     let english = [
         "go outside",
-        "go out",
+        "go out and play",
+        "go out to play",
+        "go play outside",
         "play outside",
-        "go out to the yard",
-        "to the yard",
+        "go to the yard",
+        "out to the yard",
+        "into the yard",
         "in the yard",
         "the backyard",
-        "outside",
+        "let's go out",
+        "lets go out",
     ]
     .iter()
     .any(|phrase| has(phrase));
     let korean = [
         "마당",
-        "밖에 나가",
+        "밖에 나가자",
+        "밖에 나가서 놀",
         "밖에서 놀",
         "나가자",
         "나가 놀",
-        "산책",
+        "나가서 놀",
+        "산책 가자",
+        "산책하자",
     ]
     .iter()
     .any(|word| lower.contains(word));
@@ -484,7 +496,15 @@ mod tests {
         assert_eq!(world.yard_spot(), Some(Spot::Swing));
         world.hear("come back in");
         assert!(world.ghost.plan.done);
-        for message in ["don't go outside", "hello", "the window is open"] {
+        for message in [
+            "don't go outside",
+            "hello",
+            "the window is open",
+            "it's cold outside",
+            "I'll go out for dinner later",
+            "나 밖에 나가볼게",
+            "집에 들어가는 중",
+        ] {
             let mut world = World::new(3, 11.0);
             assert_ne!(
                 world.hear(message).understanding,
