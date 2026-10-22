@@ -4,7 +4,6 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::app::{App, Mode, mood_color};
 use crate::canvas::{Canvas, Cell};
 use crate::color::Rgb;
-use crate::face::emote;
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::Status;
 use crate::render::View;

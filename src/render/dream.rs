@@ -105,9 +105,8 @@ impl Bubble {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::face::Face;
     use crate::frame::Grid;
-    use crate::render::ghost::{Aura, Pose};
+    use crate::render::ghost::Aura;
     use crate::render::{Camera, GHOST_SCALE, sky};
     use crate::world::{Dream, World};
 

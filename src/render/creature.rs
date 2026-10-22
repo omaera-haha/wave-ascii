@@ -751,7 +751,7 @@ pub fn study(
 /// The color a creature is known by in words and marks: its coat, kept
 /// bright enough to read against the dark.
 pub fn signature(species: Species, coat: u8) -> Vec3 {
-    let color = match (species, coat) {
+    match (species, coat) {
         (Species::Fox, 1) => Vec3::new(0.85, 0.9, 1.0),
         (Species::Fox, 2) => Vec3::new(0.7, 0.7, 0.8),
         (Species::Fox, _) => Vec3::new(1.0, 0.6, 0.25),
@@ -789,8 +789,7 @@ pub fn signature(species: Species, coat: u8) -> Vec3 {
         (Species::Jelly, 2) => Vec3::new(0.85, 0.75, 1.0),
         (Species::Jelly, 3) => Vec3::new(1.0, 0.8, 0.65),
         (Species::Jelly, _) => Vec3::new(1.0, 0.7, 0.88),
-    };
-    color
+    }
 }
 
 /// Where a ray meets a sphere: the distances it enters and leaves at.
@@ -1337,7 +1336,7 @@ fn penguin(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<
     // A waddle rocks the body side to side with each step.
     let waddle = Mat3::from_rotation_z(0.14 * (rig.stride).sin() * rig.walk);
     let mut body = rig.body(0.05);
-    body.axes = body.axes * waddle;
+    body.axes *= waddle;
     sculpt.within(body, |sculpt| {
         sculpt.melted(0.05, |sculpt| {
             sculpt.ellipsoid(
@@ -1952,7 +1951,7 @@ fn mushroom(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look
     let stance = 0.2;
     let waddle = Mat3::from_rotation_z(0.12 * rig.stride.sin() * rig.walk);
     let mut body = rig.body(0.06);
-    body.axes = body.axes * waddle;
+    body.axes *= waddle;
     for side in [-1.0f32, 1.0] {
         let lift = 0.03 * rig.lift(if side < 0.0 { 0.0 } else { 0.5 });
         let swing = 0.03 * rig.swing(if side < 0.0 { 0.0 } else { 0.5 });
