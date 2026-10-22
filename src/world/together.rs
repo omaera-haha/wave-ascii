@@ -135,8 +135,10 @@ impl World {
                     || peer.position.distance(self.ghost.position) < 4.0
             })
             .max_by(|first, second| {
+                // A friend feeling low draws it most.
                 let score = |peer: &Peer| {
-                    self.fondness_for(peer.id) * 2.0
+                    let low = matches!(peer.mood, Mood::Lonely | Mood::Grumpy | Mood::Bored);
+                    self.fondness_for(peer.id) * 2.0 + if low { 0.8 } else { 0.0 }
                         - peer.position.distance(self.ghost.position) * 0.3
                 };
                 score(first).total_cmp(&score(second))
@@ -167,6 +169,12 @@ impl World {
         let fond = self.fondness_for(partner.id);
         let energy = self.ghost.needs.energy;
         let lively = matches!(self.ghost.mood, Mood::Excited | Mood::Cheerful);
+        // A lonely or grumpy friend gets a nuzzle more than a game.
+        let cheer_up = if matches!(partner.mood, Mood::Lonely | Mood::Grumpy) {
+            2.0
+        } else {
+            0.0
+        };
         let weights = [
             if energy > 0.45 {
                 1.2 + if lively { 0.6 } else { 0.0 }
@@ -174,7 +182,7 @@ impl World {
                 0.1
             },
             1.3,
-            0.4 + fond,
+            0.4 + fond + cheer_up,
             if energy > 0.35 {
                 0.5 + if lively { 0.6 } else { 0.0 }
             } else {

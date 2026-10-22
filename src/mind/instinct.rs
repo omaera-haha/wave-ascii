@@ -476,6 +476,16 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     };
                     let snowy = 0.5 * world.weather.snow_cover.clamp(0.0, 1.0);
                     let starry = if world.starry_night() { 0.4 } else { 0.0 };
+                    // A friend already out there makes the yard more tempting.
+                    let friend_out = if world.peers().iter().any(|peer| {
+                        peer.busy
+                            && peer.activity == Activity::Yard
+                            && world.fondness_for(peer.id) >= 0.2
+                    }) {
+                        0.6
+                    } else {
+                        0.0
+                    };
                     let cat = if world
                         .visitors
                         .cat
@@ -486,7 +496,9 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                     } else {
                         0.0
                     };
-                    (0.25 + 0.6 * (1.0 - needs.fun) + snowy + starry + cat) * needs.energy * fair
+                    (0.25 + 0.6 * (1.0 - needs.fun) + snowy + starry + cat + friend_out)
+                        * needs.energy
+                        * fair
                 } else {
                     0.0
                 }
