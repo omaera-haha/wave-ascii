@@ -85,16 +85,19 @@ pub enum Spot {
     Bench,
     Lawn,
     Fence,
+    /// Up on the roof's ridge, for the stars.
+    Roof,
 }
 
 impl Spot {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Swing,
         Self::Garden,
         Self::Birdbath,
         Self::Bench,
         Self::Lawn,
         Self::Fence,
+        Self::Roof,
     ];
 
     /// Where the ghost floats for this spot, for a ghost of `size`.
@@ -106,6 +109,7 @@ impl Spot {
             Self::Bench => BENCH + Vec3::new(0.0, 0.42 + 0.34 * size, 0.08),
             Self::Lawn => Vec3::new(5.3, 0.32 * size + 0.06, 1.55),
             Self::Fence => Vec3::new(7.6, 1.05, -5.2),
+            Self::Roof => Vec3::new(0.55, RIDGE + 0.36 * size, (HOUSE_MIN.z + HOUSE_MAX.z) * 0.5),
         }
     }
 
@@ -118,6 +122,7 @@ impl Spot {
             Self::Bench => TREE_CROWN,
             Self::Lawn => Vec3::new(4.0, 7.0, -14.0),
             Self::Fence => Vec3::new(10.0, 1.6, -24.0),
+            Self::Roof => Vec3::new(0.0, 9.0, -20.0),
         }
     }
 
@@ -129,6 +134,7 @@ impl Spot {
             Self::Bench => "sitting on the bench in the yard",
             Self::Lawn => "lying on the lawn watching the sky",
             Self::Fence => "leaning on the back fence looking at the hills",
+            Self::Roof => "sitting up on the roof watching the stars",
         }
     }
 }
@@ -140,6 +146,11 @@ pub fn indoors(point: Vec3) -> bool {
 
 /// Inside the cottage's footprint, walls included.
 pub fn in_house(point: Vec3) -> bool {
+    over_house(point) && point.y < HOUSE_MAX.y + 0.1
+}
+
+/// Above the cottage's footprint, at any height.
+fn over_house(point: Vec3) -> bool {
     point.x >= HOUSE_MIN.x
         && point.x <= HOUSE_MAX.x
         && point.z >= HOUSE_MIN.z
@@ -196,7 +207,7 @@ pub fn on_lot(point: Vec3) -> bool {
 pub fn yard_bounds() -> (Vec3, Vec3) {
     (
         Vec3::new(LOT_MIN.x + 0.35, 0.0, LOT_MIN.y + 0.35),
-        Vec3::new(LOT_MAX.x - 0.35, 3.3, LOT_MAX.y - 0.35),
+        Vec3::new(LOT_MAX.x - 0.35, RIDGE + 1.0, LOT_MAX.y - 0.35),
     )
 }
 
@@ -204,6 +215,29 @@ pub fn yard_bounds() -> (Vec3, Vec3) {
 /// one is in the house and the other out.
 pub fn waypoint(from: Vec3, to: Vec3) -> Vec3 {
     let inside = in_house(from);
+    // Up to the roof and down again outside the walls, never through
+    // the eaves.
+    let aloft = RIDGE + 0.55;
+    let roof = |point: Vec3| over_house(point) && point.y > HOUSE_MAX.y;
+    if !inside && !roof(from) && roof(to) && from.y < aloft - 0.1 {
+        // Out of the doorway first, then straight up beside the wall.
+        if in_doorway(from) {
+            return Vec3::new(HOUSE_MAX.x + 1.0, from.y, from.z);
+        }
+        return Vec3::new(from.x, aloft, from.z);
+    }
+    if roof(from) && !roof(to) {
+        let off = Vec3::new(HOUSE_MAX.x + 0.6, from.y.max(aloft), from.z);
+        return if over_house(from) || from.y > aloft - 0.2 && !over_house(to) && !in_house(to) {
+            off
+        } else {
+            to
+        };
+    }
+    if !inside && !over_house(from) && from.y > HOUSE_MAX.y && !roof(to) && in_house(to) {
+        // Coming down from up high beside the house: down to the door.
+        return Vec3::new(from.x, DOOR_OUTSIDE.y, from.z);
+    }
     if inside == in_house(to) {
         return to;
     }
@@ -257,7 +291,7 @@ impl World {
         }
         Vec3::new(
             (ghost.x - 0.7).clamp(home.x - 3.0, 5.6),
-            home.y,
+            home.y.max(ghost.y - 1.1),
             (ghost.z * 0.55).clamp(-1.6, 1.0),
         )
     }
@@ -298,6 +332,33 @@ mod tests {
         let (position, crossed) = walk(Spot::Fence.position(1.0), Vec3::new(0.0, 1.2, 0.0));
         assert!(crossed);
         assert!(indoors(position));
+    }
+
+    #[test]
+    fn the_way_up_to_the_roof_and_back_in_stays_clear_of_the_walls_and_eaves() {
+        let roof = Spot::Roof.position(1.0);
+        let start = Vec3::new(-1.0, 1.0, -0.5);
+        let mut position = start;
+        for goal in [roof, start] {
+            for _ in 0..8000 {
+                let next = waypoint(position, goal);
+                let offset = next - position;
+                if offset.length() < 0.02 {
+                    break;
+                }
+                let was_inside = in_house(position);
+                position += offset.clamp_length_max(0.02);
+                if was_inside != in_house(position) {
+                    assert!(in_doorway(position), "through the wall at {position}");
+                }
+                // Never inside the roof: above the walls, over the house,
+                // it stays above the ridge.
+                if over_house(position) && position.y > HOUSE_MAX.y {
+                    assert!(position.y > RIDGE, "through the roof at {position}");
+                }
+            }
+            assert!(position.distance(goal) < 0.05, "{position} vs {goal}");
+        }
     }
 
     #[test]

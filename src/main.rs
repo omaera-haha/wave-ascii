@@ -396,6 +396,16 @@ fn print_frame(options: &Options) -> io::Result<()> {
         .and_then(|name| world::Activity::parse(&name))
     {
         app.world.begin(activity);
+        if let Ok(name) = env::var("WAVE_ASCII_SPOT")
+            && let Some(spot) = world::home::Spot::ALL
+                .into_iter()
+                .find(|spot| format!("{spot:?}").eq_ignore_ascii_case(&name))
+        {
+            let position = spot.position(app.world.size());
+            app.world.ghost.plan.target = position;
+            app.world.ghost.plan.anchor = position;
+            app.world.ghost.plan.cat = false;
+        }
     }
     // Counted in whole steps so long previews don't drift with rounding.
     let time = f64::from(options.time);

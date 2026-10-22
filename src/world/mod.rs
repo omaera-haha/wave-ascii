@@ -3540,7 +3540,10 @@ impl World {
         // Out through the door and back in; the yard is past the walls.
         // A place just past a wall, as a push at the ball behind it can
         // aim for, stays in the room.
-        let target = if !home::in_house(target) && home::near_house(target, 0.6) {
+        let target = if !home::in_house(target)
+            && home::near_house(target, 0.6)
+            && target.y < home::HOUSE_MAX.y
+        {
             target.clamp(ROOM_MIN, ROOM_MAX)
         } else {
             target
@@ -3610,7 +3613,7 @@ impl World {
             high.z = home::DOOR_HIGH.x - 0.15;
             high.y = home::DOOR_HIGH.y - 0.45;
         }
-        if outdoors && !doorway {
+        if outdoors && !doorway && ghost.position.y < home::HOUSE_MAX.y + 0.4 {
             // Keep off the cottage's walls.
             let at = flat(ghost.position);
             let nearest = at.clamp(

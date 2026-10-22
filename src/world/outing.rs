@@ -38,7 +38,11 @@ impl World {
     pub(super) fn first_spot(&mut self) -> Spot {
         let dark = meteor::dark(self.hour);
         if dark {
-            return if self.random.unit() < 0.7 {
+            let clear = self.weather.sky == Sky::Clear && !self.weather.storm;
+            let pick = self.random.unit();
+            return if clear && pick < 0.45 {
+                Spot::Roof
+            } else if pick < 0.8 {
                 Spot::Lawn
             } else {
                 Spot::Bench
@@ -131,10 +135,11 @@ impl World {
             self.ghost.plan.done = true;
             return;
         }
+        let dark = meteor::dark(self.hour);
         let next = loop {
             let index = (self.random.unit() * Spot::ALL.len() as f32) as usize;
             let choice = Spot::ALL[index.min(Spot::ALL.len() - 1)];
-            if Some(choice) != from {
+            if Some(choice) != from && (choice != Spot::Roof || dark) {
                 break choice;
             }
         };
@@ -214,6 +219,8 @@ impl World {
             (Spot::Lawn, true) => "풀에서 비 냄새가 나.",
             (Spot::Fence, false) => "The hills go on and on.",
             (Spot::Fence, true) => "언덕이 끝없이 이어져.",
+            (Spot::Roof, false) => "The roof is the best seat for the stars.",
+            (Spot::Roof, true) => "지붕은 별 보기 제일 좋은 자리야.",
         };
         self.think(thought);
     }
