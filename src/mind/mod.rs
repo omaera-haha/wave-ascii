@@ -1893,7 +1893,7 @@ mod tests {
         };
         mind.apply(Answer::Reflected(Ok(Some(reflection))), &mut world);
         assert_eq!(
-            observation::observe(&world)["ghost"]["doing"],
+            observation::observe(&world)["you"]["doing"],
             "telling the viewer a story"
         );
         assert_eq!(
@@ -2409,7 +2409,7 @@ mod tests {
             assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
             assert_eq!(mind.journal.conversation.last().unwrap().text, reply);
             assert!(
-                observation::observe(&world)["ghost"]["health"]
+                observation::observe(&world)["you"]["health"]
                     .as_str()
                     .unwrap()
                     .contains("said kind words")

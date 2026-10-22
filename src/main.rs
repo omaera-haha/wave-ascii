@@ -45,19 +45,21 @@ static ALBUM_EXPORTS: AtomicU64 = AtomicU64::new(0);
 const HELP: &str = "\
 Usage: wave-ascii [OPTIONS]
 
-A ghost lives in a little cottage in your terminal: a room behind a glass
-front, and a fenced yard with a tree, a swing, and a garden bed under a real
-sky. It floats about, chases light motes, plays fetch, stacks toy blocks,
-tends its plant and goes out to its garden, swings in the yard, watches the
-bird and the sky, plays hide-and-seek and noughts and crosses, draws and
-writes in the fog on the glass, sleeps at night, and watches you. Over days it grows up, grows close to you, learns your words and
-your name, forms habits, and keeps a diary. Jev (TypeSafe's System One model)
-makes its quick choices and Claude gives it thoughts and words; without API
-keys it lives on instinct. Press k in the app to add keys, or set
-ANTHROPIC_API_KEY and TYPESAFE_API_KEY.
+A little household lives in a cottage in your terminal: a fox kit, a bunny,
+a robot on one wheel, a jellyfish, or any of thirteen kinds of creature,
+each a solid little 3D body with its own face, gait, and nature. They share
+a room behind a glass front, a bedroom, and a fenced yard with a tree, a
+swing, and a garden bed under a real sky. They chase light motes, play
+fetch, stack toy blocks, tend the plants, read, swing in the yard, play tag
+and chat with each other, nap in a heap, and watch you. Over days each one
+grows up, grows close to you and to its housemates, learns your words, and
+keeps a diary. Jev (TypeSafe's System One model) makes their quick choices
+and Claude gives them thoughts and words; without API keys they live on
+instinct. Press k in the app to add keys, or set ANTHROPIC_API_KEY and
+TYPESAFE_API_KEY.
 
-Its life is saved between runs in ~/.local/share/wave-ascii/life.json, and
-its settings, keys included, in ~/.config/wave-ascii/config.json.
+Their lives are saved between runs in ~/.local/share/wave-ascii/life.json,
+and the settings, keys included, in ~/.config/wave-ascii/config.json.
 
 Options:
   --style ascii|blocks|braille   how pixels become characters (default braille)
@@ -70,15 +72,18 @@ Options:
                                  the frame is printed (default 0)
   --hour HOUR                    when piped: the hour of day (default 12)
   --date YYYY-MM-DD              when piped: the date (default 2026-06-21)
-  --born YYYY-MM-DD              when piped: the ghost's birth date (optional)
-  --peek                         print one line about what the saved ghost is
-                                 probably doing, for a prompt or status bar
+  --born YYYY-MM-DD              when piped: the birth date (optional)
+  --peek                         print one line about what the creature you
+                                 were with is probably doing, for a prompt or
+                                 status bar
   --album-html PATH              export the saved album as one HTML memory book
   --force                        allow replacing an existing HTML export
   -h, --help                     show this help
 
 Keys:
-  t, Enter     talk to the ghost      k        API keys and models
+  Tab, [ ]     turn to another one    n        adopt a new housemate
+  v            stay close on it       click    turn to one, or poke it
+  t, Enter     talk to that one       k        API keys and models
   arrows/WASD  turn the view          j        journal (arrows scroll)
   + / -        zoom                   l        its life and growth
   m, c         style, color mode      ?        help
@@ -93,19 +98,22 @@ Keys:
   w (letters)  write; Ctrl+S sends, Esc keeps draft; v browses sent
   q, Esc       quit
 
-Mouse: click the ghost to poke it (or find it when it hides), the ball to
+Mouse: click a creature to turn to it, and again to poke it (or find it
+when it hides). Start a message with a name, like “Pip, come here”, to talk
+to that one. Click the ball to
 flick it, a block to nudge it or a tower to topple it, the window to ask it
 to open or shut, the music box to wind it, a soap bubble to pop it, an envelope
 to read it, the lawn to drop a light mote out in the yard, and elsewhere to drop
 one in the room. Ask for “bubbles!” to start, or ask it to go outside.
-Press on the ghost and drag across it to stroke it; drag elsewhere to turn the view,
+Press on the one you're with and drag across it to stroke it; drag elsewhere to turn the view,
 and scroll to zoom. Right-drag draws in the fog on the glass. In the
 journal, help, life, letter, or album panel, the mouse selects text. In the journal,
 PageUp/PageDown and Home/End also scroll; Esc, Enter, or j closes it. In the
 album, left/right flip pages, Home/End jump to newest/oldest, and Esc or b
 closes it; q quits.
 
-Piped output prints one frame of a fresh ghost, sized by COLUMNS and LINES.";
+Piped output prints one frame of a fresh household, sized by COLUMNS and
+LINES.";
 
 struct Options {
     style: Style,
@@ -273,7 +281,7 @@ fn run() -> io::Result<()> {
             io::Error::new(
                 error.kind(),
                 format!(
-                    "couldn't read the ghost's life from {}: {error}",
+                    "couldn't read the household's life from {}: {error}",
                     paths.save.display()
                 ),
             )
@@ -464,6 +472,33 @@ fn print_frame(options: &Options) -> io::Result<()> {
     if let Some(target) = target {
         app.camera.target = target;
     }
+    // For checking looks: keys pressed before the frame, comma separated,
+    // like "tab,n,right" or "t,text:hello,enter".
+    if let Ok(keys) = env::var("WAVE_ASCII_KEYS") {
+        use terminal::{Input, Key};
+        let _ = app.frame(size.columns, size.rows);
+        for token in keys.split(',') {
+            let inputs = match token {
+                "tab" => vec![Key::Tab],
+                "backtab" => vec![Key::BackTab],
+                "enter" => vec![Key::Enter],
+                "esc" => vec![Key::Escape],
+                "left" => vec![Key::Left],
+                "right" => vec![Key::Right],
+                "up" => vec![Key::Up],
+                "down" => vec![Key::Down],
+                text => match text.strip_prefix("text:") {
+                    Some(text) => text.chars().map(Key::Character).collect(),
+                    None => text.chars().map(Key::Character).collect(),
+                },
+            };
+            for key in inputs {
+                app.input(Input::Key(key));
+            }
+            app.advance(0.05);
+            let _ = app.frame(size.columns, size.rows);
+        }
+    }
     // For checking looks without a terminal: the raw pixels as a PPM image.
     if let Some(path) = env::var_os("WAVE_ASCII_IMAGE") {
         let picture = app.picture(size.columns * 4, size.rows * 8);
@@ -525,7 +560,7 @@ fn export_album(paths: Option<&Paths>, path: &Path, force: bool) -> io::Result<S
         .collect();
     let pages = album::Album::read_only(paths, &milestones);
     if pages.is_empty() {
-        return Ok("The ghost hasn't kept any moments yet.".to_owned());
+        return Ok("No moments have been kept yet.".to_owned());
     }
     let directory = path
         .parent()
@@ -718,7 +753,7 @@ mod tests {
         let paths = saved_album(&directory, 0);
         assert_eq!(
             export_album(Some(&paths), &path, false).unwrap(),
-            "The ghost hasn't kept any moments yet."
+            "No moments have been kept yet."
         );
         assert!(!path.exists());
         assert!(!paths.album().exists());

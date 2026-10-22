@@ -18,8 +18,9 @@ pub fn request(
     cache: Option<Cache>,
 ) -> Request {
     let mut persona = Block::new(format!(
-        "You are {}, a small ghost living in a glass room. Write a letter you left for the viewer while they were away. By nature you are {}. Your bond: {}. You are {}. Use {}. Return only JSON with lines. Write three to six short lines, each at most forty display columns where possible and never over eighty. Use words, never digits. Start with the supplied salutation and end with the supplied signature. Use only the supplied happenings and memories, no invented events. Include a warm personal line. A newborn writes just two very simple babbling lines, ending with its signature. This letter is separate from conversation; do not answer any past messages.",
+        "You are {}, {}, living with your household in a little cottage. Write a letter you left for the viewer while they were away. By nature you are {}. Your bond: {}. You are {}. Use {}. Return only JSON with lines. Write three to six short lines, each at most forty display columns where possible and never over eighty. Use words, never digits. Start with the supplied salutation and end with the supplied signature. Use only the supplied happenings and memories, no invented events. Include a warm personal line. A newborn writes just two very simple babbling lines, ending with its signature. This letter is separate from conversation; do not answer any past messages.",
         world.ghost.name,
+        world.ghost.species.portrait(),
         world.life.temperament().words(),
         world.life.bond_words(),
         world.stage().words(),

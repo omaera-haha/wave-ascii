@@ -444,9 +444,12 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
 }
 
 /// Tips for a quiet words line, the basics first.
-const TIPS: [&str; 17] = [
-    "t to talk · click the ghost to poke it, the floor to drop a light mote · drag to look around",
-    "drag across the ghost to stroke it · right drag draws in the fog on the glass",
+const TIPS: [&str; 20] = [
+    "t to talk · Tab turns to another creature · click one to poke it, the floor to drop a mote",
+    "drag across a creature to stroke it · right drag draws in the fog on the glass",
+    "start a message with a name, like “Pip, come here”, to talk to that one",
+    "n invites a newcomer to live here, up to six · v keeps the view close on the one you're with",
+    "housemates play tag, chat, nuzzle, and dance together · l shows how fond they've grown",
     "e reads its letters, and w there writes it one back",
     "o to focus together beside your work · g for noughts and crosses on the glass",
     "tell it how you feel, like “I'm tired” or “오늘 힘들었어”, and it looks after you",
@@ -1042,22 +1045,22 @@ fn help_panel(screen: &mut Canvas) {
 /// words around them.
 fn help_lines(rows: usize) -> Vec<&'static str> {
     let introduction = [
-        "A ghost lives here. Jev chooses; Claude gives thoughts and words.",
-        "Without keys (k), instinct guides it. Speak Korean to hear Korean.",
+        "A household lives here. Jev chooses; Claude gives thoughts and words.",
+        "Without keys (k), instinct guides them. Speak Korean to hear Korean.",
     ];
     let keys = [
-        "t, Enter   talk to it           click ghost   poke or find it",
-        "k          keys and models      click ball    flick it",
-        "j          journal and diary    click room    drop a light mote",
-        "l          life and growth      click blocks  nudge or topple",
-        "p, P       postcard, posed      click friend  make it giggle",
-        "o          focus (o ends it)    drag ghost    stroke it",
-        "g          noughts and crosses  1-9, click    choose a square",
-        "f          draw (f/Esc stops)   x             hide a treasure",
-        "b, e       album, letters       click window  open or shut",
-        "arrows     turn the view        drag          turn the view",
-        "+ -, wheel zoom                 r             reset the view",
-        "m  c       style, color         space         pause",
+        "Tab, [ ]   turn to another      click one     turn to it, or poke",
+        "t, Enter   talk to that one     drag on it    stroke it",
+        "n, v       adopt, stay close    click ball    flick it",
+        "k          keys and models      click room    drop a light mote",
+        "j          journal and diary    click blocks  nudge or topple",
+        "l          life and growth      click friend  make it giggle",
+        "p, P       postcard, posed      x             hide a treasure",
+        "o          focus (o ends it)    1-9, click    choose a square",
+        "g          noughts and crosses  click window  open or shut",
+        "f          draw (f/Esc stops)   drag          turn the view",
+        "b, e       album, letters       m  c          style, color",
+        "arrows +- r turn, zoom, reset   space         pause",
         "?          this help            q, Esc        quit",
     ];
     let notes = [
@@ -1413,7 +1416,7 @@ pub fn album_panel(app: &App, screen: &mut Canvas) {
             0,
             rows / 2,
             columns,
-            "The ghost hasn't kept any moments yet.",
+            "No moments have been kept yet.",
             TEXT,
             None,
         );

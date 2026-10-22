@@ -1714,15 +1714,15 @@ impl Tally {
         if self.met_reflection {
             deeds.push((
                 Salience::Special,
-                "met the ghost in the mirror".to_owned(),
-                "거울 속 유령을 만났어".to_owned(),
+                "met someone in the mirror".to_owned(),
+                "거울 속 친구를 만났어".to_owned(),
             ));
         }
         if self.recognized_self {
             deeds.push((
                 Salience::Momentous,
-                "learned the ghost in the mirror is me".to_owned(),
-                "거울 속 유령이 나라는 걸 알게 됐어".to_owned(),
+                "learned the one in the mirror is me".to_owned(),
+                "거울 속 친구가 나라는 걸 알게 됐어".to_owned(),
             ));
         }
         if self.lullaby_sleeps > 0 {
@@ -3139,14 +3139,14 @@ impl Life {
         }
         if matches!(kind, EventKind::MetReflection) {
             return self.reach(
-                "I met a ghost in the mirror.".to_owned(),
-                "거울 속 유령을 만났어.",
+                "I met someone in the mirror.".to_owned(),
+                "거울 속 친구를 만났어.",
             );
         }
         if matches!(kind, EventKind::RecognizedSelf) {
             return self.reach(
-                "I know the ghost in the mirror is me.".to_owned(),
-                "거울 속 유령이 나라는 걸 알게 됐어.",
+                "I know the one in the mirror is me.".to_owned(),
+                "거울 속 친구가 나라는 걸 알게 됐어.",
             );
         }
         if let EventKind::LearnedAboutViewer(topic) = kind {

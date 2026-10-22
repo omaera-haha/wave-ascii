@@ -21,9 +21,9 @@ impl Stage {
 
     pub fn words(self) -> &'static str {
         match self {
-            Self::Newborn => "a newborn wisp",
-            Self::Young => "a young ghost",
-            Self::Grown => "a grown ghost",
+            Self::Newborn => "a newborn",
+            Self::Young => "young",
+            Self::Grown => "grown up",
         }
     }
 }
@@ -52,8 +52,8 @@ impl World {
         for (age, text, korean) in [
             (
                 3.0,
-                "I'm not a newborn wisp any more.",
-                "이제 갓 태어난 아기 유령은 아니야.",
+                "I'm not a newborn any more.",
+                "이제 갓 태어난 아기는 아니야.",
             ),
             (30.0, "I'm all grown up now.", "이제 다 자랐어."),
         ] {
@@ -420,7 +420,7 @@ mod tests {
             world.step(0.0);
             world.step(0.0);
         }
-        for text in ["I'm not a newborn wisp any more.", "I'm all grown up now."] {
+        for text in ["I'm not a newborn any more.", "I'm all grown up now."] {
             assert_eq!(
                 world
                     .life

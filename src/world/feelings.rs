@@ -365,7 +365,7 @@ impl World {
             });
         if let Some(comforting) = &self.comforting {
             words.push_str(&format!(
-                " The ghost is comforting them: it {}.",
+                " It is comforting them: it {}.",
                 comforting.feeling.care_words()
             ));
         }
@@ -850,8 +850,8 @@ pub fn replies(world: &World, feeling: Feeling, korean: bool) -> Vec<String> {
                 )
             } else {
                 (
-                    "Your little ghost is on your side.",
-                    "네 작은 유령은 네 편이야.",
+                    "Your little friend is on your side.",
+                    "네 작은 친구는 네 편이야.",
                 )
             },
         )

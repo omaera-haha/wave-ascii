@@ -44,12 +44,12 @@ impl Quirk {
 
     pub fn thoughts(self) -> &'static [&'static str] {
         match self {
-            Self::Hiccups => &["Hic! …excuse me.", "My light keeps jumping."],
+            Self::Hiccups => &["Hic! …excuse me.", "My whole body keeps jumping."],
             Self::Sneeze => &[
                 "Achoo! Something tickles.",
-                "Even a ghost gets a tickly nose.",
+                "Even I get a tickly nose.",
             ],
-            Self::Yawn => &["Haaah… sleepy light.", "That yawn caught me too."],
+            Self::Yawn => &["Haaah… so sleepy.", "That yawn caught me too."],
             Self::Shiver => &[
                 "Brr. The lamp looks warm.",
                 "Perhaps I should shut the window.",

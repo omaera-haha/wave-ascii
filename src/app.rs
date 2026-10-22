@@ -434,7 +434,7 @@ impl App {
         if self.live_clock && self.world.time - self.last_save > SAVE_EVERY {
             self.last_save = self.world.time;
             if let Err(error) = self.save() {
-                self.post(format!("Couldn't save the ghost: {error}"));
+                self.post(format!("Couldn't save the household: {error}"));
             }
         }
     }

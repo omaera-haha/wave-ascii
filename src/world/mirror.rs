@@ -129,7 +129,7 @@ impl World {
             visit.familiar = true;
             self.record(EventKind::RecognizedSelf);
             self.suggest_mood(Mood::Excited, 8.0);
-            self.think("The ghost in the mirror is me!");
+            self.think("The one in the mirror is me!");
         }
         let visit = self.mirror_visit.as_ref().unwrap();
         let mut target = self.ghost.plan.anchor;
@@ -235,7 +235,7 @@ impl World {
         } else {
             vec![
                 "Hello? Who are you?",
-                "Are you a ghost too?",
+                "Are you new here too?",
                 "Does it live behind the wall?",
             ]
         }
@@ -295,7 +295,7 @@ mod tests {
                 .life
                 .today
                 .words()
-                .contains("met the ghost in the mirror")
+                .contains("met someone in the mirror")
         );
     }
 
@@ -320,7 +320,7 @@ mod tests {
                 .life
                 .milestones
                 .iter()
-                .filter(|entry| entry.text == "I met a ghost in the mirror.")
+                .filter(|entry| entry.text == "I met someone in the mirror.")
                 .count(),
             1
         );
@@ -392,7 +392,7 @@ mod tests {
                     .life
                     .milestones
                     .iter()
-                    .filter(|entry| entry.text == "I know the ghost in the mirror is me.")
+                    .filter(|entry| entry.text == "I know the one in the mirror is me.")
                     .count(),
                 1
             );
@@ -401,7 +401,7 @@ mod tests {
                     .life
                     .today
                     .words()
-                    .contains("learned the ghost in the mirror is me")
+                    .contains("learned the one in the mirror is me")
             );
         }
     }

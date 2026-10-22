@@ -81,7 +81,7 @@ pub fn glance(save: &Save, now: DateTime, away: i64) -> String {
 
 /// The glance for a missing save: nobody lives here yet.
 pub fn nobody() -> &'static str {
-    "No ghost lives here yet. Run wave-ascii to meet one."
+    "Nobody lives here yet. Run wave-ascii to meet them."
 }
 
 #[cfg(test)]

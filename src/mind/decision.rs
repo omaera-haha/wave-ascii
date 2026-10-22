@@ -20,7 +20,7 @@ pub fn questions(options: &[(Activity, String)]) -> Questions {
         .with(
             "activity",
             Choice::new(
-                "Which should the ghost do next? Weigh its needs, its goal, what it loves \
+                "Which should the creature do next? Weigh its needs, its goal, what it loves \
                  doing, how close it feels to the viewer, the time of day, and what is \
                  happening around it.",
                 options
@@ -31,7 +31,7 @@ pub fn questions(options: &[(Activity, String)]) -> Questions {
         .with(
             "mood",
             Choice::new(
-                "Which word best describes how the ghost feels right now?",
+                "Which word best describes how the creature feels right now?",
                 Mood::ALL
                     .iter()
                     .map(|mood| (mood.name(), mood.description())),
@@ -62,7 +62,7 @@ pub fn read(answers: &Answers) -> Option<Decision> {
 pub fn request_questions(options: &[Activity]) -> Questions {
     let mut criteria = vec![(
         "none",
-        "The message asks for nothing the ghost can do, or is just talk.",
+        "The message asks for nothing the creature can do, or is just talk.",
     )];
     criteria.extend(
         options
@@ -72,9 +72,9 @@ pub fn request_questions(options: &[Activity]) -> Questions {
     Questions::new().with(
         "request",
         Choice::new(
-            "The state is a message the viewer typed to a small ghost living in a little \
+            "The state is a message the viewer typed to a small creature living in a little \
              cottage with a yard. \
-             Does it ask the ghost to do one of these things?",
+             Does it ask the creature to do one of these things?",
             criteria,
         ),
     )

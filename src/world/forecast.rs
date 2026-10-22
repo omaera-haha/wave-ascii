@@ -68,7 +68,7 @@ impl World {
         self.think(if snow {
             "The air smells like snow."
         } else {
-            "My hem tingles… rain is coming."
+            "I can feel it… rain is coming."
         });
         let speaking = self.telling.is_some()
             || (self.asking.is_some() || self.awaiting_plan_answer())
@@ -175,7 +175,7 @@ mod tests {
         assert_eq!(world.sensed_weather(), Some(false));
         assert_eq!(
             world.ghost.thought.as_ref().unwrap().text,
-            "My hem tingles… rain is coming."
+            "I can feel it… rain is coming."
         );
         // Sensing is no choice: nothing was drawn.
         assert_eq!(world.random.next_u64(), drawn.next_u64());

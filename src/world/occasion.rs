@@ -38,9 +38,9 @@ impl Occasion {
     pub fn words(self) -> &'static str {
         match self {
             Self::WinterHolidays => "the winter holidays",
-            Self::Birthday => "the ghost's birthday",
-            Self::HundredDays => "the ghost's hundredth day",
-            Self::ThousandDays => "the ghost's thousandth day",
+            Self::Birthday => "its birthday",
+            Self::HundredDays => "its hundredth day",
+            Self::ThousandDays => "its thousandth day",
             _ => self.name(),
         }
     }

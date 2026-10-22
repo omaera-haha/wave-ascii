@@ -30,12 +30,12 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Friend => vec![
             "Tag! You’re it!",
             "Let’s play together.",
-            "Two ghosts, one moon.",
+            "Two friends, one moon.",
         ],
         Activity::Float => Vec::new(),
         Activity::Music => vec![
             "A little tune, just for this room.",
-            "I can feel the beat in my hem.",
+            "I can feel the beat all over.",
         ],
         Activity::Air if world.ghost.plan.window == Some(false) => {
             vec!["Better shut the window.", "Keep the rain outside."]
@@ -366,7 +366,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
         lines.push(wishing.wish.hope());
     }
     if world.enjoying_air() {
-        lines.extend(["The air smells like rain.", "The breeze tickles my hem."]);
+        lines.extend(["The air smells like rain.", "The breeze tickles me."]);
         if world.season() == crate::world::Season::Autumn {
             lines.push("Leaves are dancing in.");
         }
@@ -388,7 +388,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
     if world.friend.is_some() {
         lines.extend([
             "My ghost friend is fun!",
-            "Two little ghosts in one little room.",
+            "Two little friends in one little room.",
         ]);
     } else if world
         .events
@@ -459,7 +459,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
         Some(Occasion::Halloween) => lines.extend([
             "Boo! Did I scare you?",
             "The pumpkin is grinning at me.",
-            "A ghost is very good at Halloween.",
+            "Halloween is my kind of night.",
         ]),
         Some(Occasion::WinterHolidays) => lines.extend([
             "The little tree is so pretty.",
@@ -590,7 +590,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Fetch => "Throw the ball again! Please?",
             Activity::Pounce => "Move your finger again!",
             Activity::Dance => "I've been working on a new twirl.",
-            Activity::Hide => "Nobody hides like a ghost.",
+            Activity::Hide => "Nobody hides like me.",
             Activity::Game => "Another game on the glass?",
             Activity::Music => "I could wind the music box again.",
             Activity::Puzzle => "I could think of another word for you.",
@@ -601,7 +601,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Company => "I like working quietly beside you.",
             Activity::Read => "A book is a little window too.",
             Activity::Letter => "I kept their words close.",
-            Activity::Mirror => "I wonder what the mirror ghost is doing.",
+            Activity::Mirror => "I wonder what my reflection is doing.",
             Activity::Seek => world.hunt_thought(),
             Activity::Fold => "Another crane, another little wish for you.",
             Activity::Bubbles => "That one is the biggest yet.",
@@ -698,11 +698,11 @@ fn dream_lines(world: &World) -> Vec<&'static str> {
 
     if today.mirror_visits > 0 || today.met_reflection {
         lines.push(if world.life.mirror.recognizes_self() {
-            "…my own ghost waves back from a silver room…"
+            "…my own reflection waves back from a silver room…"
         } else if world.life.mirror.sessions >= 2 {
-            "…the ghost in the mirror copies even my dreams…"
+            "…the one in the mirror copies even my dreams…"
         } else {
-            "…the ghost in the mirror invites me through…"
+            "…the one in the mirror invites me through…"
         });
     }
     if today.comforts > 0 {
@@ -805,7 +805,7 @@ fn dream_lines(world: &World) -> Vec<&'static str> {
     }
     if today.friend_visits > 0 {
         lines.extend([
-            "…two ghosts chasing each other past the moon…",
+            "…two friends chasing each other past the moon…",
             "…my ghost friend and I twirl among the stars…",
         ]);
     }
@@ -1235,8 +1235,8 @@ pub(crate) fn answer(
             lines(&["That's me!"], &["그건 나야!"])
         }
         Question::Mirror => lines(
-            &["Another ghost! It copies me."],
-            &["다른 유령이야! 나를 따라 해."],
+            &["Someone just like me! It copies me."],
+            &["나랑 똑같이 생겼어! 나를 따라 해."],
         ),
         Question::Wearing => match world.wearing {
             Some(accessory) if korean => vec![format!("{}! 마음에 들어.", accessory.korean())],
@@ -1405,8 +1405,8 @@ pub(crate) fn answer(
         },
         Question::Feeling => match ghost.mood {
             Mood::Content => lines(
-                &["I'm good, thanks.", "Content. Just being a ghost."],
-                &["좋아. 그냥 둥둥 떠 있어.", "괜찮아, 고마워."],
+                &["I'm good, thanks.", "Content. Just being me."],
+                &["좋아. 그냥 여기 있어.", "괜찮아, 고마워."],
             ),
             Mood::Cheerful => lines(
                 &["Happy! Really happy.", "Great, thanks!"],
@@ -2419,7 +2419,7 @@ mod tests {
                     if recognized {
                         "That's me!"
                     } else {
-                        "Another ghost! It copies me."
+                        "Someone just like me! It copies me."
                     },
                 ),
                 (
@@ -2427,7 +2427,7 @@ mod tests {
                     if recognized {
                         "That's me!"
                     } else {
-                        "Another ghost! It copies me."
+                        "Someone just like me! It copies me."
                     },
                 ),
                 (
@@ -2435,7 +2435,7 @@ mod tests {
                     if recognized {
                         "그건 나야!"
                     } else {
-                        "다른 유령이야! 나를 따라 해."
+                        "나랑 똑같이 생겼어! 나를 따라 해."
                     },
                 ),
                 (
@@ -2443,7 +2443,7 @@ mod tests {
                     if recognized {
                         "그건 나야!"
                     } else {
-                        "다른 유령이야! 나를 따라 해."
+                        "나랑 똑같이 생겼어! 나를 따라 해."
                     },
                 ),
             ] {
@@ -2473,14 +2473,14 @@ mod tests {
         assert!(
             dreams(&world)
                 .iter()
-                .any(|line| line == "…the ghost in the mirror invites me through…")
+                .any(|line| line == "…the one in the mirror invites me through…")
         );
         world.life.mirror.sessions = 2;
         assert!(setting_out(&world, Activity::Mirror).contains(&"It copies everything I do…"));
         assert!(
             dreams(&world)
                 .iter()
-                .any(|line| line == "…the ghost in the mirror copies even my dreams…")
+                .any(|line| line == "…the one in the mirror copies even my dreams…")
         );
         world.life.mirror.recognized = Some(world.date.to_string());
         world.wearing = Some(crate::world::Accessory::Scarf { color: 0 });
@@ -2488,7 +2488,7 @@ mod tests {
         assert!(
             dreams(&world)
                 .iter()
-                .any(|line| line == "…my own ghost waves back from a silver room…")
+                .any(|line| line == "…my own reflection waves back from a silver room…")
         );
     }
 
@@ -2500,13 +2500,13 @@ mod tests {
         assert!(
             idle(&world)
                 .iter()
-                .any(|line| line == "Haaah… sleepy light.")
+                .any(|line| line == "Haaah… so sleepy.")
         );
         world.start_focus(25);
         assert!(
             !idle(&world)
                 .iter()
-                .any(|line| line == "Haaah… sleepy light.")
+                .any(|line| line == "Haaah… so sleepy.")
         );
     }
 
@@ -2634,7 +2634,7 @@ mod tests {
             assert!(
                 idle(&world)
                     .iter()
-                    .any(|line| line == "The breeze tickles my hem.")
+                    .any(|line| line == "The breeze tickles me.")
             );
             assert!(dreams(&world).iter().any(|line| line.contains("wind")));
             world.hour = 23.0;
@@ -3100,7 +3100,7 @@ mod tests {
             (
                 DreamPicture::Friend,
                 &[
-                    "…two ghosts chasing each other past the moon…",
+                    "…two friends chasing each other past the moon…",
                     "…my ghost friend and I twirl among the stars…",
                 ],
             ),

@@ -144,9 +144,9 @@ impl World {
                 self.ghost.plan.length = stayed + 6.0;
                 let korean = self.speaks_korean();
                 self.think(if korean {
-                    "나랑 똑같은 눈 유령이야!"
+                    "눈 유령이다! 왁!"
                 } else {
-                    "A snow ghost, just like me!"
+                    "A snow ghost! Boo!"
                 });
                 if let Some(milestone) = self.life.reach(
                     "Made my first snow ghost.".to_owned(),
@@ -473,7 +473,7 @@ impl World {
         } else {
             ""
         };
-        format!("The ghost is {place}; {ground}{snowman}.")
+        format!("It is {place}; {ground}{snowman}.")
     }
 
     /// What the ghost is doing in the yard, in words.

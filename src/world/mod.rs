@@ -415,8 +415,8 @@ impl EventKind {
                 format!("you were {}, so I {}", feeling.name(), feeling.care_words())
             }
             Self::FeltBetter => "you told me you were feeling better".to_owned(),
-            Self::MetReflection => "met the ghost in the mirror".to_owned(),
-            Self::RecognizedSelf => "learned the ghost in the mirror is me".to_owned(),
+            Self::MetReflection => "met someone in the mirror".to_owned(),
+            Self::RecognizedSelf => "learned the one in the mirror is me".to_owned(),
             Self::VisitedMirror => "looked in the mirror".to_owned(),
             Self::GotLetter => "The viewer wrote me a letter.".to_owned(),
             Self::ReadViewerLetter => "I read your letter.".to_owned(),
@@ -1685,7 +1685,7 @@ impl World {
     pub fn describe(&self, activity: Activity) -> String {
         match activity {
             Activity::Letter => "Take the viewer's letter from the glass, read quietly, and keep it on the shelf. Wait until awake and after work.".to_owned(),
-            Activity::Mirror => "Visit the mirror on the right wall, study the ghost that copies you, or make faces once you recognize yourself. Quiet enough during work.".to_owned(),
+            Activity::Mirror => "Visit the mirror on the right wall, study the one who copies you, or make faces once you recognize yourself. Quiet enough during work.".to_owned(),
             Activity::Read => "Read a few pages of a picture book on the cushion or under the lamp. Quiet company during work, or a page before bed.".to_owned(),
             Activity::Music => "Wind the little music box and sway or dance to a tune. Fits when bored or in the evening; keep it quiet during work.".to_owned(),
             Activity::Air => format!("Float to the window and {}. Close it against wet weather, cold nights and blustery wind.", if self.window_open { "push the sash shut" } else { "lift the sash for fresh air" }),
@@ -1717,7 +1717,7 @@ impl World {
             Activity::Tend => self.tend_description(),
             Activity::Lamp => {
                 let (verb, fits) = if self.lamp.on {
-                    ("off", "it is daytime or the ghost wants to sleep")
+                    ("off", "it is daytime or it wants to sleep")
                 } else {
                     ("on", "it is dark in the room")
                 };

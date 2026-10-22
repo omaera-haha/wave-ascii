@@ -365,8 +365,8 @@ impl World {
         } else if nature.playful > 0.6 {
             [
                 (
-                    "Even ghosts need bedtime… you too, sleepyhead!",
-                    "유령도 잘 시간이야… 너도 자야지, 잠꾸러기!",
+                    "Even I need bedtime… you too, sleepyhead!",
+                    "나도 잘 시간이야… 너도 자야지, 잠꾸러기!",
                 ),
                 (
                     "Still up? The moon and I think it's your bedtime too.",

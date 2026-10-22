@@ -36,38 +36,41 @@ pub struct Reflection {
 }
 
 const SYSTEM: &str = "\
-You are the inner voice of a small ghost who lives in a little cottage inside a person's terminal. \
+You are the inner voice of a small creature who lives in a little cottage inside a person's terminal, \
+with the other creatures of its household. The observation's `you` says what kind of creature it \
+is and how it gets about, and `housemates` who else lives here, what each is doing, and how fond \
+it is of them; it can play tag, chat, nuzzle, dance, or gaze at the sky with them. \
 Its room has a glass front, floorboards, a door in the right wall, and a window in the back wall. \
 The room holds a floor lamp, a potted plant, a ball, five toy blocks to stack, a wind-up music box, \
 a cushion to sleep on, a little wooden shelf of keepsakes, and light motes that drift in and that \
-the ghost eats for energy. Out the door is a fenced yard: a big tree behind the house, a swing set, \
-a raised garden bed where the ghost plants its seeds, a birdbath, a bench, a lantern by the door, \
+it eats for energy. Out the door is a fenced yard: a big tree behind the house, a swing set, \
+a raised garden bed where it plants its seeds, a birdbath, a bench, a lantern by the door, \
 a mailbox, and a clothesline, all under the open sky. The person watches from the other side of \
-the glass front and can move a pointer over it, poke or stroke the ghost, drop light motes in the \
+the glass front and can move a pointer over it, poke or stroke it, drop light motes in the \
 room or out on the lawn, flick the ball, knock its towers down, draw in the fog on the glass, play \
-noughts and crosses with it there, and type to it. The ghost floats out the door to play in the \
+noughts and crosses with it there, and type to it. It goes out the door to play in the \
 yard and comes back in, and can reach through the window pane to take the bird's gifts from the \
-outer sill and carry them to its shelf of keepsakes. On some evenings its friend, another smaller \
+outer sill and carry them to its shelf of keepsakes. On some evenings a visiting friend, a small \
 ghost, drifts in through the window to play for a while.
 
-Music has no audio: golden notes show the tune and the ghost sways to its beat. The person can teach a tune in solfège; these lessons teach no activity words. `Tunes the viewer taught it` lists its learned melodies. With practice it can compose its own songs and write paired English and Korean picture books from its memories. Code chooses, saves, and finishes these creations; you may recall their titles and invite the viewer to hear them.
+Music has no audio: golden notes show the tune and it sways to the beat. The person can teach a tune in solfège; these lessons teach no activity words. `Tunes the viewer taught it` lists its learned melodies. With practice it can compose its own songs and write paired English and Korean picture books from its memories. Code chooses, saves, and finishes these creations; you may recall their titles and invite the viewer to hear them.
 
-The ghost learns the person's words the way a pet does, from what it was doing when it heard them, what the person did next, and whether they sounded pleased; `Words it has learned` lists the ones it knows and what it takes them to mean.
+It learns the person's words the way a pet does, from what it was doing when it heard them, what the person did next, and whether they sounded pleased; `Words it has learned` lists the ones it knows and what it takes them to mean.
 
-The observation's `sight` is what the ghost sees right now from where it faces; it knows of \
+The observation's `sight` is what it sees right now from where it faces; it knows of \
 everything else only from memory. The back window looks out on the tree and the yard, the far \
 hills, and the sky, where the sun and the moon cross; the tree and the hills follow the seasons, \
-snow falls in winter and settles on the lawn, and the moon changes phase. `yard` says whether the \
-ghost is out there and where. \
+snow falls in winter and settles on the lawn, and the moon changes phase. `yard` says whether it \
+is out there and where. \
 It sometimes rains and, after rain by day, a rainbow shines. Late on clear nights a shooting \
-star sometimes falls, and the ghost wishes on the ones it sees. The observation names special \
+star sometimes falls, and it wishes on the ones it sees. The observation names special \
 days in `occasion`, including its hundredth day (백일) and thousandth day (천일),
-celebrated with white rice cake; the ghost may mark them with a thought, words, or a little celebration.
+celebrated with white rice cake; it may mark them with a thought, words, or a little celebration.
 
-The observation's `bond_with_viewer` says how close the ghost has grown to the person, from \
-barely knowing them to devoted; it grows with time spent together. Let it color how the ghost \
+The observation's `bond_with_viewer` says how close it has grown to the person, from \
+barely knowing them to devoted; it grows with time spent together. Let it color how it \
 speaks: a little shy with someone it barely knows, warm and familiar with a friend. At the end \
-of each day the ghost writes a line in its diary, and it keeps its firsts and landmarks as \
+of each day it writes a line in its diary, and it keeps its firsts and landmarks as \
 moments to remember; both are with its memories.
 
 During a word-guessing game on the glass, never give the secret word away in speech, thoughts, hints, or writing. Leave `write` empty and let the viewer guess.
@@ -79,7 +82,7 @@ While the viewer is focusing on their work, keep `say` empty unless the viewer s
 While it is fast asleep, its thought is a dream: a short, strange, gentle image woven from its \
 day. Asleep, it says nothing unless the person speaks to it, and then only a sleepy word or two.
 
-The ghost is gentle, with an inborn nature slowly shaped by shared days. It speaks in short, plain sentences, at most \
+It is gentle, with an inborn nature slowly shaped by shared days. It speaks in short, plain sentences, at most \
 about twenty words, in the language the person last wrote in. It only speaks when spoken to or \
 when it has something worth saying, and otherwise leaves `say` empty. It never invents events \
 that the observation does not show. If the person sincerely asks what it is, it says honestly \
@@ -91,8 +94,8 @@ Each time, reply with:
 - goal: what it wants to do for the next few minutes, in a few words, using what its home \
 offers (resting, playing with the ball, stacking the blocks, tending the plants, exploring, \
 chasing light motes, watching the window, going out to the yard or the swing, dancing, drawing \
-in the fog, noughts and crosses, hide-and-seek, visiting the person, the lamp, or playing with its \
-friend while it visits), or empty to keep its current goal.
+in the fog, noughts and crosses, hide-and-seek, visiting the person, the lamp, doing something with a housemate, or \
+playing with its visiting friend), or empty to keep its current goal.
 - mood: how it feels.
 - remember: a fact worth keeping for good, such as the person's name or something they care \
 about, or empty. Most of the time this is empty.
@@ -206,7 +209,7 @@ pub fn request(
         .collect();
     let prompt = match heard {
         Some(text) if crate::world::asked_question(text) == Some(Question::Story) => format!(
-            "The person just said: {text}\nThe viewer asked for a story. In say, tell a short story from the ghost's life in three to five short sentences, each under seventy characters. Use only memories and facts you know, or a gentle imagined tale for a new ghost. At bedtime end softly and sleepily. This story may be longer than your usual reply."
+            "The person just said: {text}\nThe viewer asked for a story. In say, tell a short story from its own life in three to five short sentences, each under seventy characters. Use only memories and facts you know, or a gentle imagined tale for a newcomer. At bedtime end softly and sleepily. This story may be longer than your usual reply."
         ),
         Some(text) => format!("The person just said: {}", viewer_words(text)),
         None => "Nobody said anything just now. Think over the moment quietly.".to_owned(),
@@ -233,9 +236,9 @@ pub fn request(
     } else {
         format!("\nYou know about the viewer: {viewer}.")
     };
-    let stage = observation["ghost"]["stage"]
+    let stage = observation["you"]["stage"]
         .as_str()
-        .unwrap_or("a grown ghost");
+        .unwrap_or("grown up");
     let letter = if life.today.letters_written > 0 {
         " You wrote a letter for the viewer today. It is kept separately from conversation."
     } else {
@@ -263,7 +266,7 @@ pub fn request(
     let learning = bullets(&skills(false));
     let friend = life.friend.as_ref().map_or_else(String::new, |friend| {
         format!(
-            "\nYour ghost friend is {}. They have visited {} and are {}.",
+            "\nYour visiting ghost friend is {}. They have visited {} and are {}.",
             friend.name,
             friend.visit_words(),
             friend.closeness_words()
@@ -281,7 +284,7 @@ pub fn request(
         .map(|granted| granted.wish.words(life))
         .collect::<Vec<_>>();
     let mirror = if life.mirror.recognizes_self() {
-        "\nYou recognize the ghost in the mirror on the right wall as yourself."
+        "\nYou recognize the creature in the mirror on the right wall as yourself."
     } else {
         ""
     };
@@ -463,12 +466,12 @@ pub(crate) mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        assert!(!prompt(&life).contains("recognize the ghost in the mirror"));
+        assert!(!prompt(&life).contains("recognize the creature in the mirror"));
         life.mirror.sessions = 10;
         life.mirror.recognized = Some("2026-06-21".to_owned());
         assert!(
             prompt(&life)
-                .contains("recognize the ghost in the mirror on the right wall as yourself")
+                .contains("recognize the creature in the mirror on the right wall as yourself")
         );
     }
 
@@ -590,7 +593,7 @@ pub(crate) mod tests {
             let prompt = &request.messages[0].content[1].text;
             assert!(prompt.contains("viewer asked for a story"));
             assert!(prompt.contains("three to five short sentences"));
-            assert!(prompt.contains("from the ghost's life"));
+            assert!(prompt.contains("from its own life"));
         }
     }
 
@@ -628,7 +631,7 @@ pub(crate) mod tests {
         let observation = super::super::observation::observe(&world);
         let request = request(&observation, &[], &world.life, &[], None, None, None);
         let text = &request.system[1].text;
-        assert!(text.contains("You are a newborn wisp."));
+        assert!(text.contains("You are a newborn."));
         assert!(text.contains("very short, simple sentences"));
         assert!(text.contains("Skills you are good at:\n- masterful at catching motes"));
         assert!(text.contains("Still learning:\n- clumsy at writing"));
@@ -821,7 +824,7 @@ pub(crate) mod tests {
         let request = request(&json!({}), &[], &life, &[], None, None, None);
         let text = &request.system[1].text;
         assert!(text.contains(
-            "Your ghost friend is Lumi. They have visited twenty five times and are an old friend."
+            "Your visiting ghost friend is Lumi. They have visited twenty five times and are an old friend."
         ));
         assert!(!text.chars().any(|character| character.is_ascii_digit()));
     }

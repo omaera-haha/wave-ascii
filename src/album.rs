@@ -487,7 +487,7 @@ fn caption(kind: &EventKind) -> Option<(String, Option<String>)> {
         EventKind::Composed(title) => (format!("I made up a song: {title}."), None),
         EventKind::SangMySong(title) => (format!("You sang my song back to me: {title}."), None),
         EventKind::WroteBook(title) => (format!("I wrote a picture book: {title}."), None),
-        EventKind::RecognizedSelf => ("The ghost in the mirror is me!".to_owned(), None),
+        EventKind::RecognizedSelf => ("The one in the mirror is me!".to_owned(), None),
         EventKind::ShootingStar => ("I wished on a shooting star.".to_owned(), None),
         EventKind::FinishedBook(title) => (format!("I finished reading {title}."), None),
         EventKind::LearnedTune(tune) => (format!("You taught me a tune: {tune}."), None),

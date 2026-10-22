@@ -2204,8 +2204,35 @@ mod bench {
             .unwrap_or(13.0);
         let mut world = World::new(1, hour);
         world.date = jiff::civil::Date::constant(2026, 10, 22);
+        world.found_household(&[
+            crate::world::Species::Fox,
+            crate::world::Species::Bunny,
+            crate::world::Species::Owl,
+            crate::world::Species::Robot,
+        ]);
         world.step(0.0);
         let grid = Grid::new(400, 240, 1.0);
+        let view = Camera::default().view(grid);
+        let figures: Vec<_> = world
+            .roster()
+            .into_iter()
+            .map(|id| {
+                world
+                    .clone()
+                    .with_creature(id, |world| {
+                        crate::portrait::figure(
+                            world,
+                            &view,
+                            &crate::portrait::Handling {
+                                pointer: None,
+                                stroke_side: 0.0,
+                                glow: Vec3::ONE,
+                            },
+                        )
+                    })
+                    .unwrap()
+            })
+            .collect();
         for (name, camera) in [
             ("room", Camera::default()),
             (
@@ -2229,7 +2256,11 @@ mod bench {
                     brightness: 0.7,
                     beat: 1.0,
                 },
-                figures: Vec::new(),
+                figures: if std::env::var_os("BENCH_ALONE").is_some() {
+                    Vec::new()
+                } else {
+                    figures.clone()
+                },
                 friend: None,
             };
             let start = std::time::Instant::now();

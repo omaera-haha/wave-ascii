@@ -9,6 +9,46 @@ use crate::world::{
 /// What the ghost knows of its situation, in words. Both minds read it:
 /// System One models judge words more reliably than numbers, and Claude
 /// writes in the ghost's voice from it.
+/// The household's other creatures: who, what kind, what each is up to,
+/// and how fond this one is of them.
+fn housemates(world: &World) -> Value {
+    let peers: Vec<Value> = world
+        .peers()
+        .iter()
+        .map(|peer| {
+            let warmth = world.fondness_for(peer.id);
+            let doing = if peer.asleep > 0.5 {
+                "asleep".to_owned()
+            } else if peer.with == Some(world.ghost.id) {
+                "with you".to_owned()
+            } else {
+                peer.activity.doing().to_owned()
+            };
+            json!({
+                "name": peer.name,
+                "kind": peer.species.noun(),
+                "doing": doing,
+                "feeling": peer.mood.name(),
+                "near": peer.position.distance(world.ghost.position) < 1.5,
+                "you_feel": if warmth < 0.1 {
+                    "still getting to know them"
+                } else if warmth < 0.35 {
+                    "friendly"
+                } else if warmth < 0.65 {
+                    "good friends"
+                } else {
+                    "best friends"
+                },
+            })
+        })
+        .collect();
+    if peers.is_empty() {
+        json!("you live alone")
+    } else {
+        Value::Array(peers)
+    }
+}
+
 pub fn observe(world: &World) -> Value {
     let ghost = &world.ghost;
     let plan = &ghost.plan;
@@ -36,8 +76,9 @@ pub fn observe(world: &World) -> Value {
         plan.activity.doing().to_owned()
     };
     json!({
-        "ghost": {
+        "you": {
             "name": ghost.name,
+            "kind": format!("{}, {}", ghost.species.noun(), ghost.species.portrait()),
             "wearing": world.wearing.map(|accessory| accessory.words()).unwrap_or_else(|| "no accessory".to_owned()),
             "nature": world.life.temperament().words(),
             "changing": world.life.upbringing.words().unwrap_or("no clear change yet"),
@@ -56,6 +97,7 @@ pub fn observe(world: &World) -> Value {
             "quirk": world.quirk_words(),
             "health": world.life.cold_words(),
         },
+        "housemates": housemates(world),
         "time_of_day": time_of_day(world.hour),
         "season": world.season().name(),
         "occasion": world.occasion_words(),
@@ -227,8 +269,8 @@ fn outside_the_window(world: &World) -> String {
         outside.push_str(", the hills white with snow");
     }
     match world.sensed_weather() {
-        Some(false) => outside.push_str(", and the ghost feels rain coming soon"),
-        Some(true) => outside.push_str(", and the ghost smells snow coming soon"),
+        Some(false) => outside.push_str(", and you feel rain coming soon"),
+        Some(true) => outside.push_str(", and you smell snow coming soon"),
         None => {}
     }
     if world.fireworks() {
@@ -391,7 +433,7 @@ fn thing(world: &World, thing: Thing) -> String {
             if world.life.mirror.recognizes_self() {
                 "the mirror on the right wall, where you see yourself".to_owned()
             } else {
-                "the mirror on the right wall, where another ghost seems to live".to_owned()
+                "the mirror on the right wall, where someone just like you seems to live".to_owned()
             }
         }
         Thing::Moth => "a moth fluttering around the lamp".to_owned(),
@@ -546,7 +588,7 @@ fn motes(world: &World) -> String {
 fn viewer(world: &World) -> String {
     if let Some(focus) = &world.focus {
         return format!(
-            "the viewer is focusing on their work; the ghost keeps them company quietly; {}",
+            "the viewer is focusing on their work; you keep them company quietly; {}",
             focus.words_left(world.time)
         );
     }
@@ -559,7 +601,7 @@ fn viewer(world: &World) -> String {
     let words = if !present {
         "away"
     } else if world.viewer.typing {
-        "typing a message to the ghost"
+        "typing a message to you"
     } else if world.viewer.pointer.is_some() {
         "watching through the glass"
     } else {
@@ -606,7 +648,7 @@ mod tests {
                 .iter()
                 .any(|seen| seen.thing == Thing::Mirror && seen.hidden_behind.is_none())
         );
-        assert!(thing(&world, Thing::Mirror).contains("another ghost seems to live"));
+        assert!(thing(&world, Thing::Mirror).contains("someone just like you seems to live"));
         world.life.mirror.recognized = Some(world.date.to_string());
         assert!(thing(&world, Thing::Mirror).contains("you see yourself"));
         assert!(
@@ -667,20 +709,20 @@ mod tests {
         world.hear("*yawns*");
         world.step(3.0);
         assert_eq!(
-            observe(&world)["ghost"]["quirk"],
+            observe(&world)["you"]["quirk"],
             "you are stretching through a slow yawn"
         );
         world.step(5.0);
-        assert_eq!(observe(&world)["ghost"]["quirk"], "none just now");
+        assert_eq!(observe(&world)["you"]["quirk"], "none just now");
     }
 
     #[test]
     fn observations_describe_the_worn_accessory_in_words() {
         let mut world = World::new(1, 12.0);
         world.wearing = Some(crate::world::Accessory::Scarf { color: 2 });
-        assert_eq!(observe(&world)["ghost"]["wearing"], "a knitted scarf");
+        assert_eq!(observe(&world)["you"]["wearing"], "a knitted scarf");
         world.wearing = None;
-        assert_eq!(observe(&world)["ghost"]["wearing"], "no accessory");
+        assert_eq!(observe(&world)["you"]["wearing"], "no accessory");
     }
 
     #[test]
@@ -757,9 +799,9 @@ mod tests {
         world.life.skills.stacking = 20.0;
         world.begin(Activity::Build);
         let observation = observe(&world);
-        assert_eq!(observation["ghost"]["stage"], "a newborn wisp");
+        assert_eq!(observation["you"]["stage"], "a newborn");
         assert_eq!(
-            observation["ghost"]["practice"],
+            observation["you"]["practice"],
             "you are getting the hang of stacking blocks"
         );
         for description in observation["skills"].as_array().unwrap() {
@@ -849,7 +891,7 @@ mod tests {
         world.begin(Activity::Wait);
         let observation = observe(&world);
         assert_eq!(
-            observation["ghost"]["doing"],
+            observation["you"]["doing"],
             "waiting at the glass for the viewer"
         );
         assert_eq!(
@@ -894,7 +936,7 @@ mod tests {
         assert_eq!(observation["time_of_day"], "night");
         assert_eq!(observation["season"], "summer");
         assert_eq!(
-            observation["ghost"]["nature"],
+            observation["you"]["nature"],
             world.life.nature.unwrap().words()
         );
         assert_eq!(observation["room"]["light"], "lamplight in the dark");
@@ -933,7 +975,7 @@ mod tests {
         world.viewer.typing = true;
         assert_eq!(
             observe(&world)["viewer"],
-            "typing a message to the ghost, pointer still"
+            "typing a message to you, pointer still"
         );
         world.viewer.typing = false;
         world.point_at(Some(Vec3::new(0.6, 1.2, 1.4)));
@@ -1016,8 +1058,8 @@ mod tests {
         let mut world = World::new(1, 12.0);
         let observation = observe(&world);
         assert_eq!(observation["bond_with_viewer"], "barely knows them");
-        assert_eq!(observation["ghost"]["loves"], "nothing in particular yet");
-        assert_eq!(observation["ghost"]["awake"], "awake");
+        assert_eq!(observation["you"]["loves"], "nothing in particular yet");
+        assert_eq!(observation["you"]["awake"], "awake");
         world.life.bond = 0.6;
         for _ in 0..8 {
             world
@@ -1027,8 +1069,8 @@ mod tests {
         world.ghost.asleep = 1.0;
         let observation = observe(&world);
         assert_eq!(observation["bond_with_viewer"], "close to them");
-        assert_eq!(observation["ghost"]["loves"], "tending the plant");
-        assert_eq!(observation["ghost"]["awake"], "fast asleep and dreaming");
+        assert_eq!(observation["you"]["loves"], "tending the plant");
+        assert_eq!(observation["you"]["awake"], "fast asleep and dreaming");
     }
 
     #[test]
@@ -1132,12 +1174,12 @@ mod tests {
         let mut world = World::new(1, 23.0);
         world.tuck_in();
         assert_eq!(
-            observe(&world)["ghost"]["awake"],
+            observe(&world)["you"]["awake"],
             "asleep for the night and dreaming"
         );
         world.poke();
         assert_eq!(
-            observe(&world)["ghost"]["awake"],
+            observe(&world)["you"]["awake"],
             "awake but drowsy after being woken in the night"
         );
         let text = observe(&world).to_string();
@@ -1150,7 +1192,7 @@ mod tests {
         world.ghost.needs.energy = 0.4;
         world.begin(Activity::Rest);
         world.step(4.0);
-        assert_eq!(observe(&world)["ghost"]["awake"], "napping and dreaming");
+        assert_eq!(observe(&world)["you"]["awake"], "napping and dreaming");
     }
 
     #[test]
@@ -1226,12 +1268,12 @@ mod tests {
         world.begin(Activity::Hide);
         world.step(15.0);
         assert_eq!(
-            observe(&world)["ghost"]["doing"],
+            observe(&world)["you"]["doing"],
             "hiding from the viewer and waiting to be found"
         );
         world.poke();
         assert_eq!(
-            observe(&world)["ghost"]["doing"],
+            observe(&world)["you"]["doing"],
             "just finished hiding from the viewer"
         );
     }
@@ -1465,7 +1507,7 @@ mod tests {
         world.viewer.typing = true;
         assert_eq!(
             viewer(&world),
-            "typing a message to the ghost, pointer still"
+            "typing a message to you, pointer still"
         );
         world.look_away(true);
         world.step(25.0);

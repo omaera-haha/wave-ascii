@@ -125,7 +125,7 @@ const MILESTONES: [[&str; 2]; 5] = [
     ],
     [
         "I'm livelier than I used to be.",
-        "I've become a sleepier ghost.",
+        "I've become a sleepyhead.",
     ],
     [
         "I've grown a little more independent.",
@@ -169,7 +169,7 @@ const KOREAN_MILESTONES: [[&str; 2]; 5] = [
     ],
     ["내 작은 세상이 더 익숙해졌어.", "모든 게 더 궁금해졌어."],
     ["부끄러움을 덜 타게 됐어.", "전보다 조금 더 수줍어졌어."],
-    ["전보다 더 활발해졌어.", "잠이 더 많은 유령이 됐어."],
+    ["전보다 더 활발해졌어.", "잠꾸러기가 됐어."],
     [
         "혼자서도 조금 더 잘 지내게 됐어.",
         "네 곁에서 더 다정해졌어.",

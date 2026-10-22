@@ -134,6 +134,56 @@ fn abandon_old_drafts(life: &mut Life, today: Date) {
     });
 }
 
+impl WrittenBook {
+    /// The book told about a little creature of `species` instead of a
+    /// little ghost.
+    pub fn retell(&mut self, species: super::Species) {
+        if species == super::Species::Ghost {
+            return;
+        }
+        let noun = species.noun();
+        let capital: String = noun
+            .split(' ')
+            .map(|word| {
+                let mut letters = word.chars();
+                letters.next().map_or_else(String::new, |first| {
+                    first.to_uppercase().chain(letters).collect()
+                })
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let korean = species.noun_korean();
+        let english = |text: &str| {
+            text.replace("Little Ghost", &format!("Little {capital}"))
+                .replace("little ghost", &format!("little {noun}"))
+                .replace("The ghost", &format!("The {noun}"))
+                .replace("the ghost", &format!("the {noun}"))
+                .replace("A ghost", &format!("A {noun}"))
+                .replace("a ghost", &format!("a {noun}"))
+        };
+        let hangul = |text: &str| {
+            let mut text = text.to_owned();
+            for (consonant, vowel) in [("이", "가"), ("은", "는"), ("과", "와"), ("을", "를")] {
+                text = text.replace(
+                    &format!("유령{consonant}"),
+                    &format!(
+                        "{korean}{}",
+                        super::writing::particle(korean, consonant, vowel)
+                    ),
+                );
+            }
+            text.replace("유령", korean)
+        };
+        for page in std::iter::once(&mut self.title)
+            .chain(self.pages.iter_mut())
+            .chain(self.outline.iter_mut())
+        {
+            page.0 = english(&page.0);
+            page.1 = hangul(&page.1);
+        }
+    }
+}
+
 fn pair(english: &str, korean: &str) -> Page {
     (english.to_owned(), korean.to_owned())
 }
@@ -430,7 +480,8 @@ impl World {
             return None;
         }
         let season = self.season();
-        let book = compose_book(&mut self.random, &self.life, season, self.date.to_string());
+        let mut book = compose_book(&mut self.random, &self.life, season, self.date.to_string());
+        book.retell(self.ghost.species);
         self.life.written_day = Some(self.date.to_string());
         self.life.written.push(book);
         Some(LIBRARY.len() + self.life.written.len() - 1)
@@ -597,6 +648,28 @@ pub(super) mod tests {
                 world.reading.as_ref().unwrap().writing.then_some(world)
             })
             .unwrap()
+    }
+
+    #[test]
+    fn a_book_by_a_fox_is_about_a_little_fox() {
+        let mut book = compose_book(
+            &mut Random::new(3),
+            &Life::default(),
+            Season::Spring,
+            "2026-06-21".to_owned(),
+        );
+        book.outline.push(pair(
+            "The ghost sat quietly.",
+            "유령이 조용히 앉자 꼬마 유령은 웃었어.",
+        ));
+        book.retell(super::super::Species::Fox);
+        let text: String = std::iter::once(&book.title)
+            .chain(&book.outline)
+            .map(|(english, korean)| format!("{english} {korean}"))
+            .collect();
+        assert!(!text.contains("ghost") && !text.contains("유령"), "{text}");
+        assert!(text.contains("The fox sat quietly."));
+        assert!(text.contains("여우가 조용히 앉자 꼬마 여우는 웃었어."));
     }
 
     #[test]
