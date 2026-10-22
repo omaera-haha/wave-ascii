@@ -294,6 +294,7 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         ),
     ];
     furniture.push(Furniture::Gallery(&world.life.gallery));
+    furniture.push(Furniture::Clock(world.hour));
     if let Some(position) = world.carried_pin() {
         furniture.push(Furniture::GalleryCard(position));
     }
@@ -1003,7 +1004,32 @@ fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32) -> Vec3 {
     albedo * light * (0.72 + 0.28 * smoothstep(0.0, 0.3, border)) * ROOM_EXPOSURE
 }
 
+/// A round woven rug in the middle of the floor: its middle and radii.
+const RUG: Vec2 = Vec2::new(-0.15, 0.3);
+const RUG_RADII: Vec2 = Vec2::new(1.05, 0.62);
+
 fn floorboards(point: Vec3, footprint: f32) -> Vec3 {
+    let boards = planks(point, footprint);
+    let at = (Vec2::new(point.x, point.z) - RUG) / RUG_RADII;
+    let reach = at.length();
+    if reach > 1.05 {
+        return boards;
+    }
+    // Rings of color, fading to the average when they're too fine.
+    let ring = (reach * 7.0).floor();
+    let fade = 1.0 - smoothstep(0.03, 0.09, footprint);
+    let colors = [
+        Vec3::new(0.78, 0.5, 0.42),
+        Vec3::new(0.86, 0.76, 0.58),
+        Vec3::new(0.56, 0.62, 0.7),
+    ];
+    let average = (colors[0] + colors[1] + colors[2]) / 3.0;
+    let woven = colors[ring as usize % 3].lerp(average, 1.0 - fade);
+    let edge = coverage((reach - 1.0) * RUG_RADII.min_element(), footprint * 0.5);
+    boards.lerp(woven * 0.85, edge)
+}
+
+fn planks(point: Vec3, footprint: f32) -> Vec3 {
     const WIDTH: f32 = 0.17;
     const LENGTH: f32 = 1.3;
     let row = (point.z / WIDTH).floor();

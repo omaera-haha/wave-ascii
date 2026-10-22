@@ -54,6 +54,7 @@ pub enum Material {
     Origami(crate::world::acquaintance::Color, bool, bool),
     CraneThread,
     Cork(bool),
+    ClockHand,
 }
 
 impl Material {
@@ -138,6 +139,7 @@ impl Material {
                 .rgb()
                 .lerp(Vec3::ONE, if crease { 0.35 } else { 0.05 }),
             Self::CraneThread => Vec3::new(0.85, 0.82, 0.72),
+            Self::ClockHand => Vec3::new(0.18, 0.17, 0.2),
             Self::Cork(dotted) => {
                 if dotted {
                     Vec3::new(0.65, 0.43, 0.28)
@@ -205,6 +207,8 @@ pub enum Furniture<'a> {
     BubbleWand(Vec3),
     Gallery(&'a [crate::world::gallery::Pin]),
     GalleryCard(Vec3),
+    /// The wall clock above the window, showing the hour of the day.
+    Clock(f32),
     SongSheet(Vec3, Quat),
 }
 
@@ -259,6 +263,7 @@ impl Furniture<'_> {
             Self::FoldingPaper(_, position, _) => (*position, 0.12),
             Self::BubbleWand(position) => (*position - Vec3::Y * 0.07, 0.19),
             Self::Gallery(_) => (crate::world::gallery::CENTER, 0.54),
+            Self::Clock(_) => (CLOCK, 0.17),
             Self::GalleryCard(position) => (*position, 0.21),
             Self::SongSheet(position, _) => (*position, 0.21),
         }
@@ -484,6 +489,7 @@ impl Furniture<'_> {
                 (ring.min(stick), Material::Brass)
             }
             Self::Gallery(pins) => gallery_distance(point, pins),
+            Self::Clock(hour) => clock_distance(point - CLOCK, *hour),
             Self::GalleryCard(position) => gallery_card(point - *position, None, 0),
             Self::SongSheet(position, rotation) => {
                 let local = rotation.conjugate() * (point - *position);
@@ -763,6 +769,39 @@ fn envelope(point: Vec3) -> (f32, Material) {
             },
         )
     }
+}
+
+/// The clock's face middle, on the back wall above the window.
+pub const CLOCK: Vec3 = Vec3::new(0.0, 2.19, crate::world::ROOM_MIN.z + 0.03);
+
+fn clock_distance(point: Vec3, hour: f32) -> (f32, Material) {
+    // A round face toward the room, a wooden rim, and two hands.
+    let radial = Vec2::new(point.x, point.y).length();
+    let face = Vec2::new(radial - 0.13, point.z.abs() - 0.02).max_element();
+    let rim = Vec2::new((radial - 0.13).abs() - 0.016, point.z.abs() - 0.03).max_element();
+    let minutes = (hour.rem_euclid(1.0)) * std::f32::consts::TAU;
+    let hours = (hour.rem_euclid(12.0) / 12.0) * std::f32::consts::TAU;
+    let hand = |angle: f32, length: f32, width: f32| {
+        let tip = Vec3::new(angle.sin() * length, angle.cos() * length, 0.03);
+        capsule(point, Vec3::Z * 0.03, tip, width)
+    };
+    let hands = hand(minutes, 0.1, 0.007).min(hand(hours, 0.065, 0.01));
+    let mut nearest = (face, Material::Porcelain);
+    if rim < nearest.0 {
+        nearest = (rim, Material::Wood);
+    }
+    if hands < nearest.0 {
+        nearest = (hands, Material::ClockHand);
+    }
+    // Twelve little ticks around the face.
+    let angle = point.x.atan2(point.y);
+    let tick = (angle / (std::f32::consts::TAU / 12.0)).round() * (std::f32::consts::TAU / 12.0);
+    let mark = Vec3::new(tick.sin(), tick.cos(), 0.0) * 0.108 + Vec3::Z * 0.022;
+    let tick = (point - mark).length() - 0.009;
+    if tick < nearest.0 {
+        nearest = (tick, Material::ClockHand);
+    }
+    nearest
 }
 
 pub(super) fn box_distance(point: Vec3, half: Vec3) -> f32 {
