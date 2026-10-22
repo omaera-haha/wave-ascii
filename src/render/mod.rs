@@ -1,7 +1,7 @@
 mod bubbles;
 pub mod creature;
 mod dream;
-pub mod ghost;
+pub mod glow;
 mod shapes;
 pub mod sky;
 pub mod window;
@@ -17,12 +17,11 @@ use crate::world::home::{self, Area, DOOR_HIGH, DOOR_LOW, INNER_HIGH, INNER_LOW}
 use crate::world::mirror;
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
 use creature::{Figure, Model};
-use ghost::{Aura, BOUNDS, Body};
+use glow::Aura;
 use shapes::{Furniture, Material, decoration_light, sphere_span};
 
 /// World units per unit of the ghost's own space.
 pub const GHOST_SCALE: f32 = 0.45;
-pub const FRIEND_SCALE: f32 = GHOST_SCALE * 0.75;
 /// The point the camera circles and looks at, unless it follows a creature
 /// out into the yard.
 const TARGET: Vec3 = Vec3::new(0.0, 1.1, 0.0);
@@ -162,18 +161,6 @@ impl View {
         .then_some(position)
     }
 
-    /// Whether the ray meets the ghost's billboard inside its outline's bounds.
-    pub fn touches_ghost(&self, point: Vec2, ghost: Vec3, scale: f32) -> bool {
-        self.billboard(self.ray(point), ghost, scale)
-            .is_some_and(|(_, local)| local.abs().cmple(Vec2::new(0.6, 0.75)).all())
-    }
-
-    /// Where a ray meets the ghost's billboard: the distance along the ray
-    /// and the point in the ghost's own space.
-    fn billboard(&self, direction: Vec3, ghost: Vec3, scale: f32) -> Option<(f32, Vec2)> {
-        self.billboard_from(self.eye, direction, ghost, scale)
-    }
-
     fn mirrored(&self) -> Self {
         Self {
             eye: mirror::reflect_point(self.eye),
@@ -213,9 +200,9 @@ pub struct Scene<'a> {
     pub view: View,
     /// The glow of the creature the viewer is with.
     pub aura: Aura,
-    /// Every creature of the household, posed for the frame.
+    /// Every creature of the household, and any visitor like them, posed
+    /// for the frame.
     pub figures: Vec<Figure>,
-    pub friend: Option<Body>,
 }
 
 /// Renders the scene, averaging `samples` by `samples` rays a pixel or so
@@ -233,7 +220,6 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
 fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
     let ghost_scale = GHOST_SCALE * scene.world.size();
     let dream = dream::Bubble::new(scene, ghost_scale, grid.scale());
-    let bodies = [scene.friend, None];
     let models: Vec<Model> = scene.figures.iter().map(Model::of).collect();
     let lights = Lights::of(scene, &models);
     let world = scene.world;
@@ -436,25 +422,12 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         .partition(|piece| home::in_house(piece.bounds().0));
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
-    let reflected_bodies = bodies;
     let shells: Vec<_> = world
         .bubbles
         .iter()
         .filter_map(|bubble| bubbles::Shell::new(bubble, scene.view, world.time, grid.scale()))
         .collect();
     let mut glows = Vec::new();
-    for body in bodies.iter().flatten() {
-        if !home::in_house(body.position) {
-            glows.push((
-                body.position,
-                body.aura.color
-                    * (0.2 + 0.25 * body.aura.brightness)
-                    * body.aura.visibility.clamp(0.0, 1.0)
-                    * body.opacity,
-                4.0,
-            ));
-        }
-    }
     let mut shadows = Vec::new();
     for model in &models {
         if home::in_house(model.ground) {
@@ -509,7 +482,6 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         yard: &yard,
         door: world.door_open(),
         solid: !home::in_house(world.ghost.position),
-        bodies: [bodies, reflected_bodies],
         models: &models,
         spread,
         bubbles: &shells,
@@ -659,7 +631,6 @@ struct Tracer<'a> {
     /// front, the window, and the open door show inside; while it is in,
     /// the near walls are cut away to watch it.
     solid: bool,
-    bodies: [[Option<Body>; 2]; 2],
     /// The household's creatures, solid and lit like the furniture.
     models: &'a [Model],
     spread: f32,
@@ -701,7 +672,6 @@ impl Tracer<'_> {
         let scene = self.scene;
         let lights = self.lights;
         let furniture = self.furniture;
-        let bodies = &self.bodies[usize::from(reflected)];
         let spread = self.spread;
         let world = scene.world;
         let eye = origin;
@@ -883,19 +853,16 @@ impl Tracer<'_> {
             .filter(|distance| *distance <= limit + 1e-3);
         let soap = (!reflected && !self.bubbles.is_empty())
             .then(|| bubbles::hits(self.bubbles, view, direction, limit, spread * FOCAL));
-        let mut soap = soap
-            .iter()
-            .flat_map(|hits| hits.iter().flatten())
-            .peekable();
+        let soap = soap.iter().flat_map(|hits| hits.iter().flatten());
         let mut glazed = false;
-        let mut dream = dream.and_then(|bubble| {
+        let dream = dream.and_then(|bubble| {
             view.billboard_from(eye, direction, bubble.position, bubble.scale)
                 .filter(|(distance, _)| *distance < limit)
                 .map(|(distance, local)| (distance, local, bubble))
         });
         // Rain and snow fall in front of everything but what is nearer.
-        let mut nearest = limit;
-        let mut overlay = |distance: f32, glow: ghost::Glow| {
+        let nearest = limit;
+        let mut overlay = |distance: f32, glow: glow::Glow| {
             if let Some(glass) = glass
                 && glass > distance
                 && !glazed
@@ -905,38 +872,6 @@ impl Tracer<'_> {
             }
             color = glow.over(color);
         };
-        for body in bodies.iter().flatten() {
-            if body.opacity <= 0.0 {
-                continue;
-            }
-            let Some((distance, local)) =
-                view.billboard_from(eye, direction, body.position, body.scale)
-            else {
-                continue;
-            };
-            if distance >= limit || local.cmplt(BOUNDS[0]).any() || local.cmpgt(BOUNDS[1]).any() {
-                continue;
-            }
-            if let Some((distance, local, bubble)) =
-                dream.take_if(|(dream_distance, _, _)| *dream_distance >= distance)
-            {
-                overlay(
-                    distance,
-                    bubble.shade(local, (traveled + distance) * spread / bubble.scale),
-                );
-            }
-            while soap
-                .peek()
-                .is_some_and(|(bubble_distance, _)| *bubble_distance >= distance)
-            {
-                let &(bubble_distance, glow) = soap.next().unwrap();
-                overlay(bubble_distance, glow);
-            }
-            let pixel = (traveled + distance) * spread / body.scale;
-            let glow = ghost::shade(local, pixel, world.time, body);
-            overlay(distance, glow);
-            nearest = nearest.min(distance);
-        }
         if let Some((distance, local, bubble)) = dream {
             overlay(
                 distance,
@@ -1513,14 +1448,6 @@ impl Lights {
             }
             shadows.push((model.ground, model.reach * model.opacity));
         }
-        if let Some(body) = &scene.friend {
-            points.push(Light {
-                position: body.position,
-                color: body.aura.color * 0.15 * body.aura.visibility * body.opacity,
-                falloff: 6.0,
-                room: room_of(body.position),
-            });
-        }
         if let Some(decoration) = world.decoration() {
             points.push(Light {
                 position: Decoration::POSITION + Vec3::Y * decoration.height() * 0.65,
@@ -1624,7 +1551,6 @@ mod tests {
     use super::*;
     use crate::canvas::Style;
     use crate::face::Face;
-    use ghost::Pose;
 
     fn grid() -> Grid {
         Style::Ascii.grid(100, 30)
@@ -1642,7 +1568,6 @@ mod tests {
                 beat: 1.0,
             },
             figures: Vec::new(),
-            friend: None,
         }
     }
 
@@ -1667,18 +1592,6 @@ mod tests {
             snow_ghost: None,
             shaken: None,
         })
-    }
-
-    fn resident(scene: &Scene) -> Body {
-        Body {
-            position: scene.world.ghost.position,
-            scale: GHOST_SCALE,
-            pose: Pose::new(scene.world.time, 0.0, 0.0, 0.0),
-            face: Face::REST,
-            aura: scene.aura,
-            opacity: 1.0,
-            accessory: None,
-        }
     }
 
     #[test]
@@ -1714,45 +1627,58 @@ mod tests {
     }
 
     #[test]
-    fn mirrored_billboards_use_the_reflected_eye_and_basis_and_total_path() {
-        let view = Camera::default().view(grid());
-        let mirrored = view.mirrored();
-        assert_eq!(mirrored.eye, mirror::reflect_point(view.eye));
-        for (basis, reflected) in [
-            (view.forward, mirrored.forward),
-            (-view.right, mirrored.right),
-            (view.up, mirrored.up),
+    #[test]
+    fn rays_through_the_room_and_out_to_the_yard_give_finite_colors() {
+        let mut world = World::new(1, 12.0);
+        world.found_household(&[crate::world::Species::Fox, crate::world::Species::Jelly]);
+        let scene = mirror_scene(&world);
+        let models: Vec<Model> = [crate::world::Species::Fox, crate::world::Species::Jelly]
+            .into_iter()
+            .enumerate()
+            .map(|(index, species)| {
+                Model::of(&Figure {
+                    position: Vec3::new(index as f32 - 0.5, 0.3, 0.2),
+                    ..creature::tests::figure(species)
+                })
+            })
+            .collect();
+        let furniture = [
+            Furniture::Lamp(world.lamp),
+            Furniture::Plant(world.plant),
+            Furniture::Nook(world.nook),
+            Furniture::WindowSeat,
+        ];
+        let lights = Lights::of(&scene, &models);
+        let yard = yard(&scene);
+        let tracer = Tracer {
+            bubbles: &[],
+            scene: &scene,
+            lights: &lights,
+            furniture: &furniture,
+            tiles: None,
+            yard: &yard,
+            door: 1.0,
+            solid: false,
+            models: &models,
+            spread: 0.01,
+        };
+        for target in [
+            Vec3::new(-1.0, 1.0, -1.5),
+            Vec3::new(0.0, 1.5, -1.4),
+            Vec3::new(2.0, 0.9, 0.8),
+            Vec3::new(-0.5, 0.3, 0.2),
+            Vec3::new(0.5, 0.3, 0.2),
+            world.ball.position,
+            Vec3::new(6.0, 0.5, 0.0),
+            Vec3::new(0.0, 8.0, -20.0),
         ] {
-            assert_eq!(reflected, mirror::reflect_direction(basis));
-            assert!((reflected.length() - 1.0).abs() < 1e-6);
+            let direction = (target - scene.view.eye).normalize();
+            let color = tracer.trace(scene.view.eye, direction, scene.view, 0.0, None, false);
+            assert!(color.is_finite(), "{target}");
+            // Reflected in the mirror, too.
+            let color = tracer.trace(scene.view.eye, direction, scene.view, 0.0, None, true);
+            assert!(color.is_finite(), "{target}");
         }
-        // The basis keeps its handedness, so a billboard seen in the mirror
-        // shows its left and right swapped, as a reflection should.
-        let handedness = |right: Vec3, up: Vec3, forward: Vec3| right.cross(up).dot(forward);
-        assert!(
-            handedness(view.right, view.up, view.forward)
-                * handedness(mirrored.right, mirrored.up, mirrored.forward)
-                > 0.0
-        );
-        assert!(mirrored.right.dot(mirrored.up).abs() < 1e-6);
-        let direction = (mirror::CENTER - view.eye).normalize();
-        let reflected = mirror::reflect_direction(direction);
-        let position = mirror::CENTER + reflected * 0.25;
-        let scale = 0.1;
-        let local = Vec2::new(0.2, -0.3);
-        let surface = position + (mirrored.right * local.x + mirrored.up * local.y) * scale;
-        let reflected = (surface - mirrored.eye).normalize();
-        let incoming = mirror::reflect_direction(reflected);
-        let hit = room_exit(view.eye, incoming).unwrap();
-        assert!(mirror::contains(hit.point));
-        let (from_eye, eye_local) = mirrored.billboard(reflected, position, scale).unwrap();
-        let (from_glass, glass_local) = mirrored
-            .billboard_from(hit.point, reflected, position, scale)
-            .unwrap();
-        assert!(eye_local.distance(local) < 1e-4);
-        assert!(glass_local.distance(local) < 1e-4);
-        assert!((hit.distance + from_glass - from_eye).abs() < 1e-5);
-        assert!(mirrored.forward.dot((mirrored.eye - position).normalize()) < 0.0);
     }
 
     #[test]
@@ -1793,107 +1719,7 @@ mod tests {
     }
 
     #[test]
-    fn rays_through_the_room_and_out_to_the_yard_give_finite_colors() {
-        let world = World::new(1, 12.0);
-        let scene = mirror_scene(&world);
-        let bodies = [Some(resident(&scene)), None];
-        let furniture = [
-            Furniture::Lamp(world.lamp),
-            Furniture::Plant(world.plant),
-            Furniture::Nook(world.nook),
-        ];
-        let lights = Lights::of(&scene, &[]);
-        let yard = yard(&scene);
-        let tracer = Tracer {
-            bubbles: &[],
-            scene: &scene,
-            lights: &lights,
-            furniture: &furniture,
-            tiles: None,
-            yard: &yard,
-            door: 1.0,
-            solid: false,
-            bodies: [bodies, bodies],
-            models: &[],
-            spread: 0.01,
-        };
-        for target in [
-            Vec3::new(-1.0, 1.0, -1.5),
-            Vec3::new(0.0, 1.5, -1.4),
-            Vec3::new(2.0, 0.9, 0.8),
-            world.ghost.position,
-            world.ball.position,
-            Vec3::new(6.0, 0.5, 0.0),
-            Vec3::new(0.0, 8.0, -20.0),
-        ] {
-            let direction = (target - scene.view.eye).normalize();
-            let color = tracer.trace(scene.view.eye, direction, scene.view, 0.0, None, false);
-            assert!(color.is_finite(), "{target}");
-        }
-    }
-
     #[test]
-    fn reflected_small_faded_and_visiting_ghosts_are_finite() {
-        let world = World::new(1, 21.0);
-        let scene = mirror_scene(&world);
-        let lights = Lights::of(&scene, &[]);
-        let incoming = (mirror::CENTER - scene.view.eye).normalize();
-        let position = mirror::CENTER + mirror::reflect_direction(incoming) * 0.25;
-        for scale in [0.01, 0.15, GHOST_SCALE] {
-            for visibility in [0.0, 0.1, 1.0] {
-                for has_friend in [false, true] {
-                    let body = Body {
-                        position,
-                        scale,
-                        aura: Aura {
-                            visibility,
-                            ..scene.aura
-                        },
-                        ..resident(&scene)
-                    };
-                    let friend = has_friend.then_some(Body {
-                        position: position - Vec3::X * 0.08,
-                        scale: scale * 0.75,
-                        opacity: 0.4,
-                        ..body
-                    });
-                    let bodies = [Some(body), friend];
-                    let furniture = [
-                        Furniture::Mirror,
-                        Furniture::Lamp(world.lamp),
-                        Furniture::MusicBox(false, 0.0),
-                    ];
-                    let yard = yard(&scene);
-                    let tracer = Tracer {
-                        bubbles: &[],
-                        scene: &scene,
-                        lights: &lights,
-                        furniture: &furniture,
-                        tiles: None,
-                        yard: &yard,
-                        door: 0.0,
-                        solid: false,
-                        bodies: [bodies, bodies],
-                        models: &[],
-                        spread: 0.003,
-                    };
-                    for vertical in -4..=4 {
-                        for across in -4..=4 {
-                            let target = mirror::CENTER
-                                + Vec3::new(0.0, vertical as f32 * 0.1, across as f32 * 0.07);
-                            let direction = (target - scene.view.eye).normalize();
-                            assert!(
-                                tracer
-                                    .trace(scene.view.eye, direction, scene.view, 0.0, None, false)
-                                    .is_finite()
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     #[test]
     fn reflected_rays_skip_front_glass_drawings() {
         use crate::world::{Doodle, Picture, Sketch};
@@ -1914,7 +1740,6 @@ mod tests {
                 yard: &yard,
                 door: 0.0,
                 solid: false,
-                bodies: [[None; 2]; 2],
                 models: &[],
                 spread: 0.01,
             };
@@ -1934,24 +1759,6 @@ mod tests {
     }
 
     #[test]
-    fn hit_testing_uses_the_same_body_scale_as_the_billboard() {
-        let view = Camera::default().view(grid());
-        let mut world = World::new(1, 0.0);
-        world.birthday = Some(world.date);
-        let ghost = world.ghost.position;
-        let center = view.project(ghost).unwrap();
-        let edge = view
-            .project(ghost + view.right * GHOST_SCALE * 0.52)
-            .unwrap();
-        assert!(view.touches_ghost(center, ghost, GHOST_SCALE * world.size()));
-        assert!(!view.touches_ghost(edge, ghost, GHOST_SCALE * world.size()));
-        assert!(view.touches_ghost(edge, ghost, GHOST_SCALE));
-        let (_, local) = view
-            .billboard(view.ray(edge), ghost, GHOST_SCALE * world.size())
-            .unwrap();
-        assert!((local.x - 0.52 / world.size()).abs() < 1e-4);
-    }
-
     #[test]
     fn nothing_of_the_moth_lies_beyond_the_bound_that_skips_it() {
         for pixel in [0.001, 0.01, 0.05, 0.2] {
@@ -2045,34 +1852,7 @@ mod tests {
     }
 
     #[test]
-    fn the_ghost_is_touched_where_it_appears_on_screen() {
-        let view = Camera::default().view(grid());
-        let ghost = Vec3::new(0.4, 1.1, 0.2);
-        let screen = view.project(ghost).unwrap();
-        assert!(view.touches_ghost(screen, ghost, GHOST_SCALE));
-        assert!(!view.touches_ghost(screen + Vec2::new(0.6, 0.0), ghost, GHOST_SCALE));
-    }
-
     #[test]
-    fn the_friend_is_touched_where_its_scaled_billboard_is_projected() {
-        let grid = Grid::cells(100, 32);
-        for yaw in [0.0, 1.2, 3.0] {
-            let view = Camera {
-                yaw,
-                ..Camera::default()
-            }
-            .view(grid);
-            let position = Vec3::new(-0.6, 1.4, -0.4);
-            let point = view.project(position).unwrap();
-            assert!(view.touches_ghost(point, position, FRIEND_SCALE));
-            let outside = view
-                .project(position + view.right * FRIEND_SCALE * 0.7)
-                .unwrap();
-            assert!(!view.touches_ghost(outside, position, FRIEND_SCALE));
-            assert!(view.touches_ghost(outside, position, GHOST_SCALE));
-        }
-    }
-
     #[test]
     fn night_is_darker_than_noon_and_dusk_is_warmer() {
         assert!(daylight(2.0).max_element() < daylight(12.0).max_element() * 0.3);
@@ -2125,7 +1905,6 @@ mod tests {
                             beat: 1.0,
                         },
                         figures: Vec::new(),
-                        friend: None,
                     };
                     let frame = render(&scene, grid, 1);
                     for row in 0..frame.height() {
@@ -2178,7 +1957,6 @@ mod tests {
                             beat: 1.0,
                         },
                         figures: Vec::new(),
-                        friend: None,
                     };
                     assert!(sky::light_through(&scene.outside).is_finite());
                     let frame = render(&scene, grid, 1);
@@ -2265,7 +2043,6 @@ mod bench {
                 } else {
                     figures.clone()
                 },
-                friend: None,
             };
             let start = std::time::Instant::now();
             for _ in 0..10 {

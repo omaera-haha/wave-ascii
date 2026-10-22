@@ -1162,7 +1162,7 @@ mod tests {
     #[test]
     fn render_samples_stay_finite_during_quirks_at_ordinary_and_very_large_times() {
         use crate::face::{Face, mood};
-        use crate::render::ghost::{Aura, Body, Pose, shade};
+        use crate::render::creature::{Figure, Model, Motion};
         for quirk in Quirk::ALL {
             for started in [0.0, 1e12] {
                 let mut world = World::new(2, 12.0);
@@ -1178,40 +1178,38 @@ mod tests {
                         .map_or(Face::REST, |expression| {
                             expression.at((time - spell.pulse_started(time)) as f32)
                         });
-                    let body = Body {
-                        position: world.ghost.position,
-                        scale: 1.0,
-                        pose: Pose::new(time, 3.0, world.ghost.velocity.y, 0.0).in_breeze(1.0, 1.0),
-                        face,
-                        aura: Aura {
-                            color: Vec3::ONE,
-                            visibility: 1.0,
-                            brightness: 1.0,
-                            beat: 1.0,
-                        },
-                        opacity: 1.0,
-                        accessory: None,
-                    };
-                    for column in -15..=15 {
-                        for row in -15..=15 {
-                            let point = glam::Vec2::new(column as f32, row as f32) * 0.1;
-                            let glow = shade(point, 0.02, time, &body);
-                            assert!(glow.light.is_finite() && glow.cover.is_finite());
-                            assert!((0.0..=1.0).contains(&glow.cover));
-                            let bounds = crate::render::ghost::BOUNDS;
-                            if point.x < bounds[0].x
-                                || point.x > bounds[1].x
-                                || point.y < bounds[0].y
-                                || point.y > bounds[1].y
-                            {
-                                assert_eq!(glow.cover, 0.0, "{quirk:?} at {time}: {point}");
-                            }
-                        }
+                    for species in crate::world::Species::ALL {
+                        let model = Model::of(&Figure {
+                            id: 1,
+                            species,
+                            genome: crate::world::Genome::default(),
+                            position: Vec3::ZERO,
+                            facing: 0.0,
+                            size: 1.0,
+                            face,
+                            glow: Vec3::ONE,
+                            opacity: 1.0,
+                            accessory: None,
+                            motion: Motion {
+                                time,
+                                lift: motion.lift,
+                                sway: motion.lean * 1.5,
+                                reach: motion.stretch * 8.0,
+                                shiver: 1.0,
+                                ..Motion::default()
+                            },
+                        });
+                        let eye = Vec3::new(0.0, 0.1, 3.0);
+                        let hit = model
+                            .trace(eye, -eye.normalize(), 100.0, 0.002, 0.0)
+                            .unwrap_or_else(|| panic!("{quirk:?} {species:?}"));
+                        assert!(hit.albedo.is_finite() && hit.emission.is_finite());
                     }
                 }
             }
         }
     }
+
     #[test]
     fn cold_sneezes_keep_one_spell_and_the_shared_pause_between_spells() {
         let mut world = World::new(2, 12.0);

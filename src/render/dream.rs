@@ -1,6 +1,6 @@
 use glam::{Vec2, Vec3};
 
-use super::ghost::Glow;
+use super::glow::Glow;
 use super::{FOCAL, Scene};
 use crate::sdf::{coverage, smooth_min, smoothstep};
 use crate::world::dream::{DreamPicture, HOLDS, SLEEPING};
@@ -106,7 +106,7 @@ impl Bubble {
 mod tests {
     use super::*;
     use crate::frame::Grid;
-    use crate::render::ghost::Aura;
+    use crate::render::glow::Aura;
     use crate::render::{Camera, GHOST_SCALE, sky};
     use crate::world::{Dream, World};
 
@@ -134,7 +134,6 @@ mod tests {
                         beat: 1.0,
                     },
                     figures: Vec::new(),
-                    friend: None,
                 };
                 for scale in [GHOST_SCALE, GHOST_SCALE * 1e-6] {
                     let Some(bubble) = Bubble::new(&scene, scale, grid.scale()) else {
@@ -157,7 +156,12 @@ mod tests {
                             .unwrap();
                         assert!(bubble.contains(screen));
                         let (distance, local) = view
-                            .billboard(view.ray(screen), bubble.position, bubble.scale)
+                            .billboard_from(
+                                view.eye,
+                                view.ray(screen),
+                                bubble.position,
+                                bubble.scale,
+                            )
                             .unwrap();
                         let sample =
                             bubble.shade(local, distance * grid.scale() / FOCAL / bubble.scale);

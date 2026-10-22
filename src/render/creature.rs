@@ -2478,7 +2478,7 @@ fn wear(sculpt: &mut Sculpt, accessory: Accessory, crown: Frame, neck: Option<(F
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub fn figure(species: Species) -> Figure {

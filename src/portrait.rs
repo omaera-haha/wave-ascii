@@ -30,6 +30,68 @@ pub struct Handling {
 
 /// The id the stranger at the glass goes by among the figures.
 pub const STRANGER: u32 = u32::MAX;
+/// The id the visiting ghost friend goes by among the figures.
+pub const FRIEND: u32 = u32::MAX - 1;
+
+/// The little ghost friend who visits on some evenings, as a small ghost
+/// tinted its own soft color.
+pub fn friend(
+    friend: &crate::world::Friend,
+    companion: &crate::world::Companion,
+    time: f64,
+) -> Figure {
+    use crate::world::friend::State;
+    let local = time + f64::from(friend.phase);
+    let slot = (local / 4.0).floor() as u64;
+    let blink_at = 0.5 + ((slot.wrapping_mul(0x9E37_79B9) >> 12) % 250) as f64 / 100.0;
+    let blink = (1.0 - ((local.rem_euclid(4.0) - blink_at) / 0.12).abs()).max(0.0) as f32;
+    let poked = (1.0 - (time - friend.poked_at) / 1.2).clamp(0.0, 1.0) as f32;
+    let leaving = friend.state == State::Leaving;
+    let playing = friend.state == State::Playing;
+    let coat = if companion.hue < 0.4 {
+        1
+    } else if companion.hue < 0.7 {
+        0
+    } else {
+        2
+    };
+    Figure {
+        id: FRIEND,
+        species: crate::world::Species::Ghost,
+        genome: crate::world::Genome {
+            coat,
+            build: 0.0,
+            seed: 3,
+        },
+        position: friend.position,
+        facing: friend.heading.x.atan2(friend.heading.z),
+        size: 0.72,
+        face: face::Face {
+            shut: [blink; 2],
+            widen: poked,
+            smile: if poked > 0.5 {
+                0.0
+            } else if playing || leaving || poked > 0.0 {
+                0.75
+            } else {
+                0.0
+            },
+            ..face::Face::REST
+        },
+        glow: crate::render::glow::friend_color(companion.hue),
+        opacity: friend.visibility(),
+        accessory: None,
+        motion: Motion {
+            time: local,
+            pace: friend.velocity.length(),
+            energy: 0.8,
+            dance: if playing { 0.6 } else { 0.0 },
+            perched: 1.0,
+            perk: 0.5,
+            ..Motion::default()
+        },
+    }
+}
 
 /// The little stranger looking in at the glass, blinking as it peers.
 pub fn stranger(stranger: &crate::world::stranger::Stranger, time: f64) -> Figure {

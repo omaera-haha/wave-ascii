@@ -1,6 +1,6 @@
 use glam::{Vec2, Vec3};
 
-use super::{FOCAL, View, ghost::Glow, sphere_span};
+use super::{FOCAL, View, glow::Glow, sphere_span};
 use crate::sdf::coverage;
 use crate::world::bubbles::{Bubble, LIMIT, POP_FOR};
 

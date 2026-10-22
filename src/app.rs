@@ -5,15 +5,14 @@ use glam::{Vec2, Vec3};
 use crate::album::Album;
 use crate::canvas::{Canvas, Style};
 use crate::color::ColorMode;
-use crate::face;
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::portrait::{self, Handling};
 use crate::postcard::{self, Postcard};
 use crate::render::creature::{Figure, Model};
-use crate::render::ghost::{Aura, Body, Pose, friend_color};
+use crate::render::glow::Aura;
 use crate::render::sky::Outside;
-use crate::render::{self, Camera, FRIEND_SCALE, Scene, View};
+use crate::render::{self, Camera, Scene, View};
 use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
 use crate::terminal::{Input, Key, Mouse, MouseAction};
@@ -1515,12 +1514,11 @@ impl App {
     }
 
     fn touches_friend(&self, view: View, point: Vec2) -> bool {
-        self.world.friend.as_ref().is_some_and(|friend| {
-            friend.visibility() > 0.0
-                && view.touches_ghost(point, friend.position, FRIEND_SCALE)
-                && (self.creature_at(view, point).is_none()
-                    || (friend.position - self.world.ghost.body()).dot(view.forward) < 0.0)
-        })
+        self.world
+            .friend
+            .as_ref()
+            .is_some_and(|friend| friend.visibility() > 0.0)
+            && self.creature_at(view, point) == Some(portrait::FRIEND)
     }
 
     /// The creature under `point` on the screen, the nearest if several are,
@@ -1783,63 +1781,6 @@ impl App {
                 * comfort_breath.map_or(1.0, |phase| 0.9 + 0.1 * phase),
             beat: beat(ghost.mood) * (0.6 + 0.4 * energy),
         };
-        let friend =
-            world
-                .friend
-                .as_ref()
-                .zip(world.life.friend.as_ref())
-                .map(|(friend, companion)| {
-                    let time = world.time + f64::from(friend.phase);
-                    let slot = (time / 4.0).floor() as u64;
-                    let blink_at =
-                        0.5 + ((slot.wrapping_mul(0x9E37_79B9) >> 12) % 250) as f64 / 100.0;
-                    let blink =
-                        (1.0 - ((time.rem_euclid(4.0) - blink_at) / 0.12).abs()).max(0.0) as f32;
-                    let poked = (1.0 - (world.time - friend.poked_at) / 1.2).clamp(0.0, 1.0) as f32;
-                    let leaving = friend.state == crate::world::friend::State::Leaving;
-                    Body {
-                        accessory: None,
-                        position: friend.position,
-                        scale: FRIEND_SCALE,
-                        pose: Pose::new(
-                            time,
-                            friend.velocity.dot(view.right) / FRIEND_SCALE,
-                            friend.velocity.dot(view.up) / FRIEND_SCALE,
-                            0.0,
-                        )
-                        .in_breeze(world.breeze_at(friend.position).dot(view.right), 0.0),
-                        face: face::Face {
-                            shut: [blink; 2],
-                            widen: poked,
-                            smile: if poked > 0.5 {
-                                0.0
-                            } else if friend.state == crate::world::friend::State::Playing
-                                || leaving
-                                || poked > 0.0
-                            {
-                                0.75
-                            } else {
-                                0.0
-                            },
-                            gaze: if leaving {
-                                Vec2::new((time as f32 * 6.0).sin() * 0.5, 0.0)
-                            } else {
-                                Vec2::new(
-                                    friend.heading.dot(view.right),
-                                    friend.heading.dot(view.up),
-                                ) * 0.5
-                            },
-                            ..face::Face::REST
-                        },
-                        aura: Aura {
-                            color: friend_color(companion.hue),
-                            visibility: 1.0,
-                            brightness: 0.75,
-                            beat: 0.8,
-                        },
-                        opacity: friend.visibility(),
-                    }
-                });
         Scene {
             world,
             outside: Outside {
@@ -1882,7 +1823,6 @@ impl App {
             view,
             aura,
             figures,
-            friend,
         }
     }
 
@@ -1921,6 +1861,9 @@ impl App {
         figures.sort_by_key(|figure| figure.id != host);
         if let Some(stranger) = &self.world.stranger {
             figures.push(portrait::stranger(stranger, self.world.time));
+        }
+        if let (Some(friend), Some(companion)) = (&self.world.friend, &self.world.life.friend) {
+            figures.push(portrait::friend(friend, companion, self.world.time));
         }
         self.shown = figures.clone();
         figures
@@ -2882,6 +2825,8 @@ mod tests {
         app.world.friend.as_mut().unwrap().position = Vec3::new(0.6, 1.4, 0.3);
         let view = Camera::default().view(Grid::cells(100, 32));
         app.view = Some(view);
+        // Clicks find what the last frame showed.
+        app.figures(&view);
         let point = view
             .project(app.world.friend.as_ref().unwrap().position)
             .unwrap();
