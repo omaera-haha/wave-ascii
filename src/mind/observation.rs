@@ -1,0 +1,1574 @@
+use glam::Vec3;
+use serde_json::{Value, json};
+
+use crate::world::{
+    Activity, Mark, Perch, Plant, Question, Seen, Skill, Sky, Thing, World, calendar::moon_words,
+    flat,
+};
+
+/// What the ghost knows of its situation, in words. Both minds read it:
+/// System One models judge words more reliably than numbers, and Claude
+/// writes in the ghost's voice from it.
+pub fn observe(world: &World) -> Value {
+    let ghost = &world.ghost;
+    let plan = &ghost.plan;
+    let doing = if world
+        .telling
+        .as_ref()
+        .is_some_and(|telling| telling.book.is_some())
+    {
+        "reading a picture book aloud to the viewer".to_owned()
+    } else if world.telling.is_some() {
+        "telling the viewer a story".to_owned()
+    } else if world.carried_seed().is_some() {
+        "carrying a seed to a little pot".to_owned()
+    } else if let Some(gift) = ghost.keepsake {
+        format!("carrying {} to the shelf of keepsakes", gift.name())
+    } else if plan.activity == Activity::Air {
+        world.air_doing().to_owned()
+    } else if plan.done {
+        format!("just finished {}", plan.activity.doing())
+    } else if plan.activity == Activity::Hide && plan.arrived.is_some() {
+        format!("{} and waiting to be found", plan.activity.doing())
+    } else {
+        plan.activity.doing().to_owned()
+    };
+    json!({
+        "ghost": {
+            "name": ghost.name,
+            "wearing": world.wearing.map(|accessory| accessory.words()).unwrap_or_else(|| "no accessory".to_owned()),
+            "nature": world.life.temperament().words(),
+            "changing": world.life.upbringing.words().unwrap_or("no clear change yet"),
+            "stage": world.stage().words(),
+            "practice": Skill::for_activity(plan.activity)
+                .map(|skill| format!("you are {}", world.life.skills.description(skill)))
+                .unwrap_or_else(|| "nothing to practice just now".to_owned()),
+            "energy": ghost.needs.energy_words(),
+            "fun": ghost.needs.fun_words(),
+            "company": ghost.needs.company_words(),
+            "feeling": ghost.mood.name(),
+            "awake": awake(world),
+            "doing": doing,
+            "goal": ghost.goal.as_deref().unwrap_or("none yet"),
+            "loves": world.life.favorite().map_or("nothing in particular yet", Activity::doing),
+            "quirk": world.quirk_words(),
+            "health": world.life.cold_words(),
+        },
+        "time_of_day": time_of_day(world.hour),
+        "season": world.season().name(),
+        "occasion": world.occasion_words(),
+        "day_of_life": world.day_of_life().filter(|day| matches!(day, 100 | 1000))
+            .map(|day| format!("Today is its {} day of life.", crate::world::anniversary::ordinal(day))),
+        "anniversaries": world.anniversary_observations(),
+        "outside_the_window": outside_the_window(world),
+        "sight": sight(world),
+        "room": {
+            "window": if world.window_open { "open" } else { "shut" },
+            "wind": world.wind.words(),
+            "floor_below_window": if world.puddle > 0.0 { "a small puddle below the window" } else { "dry" },
+            "light": light(world),
+            "lamp": if world.lamp.on { "on" } else { "off" },
+            "plant": plant(&world.plant),
+            "pots": world.garden_words(),
+            "tending": world.tend_description(),
+            "bubbles": world.bubble_words(),
+            "ball": ball(world),
+            "music_box": world.music_words(),
+            "mirror": thing(world, Thing::Mirror),
+            "gallery": thing(world, Thing::Gallery),
+            "learned_tunes": world.learned_tune_words(),
+            "own_songs": world.composition_words(false),
+            "own_books": world.written_words(false),
+            "light_motes": motes(world),
+            "glass": glass(world),
+            "books": world.books_words(),
+            "reading": world.reading_words(),
+            "cranes": world.life.cranes.words(),
+            "folding": world.folding_words(),
+            "tidying": world.tidy_words(),
+        },
+        "friend": world.friend.as_ref().zip(world.life.friend.as_ref()).map(|(friend, companion)| {
+            format!("{}, another ghost and {}, is {}", companion.name, companion.closeness_words(), friend.doing())
+        }).unwrap_or_else(|| "no ghost friend visiting just now".to_owned()),
+        "viewer": viewer(world),
+        "treasure_hunt": world.hunt_words(),
+        "show_and_tell": world.show_words(),
+        "viewer_language": if world.speaks_korean() { "the viewer speaks Korean" } else { "not known yet" },
+        "viewer_facts": world.life.viewer.words(),
+        "viewer_feelings": world.feeling_words(),
+        "viewer_promise": world.life.promise.map(|promise| promise.words()).unwrap_or_else(|| "no promised return".to_owned()),
+        "asking_viewer": world.asking.map(|(topic, _)| format!("waiting for an answer about their {}", topic.name())),
+        "viewer_name": world.life.viewer_name.as_ref().map_or_else(|| "not known yet".to_owned(), |name| format!("The viewer's name is {name}.")),
+        "bond_with_viewer": world.life.bond_words(),
+        "visiting_routine": world.life.usual_time().map(|usual| {
+            let mut words = format!("the viewer usually comes {usual}");
+            if !world.viewer_present() && world.life.expectation(world.hour) >= 0.5 {
+                words.push_str("; it is about the time the viewer usually comes");
+            }
+            words
+        }).unwrap_or_else(|| "not known yet".to_owned()),
+        "while_the_viewer_was_away": world.away_summary(),
+        "recent_events": recent(world, 8),
+        "skills": Skill::ALL.map(|skill| world.life.skills.description(skill)),
+        "wish": world.wish_observation(),
+        "viewer_plans": crate::world::agenda::memories(&world.life.agenda, world.date),
+        "viewer_letter": if world.waiting_letter().is_some() { "a letter from the viewer waits on the inside of the front glass" }
+            else if world.life.received.iter().any(|letter| letter.reply.is_some()) { "It is thinking about how to answer the viewer's letter." }
+            else { "the viewer's letters are kept safely" },
+        "viewer_rhythm": world.rhythm_words(),
+        "letter": if world.unread_letter().is_some() { "a letter for the viewer waits unread by the front glass" } else { "no unread letter waiting" },
+    })
+}
+
+pub fn for_message(world: &World, message: &str) -> Value {
+    let mut observation = observe(world);
+    if let Some(feeling) = crate::world::feelings::felt(message) {
+        observation["viewer_said_feeling"] =
+            json!(format!("The viewer said they feel {}.", feeling.name()));
+    }
+    if Question::ask(message) == Some(Question::Away)
+        && let Some(away) = &world.away
+    {
+        observation["while_the_viewer_was_away"] = json!(away.summary());
+    }
+    observation
+}
+
+/// The latest events, newest last, with how long ago each happened.
+pub fn recent(world: &World, count: usize) -> Vec<String> {
+    let mut lines: Vec<String> = world
+        .events
+        .iter()
+        .rev()
+        .filter(|event| !matches!(event.kind, crate::world::EventKind::Began(Activity::Float)))
+        .filter(|event| !matches!(event.kind, crate::world::EventKind::Tagged { .. }))
+        .take(count)
+        .map(|event| {
+            format!(
+                "{} ({})",
+                world.event_words(event),
+                ago(world.time - event.time)
+            )
+        })
+        .collect();
+    lines.reverse();
+    lines
+}
+
+pub fn time_of_day(hour: f32) -> &'static str {
+    match hour {
+        hour if (5.0..8.0).contains(&hour) => "early morning",
+        hour if (8.0..12.0).contains(&hour) => "morning",
+        hour if (12.0..17.0).contains(&hour) => "afternoon",
+        hour if (17.0..21.0).contains(&hour) => "evening",
+        _ => "night",
+    }
+}
+
+fn ago(seconds: f64) -> &'static str {
+    match seconds {
+        seconds if seconds < 15.0 => "just now",
+        seconds if seconds < 90.0 => "a minute ago",
+        seconds if seconds < 600.0 => "a few minutes ago",
+        _ => "a while ago",
+    }
+}
+
+fn awake(world: &World) -> &'static str {
+    let ghost = &world.ghost;
+    match ghost.asleep {
+        asleep if asleep < 0.3 && world.drowsy() => {
+            "awake but drowsy after being woken in the night"
+        }
+        asleep if asleep < 0.3 => "awake",
+        asleep if asleep < 0.9 => "drifting off to sleep",
+        _ if ghost.plan.activity == Activity::Rest && !ghost.plan.done => {
+            if ghost.plan.overnight {
+                "asleep for the night and dreaming"
+            } else {
+                "napping and dreaming"
+            }
+        }
+        _ => "fast asleep and dreaming",
+    }
+}
+
+fn distance_words(distance: f32) -> &'static str {
+    match distance {
+        distance if distance < 0.8 => "close by",
+        distance if distance < 2.0 => "across the room",
+        _ => "far away",
+    }
+}
+
+fn light(world: &World) -> &'static str {
+    match (world.is_night(), world.lamp.on) {
+        (false, _) => "daylight",
+        (true, true) => "lamplight in the dark",
+        (true, false) => "dark",
+    }
+}
+
+fn outside_the_window(world: &World) -> String {
+    let weather = &world.weather;
+    let mut outside = weather.words(world.time, world.is_night()).to_owned();
+    if world.is_night()
+        && matches!(weather.sky, Sky::Clear | Sky::Rainbow)
+        && let Some(moon) = moon_words(world.moon_phase())
+    {
+        outside.push_str(" with ");
+        outside.push_str(moon);
+    }
+    if weather.sky != Sky::Snow && weather.snow_cover > 0.5 {
+        outside.push_str(", the hills white with snow");
+    }
+    match world.sensed_weather() {
+        Some(false) => outside.push_str(", and the ghost feels rain coming soon"),
+        Some(true) => outside.push_str(", and the ghost smells snow coming soon"),
+        None => {}
+    }
+    if world.fireworks() {
+        outside.push_str(", fireworks bursting in the sky");
+    }
+    if let Some(shower) = world.meteor_shower() {
+        outside.push_str(&format!(
+            ", on the night of {}, when shooting stars fall more often",
+            shower.name
+        ));
+    }
+    for passing in world.passersby().into_iter().flatten() {
+        outside.push_str(&format!(", {} right now", passing.kind.name()));
+    }
+    if !world.life.today.passerby_kinds.is_empty() {
+        let kinds: Vec<&str> = world
+            .life
+            .today
+            .passerby_kinds
+            .iter()
+            .map(|kind| kind.name())
+            .collect();
+        outside.push_str(&format!("; you saw today: {}", kinds.join(", ")));
+    }
+    if world.shooting_star().is_some() {
+        outside.push_str(", a shooting star streaking across it right now");
+    }
+    if world.starry_night() && !world.life.constellations.is_empty() {
+        let names: Vec<&str> = world
+            .life
+            .constellations
+            .iter()
+            .map(|constellation| constellation.name.as_str())
+            .collect();
+        outside.push_str(&format!(", familiar constellations: {}", names.join(", ")));
+    }
+    if world.visitors.bird.is_some() {
+        outside.push_str(match world.life.bird_trust {
+            trust if trust < 0.2 => ", the bird is wary of you",
+            trust if trust < 0.5 => ", the bird is getting used to you",
+            _ => ", the bird trusts you",
+        });
+    }
+    if let Some(gift) = world.life.sill
+        && world
+            .sight()
+            .in_view
+            .iter()
+            .any(|seen| seen.thing == Thing::Window && seen.hidden_behind.is_none())
+    {
+        outside.push_str(&format!(", {} waiting on the outer sill", gift.name()));
+    }
+    outside
+}
+
+fn plant(plant: &Plant) -> String {
+    let size = match plant.growth {
+        _ if plant.blossom > 0.0
+            && (plant.bloom_age < 0.0 || plant.bloom_age >= 86_400.0 || plant.droop > 0.0) =>
+        {
+            "flowers fading"
+        }
+        _ if plant.blooming() => "in flower",
+        _ if plant.blossom > 0.0 => "flowers opening",
+        growth if growth >= Plant::BLOOM => "resting between flowers",
+        growth if growth < 0.3 => "a small sprout",
+        growth if growth < 0.6 => "a young plant",
+        _ => "a leafy plant",
+    };
+    let water = match plant.thirst {
+        thirst if thirst < 0.3 => "well watered",
+        thirst if thirst < 0.7 => "a little dry",
+        _ => "very thirsty",
+    };
+    let mut words = format!("{size}, {water}");
+    if plant.droop > 0.0 {
+        words.push_str("; the plant is drooping");
+    }
+    if plant.seeds > 0 {
+        words.push_str("; has a seed ready");
+    }
+    words
+}
+
+// What the ghost sees from where it faces: what it looks at, what else is
+// in view and where, and what it can't see now.
+fn sight(world: &World) -> Value {
+    let sight = world.sight();
+    let in_view: Vec<String> = sight
+        .in_view
+        .iter()
+        .take(6)
+        .map(|seen| format!("{}: {}", thing(world, seen.thing), placement(seen)))
+        .collect();
+    let out_of_view: Vec<&str> = sight.out_of_view.iter().map(|thing| thing.name()).collect();
+    json!({
+        "facing": facing(world.ghost.heading),
+        "looking_at": sight
+            .looking_at
+            .map_or("nothing in particular".to_owned(), |looked| thing(world, looked)),
+        "in_view": in_view,
+        "out_of_view": out_of_view.join(", "),
+    })
+}
+
+fn thing(world: &World, thing: Thing) -> String {
+    match thing {
+        Thing::ViewerLetter => {
+            "a letter written by the viewer, waiting on the inside of the glass".to_owned()
+        }
+        Thing::Viewer if world.viewer.typing => "the viewer, typing to you".to_owned(),
+        Thing::Viewer if world.viewer_present() => {
+            "the viewer, watching through the glass".to_owned()
+        }
+        Thing::Viewer => "the glass, with nobody behind it".to_owned(),
+        Thing::Window => format!("the window, showing {}", outside_the_window(world)),
+        Thing::Lamp => format!(
+            "the floor lamp, {}",
+            if world.lamp.on { "on" } else { "off" }
+        ),
+        Thing::Seedlings => world.garden_words(),
+        Thing::Plant => format!("the plant, {}", plant(&world.plant)),
+        Thing::Ball if world.ball.held => "the ball, held by you".to_owned(),
+        Thing::Ball if world.ball.velocity.length() > 0.2 => "the rolling ball".to_owned(),
+        Thing::Ball => "the ball".to_owned(),
+        Thing::Cushion => "the cushion".to_owned(),
+        Thing::Books => format!("the picture book pile; {}", world.books_words()),
+        Thing::Shelf => world.life.keepsake_words(),
+        Thing::Friend => world.life.friend.as_ref().map_or_else(
+            || "another ghost".to_owned(),
+            |friend| format!("your ghost friend {}", friend.name),
+        ),
+        Thing::Drawing => world.drawing.as_ref().map_or_else(
+            || "the viewer's drawing".to_owned(),
+            |drawing| drawing.words(),
+        ),
+        Thing::Blocks if world.tower.is_some() => format!(
+            "the toy blocks, stacked in a tower {} blocks high",
+            crate::world::blocks::height_words(world.tower_height())
+        ),
+        Thing::Blocks => "the toy blocks, scattered on the floor".to_owned(),
+        Thing::Decoration => world
+            .decoration()
+            .map_or("a decoration", |decoration| decoration.words())
+            .to_owned(),
+        Thing::Mote(_) => "a light mote".to_owned(),
+        Thing::Bird => {
+            let place = match world.visitors.bird.as_ref() {
+                Some(bird) if bird.perched(world.time) => match bird.perch {
+                    Perch::Tree => "perched on the tree",
+                    Perch::Sill => "on the sill",
+                },
+                _ => "flying",
+            };
+            format!("a little bird outside the window, {place}")
+        }
+        Thing::MusicBox => world.music_words(),
+        Thing::Mirror => {
+            if world.life.mirror.recognizes_self() {
+                "the mirror on the right wall, where you see yourself".to_owned()
+            } else {
+                "the mirror on the right wall, where another ghost seems to live".to_owned()
+            }
+        }
+        Thing::Moth => "a moth fluttering around the lamp".to_owned(),
+        Thing::Treasure => "a treasure the viewer hid".to_owned(),
+        Thing::Cranes => world.life.cranes.words(),
+        Thing::Gallery => world.life.gallery_words(),
+    }
+}
+
+// How far a seen thing is and where it lies in the ghost's view.
+fn placement(seen: &Seen) -> String {
+    let side = match seen.across {
+        across if across.abs() < 0.17 => "straight ahead",
+        across if across <= -0.6 => "to the left",
+        across if across < 0.0 => "a little to the left",
+        across if across >= 0.6 => "to the right",
+        _ => "a little to the right",
+    };
+    let height = match seen.up {
+        up if up > 0.35 => ", above",
+        up if up < -0.35 => ", below",
+        _ => "",
+    };
+    let hidden = seen
+        .hidden_behind
+        .map(|blocker| format!(", hidden behind the {}", blocker.name()))
+        .unwrap_or_default();
+    format!("{}, {side}{height}{hidden}", distance_words(seen.distance))
+}
+
+fn facing(heading: Vec3) -> &'static str {
+    match heading {
+        heading if heading.y > 0.7 => "up at the ceiling",
+        heading if heading.y < -0.7 => "down at the floor",
+        heading if heading.z.abs() >= heading.x.abs() && heading.z > 0.0 => {
+            "toward the glass and the viewer's side"
+        }
+        heading if heading.z.abs() >= heading.x.abs() => "toward the back wall and the window",
+        heading if heading.x < 0.0 => "toward the left wall, by the lamp",
+        _ => "toward the right wall, by the plant",
+    }
+}
+
+fn ball(world: &World) -> String {
+    if world.ball.held {
+        return "in your arms".to_owned();
+    }
+    let distance = flat(world.ball.position - world.ghost.position).length();
+    let motion = if world.ball.velocity.length() > 0.2 {
+        "rolling"
+    } else {
+        "resting on the floor"
+    };
+    format!("{motion}, {}", distance_words(distance))
+}
+
+fn glass(world: &World) -> String {
+    let mut doodles: Vec<String> = world
+        .doodles
+        .iter()
+        .rev()
+        .filter(|doodle| doodle.opacity(world.time) > 0.0)
+        .take(2)
+        .map(|doodle| {
+            let fading = if doodle.opacity(world.time) < 0.5 {
+                ", fading"
+            } else {
+                ""
+            };
+            match &doodle.picture {
+                crate::world::Picture::Sketch(sketch) => {
+                    format!("a {} you drew in the fog{fading}", sketch.name())
+                }
+                crate::world::Picture::Copy(copy) => {
+                    format!("a {} you drew in the fog{fading}", copy.name)
+                }
+                picture => format!("{} you wrote in the fog{fading}", picture.name()),
+            }
+        })
+        .collect();
+    if let Some(game) = &world.game
+        && game.outcome.is_none()
+    {
+        let turn = if !game.grid_ready(world.time) {
+            "you are drawing the board"
+        } else if game.turn == Mark::Cross {
+            "it is the viewer's move"
+        } else {
+            "it is your move"
+        };
+        let mut words = format!("a game of noughts and crosses in the fog; {turn}");
+        if game.could_win(Mark::Cross) {
+            words.push_str("; the viewer could win with their next move");
+        }
+        if game.could_win(Mark::Nought) {
+            words.push_str("; you could win with your next move");
+        }
+        doodles.push(words);
+    }
+    if let Some(puzzle) = &world.puzzle
+        && puzzle.ended.is_none()
+    {
+        doodles.push(puzzle.words(world.time));
+    }
+    if let Some(drawing) = &world.drawing {
+        doodles.push(drawing.words());
+    }
+    if doodles.is_empty() {
+        "clear".to_owned()
+    } else {
+        doodles.join("; ")
+    }
+}
+
+// The motes the ghost knows of; others it hasn't seen yet.
+fn motes(world: &World) -> String {
+    let known = world
+        .motes
+        .iter()
+        .filter(|mote| world.ghost.known.contains(&mote.id))
+        .count();
+    let count = match known {
+        0 => return "none".to_owned(),
+        1 => "one light mote drifting".to_owned(),
+        count => format!(
+            "{} light motes drifting",
+            crate::world::friend::count_words(count as u32)
+        ),
+    };
+    let nearest = world
+        .nearest_mote()
+        .map(|mote| mote.position.distance(world.ghost.position))
+        .unwrap_or(f32::INFINITY);
+    format!("{count}, the nearest {}", distance_words(nearest))
+}
+
+fn viewer(world: &World) -> String {
+    if let Some(focus) = &world.focus {
+        return format!(
+            "the viewer is focusing on their work; the ghost keeps them company quietly; {}",
+            focus.words_left(world.time)
+        );
+    }
+    if world.petting() >= 0.35 {
+        return "stroking you gently through the glass".to_owned();
+    }
+    // Typing and a pointer left on the glass say nothing once the viewer
+    // has gone.
+    let present = world.viewer_present();
+    let words = if !present {
+        "away"
+    } else if world.viewer.typing {
+        "typing a message to the ghost"
+    } else if world.viewer.pointer.is_some() {
+        "watching through the glass"
+    } else {
+        "nearby"
+    };
+    if present && world.viewer.pointer.is_some() {
+        let motion = if world.viewer.pointer_is_lively() {
+            "darting about"
+        } else {
+            "still"
+        };
+        format!("{words}, pointer {motion}")
+    } else {
+        words.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn observations_describe_the_promised_return_in_words() {
+        let mut world = World::new(4, 12.0);
+        world.hear("I'll be away for two weeks");
+        let observation = observe(&world);
+        let promise = observation["viewer_promise"].as_str().unwrap();
+        assert!(promise.contains("in two weeks"));
+        assert!(promise.contains("July fifth"));
+        assert!(!promise.chars().any(char::is_numeric));
+    }
+
+    #[test]
+    fn the_mirror_is_visible_and_its_description_changes_after_recognition() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.position = crate::world::mirror::VISIT;
+        world.ghost.heading = Vec3::X;
+        assert_eq!(
+            world.position_of(Thing::Mirror),
+            Some(crate::world::mirror::CENTER)
+        );
+        assert!(
+            world
+                .sight()
+                .in_view
+                .iter()
+                .any(|seen| seen.thing == Thing::Mirror && seen.hidden_behind.is_none())
+        );
+        assert!(thing(&world, Thing::Mirror).contains("another ghost seems to live"));
+        world.life.mirror.recognized = Some(world.date.to_string());
+        assert!(thing(&world, Thing::Mirror).contains("you see yourself"));
+        assert!(
+            observe(&world)["room"]["mirror"]
+                .as_str()
+                .unwrap()
+                .contains("you see yourself")
+        );
+    }
+
+    #[test]
+    fn book_observations_name_owned_and_finished_titles_and_progress_in_words() {
+        let mut world = crate::world::World::new(5, 12.0);
+        world.life.books.owned[0].finished = 1;
+        world.begin(crate::world::Activity::Read);
+        let index = world.current_book().unwrap();
+        world
+            .life
+            .books
+            .owned
+            .iter_mut()
+            .find(|owned| owned.index == index)
+            .unwrap()
+            .page = 2;
+        let observation = super::observe(&world);
+        let reading = observation["room"]["reading"].as_str().unwrap();
+        assert!(reading.contains("two of five pages read"));
+        assert!(reading.contains(crate::world::books::LIBRARY[index].title.0));
+        let books = observation["room"]["books"].as_str().unwrap();
+        assert!(books.contains("finished The Lantern Fox"));
+        assert!(!reading.chars().any(|character| character.is_ascii_digit()));
+    }
+
+    use super::*;
+
+    #[test]
+    fn observations_keep_a_messages_own_feeling_and_describe_current_care_without_numbers() {
+        let mut world = World::new(3, 12.0);
+        world.hear("I'm tired");
+        let observation = observe(&world);
+        let words = observation["viewer_feelings"].as_str().unwrap();
+        assert!(words.contains("feel tired"));
+        assert!(words.contains("comforting them"));
+        assert!(!words.chars().any(char::is_numeric));
+        world.hear("I'm happy");
+        assert_eq!(
+            for_message(&world, "I'm tired")["viewer_said_feeling"],
+            "The viewer said they feel tired."
+        );
+    }
+
+    use crate::world::EventKind;
+    use glam::Vec3;
+
+    #[test]
+    fn ongoing_yawns_are_described_in_words_and_disappear_when_the_spell_ends() {
+        let mut world = World::new(1, 12.0);
+        world.hear("*yawns*");
+        world.step(3.0);
+        assert_eq!(
+            observe(&world)["ghost"]["quirk"],
+            "you are stretching through a slow yawn"
+        );
+        world.step(5.0);
+        assert_eq!(observe(&world)["ghost"]["quirk"], "none just now");
+    }
+
+    #[test]
+    fn observations_describe_the_worn_accessory_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.wearing = Some(crate::world::Accessory::Scarf { color: 2 });
+        assert_eq!(observe(&world)["ghost"]["wearing"], "a knitted scarf");
+        world.wearing = None;
+        assert_eq!(observe(&world)["ghost"]["wearing"], "no accessory");
+    }
+
+    #[test]
+    fn a_puzzle_observation_names_the_wait_and_counts_without_the_answer() {
+        let mut world = World::new(5, 12.0);
+        world.hear("word game");
+        world.step(30.0);
+        let secret = world.puzzle.as_ref().unwrap().word.clone();
+        let words = observe(&world).to_string();
+        assert!(words.contains("waiting for the viewer to guess"));
+        assert!(words.contains("letters shown and six petals left"));
+        assert!(!words.contains(&secret));
+        assert!(!words.chars().any(|character| character.is_ascii_digit()));
+    }
+
+    #[test]
+    fn focus_observations_describe_quiet_work_and_remaining_time_without_digits() {
+        let mut world = World::new(1, 12.0);
+        world.hear("focus for 40 minutes");
+        world.time += 20.0 * 60.0;
+        let words = observe(&world).to_string();
+        assert!(words.contains("the viewer is focusing on their work"));
+        assert!(words.contains("company quietly"));
+        assert!(words.contains("about twenty minutes left"));
+        assert!(
+            !words.chars().any(|character| character.is_ascii_digit()),
+            "{words}"
+        );
+        world.end_focus();
+        let words = observe(&world).to_string();
+        assert!(
+            !words.chars().any(|character| character.is_ascii_digit()),
+            "{words}"
+        );
+    }
+
+    #[test]
+    fn familiar_constellations_are_named_only_in_a_clear_dark_sky() {
+        let mut world = World::new(1, 21.0);
+        world
+            .life
+            .constellations
+            .push(crate::world::stars::Constellation {
+                name: "the Shy Spiral".to_owned(),
+                ..Default::default()
+            });
+        world.weather.sky = Sky::Clear;
+        world.weather.storm = false;
+        let outside = outside_the_window(&world);
+        assert!(outside.contains("the Shy Spiral"));
+        assert!(!outside.chars().any(|character| character.is_ascii_digit()));
+        world.hour = 12.0;
+        assert!(!outside_the_window(&world).contains("the Shy Spiral"));
+        world.hour = 21.0;
+        world.weather.sky = Sky::Rain;
+        assert!(!outside_the_window(&world).contains("the Shy Spiral"));
+    }
+
+    #[test]
+    fn the_observation_remembers_that_the_viewer_speaks_korean() {
+        let mut world = World::new(1, 12.0);
+        world.hear("안녕");
+        world.hear("반가워");
+        assert_eq!(
+            observe(&world)["viewer_language"],
+            "the viewer speaks Korean"
+        );
+    }
+
+    #[test]
+    fn stage_and_relevant_practice_reach_both_minds_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.birthday = Some(world.date);
+        world.life.skills.stacking = 20.0;
+        world.begin(Activity::Build);
+        let observation = observe(&world);
+        assert_eq!(observation["ghost"]["stage"], "a newborn wisp");
+        assert_eq!(
+            observation["ghost"]["practice"],
+            "you are getting the hang of stacking blocks"
+        );
+        for description in observation["skills"].as_array().unwrap() {
+            assert!(
+                !description
+                    .as_str()
+                    .unwrap()
+                    .chars()
+                    .any(|letter| letter.is_ascii_digit())
+            );
+        }
+    }
+
+    #[test]
+    fn a_game_describes_turns_and_threats_without_digits() {
+        use crate::world::Game;
+
+        let mut world = World::new(2, 12.0);
+        world.challenge();
+        let game = world.game.as_mut().unwrap();
+        game.grid_started = Some(0.0);
+        game.cells = [
+            Some(Mark::Cross),
+            Some(Mark::Cross),
+            None,
+            Some(Mark::Nought),
+            Some(Mark::Nought),
+            None,
+            None,
+            None,
+            None,
+        ];
+        world.time = Game::GRID_TIME;
+        let words = glass(&world);
+        assert!(words.contains("it is the viewer's move"));
+        assert!(words.contains("the viewer could win with their next move"));
+        assert!(words.contains("you could win with your next move"));
+        assert!(!words.chars().any(|character| character.is_ascii_digit()));
+        world.game.as_mut().unwrap().turn = Mark::Nought;
+        assert!(glass(&world).contains("it is your move"));
+        world.game.as_mut().unwrap().outcome = Some(crate::world::Outcome::Draw);
+        assert!(!glass(&world).contains("move"));
+    }
+
+    #[test]
+    fn bird_friendship_and_keepsakes_reach_the_minds_in_words() {
+        use crate::world::{Keepsake, Random, visitor::Bird};
+
+        let mut world = World::new(1, 12.0);
+        world.ghost.heading = (crate::world::WINDOW_CENTER - world.ghost.position).normalize();
+        world.life.sill = Some(Keepsake::Petal);
+        world.life.keepsakes = vec![Keepsake::Feather, Keepsake::Acorn];
+        world.visitors.bird = Some(Bird::new(0.0, 0.8, &mut Random::new(1)));
+        for (trust, words) in [
+            (0.0, "wary of you"),
+            (0.3, "getting used to you"),
+            (0.8, "trusts you"),
+        ] {
+            world.life.bird_trust = trust;
+            let observation = observe(&world).to_string();
+            assert!(observation.contains(words));
+            assert!(observation.contains("a blossom petal waiting on the outer sill"));
+            assert!(
+                !observation
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+        assert_eq!(
+            thing(&world, Thing::Shelf),
+            "the shelf of keepsakes, with a feather and an acorn"
+        );
+        world.ghost.heading = Vec3::Z;
+        assert!(!outside_the_window(&world).contains("waiting on the outer sill"));
+    }
+
+    #[test]
+    fn learned_visiting_hours_and_waiting_are_described_in_words() {
+        let mut world = World::new(1, 20.0);
+        assert_eq!(observe(&world)["visiting_routine"], "not known yet");
+        for day in 1..=3 {
+            world.life.begin_day(&format!("2026-06-{day:02}"));
+            world.life.arrive(20.0);
+        }
+        world.date = jiff::civil::Date::constant(2026, 6, 4);
+        world.life.begin_day(&world.date.to_string());
+        world.begin(Activity::Wait);
+        let observation = observe(&world);
+        assert_eq!(
+            observation["ghost"]["doing"],
+            "waiting at the glass for the viewer"
+        );
+        assert_eq!(
+            observation["visiting_routine"],
+            "the viewer usually comes in the evening; it is about the time the viewer usually comes"
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.notice_viewer();
+        world.step(0.1);
+        let observation = observe(&world);
+        assert_eq!(
+            observation["visiting_routine"],
+            "the viewer usually comes in the evening"
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        for event in [EventKind::ExpectedArrival, EventKind::MissedVisit] {
+            assert!(
+                !event
+                    .words()
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+    }
+
+    #[test]
+    fn the_observation_describes_the_room_in_words_not_numbers() {
+        let mut world = World::new(1, 22.0);
+        world.drop_mote(Vec3::new(0.0, 1.0, 0.0));
+        world.poke();
+        let observation = observe(&world);
+        assert_eq!(observation["time_of_day"], "night");
+        assert_eq!(observation["season"], "summer");
+        assert_eq!(
+            observation["ghost"]["nature"],
+            world.life.nature.unwrap().words()
+        );
+        assert_eq!(observation["room"]["light"], "lamplight in the dark");
+        assert!(
+            observation["room"]["light_motes"]
+                .as_str()
+                .unwrap()
+                .starts_with("one light mote")
+        );
+        let events: Vec<&str> = observation["recent_events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event.as_str().unwrap())
+            .collect();
+        assert!(
+            events.contains(&"the viewer poked you (just now)"),
+            "{events:?}"
+        );
+        let text = observation.to_string();
+        assert!(
+            !text.chars().any(|character| character.is_ascii_digit()),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_viewers_pointer_can_be_darting_or_still_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.point_at(Some(Vec3::new(-0.6, 1.2, 1.4)));
+        assert_eq!(
+            observe(&world)["viewer"],
+            "watching through the glass, pointer still"
+        );
+        world.viewer.typing = true;
+        assert_eq!(
+            observe(&world)["viewer"],
+            "typing a message to the ghost, pointer still"
+        );
+        world.viewer.typing = false;
+        world.point_at(Some(Vec3::new(0.6, 1.2, 1.4)));
+        world.begin(Activity::Pounce);
+        world.ghost.position = world.ghost.plan.target;
+        world.step(0.05);
+        assert_eq!(
+            observe(&world)["viewer"],
+            "watching through the glass, pointer darting about"
+        );
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::Pounced)
+        );
+        assert!(
+            !observe(&world)
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.step(3.0);
+        assert_eq!(
+            observe(&world)["viewer"],
+            "watching through the glass, pointer still"
+        );
+    }
+
+    #[test]
+    fn storms_and_thunder_reach_the_minds_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.weather.sky = Sky::Rain;
+        world.weather.storm = true;
+        world.weather.until = 300.0;
+        world.weather.thunder_at = Some(0.05);
+        world.events.push(crate::world::Event {
+            time: 0.0,
+            kind: crate::world::EventKind::StormStarted,
+        });
+        world.step(0.1);
+        let observation = observe(&world);
+        assert_eq!(observation["outside_the_window"], "a thunderstorm");
+        let events = recent(&world, 8);
+        assert!(events.contains(&"a thunderstorm rolled in (just now)".to_owned()));
+        assert!(events.contains(&"thunder rumbled outside (just now)".to_owned()));
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+
+    #[test]
+    fn the_ghost_reports_what_it_sees_where() {
+        let mut world = World::new(1, 12.0);
+        world.ghost.position = Vec3::new(0.0, 1.2, 0.0);
+        world.ghost.heading = -Vec3::Z;
+        let sight = observe(&world)["sight"].clone();
+        assert_eq!(sight["facing"], "toward the back wall and the window");
+        assert_eq!(sight["looking_at"], "the window, showing a clear sky");
+        let in_view: Vec<&str> = sight["in_view"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|seen| seen.as_str().unwrap())
+            .collect();
+        assert!(
+            in_view.iter().any(
+                |seen| seen.starts_with("the floor lamp, on: ") && seen.contains("to the left")
+            ),
+            "{in_view:?}"
+        );
+        assert!(sight["out_of_view"].as_str().unwrap().contains("viewer"));
+    }
+
+    #[test]
+    fn the_ghost_tells_how_close_it_is_to_the_viewer_and_what_it_loves() {
+        let mut world = World::new(1, 12.0);
+        let observation = observe(&world);
+        assert_eq!(observation["bond_with_viewer"], "barely knows them");
+        assert_eq!(observation["ghost"]["loves"], "nothing in particular yet");
+        assert_eq!(observation["ghost"]["awake"], "awake");
+        world.life.bond = 0.6;
+        for _ in 0..8 {
+            world
+                .life
+                .note(&crate::world::EventKind::Began(Activity::Tend));
+        }
+        world.ghost.asleep = 1.0;
+        let observation = observe(&world);
+        assert_eq!(observation["bond_with_viewer"], "close to them");
+        assert_eq!(observation["ghost"]["loves"], "tending the plant");
+        assert_eq!(observation["ghost"]["awake"], "fast asleep and dreaming");
+    }
+
+    #[test]
+    fn the_plant_reads_by_size_and_water() {
+        let thirsty = Plant {
+            position: Vec3::ZERO,
+            growth: 0.85,
+            thirst: 0.9,
+            blossom: 1.0,
+            droop: 0.8,
+            ..Plant::default()
+        };
+        assert_eq!(
+            plant(&thirsty),
+            "flowers fading, very thirsty; the plant is drooping"
+        );
+    }
+
+    #[test]
+    fn a_held_ball_is_described_in_words_in_the_ghosts_arms() {
+        let mut world = World::new(1, 12.0);
+        world.begin(Activity::Fetch);
+        world.ball.held = true;
+        world.ball.velocity = Vec3::X;
+        let observation = observe(&world);
+        assert_eq!(observation["room"]["ball"], "in your arms");
+        assert_eq!(thing(&world, Thing::Ball), "the ball, held by you");
+        let text = observation.to_string();
+        assert!(
+            !text.chars().any(|character| character.is_ascii_digit()),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn visitors_and_their_events_are_described_only_in_words() {
+        use crate::world::{
+            Event, EventKind, Random,
+            visitor::{Bird, Moth},
+        };
+
+        let mut world = World::new(1, 12.0);
+        let mut random = Random::new(1);
+        let mut bird = Bird::new(0.0, 0.0, &mut random);
+        for (time, perch, words) in [
+            (1.0, Perch::Tree, "flying"),
+            (5.0, Perch::Tree, "perched on the tree"),
+            (5.0, Perch::Sill, "on the sill"),
+        ] {
+            bird.perch = perch;
+            world.visitors.bird = Some(bird);
+            world.time = time;
+            world.ghost.heading = (bird.position(time) - world.ghost.position).normalize();
+            let observation = observe(&world).to_string();
+            assert!(observation.contains(&format!("a little bird outside the window, {words}")));
+            assert!(
+                !observation
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+        let mut moth = Moth::new(world.time, &mut random);
+        moth.position = world.lamp.bulb() + Vec3::new(0.3, 0.15, 0.3);
+        world.visitors.moth = Some(moth);
+        world.ghost.heading = (moth.position - world.ghost.position).normalize();
+        for kind in [
+            EventKind::BirdLanded,
+            EventKind::BirdSang,
+            EventKind::BirdFlewOff { startled: true },
+            EventKind::MothArrived,
+            EventKind::MothLeft,
+            EventKind::Noticed("a moth at the lamp".to_owned()),
+        ] {
+            world.events.push(Event {
+                time: world.time,
+                kind,
+            });
+        }
+        let observation = observe(&world).to_string();
+        assert!(observation.contains("a moth fluttering around the lamp"));
+        assert!(
+            !observation
+                .chars()
+                .any(|character| character.is_ascii_digit()),
+            "{observation}"
+        );
+    }
+
+    #[test]
+    fn hours_name_the_time_of_day() {
+        assert_eq!(time_of_day(6.0), "early morning");
+        assert_eq!(time_of_day(13.0), "afternoon");
+        assert_eq!(time_of_day(23.5), "night");
+        assert_eq!(time_of_day(2.0), "night");
+    }
+
+    #[test]
+    fn night_sleep_naps_and_drowsy_interruptions_are_described_without_digits() {
+        let mut world = World::new(1, 23.0);
+        world.tuck_in();
+        assert_eq!(
+            observe(&world)["ghost"]["awake"],
+            "asleep for the night and dreaming"
+        );
+        world.poke();
+        assert_eq!(
+            observe(&world)["ghost"]["awake"],
+            "awake but drowsy after being woken in the night"
+        );
+        let text = observe(&world).to_string();
+        assert!(
+            !text.chars().any(|character| character.is_ascii_digit()),
+            "{text}"
+        );
+        world.hour = 14.0;
+        world.ghost.position = world.nook.bed(world.size());
+        world.ghost.needs.energy = 0.4;
+        world.begin(Activity::Rest);
+        world.step(4.0);
+        assert_eq!(observe(&world)["ghost"]["awake"], "napping and dreaming");
+    }
+
+    #[test]
+    fn seasons_snow_and_visible_moons_are_described_without_digits() {
+        let mut world = World::new(1, 22.0);
+        world.date = jiff::civil::Date::constant(2026, 3, 3);
+        assert_eq!(observe(&world)["season"], "spring");
+        assert_eq!(
+            outside_the_window(&world),
+            "a clear night sky with a full moon"
+        );
+        assert!(thing(&world, Thing::Window).contains("a full moon"));
+        world.date = jiff::civil::Date::constant(2026, 2, 17);
+        assert_eq!(outside_the_window(&world), "a clear night sky");
+        world.weather.sky = Sky::Snow;
+        world.weather.snow_cover = 0.8;
+        assert_eq!(observe(&world)["season"], "winter");
+        assert_eq!(outside_the_window(&world), "snow falling, the hills white");
+        assert!(thing(&world, Thing::Window).contains("snow falling"));
+        assert!(
+            !observe(&world)
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.weather.sky = Sky::Clear;
+        assert!(outside_the_window(&world).contains("hills white with snow"));
+        world.date = jiff::civil::Date::constant(2026, 3, 3);
+        world.hour = 12.0;
+        assert!(!outside_the_window(&world).contains("moon"));
+        world.hour = 22.0;
+        world.weather.sky = Sky::Rain;
+        assert!(!outside_the_window(&world).contains("moon"));
+    }
+
+    #[test]
+    fn the_glass_reports_the_newest_pictures_and_their_fading_in_words() {
+        use crate::world::{Doodle, Sketch};
+        use glam::Vec2;
+
+        let mut world = World::new(1, 12.0);
+        assert_eq!(observe(&world)["room"]["glass"], "clear");
+        for (index, sketch) in [Sketch::Smile, Sketch::Star, Sketch::Heart]
+            .into_iter()
+            .enumerate()
+        {
+            world.doodles.push(Doodle {
+                picture: crate::world::Picture::Sketch(sketch),
+                center: Vec2::ZERO,
+                size: 0.3,
+                started: index as f64,
+            });
+        }
+        world.time = Doodle::LIFETIME - 10.0;
+        let observation = observe(&world);
+        assert_eq!(
+            observation["room"]["glass"],
+            "a heart you drew in the fog, fading; a star you drew in the fog, fading"
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        world.time += 20.0;
+        assert_eq!(observe(&world)["room"]["glass"], "clear");
+    }
+
+    #[test]
+    fn a_hidden_ghost_reports_that_it_is_waiting_to_be_found() {
+        let mut world = World::new(1, 12.0);
+        world.begin(Activity::Hide);
+        world.step(15.0);
+        assert_eq!(
+            observe(&world)["ghost"]["doing"],
+            "hiding from the viewer and waiting to be found"
+        );
+        world.poke();
+        assert_eq!(
+            observe(&world)["ghost"]["doing"],
+            "just finished hiding from the viewer"
+        );
+    }
+
+    #[test]
+    fn occasions_and_decorations_are_named_in_words_without_digits() {
+        use jiff::civil::Date;
+
+        let mut world = World::new(1, 22.0);
+        for (date, birthday, occasion, decoration) in [
+            (
+                Date::constant(2026, 10, 24),
+                None,
+                "Halloween",
+                "a glowing jack-o'-lantern",
+            ),
+            (
+                Date::constant(2026, 12, 24),
+                None,
+                "the winter holidays",
+                "a little tree with twinkling lights",
+            ),
+            (
+                Date::constant(2026, 12, 31),
+                None,
+                "New Year's Eve",
+                "a little tree with twinkling lights",
+            ),
+            (
+                Date::constant(2027, 1, 1),
+                None,
+                "New Year's Day",
+                "a little tree with twinkling lights",
+            ),
+            (
+                Date::constant(2027, 2, 14),
+                None,
+                "Valentine's Day",
+                "a decoration",
+            ),
+            (
+                Date::constant(2028, 3, 1),
+                Some(Date::constant(2026, 3, 1)),
+                "its second birthday",
+                "a birthday cake with candles",
+            ),
+            (
+                Date::constant(2026, 6, 21),
+                None,
+                "an ordinary day",
+                "a decoration",
+            ),
+        ] {
+            world.date = date;
+            world.birthday = birthday;
+            world.step(0.05);
+            assert_eq!(observe(&world)["occasion"], occasion);
+            assert_eq!(thing(&world, Thing::Decoration), decoration);
+            let text = observe(&world).to_string();
+            assert!(
+                !text.chars().any(|character| character.is_ascii_digit()),
+                "{text}"
+            );
+        }
+        world.date = Date::constant(2026, 12, 31);
+        world.hour = 23.5;
+        world.step(0.05);
+        assert!(outside_the_window(&world).contains("fireworks"));
+        world.date = Date::constant(2027, 1, 1);
+        world.hour = 0.0;
+        world.step(0.05);
+        assert!(recent(&world, 8).contains(&"a new year began (just now)".to_owned()));
+        assert!(
+            !observe(&world)
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+
+    #[test]
+    fn seen_blocks_describe_the_tower_height_in_words_and_topplings_name_who_did_it() {
+        let mut world = World::new(1, 12.0);
+        assert_eq!(
+            thing(&world, Thing::Blocks),
+            "the toy blocks, scattered on the floor"
+        );
+        world.tower = Some(Vec3::ZERO);
+        for block in world.blocks.iter_mut().take(3) {
+            block.stacked = true;
+        }
+        world.ghost.heading =
+            (world.position_of(Thing::Blocks).unwrap() - world.ghost.position - Vec3::Y * 0.1)
+                .normalize();
+        let observation = observe(&world).to_string();
+        assert!(observation.contains("the toy blocks, stacked in a tower three blocks high"));
+        assert!(
+            !observation
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        for event in [
+            crate::world::EventKind::Built { height: 5 },
+            crate::world::EventKind::Toppled { by_viewer: true },
+            crate::world::EventKind::Toppled { by_viewer: false },
+        ] {
+            assert!(
+                !event
+                    .words()
+                    .chars()
+                    .any(|character| character.is_ascii_digit())
+            );
+        }
+    }
+
+    #[test]
+    fn the_observation_knows_the_viewers_name_and_describes_written_digits_in_words() {
+        let mut world = World::new(1, 12.0);
+        world.hear("my name is Mina");
+        assert!(world.write("2027"));
+        world.ghost.position = world.ghost.plan.target;
+        world.step(8.0);
+        let observation = observe(&world);
+        assert_eq!(observation["viewer_name"], "The viewer's name is Mina.");
+        assert!(
+            observation["room"]["glass"]
+                .as_str()
+                .unwrap()
+                .contains("two zero two seven")
+        );
+        assert!(
+            observation["room"]["glass"]
+                .as_str()
+                .unwrap()
+                .contains("wrong way round")
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+
+    #[test]
+    fn the_garden_and_its_events_reach_both_minds_in_words() {
+        use crate::world::{Event, EventKind, Flower, Seedling};
+        let mut world = World::new(1, 12.0);
+        world.plant.growth = 1.0;
+        world.plant.blossom = 0.7;
+        world.plant.bloom_age = 87_000.0;
+        world.plant.seeds = 2;
+        let mut tulip = Seedling::new(Flower::Tulip);
+        tulip.growth = 0.8;
+        world.seedlings = vec![tulip, Seedling::new(Flower::Daisy)];
+        world.seedlings[1].growth = 0.1;
+        for kind in [
+            EventKind::Planted(Flower::Poppy),
+            EventKind::Sprouted(Flower::Daisy),
+            EventKind::Flowered(Flower::Bluebell),
+            EventKind::Drooped,
+        ] {
+            world.events.push(Event {
+                time: world.time,
+                kind,
+            });
+        }
+        let observation = observe(&world);
+        let plant = observation["room"]["plant"].as_str().unwrap();
+        assert!(plant.contains("flowers fading"));
+        assert!(plant.contains("has a seed ready"));
+        assert_eq!(
+            observation["room"]["pots"],
+            "two little pots: a tulip in bud and a daisy sprout"
+        );
+        assert!(thing(&world, Thing::Seedlings).contains("a tulip in bud"));
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+
+    #[test]
+    fn observations_name_the_visiting_friend_without_digits_or_a_flood_of_tags() {
+        let mut world = World::new(2, 20.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 25);
+        world.life.wish = Some(crate::world::Wishing {
+            wish: crate::world::Wish::Tower { height: 3 },
+            day: world.date.to_string(),
+            said: None,
+        });
+        world.step(0.1);
+        world.invite_friend();
+        let name = world.life.friend.as_ref().unwrap().name.clone();
+        let observation = observe(&world);
+        assert!(observation["friend"].as_str().unwrap().contains(&name));
+        assert!(
+            observation["friend"]
+                .as_str()
+                .unwrap()
+                .contains("still a new friend")
+        );
+        assert!(
+            !observation
+                .to_string()
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+        for _ in 0..12 {
+            world.events.push(crate::world::Event {
+                time: world.time,
+                kind: crate::world::EventKind::Tagged { by_friend: true },
+            });
+        }
+        let recent = recent(&world, 8);
+        assert!(
+            recent
+                .iter()
+                .any(|line| line.contains("floated in through the window"))
+        );
+        assert!(!recent.iter().any(|line| line.contains("tagged")));
+    }
+
+    #[test]
+    fn a_viewer_who_left_reads_as_away_despite_a_pointer_or_unsent_words() {
+        let mut world = World::new(1, 12.0);
+        world.notice_viewer();
+        world.viewer.pointer = Some(glam::Vec3::new(0.0, 1.0, 1.5));
+        world.viewer.typing = true;
+        assert_eq!(
+            viewer(&world),
+            "typing a message to the ghost, pointer still"
+        );
+        world.look_away(true);
+        world.step(25.0);
+        assert_eq!(viewer(&world), "away");
+    }
+
+    #[test]
+    fn the_return_story_reaches_the_minds_only_while_the_session_is_young() {
+        let mut world = World::new(1, 12.0);
+        world.away = Some(crate::world::away::story(
+            "2026-06-21T12:00:00".parse().unwrap(),
+            "2026-06-21T16:00:00".parse().unwrap(),
+            1,
+            &world.life,
+            None,
+        ));
+        let observation = observe(&world);
+        let summary = observation["while_the_viewer_was_away"].as_str().unwrap();
+        assert!(summary.starts_with("While you were away:"));
+        assert!(!summary.chars().any(|character| character.is_ascii_digit()));
+        world.time = 900.0;
+        assert!(observe(&world)["while_the_viewer_was_away"].is_null());
+        assert!(
+            for_message(&world, "what did you do while I was away?")["while_the_viewer_was_away"]
+                .is_string()
+        );
+        assert!(for_message(&world, "hello")["while_the_viewer_was_away"].is_null());
+        world.time = 0.0;
+        world.away.as_mut().unwrap().told = true;
+        assert!(observe(&world)["while_the_viewer_was_away"].is_null());
+        assert!(for_message(&world, "뭐 하고 있었어?")["while_the_viewer_was_away"].is_string());
+    }
+
+    #[test]
+    fn viewer_drawings_are_described_without_coordinates_or_scores() {
+        let mut world = World::new(1, 12.0);
+        world.draw_on_glass(Vec3::new(-0.4, 1.2, crate::world::ROOM_MAX.z));
+        world.draw_on_glass(Vec3::new(0.4, 1.2, crate::world::ROOM_MAX.z));
+        world.lift_finger();
+        assert!(glass(&world).contains("a picture you haven't studied yet"));
+        world.step(15.0);
+        let observation = observe(&world).to_string();
+        assert!(observation.contains("the viewer drew a line on the glass"));
+        assert!(
+            !observation
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        );
+    }
+    #[test]
+    fn landmark_days_and_anniversaries_reach_both_minds_in_words() {
+        let mut world = World::new(3, 12.0);
+        world.birthday = Some("2026-03-03".parse().unwrap());
+        for (today, previous, words) in [
+            ("2026-06-10", "2026-05-10", "hundredth"),
+            ("2028-11-26", "2028-10-26", "thousandth"),
+        ] {
+            world.date = today.parse().unwrap();
+            world.life.milestones = vec![crate::world::Entry {
+                day: previous.to_owned(),
+                text: "I learned your name: Sam.".to_owned(),
+                korean: None,
+            }];
+            let observation = observe(&world);
+            assert!(observation["day_of_life"].as_str().unwrap().contains(words));
+            assert_eq!(
+                observation["anniversaries"][0],
+                "Today is one month since it learned the viewer's name: Sam."
+            );
+            assert!(
+                !observation
+                    .to_string()
+                    .chars()
+                    .any(|letter| letter.is_ascii_digit())
+            );
+        }
+        world.birthday = None;
+        assert!(observe(&world)["day_of_life"].is_null());
+    }
+
+    #[test]
+    fn observations_name_the_wish_its_age_and_wishes_granted_today() {
+        use crate::world::{Granted, Wish, Wishing};
+        let mut world = World::new(17, 12.0);
+        world.life.begin_day(&world.date.to_string());
+        world.life.wish = Some(Wishing {
+            wish: Wish::Rainbow,
+            day: "2026-06-19".to_owned(),
+            said: None,
+        });
+        world.life.granted.push(Granted {
+            wish: Wish::Tower { height: 4 },
+            day: world.date.to_string(),
+        });
+        let observation = observe(&world);
+        let wish = observation["wish"].as_str().unwrap();
+        assert!(wish.contains("to see a rainbow; it made the wish two days ago"));
+        assert!(wish.contains("came true today: to build a tower four blocks high"));
+        assert!(!wish.chars().any(|letter| letter.is_ascii_digit()));
+    }
+    #[test]
+    fn observations_describe_the_hunt_without_disclosing_an_unseen_treasure() {
+        let mut world = World::new(7, 12.0);
+        world.ghost.position = Vec3::new(0.0, 0.7, 0.8);
+        world.start_hiding().unwrap();
+        world.hide_treasure(Vec3::new(0.0, 0.0, -0.8));
+        world.ghost.heading = Vec3::Z;
+        world.hear("warmer");
+        let observation = observe(&world);
+        assert_eq!(
+            observation["treasure_hunt"],
+            "you are searching for the treasure the viewer hid; they said you are getting warmer"
+        );
+        assert!(
+            !observation["sight"]["in_view"]
+                .to_string()
+                .contains("a treasure the viewer hid")
+        );
+        let spot = world.hunt.as_ref().unwrap().position;
+        world.ghost.heading = (spot - world.ghost.position - Vec3::Y * 0.1).normalize();
+        let observation = observe(&world);
+        assert!(
+            observation["sight"]["in_view"]
+                .to_string()
+                .contains("a treasure the viewer hid")
+        );
+    }
+}

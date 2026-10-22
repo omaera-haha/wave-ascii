@@ -1,12 +1,19 @@
 use std::env;
-use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
-use std::process::{Command, Stdio};
+use std::io::{self, Write};
+use std::time::Duration;
+
+use crossterm::event::{
+    self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableFocusChange, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton,
+    MouseEventKind,
+};
+use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, SetTitle};
+use crossterm::{cursor, execute};
 
 use crate::canvas::Canvas;
 use crate::color::ColorMode;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Size {
     pub columns: usize,
     pub rows: usize,
@@ -26,19 +33,20 @@ impl Size {
             rows: dimension("LINES", 24),
         }
     }
-
-    fn parse(output: &str) -> Option<Self> {
-        let mut dimensions = output.split_whitespace();
-        let rows = dimensions.next()?.parse().ok()?;
-        let columns = dimensions.next()?.parse().ok()?;
-        (rows > 0 && columns > 0).then_some(Self { columns, rows })
-    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Key {
-    Character(u8),
+    Character(char),
+    /// A letter typed with Ctrl held, such as Ctrl+C.
+    Control(char),
     Enter,
+    Escape,
+    Backspace,
+    Delete,
+    Tab,
+    /// Shift+Tab.
+    BackTab,
     Up,
     Down,
     Left,
@@ -47,118 +55,197 @@ pub enum Key {
     End,
     PageUp,
     PageDown,
-    /// Shift+Tab.
-    BackTab,
-    Escape,
 }
 
-impl Key {
-    // Raw mode delivers arrows as `ESC [ A`-style sequences, so a lone ESC is
-    // the Escape key only when no sequence follows it in the same read.
-    fn parse(bytes: &[u8]) -> Vec<Self> {
-        let mut keys = Vec::new();
-        let mut index = 0;
-        while index < bytes.len() {
-            let byte = bytes[index];
-            index += 1;
-            if byte != 27 || !matches!(bytes.get(index), Some(b'[' | b'O')) {
-                keys.push(match byte {
-                    27 => Self::Escape,
-                    // Raw mode turns off the translation of Enter's CR to LF.
-                    b'\r' | b'\n' => Self::Enter,
-                    _ => Self::Character(byte),
-                });
-                continue;
+/// What a mouse did, at a cell counted from 0 at the top left of the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Mouse {
+    pub column: usize,
+    pub row: usize,
+    pub action: MouseAction,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseAction {
+    /// The pointer moved with no button held.
+    Move,
+    /// The left button went down.
+    Press,
+    /// The pointer moved with the left button held.
+    Drag,
+    /// The left button came up.
+    Release,
+    ScrollUp,
+    ScrollDown,
+    DrawPress,
+    DrawDrag,
+    DrawRelease,
+}
+
+/// Something that arrived from the terminal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Input {
+    Key(Key),
+    /// Text pasted all at once.
+    Paste(String),
+    Mouse(Mouse),
+    /// The terminal changed size to this many columns and rows.
+    Resize {
+        columns: u16,
+        rows: u16,
+    },
+    /// The terminal window gained (true) or lost (false) the focus, in
+    /// terminals that report it.
+    Focus(bool),
+}
+
+impl Input {
+    /// The input an event stands for, if the app uses it. Key releases and
+    /// unsupported buttons are left out.
+    fn from_event(event: Event) -> Option<Self> {
+        match event {
+            Event::Key(key) if key.kind != KeyEventKind::Release => {
+                let control = key.modifiers.contains(KeyModifiers::CONTROL);
+                Some(Self::Key(match key.code {
+                    KeyCode::Char(character) if control => {
+                        Key::Control(character.to_ascii_lowercase())
+                    }
+                    KeyCode::Char(character) => Key::Character(character),
+                    KeyCode::Enter => Key::Enter,
+                    KeyCode::Esc => Key::Escape,
+                    KeyCode::Backspace => Key::Backspace,
+                    KeyCode::Delete => Key::Delete,
+                    KeyCode::Tab => Key::Tab,
+                    KeyCode::BackTab => Key::BackTab,
+                    KeyCode::Up => Key::Up,
+                    KeyCode::Down => Key::Down,
+                    KeyCode::Left => Key::Left,
+                    KeyCode::Right => Key::Right,
+                    KeyCode::Home => Key::Home,
+                    KeyCode::End => Key::End,
+                    KeyCode::PageUp => Key::PageUp,
+                    KeyCode::PageDown => Key::PageDown,
+                    _ => return None,
+                }))
             }
-            // Read parameters up to the final byte of the sequence. Keys with
-            // modifiers add parameters after a `;`, so only the first counts.
-            index += 1;
-            let start = index;
-            while index < bytes.len() && !(0x40..=0x7e).contains(&bytes[index]) {
-                index += 1;
+            Event::Mouse(mouse) => {
+                let action = match mouse.kind {
+                    MouseEventKind::Moved => MouseAction::Move,
+                    MouseEventKind::Down(MouseButton::Left) => MouseAction::Press,
+                    MouseEventKind::Drag(MouseButton::Left) => MouseAction::Drag,
+                    MouseEventKind::Up(MouseButton::Left) => MouseAction::Release,
+                    MouseEventKind::Down(MouseButton::Right) => MouseAction::DrawPress,
+                    MouseEventKind::Drag(MouseButton::Right) => MouseAction::DrawDrag,
+                    MouseEventKind::Up(MouseButton::Right) => MouseAction::DrawRelease,
+                    MouseEventKind::ScrollUp => MouseAction::ScrollUp,
+                    MouseEventKind::ScrollDown => MouseAction::ScrollDown,
+                    _ => return None,
+                };
+                Some(Self::Mouse(Mouse {
+                    column: usize::from(mouse.column),
+                    row: usize::from(mouse.row),
+                    action,
+                }))
             }
-            let parameter = bytes[start..index].split(|byte| *byte == b';').next();
-            let key = match (bytes.get(index), parameter) {
-                (Some(b'A'), _) => Some(Self::Up),
-                (Some(b'B'), _) => Some(Self::Down),
-                (Some(b'C'), _) => Some(Self::Right),
-                (Some(b'D'), _) => Some(Self::Left),
-                (Some(b'H'), _) | (Some(b'~'), Some(b"1" | b"7")) => Some(Self::Home),
-                (Some(b'F'), _) | (Some(b'~'), Some(b"4" | b"8")) => Some(Self::End),
-                (Some(b'~'), Some(b"5")) => Some(Self::PageUp),
-                (Some(b'~'), Some(b"6")) => Some(Self::PageDown),
-                (Some(b'Z'), _) => Some(Self::BackTab),
-                _ => None,
-            };
-            keys.extend(key);
-            index += 1;
+            Event::Paste(text) => Some(Self::Paste(text)),
+            Event::Resize(columns, rows) => Some(Self::Resize { columns, rows }),
+            Event::FocusGained => Some(Self::Focus(true)),
+            Event::FocusLost => Some(Self::Focus(false)),
+            _ => None,
         }
-        keys
     }
 }
 
+/// The terminal in raw mode on the alternate screen, with the cursor hidden
+/// and optional mouse capture. Dropping it puts everything back, so code must let
+/// it drop normally instead of calling `process::exit`.
 pub struct Terminal {
-    tty: File,
-    saved_mode: String,
     previous: Option<Canvas>,
     output: String,
+    mouse_capture: bool,
+    title: Option<String>,
 }
 
 impl Terminal {
     pub fn open() -> io::Result<Self> {
-        let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
-        let saved_mode = stty(&tty, &["-g"])?;
-        stty(&tty, &["raw", "-echo", "min", "0", "time", "0"])?;
+        terminal::enable_raw_mode()?;
         let terminal = Self {
-            tty,
-            saved_mode,
             previous: None,
             output: String::new(),
+            mouse_capture: true,
+            title: None,
         };
-        let mut output = io::stdout().lock();
-        output.write_all(b"\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H")?;
-        output.flush()?;
+        execute!(
+            io::stdout(),
+            crossterm::style::Print("\x1b[22;0t"),
+            EnterAlternateScreen,
+            cursor::Hide,
+            EnableMouseCapture,
+            EnableBracketedPaste,
+            EnableFocusChange,
+            terminal::Clear(terminal::ClearType::All),
+        )?;
         Ok(terminal)
     }
 
-    pub fn size(&self) -> Size {
-        stty(&self.tty, &["size"])
-            .ok()
-            .and_then(|output| Size::parse(&output))
-            .unwrap_or_else(Size::from_environment)
+    /// Lets the terminal select text while a reading panel is open.
+    pub fn set_mouse_capture(&mut self, on: bool) -> io::Result<()> {
+        if self.mouse_capture != on {
+            if on {
+                execute!(io::stdout(), EnableMouseCapture)?;
+            } else {
+                execute!(io::stdout(), DisableMouseCapture)?;
+            }
+            self.mouse_capture = on;
+        }
+        Ok(())
     }
 
-    pub fn keys(&mut self) -> io::Result<Vec<Key>> {
-        let mut keys = [0; 64];
-        let count = self.tty.read(&mut keys)?;
-        Ok(Key::parse(&keys[..count]))
+    /// Writes the window title only when its text changes, including focus minutes.
+    pub fn set_title(&mut self, title: &str) -> io::Result<()> {
+        if self.title.as_deref() != Some(title) {
+            execute!(io::stdout(), SetTitle(title))?;
+            self.title = Some(title.to_owned());
+        }
+        Ok(())
+    }
+
+    pub fn size(&self) -> Size {
+        terminal::size()
+            .ok()
+            .filter(|(columns, rows)| *columns > 0 && *rows > 0)
+            .map_or_else(Size::from_environment, |(columns, rows)| Size {
+                columns: usize::from(columns),
+                rows: usize::from(rows),
+            })
+    }
+
+    /// The inputs that have arrived, waiting up to `wait` for the first.
+    pub fn inputs(&mut self, wait: Duration) -> io::Result<Vec<Input>> {
+        let mut inputs = Vec::new();
+        let mut wait = wait;
+        while event::poll(wait)? {
+            inputs.extend(Input::from_event(event::read()?));
+            wait = Duration::ZERO;
+        }
+        Ok(inputs)
     }
 
     /// Clears the screen and forgets what it showed, so the next draw is
     /// complete. Call it after resizing or changing how cells are encoded.
     pub fn clear(&mut self) -> io::Result<()> {
         self.previous = None;
-        io::stdout().lock().write_all(b"\x1b[2J\x1b[H")
+        execute!(io::stdout(), terminal::Clear(terminal::ClearType::All))
     }
 
     /// Draws the canvas, rewriting only cells that changed since the last
-    /// draw, with the status line below it. The frame is wrapped in
-    /// synchronized-output markers so terminals that support them never show
-    /// a half-drawn frame.
-    pub fn draw(&mut self, canvas: &Canvas, color: ColorMode, status: &str) -> io::Result<()> {
-        // The status is padded by a space on each side.
-        let status: String = status
-            .chars()
-            .take(canvas.columns().saturating_sub(2))
-            .collect();
+    /// draw. The frame is wrapped in synchronized-output markers so terminals
+    /// that support them never show a half-drawn frame.
+    pub fn draw(&mut self, canvas: &Canvas, color: ColorMode) -> io::Result<()> {
         self.output.clear();
         self.output.push_str("\x1b[?2026h");
         canvas.redraw(self.previous.as_ref(), color, &mut self.output);
-        self.output.push_str(&format!(
-            "\x1b[{};1H\x1b[0;7m {status} \x1b[0m\x1b[K\x1b[?2026l",
-            canvas.rows() + 1
-        ));
-
+        self.output.push_str("\x1b[0m\x1b[?2026l");
         let mut stdout = io::stdout().lock();
         stdout.write_all(self.output.as_bytes())?;
         stdout.flush()?;
@@ -169,88 +256,124 @@ impl Terminal {
 
 impl Drop for Terminal {
     fn drop(&mut self) {
-        let _ = stty(&self.tty, &[self.saved_mode.trim()]);
-        let mut output = io::stdout().lock();
-        let _ = output.write_all(b"\x1b[?25h\x1b[?1049l");
-        let _ = output.flush();
+        let _ = execute!(
+            io::stdout(),
+            DisableFocusChange,
+            DisableBracketedPaste,
+            DisableMouseCapture,
+            cursor::Show,
+            LeaveAlternateScreen,
+            crossterm::style::Print("\x1b[23;0t"),
+        );
+        let _ = terminal::disable_raw_mode();
     }
-}
-
-fn stty(tty: &File, arguments: &[&str]) -> io::Result<String> {
-    let output = Command::new("stty")
-        .args(arguments)
-        .stdin(Stdio::from(tty.try_clone()?))
-        .output()?;
-    if !output.status.success() {
-        return Err(io::Error::other(format!(
-            "stty failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyEvent, MouseEvent};
 
-    #[test]
-    fn arrow_sequences_are_not_mistaken_for_escape() {
-        assert_eq!(
-            Key::parse(b"\x1b[A\x1bOD\x1b[1;5Cq\x1b"),
-            [
-                Key::Up,
-                Key::Left,
-                Key::Right,
-                Key::Character(b'q'),
-                Key::Escape
-            ]
-        );
-        assert_eq!(Key::parse(b"\x1b\x1b[B"), [Key::Escape, Key::Down]);
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> Event {
+        Event::Key(KeyEvent::new(code, modifiers))
+    }
+
+    fn mouse(kind: MouseEventKind) -> Event {
+        Event::Mouse(MouseEvent {
+            kind,
+            column: 12,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        })
     }
 
     #[test]
-    fn enter_arrives_as_a_carriage_return_in_raw_mode() {
-        assert_eq!(Key::parse(b"\r"), [Key::Enter]);
-        assert_eq!(Key::parse(b"\n"), [Key::Enter]);
-        assert_eq!(Key::parse(b"\t"), [Key::Character(b'\t')]);
-    }
-
-    #[test]
-    fn home_and_end_are_read_in_every_common_encoding() {
-        for sequence in [&b"\x1b[H"[..], b"\x1bOH", b"\x1b[1~", b"\x1b[7~"] {
-            assert_eq!(Key::parse(sequence), [Key::Home], "{sequence:?}");
-        }
-        for sequence in [&b"\x1b[F"[..], b"\x1bOF", b"\x1b[4~", b"\x1b[8~"] {
-            assert_eq!(Key::parse(sequence), [Key::End], "{sequence:?}");
+    fn typed_characters_keep_their_case_and_unicode() {
+        for character in ['a', 'Q', '한', '?'] {
+            assert_eq!(
+                Input::from_event(key(KeyCode::Char(character), KeyModifiers::SHIFT)),
+                Some(Input::Key(Key::Character(character)))
+            );
         }
     }
 
     #[test]
-    fn page_keys_and_shift_tab_are_recognized_with_or_without_modifiers() {
+    fn letters_with_ctrl_become_control_keys() {
         assert_eq!(
-            Key::parse(b"\x1b[5~\x1b[6~\x1b[5;5~\x1b[Z"),
-            [Key::PageUp, Key::PageDown, Key::PageUp, Key::BackTab]
+            Input::from_event(key(KeyCode::Char('C'), KeyModifiers::CONTROL)),
+            Some(Input::Key(Key::Control('c')))
         );
     }
 
     #[test]
-    fn unknown_sequences_are_skipped_whole() {
-        // F5 and Insert, then a key the app knows.
-        assert_eq!(Key::parse(b"\x1b[15~\x1b[2~j"), [Key::Character(b'j')]);
+    fn key_releases_are_ignored() {
+        let mut release = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        release.kind = KeyEventKind::Release;
+        assert_eq!(Input::from_event(Event::Key(release)), None);
     }
 
     #[test]
-    fn a_sequence_cut_off_at_the_end_of_a_read_produces_no_key() {
-        assert_eq!(Key::parse(b"q\x1b["), [Key::Character(b'q')]);
-        assert_eq!(Key::parse(b"\x1b[5"), []);
+    fn the_left_button_moves_and_wheel_are_reported_at_their_cell() {
+        let cases = [
+            (MouseEventKind::Moved, MouseAction::Move),
+            (MouseEventKind::Down(MouseButton::Left), MouseAction::Press),
+            (MouseEventKind::Drag(MouseButton::Left), MouseAction::Drag),
+            (MouseEventKind::Up(MouseButton::Left), MouseAction::Release),
+            (
+                MouseEventKind::Down(MouseButton::Right),
+                MouseAction::DrawPress,
+            ),
+            (
+                MouseEventKind::Drag(MouseButton::Right),
+                MouseAction::DrawDrag,
+            ),
+            (
+                MouseEventKind::Up(MouseButton::Right),
+                MouseAction::DrawRelease,
+            ),
+            (MouseEventKind::ScrollUp, MouseAction::ScrollUp),
+            (MouseEventKind::ScrollDown, MouseAction::ScrollDown),
+        ];
+        for (kind, action) in cases {
+            assert_eq!(
+                Input::from_event(mouse(kind)),
+                Some(Input::Mouse(Mouse {
+                    column: 12,
+                    row: 4,
+                    action
+                }))
+            );
+        }
+        assert_eq!(
+            Input::from_event(mouse(MouseEventKind::Down(MouseButton::Middle))),
+            None
+        );
     }
 
     #[test]
-    fn stty_rows_and_columns_are_read_in_the_correct_order() {
-        let size = Size::parse("24 80\n").unwrap();
-        assert_eq!((size.columns, size.rows), (80, 24));
-        assert!(Size::parse("0 0").is_none());
-        assert!(Size::parse("not a size").is_none());
+    fn pastes_and_resizes_come_through() {
+        assert_eq!(
+            Input::from_event(Event::Paste("sk-key".into())),
+            Some(Input::Paste("sk-key".into()))
+        );
+        assert_eq!(
+            Input::from_event(Event::Resize(80, 24)),
+            Some(Input::Resize {
+                columns: 80,
+                rows: 24
+            })
+        );
+    }
+
+    #[test]
+    fn focus_changes_come_through() {
+        assert_eq!(
+            Input::from_event(Event::FocusGained),
+            Some(Input::Focus(true))
+        );
+        assert_eq!(
+            Input::from_event(Event::FocusLost),
+            Some(Input::Focus(false))
+        );
     }
 }

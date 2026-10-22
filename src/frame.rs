@@ -112,14 +112,6 @@ impl Shade {
         self.color * self.brightness
     }
 
-    pub fn brighter(self, other: Self) -> Self {
-        if other.brightness > self.brightness {
-            other
-        } else {
-            self
-        }
-    }
-
     fn clamped(self) -> Self {
         Self::new(
             self.brightness.clamp(0.0, 1.0),

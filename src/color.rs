@@ -150,15 +150,6 @@ pub fn value_and_hue(color: Vec3) -> (f32, Vec3) {
     }
 }
 
-/// Hue, saturation, and value, each from 0 to 1, to RGB.
-pub fn hsv(hue: f32, saturation: f32, value: f32) -> Vec3 {
-    let channel = |offset: f32| {
-        let k = (offset + hue.rem_euclid(1.0) * 6.0) % 6.0;
-        value - value * saturation * k.min(4.0 - k).clamp(0.0, 1.0)
-    };
-    Vec3::new(channel(5.0), channel(3.0), channel(1.0))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,14 +160,6 @@ mod tests {
         assert_eq!(palette_index(Rgb([0, 0, 0])), 16);
         assert_eq!(palette_index(Rgb([255, 255, 255])), 231);
         assert_eq!(palette_index(Rgb([128, 128, 128])), 244);
-    }
-
-    #[test]
-    fn hsv_produces_primary_colors() {
-        assert!(hsv(0.0, 1.0, 1.0).distance(Vec3::X) < 1e-5);
-        assert!(hsv(1.0 / 3.0, 1.0, 1.0).distance(Vec3::Y) < 1e-5);
-        assert!(hsv(2.0 / 3.0, 1.0, 1.0).distance(Vec3::Z) < 1e-5);
-        assert!(hsv(0.5, 0.0, 0.5).distance(Vec3::splat(0.5)) < 1e-5);
     }
 
     #[test]
