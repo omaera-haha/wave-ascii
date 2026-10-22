@@ -235,173 +235,230 @@ impl Sky {
 
 /// The color of the sky toward `direction`, a pixel spanning `spread`
 /// radians: the far hills, then the sky and everything in it.
+#[cfg(test)]
 pub fn sky(direction: Vec3, spread: f32, outside: &Outside) -> Vec3 {
-    let coordinates = chart(direction);
-    let footprint = (spread / CHART_HEIGHT).max(1e-5);
-    let sky = Sky::at_hour(outside.hour);
-    let rain = outside.rain.clamp(0.0, 1.0);
-    let storm = if outside.storm { rain } else { 0.0 };
-    let flash = outside.flash.clamp(0.0, 1.0);
-    let snow = outside.snow.clamp(0.0, 1.0);
-    let cloud = rain.max(snow * 0.85);
-    let elevation = direction.y.clamp(-1.0, 1.0).asin();
-    let mut color = sky
-        .horizon
-        .lerp(sky.zenith, smoothstep(-0.05, 0.75, elevation))
-        * EXPOSURE;
-    let night = (1.0 - sky.day) * (1.0 - sky.twilight * 0.85) * (1.0 - cloud).powi(2);
-
-    if night > 0.0 && elevation > 0.0 {
-        let inside = coordinates.cmpge(Vec2::ZERO).all() && coordinates.cmple(Vec2::ONE).all();
-        let twinkle = |seed: f32| 0.65 + 0.35 * (phase(outside.time, 0.7, TAU) + seed * TAU).sin();
-        if inside {
-            let stars = coordinates * stars::GRID;
-            let cell = stars.floor();
-            let seed = hash(cell);
-            let center = stars::center(cell);
-            let distance = ((stars - cell - center) / stars::GRID).length();
-            color += Vec3::new(0.78, 0.86, 1.0)
-                * coverage(distance - 0.0025, footprint * 0.5)
-                * stars::brightness(seed)
-                * twinkle(seed)
-                * night;
-        } else {
-            let (light, seed) = far_star(direction, spread);
-            color += Vec3::new(0.78, 0.86, 1.0) * light * twinkle(seed) * night;
-        }
-    }
-
-    let proportions = Vec2::new(1.0, CHART_HEIGHT / CHART_WIDTH);
-    if let Some(streak) = &outside.meteor {
-        color += Vec3::new(0.86, 0.92, 1.0)
-            * shooting_star(coordinates, footprint, streak, proportions)
-            * night;
-    }
-
-    let moon_point = (coordinates - outside.moon()) * proportions;
-    let moon_distance = moon_point.length();
-    if night > 0.0 && moon_distance > 0.06 && !outside.constellations.is_empty() {
-        let margin = Vec2::splat(0.0007 + footprint);
-        let mut lines: f32 = 0.0;
-        for segment in &outside.constellations {
-            if coordinates.cmpge(segment.minimum - margin).all()
-                && coordinates.cmple(segment.maximum + margin).all()
-            {
-                lines = lines.max(coverage(
-                    capsule(coordinates, segment.start, segment.end, 0.0007),
-                    footprint * 0.5,
-                ));
-            }
-        }
-        color += Vec3::new(0.7, 0.8, 1.0)
-            * lines
-            * (outside.constellation_base + outside.constellation_glow)
-            * night;
-    }
-    let lunar_night = (1.0 - sky.day) * (1.0 - cloud * 0.8);
-    if lunar_night > 0.0 && moon_distance < 0.4 {
-        let angle = outside.moon_phase * TAU;
-        let across = if outside.moon_phase < 0.5 {
-            moon_point.x
-        } else {
-            -moon_point.x
-        };
-        let terminator = angle.cos() * (0.05_f32.powi(2) - moon_point.y.powi(2)).max(0.0).sqrt();
-        let lit = coverage(terminator - across, footprint * 0.5);
-        let fullness = (1.0 - angle.cos()) * 0.5;
-        let moon = coverage(moon_distance - 0.05, footprint * 0.5)
-            * lit
-            * smoothstep(0.0, 0.015, fullness)
-            + (-moon_distance.powi(2) / 0.012).exp() * 0.12 * fullness;
-        color += Vec3::new(0.78, 0.85, 1.0) * moon * lunar_night;
-    }
-
-    let sun_distance = ((coordinates - outside.sun()) * proportions).length();
-    let sunlight = coverage(sun_distance - 0.04, footprint * 0.5)
-        + (-sun_distance.powi(2) / 0.02).exp() * 0.4;
-    color += Vec3::new(1.0, 0.77, 0.38) * sunlight * sky.day * (1.0 - cloud * 0.9);
-
-    // A deck of clouds overhead, drifting with the wind.
-    if direction.y > 0.004 {
-        let rise = direction.y.max(0.02);
-        let deck = Vec2::new(direction.x, direction.z) / rise * CLOUD_DECK;
-        let drift = phase(outside.time, 0.25, 4096.0)
-            + (outside.wind_travel * 0.6).rem_euclid(4096.0) as f32;
-        let deck = deck * 0.055 - Vec2::new(drift * 0.055, drift * 0.02);
-        // Toward the horizon a pixel covers more of the deck; blur there.
-        let blur = smoothstep(0.15, 0.8, spread * CLOUD_DECK * 0.055 / (rise * rise));
-        let clouds = noise(deck) * 0.65 + noise(deck * 2.1 + Vec2::splat(7.3)) * 0.35;
-        let clouds = mix(clouds, 0.5, blur);
-        let clouds = smoothstep(0.5 - storm * 0.15 - cloud * 0.1, 0.74 - storm * 0.15, clouds)
-            * smoothstep(0.02, 0.12, elevation);
-        let cloud_color = Vec3::new(0.055, 0.065, 0.1)
-            .lerp(Vec3::new(0.94, 0.96, 1.0), sky.day)
-            .lerp(Vec3::new(0.86, 0.57, 0.63), sky.twilight)
-            * (EXPOSURE + 0.24);
-        color = color.lerp(cloud_color, clouds * 0.6);
-    }
-    color = weather_color(color, cloud) * (1.0 - outside.storm_dimming());
-    color = color.lerp(Vec3::new(0.75, 0.86, 1.0), flash * 0.85);
-
-    if let Some(burst) = firework(outside) {
-        color += burst.sparks(coordinates, footprint);
-    }
-
-    if outside.rainbow > 0.0 {
-        let radius = coordinates.distance(Vec2::new(0.5, 0.04));
-        let primary = spectrum((radius - 0.72) / 0.06)
-            * coverage((radius - 0.75).abs() - 0.03, footprint * 0.5)
-            * 0.38;
-        let secondary = spectrum(1.0 - (radius - 0.815) / 0.09)
-            * coverage((radius - 0.86).abs() - 0.045, footprint * 0.5)
-            * 0.09;
-        color += (primary + secondary) * outside.rainbow.min(1.0) * (1.0 - rain * 0.65);
-    }
-
-    if flash > 0.0 {
-        color += Vec3::new(0.85, 0.92, 1.0)
-            * lightning(coordinates, footprint, outside.last_flash)
-            * flash;
-    }
-    for passing in outside.passersby.iter().flatten() {
-        if matches!(passing.kind, Passerby::Squirrel | Passerby::Snowman) {
-            continue;
-        }
-        color = passerby(color, coordinates, footprint, passing, &sky, cloud);
-    }
-    hills(color, direction, spread, outside, &sky, flash)
+    Heavens::new(outside).sky(direction, spread)
 }
 
-/// The far hills, ridge over ridge around the whole horizon.
-fn hills(
-    mut color: Vec3,
-    direction: Vec3,
-    spread: f32,
-    outside: &Outside,
-    sky: &Sky,
+/// The sky for one frame, with what every pixel shares worked out once.
+pub struct Heavens<'a> {
+    outside: &'a Outside,
+    sky: Sky,
+    rain: f32,
+    storm: f32,
     flash: f32,
-) -> Vec3 {
-    let elevation = direction.y.clamp(-1.0, 1.0).asin();
-    if elevation > 0.09 {
-        return color;
+    cloud: f32,
+    night: f32,
+    lunar_night: f32,
+    sun: Vec2,
+    moon: Vec2,
+    cloud_color: Vec3,
+    drift: f32,
+    twinkle: f32,
+    firework: Option<Firework>,
+    /// The far hills' colors, far to near, lit and hazed.
+    hills: [Vec3; 3],
+    dimming: f32,
+}
+
+impl<'a> Heavens<'a> {
+    pub fn new(outside: &'a Outside) -> Self {
+        let sky = Sky::at_hour(outside.hour);
+        let rain = outside.rain.clamp(0.0, 1.0);
+        let snow = outside.snow.clamp(0.0, 1.0);
+        let cloud = rain.max(snow * 0.85);
+        let flash = outside.flash.clamp(0.0, 1.0);
+        let light = land_light(&sky, flash);
+        let haze = outside.haze();
+        let land = land_colors(outside.season);
+        let hills = std::array::from_fn(|index| {
+            let white = Vec3::new(0.78, 0.86, 0.96) + Vec3::splat(index as f32 * 0.015);
+            let land = land[index].lerp(white, outside.snow_cover.clamp(0.0, 1.0));
+            weather_color(land * light, cloud).lerp(haze, 0.45 - index as f32 * 0.12)
+        });
+        Self {
+            rain,
+            storm: if outside.storm { rain } else { 0.0 },
+            flash,
+            cloud,
+            night: (1.0 - sky.day) * (1.0 - sky.twilight * 0.85) * (1.0 - cloud).powi(2),
+            lunar_night: (1.0 - sky.day) * (1.0 - cloud * 0.8),
+            sun: outside.sun(),
+            moon: outside.moon(),
+            cloud_color: Vec3::new(0.055, 0.065, 0.1)
+                .lerp(Vec3::new(0.94, 0.96, 1.0), sky.day)
+                .lerp(Vec3::new(0.86, 0.57, 0.63), sky.twilight)
+                * (EXPOSURE + 0.24),
+            drift: phase(outside.time, 0.25, 4096.0)
+                + (outside.wind_travel * 0.6).rem_euclid(4096.0) as f32,
+            twinkle: phase(outside.time, 0.7, TAU),
+            firework: firework(outside),
+            hills,
+            dimming: outside.storm_dimming(),
+            sky,
+            outside,
+        }
     }
-    let azimuth = direction.x.atan2(-direction.z);
-    let land = land_colors(outside.season);
-    let ridges = [
-        0.052 + 0.014 * (3.0 * azimuth + 0.6).sin() + 0.006 * (8.0 * azimuth).sin(),
-        0.036 + 0.013 * (4.0 * azimuth + 1.8).sin() + 0.006 * (9.0 * azimuth).sin(),
-        0.021 + 0.01 * (5.0 * azimuth + 0.2).sin() + 0.004 * (13.0 * azimuth + 1.0).sin(),
-    ];
-    let cloud = outside.rain.max(outside.snow * 0.85);
-    let light = land_light(sky, flash);
-    let haze = outside.haze();
-    for (index, (ridge, land)) in ridges.into_iter().zip(land).enumerate() {
-        let white = Vec3::new(0.78, 0.86, 0.96) + Vec3::splat(index as f32 * 0.015);
-        let land = land.lerp(white, outside.snow_cover.clamp(0.0, 1.0));
-        let land = weather_color(land * light, cloud).lerp(haze, 0.45 - index as f32 * 0.12);
-        color = color.lerp(land, coverage(elevation - ridge, spread * 0.5));
+
+    /// The color of the sky toward `direction`, a pixel spanning `spread`
+    /// radians: the far hills, then the sky and everything in it.
+    pub fn sky(&self, direction: Vec3, spread: f32) -> Vec3 {
+        let outside = self.outside;
+        let sky = &self.sky;
+        let coordinates = chart(direction);
+        let footprint = (spread / CHART_HEIGHT).max(1e-5);
+        let (rain, storm, flash, cloud, night) =
+            (self.rain, self.storm, self.flash, self.cloud, self.night);
+        let elevation = direction.y.clamp(-1.0, 1.0).asin();
+        let mut color = sky
+            .horizon
+            .lerp(sky.zenith, smoothstep(-0.05, 0.75, elevation))
+            * EXPOSURE;
+
+        if night > 0.0 && elevation > 0.0 {
+            let inside = coordinates.cmpge(Vec2::ZERO).all() && coordinates.cmple(Vec2::ONE).all();
+            let twinkle = |seed: f32| 0.65 + 0.35 * (self.twinkle + seed * TAU).sin();
+            if inside {
+                let stars = coordinates * stars::GRID;
+                let cell = stars.floor();
+                let seed = hash(cell);
+                let center = stars::center(cell);
+                let distance = ((stars - cell - center) / stars::GRID).length();
+                color += Vec3::new(0.78, 0.86, 1.0)
+                    * coverage(distance - 0.0025, footprint * 0.5)
+                    * stars::brightness(seed)
+                    * twinkle(seed)
+                    * night;
+            } else {
+                let (light, seed) = far_star(direction, spread);
+                color += Vec3::new(0.78, 0.86, 1.0) * light * twinkle(seed) * night;
+            }
+        }
+
+        let proportions = Vec2::new(1.0, CHART_HEIGHT / CHART_WIDTH);
+        if let Some(streak) = &outside.meteor {
+            color += Vec3::new(0.86, 0.92, 1.0)
+                * shooting_star(coordinates, footprint, streak, proportions)
+                * night;
+        }
+
+        let moon_point = (coordinates - self.moon) * proportions;
+        let moon_distance = moon_point.length();
+        if night > 0.0 && moon_distance > 0.06 && !outside.constellations.is_empty() {
+            let margin = Vec2::splat(0.0007 + footprint);
+            let mut lines: f32 = 0.0;
+            for segment in &outside.constellations {
+                if coordinates.cmpge(segment.minimum - margin).all()
+                    && coordinates.cmple(segment.maximum + margin).all()
+                {
+                    lines = lines.max(coverage(
+                        capsule(coordinates, segment.start, segment.end, 0.0007),
+                        footprint * 0.5,
+                    ));
+                }
+            }
+            color += Vec3::new(0.7, 0.8, 1.0)
+                * lines
+                * (outside.constellation_base + outside.constellation_glow)
+                * night;
+        }
+        if self.lunar_night > 0.0 && moon_distance < 0.4 {
+            let angle = outside.moon_phase * TAU;
+            let across = if outside.moon_phase < 0.5 {
+                moon_point.x
+            } else {
+                -moon_point.x
+            };
+            let terminator =
+                angle.cos() * (0.05_f32.powi(2) - moon_point.y.powi(2)).max(0.0).sqrt();
+            let lit = coverage(terminator - across, footprint * 0.5);
+            let fullness = (1.0 - angle.cos()) * 0.5;
+            let moon = coverage(moon_distance - 0.05, footprint * 0.5)
+                * lit
+                * smoothstep(0.0, 0.015, fullness)
+                + (-moon_distance.powi(2) / 0.012).exp() * 0.12 * fullness;
+            color += Vec3::new(0.78, 0.85, 1.0) * moon * self.lunar_night;
+        }
+
+        if sky.day > 0.0 {
+            let sun_distance = ((coordinates - self.sun) * proportions).length();
+            if sun_distance < 0.6 {
+                let sunlight = coverage(sun_distance - 0.04, footprint * 0.5)
+                    + (-sun_distance.powi(2) / 0.02).exp() * 0.4;
+                color += Vec3::new(1.0, 0.77, 0.38) * sunlight * sky.day * (1.0 - cloud * 0.9);
+            }
+        }
+
+        // A deck of clouds overhead, drifting with the wind.
+        if elevation > 0.02 {
+            let rise = direction.y.max(0.02);
+            let deck = Vec2::new(direction.x, direction.z) / rise * CLOUD_DECK;
+            let deck = deck * 0.055 - Vec2::new(self.drift * 0.055, self.drift * 0.02);
+            // Toward the horizon a pixel covers more of the deck; blur there.
+            let blur = smoothstep(0.15, 0.8, spread * CLOUD_DECK * 0.055 / (rise * rise));
+            let clouds = if blur >= 1.0 {
+                0.5
+            } else {
+                mix(
+                    noise(deck) * 0.65 + noise(deck * 2.1 + Vec2::splat(7.3)) * 0.35,
+                    0.5,
+                    blur,
+                )
+            };
+            let clouds = smoothstep(0.5 - storm * 0.15 - cloud * 0.1, 0.74 - storm * 0.15, clouds)
+                * smoothstep(0.02, 0.12, elevation);
+            color = color.lerp(self.cloud_color, clouds * 0.6);
+        }
+        color = weather_color(color, cloud) * (1.0 - self.dimming);
+        if flash > 0.0 {
+            color = color.lerp(Vec3::new(0.75, 0.86, 1.0), flash * 0.85);
+        }
+
+        if let Some(burst) = &self.firework {
+            color += burst.sparks(coordinates, footprint);
+        }
+
+        if outside.rainbow > 0.0 {
+            let radius = coordinates.distance(Vec2::new(0.5, 0.04));
+            let primary = spectrum((radius - 0.72) / 0.06)
+                * coverage((radius - 0.75).abs() - 0.03, footprint * 0.5)
+                * 0.38;
+            let secondary = spectrum(1.0 - (radius - 0.815) / 0.09)
+                * coverage((radius - 0.86).abs() - 0.045, footprint * 0.5)
+                * 0.09;
+            color += (primary + secondary) * outside.rainbow.min(1.0) * (1.0 - rain * 0.65);
+        }
+
+        if flash > 0.0 {
+            color += Vec3::new(0.85, 0.92, 1.0)
+                * lightning(coordinates, footprint, outside.last_flash)
+                * flash;
+        }
+        for passing in outside.passersby.iter().flatten() {
+            if matches!(passing.kind, Passerby::Squirrel | Passerby::Snowman) {
+                continue;
+            }
+            color = passerby(color, coordinates, footprint, passing, sky, cloud);
+        }
+        self.over_hills(color, direction, spread, elevation)
     }
-    color
+
+    /// The far hills, ridge over ridge around the whole horizon.
+    fn over_hills(&self, mut color: Vec3, direction: Vec3, spread: f32, elevation: f32) -> Vec3 {
+        if elevation > 0.09 {
+            return color;
+        }
+        let azimuth = direction.x.atan2(-direction.z);
+        let ridges = [
+            0.052 + 0.014 * (3.0 * azimuth + 0.6).sin() + 0.006 * (8.0 * azimuth).sin(),
+            0.036 + 0.013 * (4.0 * azimuth + 1.8).sin() + 0.006 * (9.0 * azimuth).sin(),
+            0.021 + 0.01 * (5.0 * azimuth + 0.2).sin() + 0.004 * (13.0 * azimuth + 1.0).sin(),
+        ];
+        for (ridge, land) in ridges.into_iter().zip(self.hills) {
+            color = color.lerp(land, coverage(elevation - ridge, spread * 0.5));
+        }
+        color
+    }
 }
 
 /// How lit the land is by day, twilight, and lightning.
@@ -440,11 +497,14 @@ fn far_star(direction: Vec3, spread: f32) -> (f32, f32) {
     const CELLS: f32 = 40.0;
     let scaled = direction * CELLS;
     let cell = scaled.floor();
-    let seed = hash(Vec2::new(cell.x + cell.z * 7.0, cell.y + cell.z * 3.0));
+    let seed = scramble(Vec2::new(cell.x + cell.z * 97.0, cell.y + cell.z * 31.0));
+    if stars::brightness(seed) <= 0.0 {
+        return (0.0, seed);
+    }
     let offset = Vec3::new(
-        hash(Vec2::new(cell.x, cell.y + 0.5)),
-        hash(Vec2::new(cell.y + 0.25, cell.z)),
-        hash(Vec2::new(cell.z + 0.75, cell.x)),
+        scramble(Vec2::new(cell.x, cell.y + 1000.0)),
+        scramble(Vec2::new(cell.y + 2000.0, cell.z)),
+        scramble(Vec2::new(cell.z + 3000.0, cell.x)),
     ) * 0.6
         + 0.2;
     let star = (cell + offset).normalize();
@@ -733,10 +793,21 @@ pub fn noise(point: Vec2) -> f32 {
     let fraction = point - cell;
     let weight = fraction * fraction * (Vec2::splat(3.0) - fraction * 2.0);
     mix(
-        mix(hash(cell), hash(cell + Vec2::X), weight.x),
-        mix(hash(cell + Vec2::Y), hash(cell + Vec2::ONE), weight.x),
+        mix(scramble(cell), scramble(cell + Vec2::X), weight.x),
+        mix(scramble(cell + Vec2::Y), scramble(cell + Vec2::ONE), weight.x),
         weight.y,
     )
+}
+
+/// A quick value from 0 to 1 for a lattice cell, for textures; the star
+/// field keeps `stars::hash`, which saved constellations depend on.
+pub fn scramble(cell: Vec2) -> f32 {
+    let mut bits = (cell.x as i32 as u32).wrapping_mul(0x8DA6_B343)
+        ^ (cell.y as i32 as u32).wrapping_mul(0xD816_3841);
+    bits ^= bits >> 13;
+    bits = bits.wrapping_mul(0x5BD1_E995);
+    bits ^= bits >> 15;
+    (bits >> 8) as f32 / (1u32 << 24) as f32
 }
 
 #[cfg(test)]
@@ -832,14 +903,17 @@ mod tests {
     #[test]
     fn far_hills_rise_all_the_way_around_the_horizon() {
         let outside = Outside::clear(12.0, 0.0);
-        let sky = Sky::at_hour(12.0);
+        let heavens = Heavens::new(&outside);
         for turn in 0..64 {
             let azimuth = turn as f32 / 64.0 * TAU;
             let low = direction(azimuth, 0.005);
             let high = direction(azimuth, 0.2);
-            let land = hills(Vec3::ONE * 9.0, low, 0.001, &outside, &sky, 0.0);
+            let land = heavens.over_hills(Vec3::ONE * 9.0, low, 0.001, 0.005);
             assert!(land.max_element() < 2.0, "{azimuth}");
-            assert_eq!(hills(Vec3::ONE * 9.0, high, 0.001, &outside, &sky, 0.0), Vec3::ONE * 9.0);
+            assert_eq!(
+                heavens.over_hills(Vec3::ONE * 9.0, high, 0.001, 0.2),
+                Vec3::ONE * 9.0
+            );
         }
     }
 }

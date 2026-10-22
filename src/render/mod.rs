@@ -15,7 +15,6 @@ use crate::frame::{Frame, Grid, Shade};
 use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::home::{self, DOOR_HIGH, DOOR_LOW};
 use crate::world::mirror;
-use crate::world::stars::hash;
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
 use ghost::{Aura, BOUNDS, Body, Pose};
 use shapes::{Furniture, Material, decoration_light, sphere_span};
@@ -221,6 +220,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         let (fine, across, down) = grid.refine(samples);
         return render(scene, fine, 1).downsample(across, down);
     }
+    render_with(scene, grid, true)
+}
+
+// With `cull`, each ray from the eye tests only what its screen tile may
+// show; without, everything, which looks the same but takes longer.
+fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
     let ghost_scale = GHOST_SCALE * scene.world.size();
     let dream = dream::Bubble::new(scene, ghost_scale, grid.scale());
     let mut bodies = [
@@ -470,10 +475,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         },
         occasion: world.occasion(),
     });
+    let tiles = Tiles::new(grid, scene.view, &indoor, &yard, &outdoor);
     let tracer = Tracer {
         scene,
         lights: &lights,
         furniture: &indoor,
+        tiles: cull.then_some(&tiles),
         yard: &yard,
         door: world.door_open(),
         solid: !home::in_house(world.ghost.position),
@@ -484,16 +491,132 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     Frame::sample(grid, |point| {
         let direction = scene.view.ray(point);
         let dream = dream.as_ref().filter(|bubble| bubble.contains(point));
-        let color = tracer.trace(scene.view.eye, direction, scene.view, 0.0, dream, false);
-        // A gentle lift of the mid-tones, which glyphs otherwise lose.
-        Shade::from_rgb(color.clamp(Vec3::ZERO, Vec3::ONE).powf(0.85))
+        let tile = cull.then(|| tiles.at(point));
+        let color = tracer.trace_from(scene.view.eye, direction, scene.view, 0.0, dream, false, tile);
+        // A gentle lift of the mid-tones, which glyphs otherwise lose: about
+        // the 0.85th power, from square roots, which are quicker.
+        let color = color.clamp(Vec3::ZERO, Vec3::ONE);
+        let roots = Vec3::new(color.x.sqrt(), color.y.sqrt(), color.z.sqrt());
+        Shade::from_rgb(color * 0.7 + roots * 0.3)
     })
+}
+
+/// What each patch of the screen may show: for each tile, the indoor
+/// furniture, yard pieces, and outdoor things whose bounds cover it, so a
+/// ray from the eye tests only those.
+struct Tiles {
+    size: f32,
+    left: f32,
+    top: f32,
+    columns: usize,
+    rows: usize,
+    furniture: Vec<Vec<u16>>,
+    pieces: Vec<Vec<u16>>,
+    outdoor: Vec<Vec<u16>>,
+}
+
+impl Tiles {
+    fn new(
+        grid: Grid,
+        view: View,
+        indoor: &[Furniture],
+        yard: &yard::Yard,
+        outdoor: &[Furniture],
+    ) -> Self {
+        let size = 0.1;
+        let half_width = grid.half_width();
+        let columns = ((2.0 * half_width / size).ceil() as usize).max(1);
+        let rows = ((2.0 / size).ceil() as usize).max(1);
+        let mut tiles = Self {
+            size,
+            left: -half_width,
+            top: 1.0,
+            columns,
+            rows,
+            furniture: vec![Vec::new(); columns * rows],
+            pieces: vec![Vec::new(); columns * rows],
+            outdoor: vec![Vec::new(); columns * rows],
+        };
+        let margin = grid.scale() * 2.0;
+        let spheres = |list: &[Furniture]| -> Vec<(Vec3, Vec3)> {
+            list.iter()
+                .map(|piece| {
+                    let (center, radius) = piece.bounds();
+                    (center, Vec3::splat(radius))
+                })
+                .collect()
+        };
+        let boxes: [Vec<(Vec3, Vec3)>; 3] = [
+            spheres(indoor),
+            yard.piece_boxes().collect(),
+            spheres(outdoor),
+        ];
+        for (kind, boxes) in boxes.iter().enumerate() {
+            for (index, &(center, half)) in boxes.iter().enumerate() {
+                let (low, high) = match screen_box(view, center, half) {
+                    Some((low, high)) => (low - Vec2::splat(margin), high + Vec2::splat(margin)),
+                    None => (Vec2::splat(-1e9), Vec2::splat(1e9)),
+                };
+                let first = ((low.x - tiles.left) / size).floor().max(0.0) as usize;
+                let last = (((high.x - tiles.left) / size).floor().max(0.0) as usize).min(columns - 1);
+                let top = ((tiles.top - high.y) / size).floor().max(0.0) as usize;
+                let bottom = (((tiles.top - low.y) / size).floor().max(0.0) as usize).min(rows - 1);
+                if first > last || top > bottom || low.x > half_width || high.y < -1.0 {
+                    continue;
+                }
+                for row in top..=bottom {
+                    for column in first..=last {
+                        let tile = row * columns + column;
+                        let list = match kind {
+                            0 => &mut tiles.furniture[tile],
+                            1 => &mut tiles.pieces[tile],
+                            _ => &mut tiles.outdoor[tile],
+                        };
+                        list.push(index as u16);
+                    }
+                }
+            }
+        }
+        tiles
+    }
+
+    /// The tile under a screen point.
+    fn at(&self, point: Vec2) -> usize {
+        let column = (((point.x - self.left) / self.size).max(0.0) as usize).min(self.columns - 1);
+        let row = (((self.top - point.y) / self.size).max(0.0) as usize).min(self.rows - 1);
+        row * self.columns + column
+    }
+}
+
+/// Where a box appears on the screen, as the corners of a rectangle
+/// around it, or `None` when part of it is behind the eye.
+fn screen_box(view: View, center: Vec3, half: Vec3) -> Option<(Vec2, Vec2)> {
+    let mut low = Vec2::splat(f32::INFINITY);
+    let mut high = Vec2::splat(f32::NEG_INFINITY);
+    for corner in 0..8 {
+        let sign = Vec3::new(
+            if corner & 1 == 0 { -1.0 } else { 1.0 },
+            if corner & 2 == 0 { -1.0 } else { 1.0 },
+            if corner & 4 == 0 { -1.0 } else { 1.0 },
+        );
+        let offset = center + half * sign - view.eye;
+        let depth = offset.dot(view.forward);
+        if depth < 0.05 {
+            return None;
+        }
+        let point = Vec2::new(offset.dot(view.right), offset.dot(view.up)) * FOCAL / depth;
+        low = low.min(point);
+        high = high.max(point);
+    }
+    Some((low, high))
 }
 
 struct Tracer<'a> {
     scene: &'a Scene<'a>,
     lights: &'a Lights,
     furniture: &'a [Furniture<'a>],
+    /// Screen tiles for rays from the eye; mirrored rays test everything.
+    tiles: Option<&'a Tiles>,
     yard: &'a yard::Yard<'a>,
     /// How far the door stands open, 0 to 1.
     door: f32,
@@ -507,6 +630,7 @@ struct Tracer<'a> {
 }
 
 impl Tracer<'_> {
+    #[cfg(test)]
     fn trace(
         &self,
         origin: Vec3,
@@ -516,6 +640,27 @@ impl Tracer<'_> {
         dream: Option<&dream::Bubble>,
         reflected: bool,
     ) -> Vec3 {
+        self.trace_from(origin, direction, view, traveled, dream, reflected, None)
+    }
+
+    /// Traces a ray; `tile`, for rays from the eye, limits what it tests to
+    /// what that patch of the screen may show.
+    #[allow(clippy::too_many_arguments)]
+    fn trace_from(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        view: View,
+        traveled: f32,
+        dream: Option<&dream::Bubble>,
+        reflected: bool,
+        tile: Option<usize>,
+    ) -> Vec3 {
+        let tile = tile.zip(self.tiles);
+        let cull = tile.map(|(tile, tiles)| yard::Cull {
+            pieces: &tiles.pieces[tile],
+            furniture: &tiles.outdoor[tile],
+        });
         let scene = self.scene;
         let lights = self.lights;
         let furniture = self.furniture;
@@ -527,7 +672,7 @@ impl Tracer<'_> {
         let mut limit = f32::INFINITY;
         // Outdoors before the room, or all the way when the ray misses it.
         let before = room.map_or(f32::INFINITY, |hit| hit.enter);
-        let front = self.yard.trace(
+        let front = self.yard.trace_among(
             eye,
             direction,
             0.0,
@@ -535,6 +680,7 @@ impl Tracer<'_> {
             room.is_some() && !self.solid,
             traveled,
             spread,
+            cull,
         );
         let mut color = match (front, room) {
             (Some((distance, shade)), _) => {
@@ -547,7 +693,7 @@ impl Tracer<'_> {
                     Some((frame, sheen, trim)) => {
                         let (far, outdoors) = self
                             .yard
-                            .trace(
+                            .trace_among(
                                 eye,
                                 direction,
                                 hit.distance + 1e-4,
@@ -555,6 +701,7 @@ impl Tracer<'_> {
                                 false,
                                 traveled,
                                 spread,
+                                cull,
                             )
                             .unwrap_or_else(|| {
                                 (f32::INFINITY, self.yard.background(direction, spread))
@@ -584,7 +731,13 @@ impl Tracer<'_> {
             let normal = (point - world.ball.position) / Ball::RADIUS;
             color = Material::Ball.albedo(&world.plant) * lights.at(point, normal);
         }
-        for piece in furniture {
+        let pieces: &mut dyn Iterator<Item = &Furniture> = match tile {
+            Some((tile, tiles)) => &mut tiles.furniture[tile]
+                .iter()
+                .map(|&index| &furniture[usize::from(index)]),
+            None => &mut furniture.iter(),
+        };
+        for piece in pieces {
             if let Some((distance, material)) = piece.trace(eye, direction, limit) {
                 limit = distance;
                 let point = eye + direction * distance;
@@ -619,13 +772,14 @@ impl Tracer<'_> {
             && limit == hit.distance
         {
             let reflected_direction = mirror::reflect_direction(direction);
-            let reflected_color = self.trace(
+            let reflected_color = self.trace_from(
                 hit.point - Vec3::X * 1e-4,
                 reflected_direction,
                 view.mirrored(),
                 traveled + hit.distance,
                 None,
                 true,
+                None,
             );
             let sheen = 0.025 + 0.055 * (1.0 - direction.x.abs()).powi(3);
             color =
@@ -913,7 +1067,9 @@ fn sprite(
     }
     let miss = (eye + direction * along).distance_squared(center);
     let width = size.max((traveled + along) * spread * 1.2);
-    (-miss / (width * width)).exp()
+    let spread = miss / (width * width);
+    // Past a dozen widths' worth it rounds to nothing.
+    if spread > 12.0 { 0.0 } else { (-spread).exp() }
 }
 
 /// Where a ray leaves the room: rays pass through the near walls as through
@@ -1033,9 +1189,9 @@ fn planks(point: Vec3, footprint: f32) -> Vec3 {
     const WIDTH: f32 = 0.17;
     const LENGTH: f32 = 1.3;
     let row = (point.z / WIDTH).floor();
-    let shifted = point.x + hash(Vec2::new(row, 3.0)) * LENGTH;
+    let shifted = point.x + sky::scramble(Vec2::new(row, 3.0)) * LENGTH;
     let plank = (shifted / LENGTH).floor();
-    let seed = hash(Vec2::new(row, plank));
+    let seed = sky::scramble(Vec2::new(row, plank));
     let fade = 1.0 - smoothstep(0.015, 0.06, footprint);
     let grain = crate::render::sky::noise(Vec2::new(shifted * 6.0, row * 7.3 + point.z * 30.0));
     let base = Vec3::new(0.64, 0.46, 0.31) * (0.84 + 0.22 * seed + 0.12 * (grain - 0.5) * fade);
@@ -1329,6 +1485,39 @@ mod tests {
     }
 
     #[test]
+    fn screen_tiles_skip_only_what_could_not_be_seen() {
+        let mut world = World::new(3, 15.0);
+        world.date = jiff::civil::Date::constant(2026, 10, 30);
+        world.visitors.next_cat = 0.0;
+        world.step(30.0);
+        for (yaw, target) in [
+            (0.0, Camera::home()),
+            (0.6, Vec3::new(4.3, 1.2, -0.7)),
+            (2.6, Camera::home()),
+        ] {
+            let grid = Grid::new(160, 96, 1.0);
+            let scene = Scene {
+                view: Camera {
+                    yaw,
+                    target,
+                    zoom: 0.7,
+                    ..Camera::default()
+                }
+                .view(grid),
+                ..mirror_scene(&world)
+            };
+            let culled = render_with(&scene, grid, true);
+            let full = render_with(&scene, grid, false);
+            for row in 0..grid.height {
+                for column in 0..grid.width {
+                    let difference = culled.shade(column, row).rgb() - full.shade(column, row).rgb();
+                    assert!(difference.abs().max_element() < 1e-4, "{yaw} {column} {row}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn rays_through_the_room_and_out_to_the_yard_give_finite_colors() {
         let world = World::new(1, 12.0);
         let scene = mirror_scene(&world);
@@ -1345,6 +1534,7 @@ mod tests {
             scene: &scene,
             lights: &lights,
             furniture: &furniture,
+            tiles: None,
             yard: &yard,
             door: 1.0,
             solid: false,
@@ -1403,6 +1593,7 @@ mod tests {
                         scene: &scene,
                         lights: &lights,
                         furniture: &furniture,
+                        tiles: None,
                         yard: &yard,
                         door: 0.0,
                         solid: false,
@@ -1442,6 +1633,7 @@ mod tests {
                 scene: &scene,
                 lights: &lights,
                 furniture: &[],
+                tiles: None,
                 yard: &yard,
                 door: 0.0,
                 solid: false,
@@ -1734,7 +1926,9 @@ mod bench {
     #[test]
     #[ignore]
     fn bench_frames() {
-        let mut world = World::new(1, 13.0);
+        let hour: f32 = std::env::var("BENCH_HOUR").ok().and_then(|hour| hour.parse().ok()).unwrap_or(13.0);
+        let mut world = World::new(1, hour);
+        world.date = jiff::civil::Date::constant(2026, 10, 22);
         world.step(0.0);
         let grid = Grid::new(400, 240, 1.0);
         for (name, camera) in [
@@ -1749,7 +1943,10 @@ mod bench {
         ] {
             let scene = Scene {
                 world: &world,
-                outside: sky::Outside::clear(13.0, 10.0),
+                outside: sky::Outside {
+                    season: world.season(),
+                    ..sky::Outside::clear(hour, 10.0)
+                },
                 view: camera.view(grid),
                 face: Face::REST,
                 aura: Aura {

@@ -11,7 +11,7 @@ use super::shapes::{
     Furniture, Material, box_distance, box_span, capsule, ellipsoid, rounded_cylinder,
     sphere_span,
 };
-use super::sky::{self, Outside, Sky, noise, phase, weather_color};
+use super::sky::{self, Heavens, Outside, Sky, noise, phase, scramble, weather_color};
 use crate::sdf::{coverage, mix, smooth_min, smoothstep};
 use crate::world::home::{
     self, BENCH, BIRDBATH, BUSHES, CHIMNEY, CHIMNEY_HALF, CHIMNEY_TOP, CLOTHESLINE,
@@ -21,7 +21,6 @@ use crate::world::home::{
 };
 use crate::world::{ROOM_MAX, ROOM_MIN};
 use crate::world::passerby::{Passerby, Passing};
-use crate::world::stars::hash;
 use crate::world::cat::{CatPicture, Coat, Pose};
 use crate::world::{BirdPicture, Occasion, Plant, Season};
 
@@ -102,6 +101,53 @@ enum Piece {
 }
 
 impl Piece {
+    /// A box around the piece, as its middle and half size, holding all the
+    /// bounds `span` tests.
+    fn bounding_box(&self) -> (Vec3, Vec3) {
+        let ball = |center: Vec3, radius: f32| (center, Vec3::splat(radius));
+        match *self {
+            Self::Fence(start, end) => (
+                (start + end) * 0.5 + Vec3::Y * 0.45,
+                ((end - start) * 0.5).abs() + Vec3::new(0.08, 0.5, 0.08),
+            ),
+            Self::Tree => {
+                let crown = TREE_CROWN_RADIUS + 0.75;
+                let low = (TREE_CROWN - Vec3::splat(crown)).min(TREE + Vec3::new(-2.05, -0.05, -0.65));
+                let high = (TREE_CROWN + Vec3::splat(crown)).max(TREE + Vec3::new(1.65, 4.65, 1.35));
+                ((low + high) * 0.5, (high - low) * 0.5)
+            }
+            Self::Swing => (
+                SWING_TOP - Vec3::Y * (SWING_TOP.y * 0.5 - 0.05),
+                Vec3::new(SWING_HALF_WIDTH + 0.35, SWING_TOP.y * 0.5 + 0.12, 0.72),
+            ),
+            Self::Garden => ball(GARDEN + Vec3::Y * 0.12, 0.95),
+            Self::Birdbath => ball(BIRDBATH + Vec3::Y * 0.45, 0.6),
+            Self::Bench => ball(BENCH + Vec3::Y * 0.45, 0.85),
+            Self::Lantern => ball(
+                LANTERN + Vec3::Y * (LANTERN_HEIGHT * 0.5 + 0.1),
+                LANTERN_HEIGHT * 0.5 + 0.3,
+            ),
+            Self::Mailbox => ball(MAILBOX + Vec3::Y * 0.65, 0.68),
+            Self::Clothesline => (
+                (CLOTHESLINE[0] + CLOTHESLINE[1]) * 0.5 + Vec3::Y * 0.85,
+                ((CLOTHESLINE[1] - CLOTHESLINE[0]) * 0.5).abs() + Vec3::new(0.4, 0.85, 0.4),
+            ),
+            Self::Bush(center, radius) => ball(center + Vec3::Y * radius * 0.55, radius * 1.15),
+            Self::Sill => (SILL, SILL_HALF + Vec3::splat(0.02)),
+            Self::Snowman(_) => ball(SNOWMAN + Vec3::Y * 0.65, 0.75),
+            Self::Door(_) => ball(door_hinge() + Vec3::Y * 0.9, 1.15),
+            Self::Pumpkin => ball(PUMPKIN + Vec3::Y * 0.15, 0.24),
+            Self::Chimney => (
+                CHIMNEY + Vec3::Y * ((CHIMNEY_TOP + 2.55) * 0.5),
+                Vec3::new(
+                    CHIMNEY_HALF + 0.05,
+                    (CHIMNEY_TOP - 2.55) * 0.5 + 0.05,
+                    CHIMNEY_HALF + 0.05,
+                ),
+            ),
+        }
+    }
+
     /// Where a ray from `origin` passes through the piece's bounds.
     fn span(&self, origin: Vec3, direction: Vec3) -> Option<(f32, f32)> {
         match *self {
@@ -176,6 +222,13 @@ fn door_hinge() -> Vec3 {
     Vec3::new(HOUSE_MAX.x, 0.0, DOOR_HIGH.x)
 }
 
+/// Which yard pieces and outdoor things a ray may meet, by index.
+#[derive(Clone, Copy, Debug)]
+pub struct Cull<'c> {
+    pub pieces: &'c [u16],
+    pub furniture: &'c [u16],
+}
+
 /// A point light outdoors.
 struct Glow {
     position: Vec3,
@@ -196,6 +249,7 @@ enum Critter {
 /// The outdoors for one frame.
 pub struct Yard<'a> {
     outside: &'a Outside,
+    heavens: Heavens<'a>,
     sky: Sky,
     plant: &'a Plant,
     furniture: &'a [Furniture<'a>],
@@ -352,6 +406,7 @@ impl<'a> Yard<'a> {
                 + Vec3::new(0.03, 0.035, 0.055)
                 + Vec3::splat(flash * 0.2),
             haze: outside.haze(),
+            heavens: Heavens::new(outside),
             sky,
             outside,
             plant: setting.plant,
@@ -379,6 +434,7 @@ impl<'a> Yard<'a> {
     /// The first thing outdoors that a ray meets between `from` and `to`:
     /// its distance and color. `cut` skips the cottage's walls, for rays
     /// on their way into the room.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub fn trace(
         &self,
@@ -389,6 +445,23 @@ impl<'a> Yard<'a> {
         cut: bool,
         traveled: f32,
         spread: f32,
+    ) -> Option<(f32, Vec3)> {
+        self.trace_among(origin, direction, from, to, cut, traveled, spread, None)
+    }
+
+    /// As `trace`, testing only the pieces and things `cull` lists, when
+    /// it does: those whose bounds cover the ray's part of the screen.
+    #[allow(clippy::too_many_arguments)]
+    pub fn trace_among(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        from: f32,
+        to: f32,
+        cut: bool,
+        traveled: f32,
+        spread: f32,
+        cull: Option<Cull>,
     ) -> Option<(f32, Vec3)> {
         let mut limit = to;
         let mut hit: Option<(f32, Vec3)> = None;
@@ -422,7 +495,11 @@ impl<'a> Yard<'a> {
             ));
         }
 
-        for piece in &self.pieces {
+        let pieces: &mut dyn Iterator<Item = &Piece> = match cull {
+            Some(cull) => &mut cull.pieces.iter().map(|&index| &self.pieces[usize::from(index)]),
+            None => &mut self.pieces.iter(),
+        };
+        for piece in pieces {
             let Some((enter, exit)) = piece.span(origin, direction) else {
                 continue;
             };
@@ -445,7 +522,14 @@ impl<'a> Yard<'a> {
             }
         }
 
-        for thing in self.furniture {
+        let things: &mut dyn Iterator<Item = &Furniture> = match cull {
+            Some(cull) => &mut cull
+                .furniture
+                .iter()
+                .map(|&index| &self.furniture[usize::from(index)]),
+            None => &mut self.furniture.iter(),
+        };
+        for thing in things {
             let Some((distance, material)) = thing.trace(origin, direction, limit) else {
                 continue;
             };
@@ -503,9 +587,14 @@ impl<'a> Yard<'a> {
         hit
     }
 
+    /// Boxes around each yard piece, in the order `Cull` counts them.
+    pub fn piece_boxes(&self) -> impl Iterator<Item = (Vec3, Vec3)> + '_ {
+        self.pieces.iter().map(Piece::bounding_box)
+    }
+
     /// The sky, or the far ground fading into haze.
     pub fn background(&self, direction: Vec3, spread: f32) -> Vec3 {
-        sky::sky(direction, spread, self.outside)
+        self.heavens.sky(direction, spread)
     }
 
     /// Rain and snow falling between `shelter` and `limit` along the ray,
@@ -546,10 +635,10 @@ impl<'a> Yard<'a> {
                 let slant = across + point.y * (0.15 + self.wind * 0.35);
                 let cells = Vec2::new(slant / 0.16, (point.y + falling) / 0.85);
                 let cell = cells.floor();
-                let seed = hash(cell + Vec2::splat(layer as f32 * 13.0));
+                let seed = scramble(cell + Vec2::splat(layer as f32 * 13.0));
                 if seed < rain * 0.9 {
                     let fraction = cells - cell;
-                    let wide = ((fraction.x - (0.2 + 0.6 * hash(cell + Vec2::X))).abs() * 0.16)
+                    let wide = ((fraction.x - (0.2 + 0.6 * scramble(cell + Vec2::X))).abs() * 0.16)
                         - 0.004;
                     let long = ((fraction.y - 0.5).abs() * 0.85) - 0.14;
                     let streak = coverage(wide.max(long), pixel * 0.6);
@@ -562,9 +651,9 @@ impl<'a> Yard<'a> {
                 let drifting = across + point.y * self.wind * 0.5 + sway;
                 let cells = Vec2::new(drifting / 0.3, (point.y + falling) / 0.3);
                 let cell = cells.floor();
-                let seed = hash(cell + Vec2::splat(layer as f32 * 7.0));
+                let seed = scramble(cell + Vec2::splat(layer as f32 * 7.0));
                 if seed < snow * 0.55 {
-                    let center = Vec2::new(hash(cell + Vec2::X), hash(cell + Vec2::Y)) * 0.6 + 0.2;
+                    let center = Vec2::new(scramble(cell + Vec2::X), scramble(cell + Vec2::Y)) * 0.6 + 0.2;
                     let distance = ((cells - cell - center) * 0.3).length();
                     let flake = coverage(distance - 0.011, pixel * 0.6 + 0.003);
                     color = color.lerp(SNOW * (0.35 + self.ambient.max_element()), flake * 0.85);
@@ -672,12 +761,12 @@ impl<'a> Yard<'a> {
         if self.outside.season == Season::Summer && night > 0.3 {
             let time = self.outside.time;
             for index in 0..8 {
-                let seed = hash(Vec2::new(index as f32, 41.0));
+                let seed = scramble(Vec2::new(index as f32, 41.0));
                 let wander = phase(time, 0.11, TAU) + seed * TAU;
                 let home = Vec3::new(
                     2.6 + seed * 5.6,
-                    0.35 + hash(Vec2::new(index as f32, 3.0)) * 0.9,
-                    -3.8 + hash(Vec2::new(index as f32, 9.0)) * 6.0,
+                    0.35 + scramble(Vec2::new(index as f32, 3.0)) * 0.9,
+                    -3.8 + scramble(Vec2::new(index as f32, 9.0)) * 6.0,
                 );
                 let position = home
                     + Vec3::new(
@@ -1076,13 +1165,18 @@ impl<'a> Yard<'a> {
         if facing > 0.0 && self.sunlight.max_element() > 1e-3 {
             total += self.sunlight * facing * self.shadow(point, normal, self.sun);
         }
+        // Moonlight is soft enough to need no shadows.
         let facing = (normal.dot(self.moon) + wrap) / (1.0 + wrap);
         if facing > 0.0 && self.moonlight.max_element() > 1e-3 {
-            total += self.moonlight * facing * self.shadow(point, normal, self.moon);
+            total += self.moonlight * facing;
         }
         for glow in &self.glows {
             let offset = glow.position - point;
             let distance_squared = offset.length_squared();
+            // Far off, a little light has faded to nothing.
+            if glow.falloff * distance_squared > 60.0 {
+                continue;
+            }
             let facing = normal
                 .dot(offset / distance_squared.sqrt().max(1e-4))
                 .max(0.0);
@@ -1184,9 +1278,9 @@ impl<'a> Yard<'a> {
                 if season == Season::Spring {
                     let cells = Vec2::new(point.x + point.z * 0.7, point.y) * 9.0;
                     let cell = cells.floor();
-                    let center = Vec2::new(hash(cell + Vec2::X), hash(cell + Vec2::Y)) * 0.5 + 0.25;
+                    let center = Vec2::new(scramble(cell + Vec2::X), scramble(cell + Vec2::Y)) * 0.5 + 0.25;
                     let blossom = coverage((cells - cell - center).length() - 0.28, 0.12)
-                        * smoothstep(0.35, 0.6, hash(cell));
+                        * smoothstep(0.35, 0.6, scramble(cell));
                     leaves.lerp(Vec3::new(1.0, 0.8, 0.88), blossom)
                 } else {
                     leaves
@@ -1239,7 +1333,7 @@ impl<'a> Yard<'a> {
                 let row = (point.y / 0.07).floor();
                 let across = point.x / 0.22 + row * 0.5;
                 let seam = ((point.y / 0.07).fract() < 0.18) || (across.fract() < 0.08);
-                let tone = 0.88 + 0.2 * hash(Vec2::new(across.floor(), row));
+                let tone = 0.88 + 0.2 * scramble(Vec2::new(across.floor(), row));
                 Vec3::new(0.66, 0.36, 0.3) * tone * if seam { 0.72 } else { 1.0 }
             }
             Surface::Brick => {
@@ -1291,7 +1385,7 @@ impl<'a> Yard<'a> {
                 let leaf = coverage(
                     (cells - cell - Vec2::splat(0.5)).length() - 0.2,
                     footprint * 2.5 + 0.05,
-                ) * smoothstep(0.4, 0.7, hash(cell))
+                ) * smoothstep(0.4, 0.7, scramble(cell))
                     * near;
                 albedo = albedo.lerp(Vec3::new(0.95, 0.45, 0.2), leaf * (1.0 - blur));
             }
@@ -1301,8 +1395,8 @@ impl<'a> Yard<'a> {
             let flower = coverage(
                 (cells - cell - Vec2::splat(0.5)).length() - 0.09,
                 footprint * 1.5 + 0.02,
-            ) * smoothstep(0.82, 0.9, hash(cell));
-            let tint = if hash(cell + Vec2::X) < 0.5 {
+            ) * smoothstep(0.82, 0.9, scramble(cell));
+            let tint = if scramble(cell + Vec2::X) < 0.5 {
                 Vec3::new(1.0, 0.95, 0.6)
             } else {
                 Vec3::new(1.0, 0.7, 0.85)
@@ -1542,14 +1636,14 @@ fn snowman(local: Vec3, melt: f32) -> (f32, Surface) {
 /// big tree's crown and away on the wind.
 fn falling(outside: &Outside) -> impl Iterator<Item = Critter> + '_ {
     (0..7).map(move |index| {
-        let seed = hash(Vec2::new(index as f32, 23.0));
+        let seed = scramble(Vec2::new(index as f32, 23.0));
         let fall = (phase(outside.time, 0.045, 1.0) + seed).fract();
         let sway = (phase(outside.time, 0.5, TAU) + seed * TAU).sin();
         let start = TREE_CROWN
             + Vec3::new(
                 (seed - 0.5) * 2.4,
-                -0.6 + hash(Vec2::new(index as f32, 4.0)) * 0.8,
-                (hash(Vec2::new(index as f32, 7.0)) - 0.3) * 2.0,
+                -0.6 + scramble(Vec2::new(index as f32, 4.0)) * 0.8,
+                (scramble(Vec2::new(index as f32, 7.0)) - 0.3) * 2.0,
             );
         let drop = start.y * fall;
         let drift = Vec3::new(
