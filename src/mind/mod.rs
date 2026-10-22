@@ -442,7 +442,11 @@ impl Mind {
                 self.reflect_every
             } else {
                 self.reflect_every * ALONE_FACTOR
-            } * if world.companion { COMPANION_FACTOR } else { 1.0 };
+            } * if world.companion {
+                COMPANION_FACTOR
+            } else {
+                1.0
+            };
             let due = match self.last_reflection {
                 None => world.time > FIRST_REFLECTION,
                 Some(last) => world.time - last > interval,

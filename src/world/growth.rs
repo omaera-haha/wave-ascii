@@ -69,7 +69,8 @@ impl World {
 /// Body scale for a creature born on `birthday`, on `date` at `hour`:
 /// eased from small to full size over the first month.
 pub fn body_size(birthday: Option<jiff::civil::Date>, date: jiff::civil::Date, hour: f32) -> f32 {
-    let days = birthday.map(|birthday| ((date - birthday).get_days() as f32 + hour / 24.0).max(0.0));
+    let days =
+        birthday.map(|birthday| ((date - birthday).get_days() as f32 + hour / 24.0).max(0.0));
     let progress = days.map_or(1.0, |days| (days / 30.0).min(1.0));
     0.68 + 0.32 * progress * progress * (3.0 - 2.0 * progress)
 }

@@ -236,9 +236,7 @@ pub fn request(
     } else {
         format!("\nYou know about the viewer: {viewer}.")
     };
-    let stage = observation["you"]["stage"]
-        .as_str()
-        .unwrap_or("grown up");
+    let stage = observation["you"]["stage"].as_str().unwrap_or("grown up");
     let letter = if life.today.letters_written > 0 {
         " You wrote a letter for the viewer today. It is kept separately from conversation."
     } else {

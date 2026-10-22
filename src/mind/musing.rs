@@ -296,66 +296,180 @@ fn kind_thoughts(world: &World) -> Vec<&'static str> {
     let snow = world.weather.sky == Sky::Snow;
     let korean = world.speaks_korean();
     let pick = |english: &'static [&'static str], hangul: &'static [&'static str]| {
-        if korean { hangul.to_vec() } else { english.to_vec() }
+        if korean {
+            hangul.to_vec()
+        } else {
+            english.to_vec()
+        }
     };
     let mut lines = match world.ghost.species {
         Species::Ghost => Vec::new(),
         Species::Fox => pick(
-            &["My tail is extra fluffy today.", "I could chase my own tail. Again.", "My ears hear everything."],
-            &["오늘 꼬리가 유난히 복슬복슬해.", "또 내 꼬리를 쫓아 볼까.", "내 귀는 다 들려."],
+            &[
+                "My tail is extra fluffy today.",
+                "I could chase my own tail. Again.",
+                "My ears hear everything.",
+            ],
+            &[
+                "오늘 꼬리가 유난히 복슬복슬해.",
+                "또 내 꼬리를 쫓아 볼까.",
+                "내 귀는 다 들려.",
+            ],
         ),
         Species::Bunny => pick(
-            &["*thump* Did you hear that?", "My nose won't stop wiggling.", "I could hop all the way to the fence."],
-            &["*쿵* 방금 들었어?", "코가 자꾸 씰룩거려.", "울타리까지 깡총깡총 갈 수 있어."],
+            &[
+                "*thump* Did you hear that?",
+                "My nose won't stop wiggling.",
+                "I could hop all the way to the fence.",
+            ],
+            &[
+                "*쿵* 방금 들었어?",
+                "코가 자꾸 씰룩거려.",
+                "울타리까지 깡총깡총 갈 수 있어.",
+            ],
         ),
         Species::Penguin => pick(
-            &["Peep! Waddle, waddle.", "My flippers are ready for anything.", "I wish the floor were a little icier."],
-            &["삑! 뒤뚱뒤뚱.", "내 날개는 언제든 준비됐어.", "바닥이 좀 더 미끄러우면 좋겠다."],
+            &[
+                "Peep! Waddle, waddle.",
+                "My flippers are ready for anything.",
+                "I wish the floor were a little icier.",
+            ],
+            &[
+                "삑! 뒤뚱뒤뚱.",
+                "내 날개는 언제든 준비됐어.",
+                "바닥이 좀 더 미끄러우면 좋겠다.",
+            ],
         ),
         Species::Frog => pick(
-            &["Ribbit. That mote looks tasty.", "I could jump to the ceiling. Probably.", "A nice puddle would be perfect."],
-            &["개굴. 저 빛 알갱이 맛있겠다.", "천장까지 뛸 수 있을 것 같아. 아마도.", "웅덩이 하나 있으면 딱인데."],
+            &[
+                "Ribbit. That mote looks tasty.",
+                "I could jump to the ceiling. Probably.",
+                "A nice puddle would be perfect.",
+            ],
+            &[
+                "개굴. 저 빛 알갱이 맛있겠다.",
+                "천장까지 뛸 수 있을 것 같아. 아마도.",
+                "웅덩이 하나 있으면 딱인데.",
+            ],
         ),
         Species::Slime => pick(
-            &["Blorp. I feel extra wobbly.", "I'm shiny when the lamp is on.", "Squish, squish, bounce."],
-            &["블롭. 오늘 유난히 말랑해.", "램프가 켜지면 나는 반짝여.", "말랑말랑, 통통."],
+            &[
+                "Blorp. I feel extra wobbly.",
+                "I'm shiny when the lamp is on.",
+                "Squish, squish, bounce.",
+            ],
+            &[
+                "블롭. 오늘 유난히 말랑해.",
+                "램프가 켜지면 나는 반짝여.",
+                "말랑말랑, 통통.",
+            ],
         ),
         Species::Owl => pick(
-            &["Hoo. I can turn my head almost all the way round.", "From up high you see everything.", "My feathers need a little fluffing."],
-            &["후. 고개를 거의 한 바퀴 돌릴 수 있어.", "높은 곳에서는 다 보여.", "깃털을 좀 부풀려야겠다."],
+            &[
+                "Hoo. I can turn my head almost all the way round.",
+                "From up high you see everything.",
+                "My feathers need a little fluffing.",
+            ],
+            &[
+                "후. 고개를 거의 한 바퀴 돌릴 수 있어.",
+                "높은 곳에서는 다 보여.",
+                "깃털을 좀 부풀려야겠다.",
+            ],
         ),
         Species::Robot => pick(
-            &["Beep. All systems happy.", "Battery at a cozy level.", "My wheel needs a little spin."],
-            &["삐빅. 모든 기능 행복함.", "배터리가 아늑한 수준이야.", "바퀴를 좀 굴려야겠어."],
+            &[
+                "Beep. All systems happy.",
+                "Battery at a cozy level.",
+                "My wheel needs a little spin.",
+            ],
+            &[
+                "삐빅. 모든 기능 행복함.",
+                "배터리가 아늑한 수준이야.",
+                "바퀴를 좀 굴려야겠어.",
+            ],
         ),
         Species::Hedgehog => pick(
-            &["Huff. Mind my spines.", "Curling up is the best way to think.", "I smell something in the garden."],
-            &["훕. 가시 조심해.", "몸을 동그랗게 말면 생각이 잘 돼.", "정원에서 무슨 냄새가 나."],
+            &[
+                "Huff. Mind my spines.",
+                "Curling up is the best way to think.",
+                "I smell something in the garden.",
+            ],
+            &[
+                "훕. 가시 조심해.",
+                "몸을 동그랗게 말면 생각이 잘 돼.",
+                "정원에서 무슨 냄새가 나.",
+            ],
         ),
         Species::Mushroom => pick(
-            &["My cap feels extra spotty today.", "Puff. I could grow a little taller.", "The garden bed smells like home."],
-            &["오늘 모자 점박이가 더 많아진 것 같아.", "퍼프. 조금 더 자랄 수 있을 것 같아.", "텃밭에서 집 냄새가 나."],
+            &[
+                "My cap feels extra spotty today.",
+                "Puff. I could grow a little taller.",
+                "The garden bed smells like home.",
+            ],
+            &[
+                "오늘 모자 점박이가 더 많아진 것 같아.",
+                "퍼프. 조금 더 자랄 수 있을 것 같아.",
+                "텃밭에서 집 냄새가 나.",
+            ],
         ),
         Species::Axolotl => pick(
-            &["I could smile all day.", "My frills tickle when I wiggle.", "Blub. Is it bath time?"],
-            &["하루 종일 웃을 수 있어.", "꼼지락거리면 아가미가 간질간질해.", "뽀글. 목욕 시간이야?"],
+            &[
+                "I could smile all day.",
+                "My frills tickle when I wiggle.",
+                "Blub. Is it bath time?",
+            ],
+            &[
+                "하루 종일 웃을 수 있어.",
+                "꼼지락거리면 아가미가 간질간질해.",
+                "뽀글. 목욕 시간이야?",
+            ],
         ),
         Species::Dragon => pick(
-            &["One day I'll breathe fire. A little one.", "My wings are getting stronger.", "Rawr! That was a small rawr."],
-            &["언젠가 불을 뿜을 거야. 작은 불.", "날개가 점점 튼튼해져.", "크앙! 작은 크앙이었어."],
+            &[
+                "One day I'll breathe fire. A little one.",
+                "My wings are getting stronger.",
+                "Rawr! That was a small rawr.",
+            ],
+            &[
+                "언젠가 불을 뿜을 거야. 작은 불.",
+                "날개가 점점 튼튼해져.",
+                "크앙! 작은 크앙이었어.",
+            ],
         ),
         Species::Jelly => pick(
-            &["I drift wherever the air goes.", "Bloop. I'm glowing a little.", "Everything looks soft from in here."],
-            &["공기 따라 둥실둥실 흘러가.", "뽀록. 조금 빛나고 있어.", "여기서 보면 다 몽글몽글해."],
+            &[
+                "I drift wherever the air goes.",
+                "Bloop. I'm glowing a little.",
+                "Everything looks soft from in here.",
+            ],
+            &[
+                "공기 따라 둥실둥실 흘러가.",
+                "뽀록. 조금 빛나고 있어.",
+                "여기서 보면 다 몽글몽글해.",
+            ],
         ),
     };
     match world.ghost.species {
-        Species::Owl if night => lines.push(if korean { "밤이야. 내 시간이야." } else { "Night. My favorite time." }),
-        Species::Frog | Species::Axolotl | Species::Mushroom if rain => {
-            lines.push(if korean { "비다! 최고야." } else { "Rain! The best weather." })
-        }
-        Species::Penguin if snow => lines.push(if korean { "눈이다! 고향 같아." } else { "Snow! It feels like home." }),
-        Species::Robot if rain => lines.push(if korean { "비는 조심해야 해. 녹슬면 안 돼." } else { "Rain. Must not rust." }),
+        Species::Owl if night => lines.push(if korean {
+            "밤이야. 내 시간이야."
+        } else {
+            "Night. My favorite time."
+        }),
+        Species::Frog | Species::Axolotl | Species::Mushroom if rain => lines.push(if korean {
+            "비다! 최고야."
+        } else {
+            "Rain! The best weather."
+        }),
+        Species::Penguin if snow => lines.push(if korean {
+            "눈이다! 고향 같아."
+        } else {
+            "Snow! It feels like home."
+        }),
+        Species::Robot if rain => lines.push(if korean {
+            "비는 조심해야 해. 녹슬면 안 돼."
+        } else {
+            "Rain. Must not rust."
+        }),
         _ => {}
     }
     lines
@@ -2610,17 +2724,9 @@ mod tests {
         let mut world = World::new(1, 12.0);
         world.hear("하암");
         world.step(3.0);
-        assert!(
-            idle(&world)
-                .iter()
-                .any(|line| line == "Haaah… so sleepy.")
-        );
+        assert!(idle(&world).iter().any(|line| line == "Haaah… so sleepy."));
         world.start_focus(25);
-        assert!(
-            !idle(&world)
-                .iter()
-                .any(|line| line == "Haaah… so sleepy.")
-        );
+        assert!(!idle(&world).iter().any(|line| line == "Haaah… so sleepy."));
     }
 
     #[test]

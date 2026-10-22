@@ -282,20 +282,14 @@ impl World {
                     | Activity::Build
             );
         let toward = if pace > 0.15 && travelling {
-            Some(Vec3::new(
-                ghost.velocity.x,
-                0.0,
-                ghost.velocity.z,
-            ))
+            Some(Vec3::new(ghost.velocity.x, 0.0, ghost.velocity.z))
         } else {
             looking
         };
-        let wanted = toward
-            .map(|toward| toward.x.atan2(toward.z))
-            .unwrap_or(0.0);
+        let wanted = toward.map(|toward| toward.x.atan2(toward.z)).unwrap_or(0.0);
         let mut turn = wanted - footing.facing;
-        turn = (turn + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
-            - std::f32::consts::PI;
+        turn =
+            (turn + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
         let rate = if ghost.asleep > 0.5 { 0.0 } else { 6.0 };
         let step = turn * (1.0 - (-seconds * rate).exp());
         footing.facing = (footing.facing + step).rem_euclid(std::f32::consts::TAU);
@@ -387,7 +381,10 @@ mod tests {
             world.keep_footing(0.05);
         }
         let facing = world.ghost.footing.facing;
-        assert!((facing - std::f32::consts::FRAC_PI_2).abs() < 0.1, "{facing}");
+        assert!(
+            (facing - std::f32::consts::FRAC_PI_2).abs() < 0.1,
+            "{facing}"
+        );
     }
 
     #[test]

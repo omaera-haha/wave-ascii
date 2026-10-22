@@ -85,7 +85,12 @@ enum Shape {
         inverse: Mat3,
     },
     /// A capsule whose ends have different radii.
-    Cone { a: Vec3, b: Vec3, ra: f32, rb: f32 },
+    Cone {
+        start: Vec3,
+        end: Vec3,
+        start_radius: f32,
+        end_radius: f32,
+    },
     Block {
         center: Vec3,
         half: Vec3,
@@ -118,7 +123,12 @@ impl Shape {
                     -radii.min_element()
                 }
             }
-            Self::Cone { a, b, ra, rb } => round_cone(point, a, b, ra, rb),
+            Self::Cone {
+                start,
+                end,
+                start_radius,
+                end_radius,
+            } => round_cone(point, start, end, start_radius, end_radius),
             Self::Block {
                 center,
                 half,
@@ -143,7 +153,15 @@ impl Shape {
     fn bound(&self) -> (Vec3, f32) {
         match *self {
             Self::Ellipsoid { center, radii, .. } => (center, radii.max_element()),
-            Self::Cone { a, b, ra, rb } => ((a + b) * 0.5, a.distance(b) * 0.5 + ra.max(rb)),
+            Self::Cone {
+                start,
+                end,
+                start_radius,
+                end_radius,
+            } => (
+                (start + end) * 0.5,
+                start.distance(end) * 0.5 + start_radius.max(end_radius),
+            ),
             Self::Block { center, half, .. } => (center, half.length()),
             Self::Ring {
                 center,
@@ -155,32 +173,33 @@ impl Shape {
     }
 }
 
-/// Signed distance to a capsule from `a` to `b` whose radius runs from `ra`
-/// to `rb`.
-fn round_cone(point: Vec3, a: Vec3, b: Vec3, ra: f32, rb: f32) -> f32 {
-    let along = b - a;
+/// Signed distance to a capsule from `start` to `end` whose radius runs
+/// from `start_radius` to `end_radius`.
+fn round_cone(point: Vec3, start: Vec3, end: Vec3, start_radius: f32, end_radius: f32) -> f32 {
+    let along = end - start;
     let length_squared = along.length_squared();
     if length_squared < 1e-10 {
-        return point.distance(a) - ra.max(rb);
+        return point.distance(start) - start_radius.max(end_radius);
     }
-    let difference = ra - rb;
+    let difference = start_radius - end_radius;
     let slant = length_squared - difference * difference;
     let inverse = 1.0 / length_squared;
-    let offset = point - a;
-    let y = offset.dot(along);
-    let z = y - length_squared;
-    let x = offset * length_squared - along * y;
-    let x2 = x.length_squared();
-    let y2 = y * y * length_squared;
-    let z2 = z * z * length_squared;
-    let k = difference.signum() * difference * difference * x2;
-    if z.signum() * slant * z2 > k {
-        return (x2 + z2).sqrt() * inverse - rb;
+    let offset = point - start;
+    // How far along the axis, from each end, and how far off it, all scaled
+    // by the axis's squared length.
+    let from_start = offset.dot(along);
+    let from_end = from_start - length_squared;
+    let off_axis = (offset * length_squared - along * from_start).length_squared();
+    let before = from_start * from_start * length_squared;
+    let after = from_end * from_end * length_squared;
+    let side = difference.signum() * difference * difference * off_axis;
+    if from_end.signum() * slant * after > side {
+        return (off_axis + after).sqrt() * inverse - end_radius;
     }
-    if y.signum() * slant * y2 < k {
-        return (x2 + y2).sqrt() * inverse - ra;
+    if from_start.signum() * slant * before < side {
+        return (off_axis + before).sqrt() * inverse - start_radius;
     }
-    ((x2 * slant * inverse).sqrt() + y * difference) * inverse - ra
+    ((off_axis * slant * inverse).sqrt() + from_start * difference) * inverse - start_radius
 }
 
 /// How a part is colored.
@@ -355,13 +374,13 @@ impl Sculpt {
         self.ellipsoid(center, Vec3::splat(radius), paint);
     }
 
-    fn cone(&mut self, a: Vec3, b: Vec3, ra: f32, rb: f32, paint: Paint) {
+    fn cone(&mut self, start: Vec3, end: Vec3, start_radius: f32, end_radius: f32, paint: Paint) {
         self.push(
             Shape::Cone {
-                a: self.frame.point(a),
-                b: self.frame.point(b),
-                ra: ra.max(1e-3),
-                rb: rb.max(1e-3),
+                start: self.frame.point(start),
+                end: self.frame.point(end),
+                start_radius: start_radius.max(1e-3),
+                end_radius: end_radius.max(1e-3),
             },
             paint,
         );
@@ -639,7 +658,9 @@ impl Model {
         for (slot, &index) in parts.iter().enumerate() {
             let part = &self.parts[usize::from(index)];
             let width = part.blend.max(0.004);
-            let weight = (1.0 - (distances[slot] - nearest) / width).clamp(0.0, 1.0).powi(2);
+            let weight = (1.0 - (distances[slot] - nearest) / width)
+                .clamp(0.0, 1.0)
+                .powi(2);
             if weight <= 0.0 {
                 continue;
             }
@@ -690,7 +711,12 @@ impl Model {
 
 /// A creature on its own against `backdrop`, as on a card: seen from a
 /// little above and in front, turned by `turn`, under a soft studio light.
-pub fn study(figure: &Figure, grid: crate::frame::Grid, backdrop: Vec3, turn: f32) -> crate::frame::Frame {
+pub fn study(
+    figure: &Figure,
+    grid: crate::frame::Grid,
+    backdrop: Vec3,
+    turn: f32,
+) -> crate::frame::Frame {
     let model = Model::of(figure);
     let (center, radius) = model.bounds();
     let around = Vec3::new(turn.sin(), 0.32, turn.cos()).normalize();
@@ -706,7 +732,9 @@ pub fn study(figure: &Figure, grid: crate::frame::Grid, backdrop: Vec3, turn: f3
             Some(hit) => {
                 let lit = Vec3::splat(0.42)
                     + Vec3::new(1.0, 0.96, 0.9) * hit.normal.dot(light).max(0.0) * 0.75
-                    + Vec3::new(0.5, 0.6, 0.8) * (1.0 - hit.normal.dot(-direction).max(0.0)).powi(3) * 0.4;
+                    + Vec3::new(0.5, 0.6, 0.8)
+                        * (1.0 - hit.normal.dot(-direction).max(0.0)).powi(3)
+                        * 0.4;
                 let half = (-direction + light).normalize();
                 let glint = hit.sheen * hit.normal.dot(half).max(0.0).powi(24) * 0.7;
                 let shaded = hit.albedo * lit + hit.emission + Vec3::splat(glint);
@@ -965,7 +993,13 @@ fn four_legs(
         );
         sculpt.melted(0.03, |sculpt| {
             sculpt.within(Frame::ROOT, |sculpt| {
-                sculpt.cone(hip, foot + Vec3::Y * radius * 0.6, radius * 1.15, radius, leg);
+                sculpt.cone(
+                    hip,
+                    foot + Vec3::Y * radius * 0.6,
+                    radius * 1.15,
+                    radius,
+                    leg,
+                );
             });
         });
         sculpt.melted(0.015, |sculpt| {
@@ -1045,8 +1079,8 @@ fn fox(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<Plat
         .enumerate()
     {
         let sway = rig.tail_sway(index as f32);
-        direction = (Mat3::from_rotation_y(sway * 0.8) * Mat3::from_rotation_x(-curl * 0.5))
-            * direction;
+        direction =
+            (Mat3::from_rotation_y(sway * 0.8) * Mat3::from_rotation_x(-curl * 0.5)) * direction;
         if rig.sleep > 0.5 {
             direction = Mat3::from_rotation_y(0.7 * rig.sleep) * direction;
         }
@@ -1070,7 +1104,11 @@ fn fox(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<Plat
     let head_frame = head.child(center, Mat3::IDENTITY);
     sculpt.within(head, |sculpt| {
         sculpt.melted(0.04, |sculpt| {
-            sculpt.ellipsoid(center, Vec3::new(radius, radius * 0.9, radius * 0.92), Paint::Plain(fur));
+            sculpt.ellipsoid(
+                center,
+                Vec3::new(radius, radius * 0.9, radius * 0.92),
+                Paint::Plain(fur),
+            );
             // Cheek ruff and a pointed muzzle.
             sculpt.ellipsoid(
                 center + Vec3::new(0.0, -0.06, 0.06),
@@ -1086,21 +1124,34 @@ fn fox(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<Plat
             );
         });
         sculpt.melted(0.006, |sculpt| {
-            sculpt.ball(center + Vec3::new(0.0, -0.04, 0.2), 0.02, Paint::Gloss(sock * 0.6));
+            sculpt.ball(
+                center + Vec3::new(0.0, -0.04, 0.2),
+                0.02,
+                Paint::Gloss(sock * 0.6),
+            );
         });
         let droop = (-rig.perk).max(0.0) + 0.5 * rig.sleep;
         for side in [-1.0f32, 1.0] {
             let base = center + Vec3::new(side * 0.075, 0.09, -0.01);
             let tip = base
-                + Vec3::new(side * (0.05 + 0.04 * droop), 0.15 - 0.07 * droop, -0.02 - 0.05 * droop)
-                    * (1.0 + 0.06 * rig.perk.max(0.0));
+                + Vec3::new(
+                    side * (0.05 + 0.04 * droop),
+                    0.15 - 0.07 * droop,
+                    -0.02 - 0.05 * droop,
+                ) * (1.0 + 0.06 * rig.perk.max(0.0));
             sculpt.melted(0.02, |sculpt| {
-                sculpt.cone(base, tip, 0.055, 0.01, Paint::Fade {
-                    top: sock,
-                    bottom: fur,
-                    middle: 0.0,
-                    span: 0.0,
-                });
+                sculpt.cone(
+                    base,
+                    tip,
+                    0.055,
+                    0.01,
+                    Paint::Fade {
+                        top: sock,
+                        bottom: fur,
+                        middle: 0.0,
+                        span: 0.0,
+                    },
+                );
             });
             sculpt.melted(0.004, |sculpt| {
                 sculpt.cone(
@@ -1115,7 +1166,10 @@ fn fox(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<Plat
     });
     look.top = head_frame.point(Vec3::new(0.0, radius + 0.12, 0.0));
     look.hat = Some(head_frame.child(Vec3::new(0.0, radius * 0.85, -0.02), Mat3::IDENTITY));
-    look.neck = Some((body.child(Vec3::new(0.0, 0.06, 0.13), Mat3::from_rotation_x(0.6)), 0.085));
+    look.neck = Some((
+        body.child(Vec3::new(0.0, 0.06, 0.13), Mat3::from_rotation_x(0.6)),
+        0.085,
+    ));
     Some(plate(&head_frame, radius, -0.025, 0.95, false))
 }
 
@@ -1174,7 +1228,11 @@ fn bunny(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look) -
         for side in [-1.0f32, 1.0] {
             sculpt.melted(0.03, |sculpt| {
                 sculpt.ellipsoid(
-                    Vec3::new(side * 0.085, -stance + 0.03 + 0.03 * rig.air, -0.05 - reach * 2.0),
+                    Vec3::new(
+                        side * 0.085,
+                        -stance + 0.03 + 0.03 * rig.air,
+                        -0.05 - reach * 2.0,
+                    ),
                     Vec3::new(0.045, 0.03, 0.09),
                     coat_paint,
                 );
@@ -1199,7 +1257,11 @@ fn bunny(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look) -
     let head_frame = head.child(center, Mat3::IDENTITY);
     sculpt.within(head, |sculpt| {
         sculpt.melted(0.05, |sculpt| {
-            sculpt.ellipsoid(center, Vec3::new(radius * 1.05, radius * 0.95, radius), coat_paint);
+            sculpt.ellipsoid(
+                center,
+                Vec3::new(radius * 1.05, radius * 0.95, radius),
+                coat_paint,
+            );
             for side in [-1.0f32, 1.0] {
                 sculpt.ball(
                     center + Vec3::new(side * 0.06, -0.055, 0.07),
@@ -1245,7 +1307,10 @@ fn bunny(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look) -
     });
     look.top = head_frame.point(Vec3::new(0.0, radius + 0.2, 0.0));
     look.hat = Some(head_frame.child(Vec3::new(0.0, radius * 0.8, 0.02), Mat3::IDENTITY));
-    look.neck = Some((body.child(Vec3::new(0.0, 0.08, 0.05), Mat3::from_rotation_x(0.3)), 0.09));
+    look.neck = Some((
+        body.child(Vec3::new(0.0, 0.08, 0.05), Mat3::from_rotation_x(0.3)),
+        0.09,
+    ));
     Some(plate(&head_frame, radius, -0.01, 0.92, false))
 }
 
@@ -1396,7 +1461,11 @@ fn frog(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look) ->
         sculpt.melted(0.06, |sculpt| {
             sculpt.ellipsoid(
                 Vec3::new(0.0, 0.0, -0.02),
-                Vec3::new(0.15 * rig.build, 0.09 + 0.005 * rig.breath, 0.14 + 0.03 * reach),
+                Vec3::new(
+                    0.15 * rig.build,
+                    0.09 + 0.005 * rig.breath,
+                    0.14 + 0.03 * reach,
+                ),
                 skin,
             );
             sculpt.ellipsoid(
@@ -1470,7 +1539,11 @@ fn slime(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<Pl
         sculpt.melted(0.07, |sculpt| {
             sculpt.ellipsoid(
                 Vec3::new(0.0, -0.005, 0.0),
-                Vec3::new(0.17 * flat * rig.build, 0.13 * squash, 0.16 * flat * rig.build),
+                Vec3::new(
+                    0.17 * flat * rig.build,
+                    0.13 * squash,
+                    0.16 * flat * rig.build,
+                ),
                 Paint::Plain(color),
             );
             sculpt.ball(
@@ -1573,7 +1646,11 @@ fn owl(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look) -> 
     let head_frame = head.child(center, Mat3::IDENTITY);
     sculpt.within(head, |sculpt| {
         sculpt.melted(0.07, |sculpt| {
-            sculpt.ellipsoid(center, Vec3::new(radius * 1.05, radius * 0.92, radius), feather);
+            sculpt.ellipsoid(
+                center,
+                Vec3::new(radius * 1.05, radius * 0.92, radius),
+                feather,
+            );
         });
         sculpt.melted(0.02, |sculpt| {
             for side in [-1.0f32, 1.0] {
@@ -1627,7 +1704,13 @@ fn robot(sculpt: &mut Sculpt, rig: &Rig, coat: u8, glow: Vec3, look: &mut Look) 
     };
     sculpt.within(wheel, |sculpt| {
         sculpt.melted(0.0, |sculpt| {
-            sculpt.ring(Vec3::ZERO, Mat3::IDENTITY, 0.045, 0.022, Paint::Plain(Vec3::splat(0.2)));
+            sculpt.ring(
+                Vec3::ZERO,
+                Mat3::IDENTITY,
+                0.045,
+                0.022,
+                Paint::Plain(Vec3::splat(0.2)),
+            );
             sculpt.block(
                 Vec3::ZERO,
                 Vec3::new(0.05, 0.012, 0.012),
@@ -1650,14 +1733,20 @@ fn robot(sculpt: &mut Sculpt, rig: &Rig, coat: u8, glow: Vec3, look: &mut Look) 
                 0.035,
                 Paint::Plain(shell),
             );
-            sculpt.ball(Vec3::new(0.0, -0.06, 0.07), 0.025, Paint::Glow(accent * 0.8));
+            sculpt.ball(
+                Vec3::new(0.0, -0.06, 0.07),
+                0.025,
+                Paint::Glow(accent * 0.8),
+            );
         });
         // Little arms that wave when it's happy.
         for side in [-1.0f32, 1.0] {
-            let wave = 0.3 + 0.9 * rig.dance * (rig.time * 8.0 + side).sin().abs()
+            let wave = 0.3
+                + 0.9 * rig.dance * (rig.time * 8.0 + side).sin().abs()
                 + 0.3 * rig.perk.max(0.0);
             let shoulder = Vec3::new(side * 0.1, -0.04, 0.0);
-            let hand = shoulder + Vec3::new(side * 0.06 * wave.cos().abs(), -0.07 + 0.09 * wave, 0.02);
+            let hand =
+                shoulder + Vec3::new(side * 0.06 * wave.cos().abs(), -0.07 + 0.09 * wave, 0.02);
             sculpt.melted(0.01, |sculpt| {
                 sculpt.cone(shoulder, hand, 0.014, 0.012, Paint::Plain(accent));
                 sculpt.ball(hand, 0.022, Paint::Plain(shell));
@@ -1669,8 +1758,19 @@ fn robot(sculpt: &mut Sculpt, rig: &Rig, coat: u8, glow: Vec3, look: &mut Look) 
     let head_frame = head.child(center, Mat3::IDENTITY);
     sculpt.within(head, |sculpt| {
         sculpt.melted(0.015, |sculpt| {
-            sculpt.cone(Vec3::new(0.0, -0.02, 0.0), Vec3::new(0.0, 0.03, 0.0), 0.025, 0.025, Paint::Plain(Vec3::splat(0.35)));
-            sculpt.block(center, Vec3::new(0.14, 0.1, 0.1), 0.045, Paint::Plain(shell));
+            sculpt.cone(
+                Vec3::new(0.0, -0.02, 0.0),
+                Vec3::new(0.0, 0.03, 0.0),
+                0.025,
+                0.025,
+                Paint::Plain(Vec3::splat(0.35)),
+            );
+            sculpt.block(
+                center,
+                Vec3::new(0.14, 0.1, 0.1),
+                0.045,
+                Paint::Plain(shell),
+            );
         });
         sculpt.melted(0.0, |sculpt| {
             sculpt.block(
@@ -1680,13 +1780,23 @@ fn robot(sculpt: &mut Sculpt, rig: &Rig, coat: u8, glow: Vec3, look: &mut Look) 
                 Paint::Gloss(screen),
             );
             for side in [-1.0f32, 1.0] {
-                sculpt.ball(center + Vec3::new(side * 0.14, 0.0, 0.0), 0.028, Paint::Plain(accent));
+                sculpt.ball(
+                    center + Vec3::new(side * 0.14, 0.0, 0.0),
+                    0.028,
+                    Paint::Plain(accent),
+                );
             }
         });
         let sway = 0.15 * (rig.time * 2.0).sin() + 0.3 * rig.dance * (rig.time * 7.0).sin();
         let tip = center + Vec3::new(sway * 0.12, 0.2, -0.01);
         sculpt.melted(0.006, |sculpt| {
-            sculpt.cone(center + Vec3::new(0.0, 0.09, -0.01), tip, 0.008, 0.006, Paint::Plain(Vec3::splat(0.4)));
+            sculpt.cone(
+                center + Vec3::new(0.0, 0.09, -0.01),
+                tip,
+                0.008,
+                0.006,
+                Paint::Plain(Vec3::splat(0.4)),
+            );
             sculpt.ball(tip, 0.026, Paint::Glow(glow * (0.5 + 0.5 * rig.energy)));
         });
         look.top = head_frame.point(Vec3::new(0.0, 0.22, 0.0));
@@ -1720,7 +1830,11 @@ fn hedgehog(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option
         sculpt.melted(0.04, |sculpt| {
             sculpt.ellipsoid(
                 Vec3::new(0.0, -0.01, -0.02),
-                Vec3::new(0.14 * rig.build, 0.1 + 0.004 * rig.breath + 0.02 * curl, 0.16 - 0.03 * curl),
+                Vec3::new(
+                    0.14 * rig.build,
+                    0.1 + 0.004 * rig.breath + 0.02 * curl,
+                    0.16 - 0.03 * curl,
+                ),
                 Paint::Spots {
                     base: spines,
                     spot: tips,
@@ -1748,7 +1862,12 @@ fn hedgehog(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option
             );
             for side in [-1.0f32, 1.0] {
                 for along in [0.07f32, -0.08] {
-                    let lift = 0.02 * rig.lift(if (side > 0.0) == (along > 0.0) { 0.0 } else { 0.5 });
+                    let lift = 0.02
+                        * rig.lift(if (side > 0.0) == (along > 0.0) {
+                            0.0
+                        } else {
+                            0.5
+                        });
                     sculpt.ball(
                         Vec3::new(side * 0.07, -stance + 0.02 + lift + 0.03 * curl, along),
                         0.022,
@@ -1773,9 +1892,17 @@ fn hedgehog(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option
             );
         });
         sculpt.melted(0.004, |sculpt| {
-            sculpt.ball(center + Vec3::new(0.0, -0.035, 0.145), 0.018, Paint::Gloss(Vec3::splat(0.08)));
+            sculpt.ball(
+                center + Vec3::new(0.0, -0.035, 0.145),
+                0.018,
+                Paint::Gloss(Vec3::splat(0.08)),
+            );
             for side in [-1.0f32, 1.0] {
-                sculpt.ball(center + Vec3::new(side * 0.06, 0.06, -0.01), 0.025, Paint::Plain(face * 0.9));
+                sculpt.ball(
+                    center + Vec3::new(side * 0.06, 0.06, -0.01),
+                    0.025,
+                    Paint::Plain(face * 0.9),
+                );
             }
         });
     });
@@ -1863,11 +1990,7 @@ fn mushroom(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look
     let head = body.child(Vec3::new(0.0, 0.05, 0.0), rig.head);
     sculpt.within(head, |sculpt| {
         sculpt.melted(0.03, |sculpt| {
-            sculpt.ellipsoid(
-                Vec3::new(0.0, 0.08, 0.0),
-                Vec3::new(0.21, 0.13, 0.21),
-                cap,
-            );
+            sculpt.ellipsoid(Vec3::new(0.0, 0.08, 0.0), Vec3::new(0.21, 0.13, 0.21), cap);
             sculpt.ellipsoid(
                 Vec3::new(0.0, 0.03, 0.0),
                 Vec3::new(0.19, 0.035, 0.19),
@@ -1881,7 +2004,10 @@ fn mushroom(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look
     }
     look.top = head.point(Vec3::new(0.0, 0.22, 0.0));
     look.hat = Some(head.child(Vec3::new(0.0, 0.19, 0.0), Mat3::IDENTITY));
-    look.neck = Some((body.child(Vec3::new(0.0, -0.04, 0.0), Mat3::IDENTITY), 0.095));
+    look.neck = Some((
+        body.child(Vec3::new(0.0, -0.04, 0.0), Mat3::IDENTITY),
+        0.095,
+    ));
     let face_frame = body.child(Vec3::new(0.0, -0.065, 0.0), rig.head);
     let mut face = plate(&face_frame, 0.09, 0.0, 0.9, false);
     face.center = face_frame.point(Vec3::new(0.0, 0.0, 0.05));
@@ -2050,7 +2176,8 @@ fn dragon(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<P
     let mut previous = body.point(Vec3::new(0.0, -0.01, -0.16));
     for index in 0..4 {
         let sway = rig.tail_sway(index as f32);
-        let direction = Mat3::from_rotation_y(sway) * Vec3::new(0.0, 0.02 - 0.04 * index as f32, -1.0).normalize();
+        let direction = Mat3::from_rotation_y(sway)
+            * Vec3::new(0.0, 0.02 - 0.04 * index as f32, -1.0).normalize();
         let next = previous + direction * 0.08;
         let radius = 0.045 - index as f32 * 0.01;
         sculpt.melted(0.03, |sculpt| {
@@ -2059,7 +2186,11 @@ fn dragon(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<P
         previous = next;
     }
     sculpt.melted(0.01, |sculpt| {
-        sculpt.ellipsoid(previous, Vec3::new(0.035, 0.012, 0.035), Paint::Plain(wings));
+        sculpt.ellipsoid(
+            previous,
+            Vec3::new(0.035, 0.012, 0.035),
+            Paint::Plain(wings),
+        );
     });
     let head = body.child(Vec3::new(0.0, 0.08, 0.12), rig.head);
     let radius = 0.13;
@@ -2083,13 +2214,20 @@ fn dragon(sculpt: &mut Sculpt, rig: &Rig, coat: u8, look: &mut Look) -> Option<P
                     0.006,
                     Paint::Plain(belly),
                 );
-                sculpt.ball(center + Vec3::new(side * 0.025, -0.02, 0.16), 0.008, Paint::Gloss(scales * 0.4));
+                sculpt.ball(
+                    center + Vec3::new(side * 0.025, -0.02, 0.16),
+                    0.008,
+                    Paint::Gloss(scales * 0.4),
+                );
             }
         });
     });
     look.top = head_frame.point(Vec3::new(0.0, radius + 0.06, 0.0));
     look.hat = Some(head_frame.child(Vec3::new(0.0, radius * 0.85, -0.01), Mat3::IDENTITY));
-    look.neck = Some((body.child(Vec3::new(0.0, 0.06, 0.11), Mat3::from_rotation_x(0.5)), 0.08));
+    look.neck = Some((
+        body.child(Vec3::new(0.0, 0.06, 0.11), Mat3::from_rotation_x(0.5)),
+        0.08,
+    ));
     Some(plate(&head_frame, radius, -0.02, 0.9, false))
 }
 
@@ -2124,7 +2262,11 @@ fn ghost(sculpt: &mut Sculpt, rig: &Rig, coat: u8, glow: Vec3, look: &mut Look) 
                 let angle = index as f32 / 7.0 * TAU;
                 let wave = 0.02 * (rig.time * 3.0 - index as f32 * 1.3).sin();
                 sculpt.ball(
-                    Vec3::new(angle.sin() * 0.16, -0.22 + wave, angle.cos() * 0.16 - 0.03 * rig.walk),
+                    Vec3::new(
+                        angle.sin() * 0.16,
+                        -0.22 + wave,
+                        angle.cos() * 0.16 - 0.03 * rig.walk,
+                    ),
                     0.06,
                     Paint::Plain(color),
                 );
@@ -2153,13 +2295,18 @@ fn jelly(sculpt: &mut Sculpt, rig: &Rig, coat: u8, seed: u32, look: &mut Look) -
     let pulse = (rig.time * 2.4).sin();
     let body = Frame {
         origin: Vec3::new(0.0, 0.015 * pulse + rig.lift, 0.0),
-        axes: Mat3::from_rotation_z(0.12 * rig.lean + rig.sway) * Mat3::from_rotation_x(0.2 * rig.walk),
+        axes: Mat3::from_rotation_z(0.12 * rig.lean + rig.sway)
+            * Mat3::from_rotation_x(0.2 * rig.walk),
     };
     sculpt.within(body, |sculpt| {
         sculpt.melted(0.05, |sculpt| {
             sculpt.ellipsoid(
                 Vec3::new(0.0, 0.06, 0.0),
-                Vec3::new(0.18 - 0.012 * pulse, 0.13 + 0.01 * pulse, 0.18 - 0.012 * pulse),
+                Vec3::new(
+                    0.18 - 0.012 * pulse,
+                    0.13 + 0.01 * pulse,
+                    0.18 - 0.012 * pulse,
+                ),
                 Paint::Spots {
                     base: color,
                     spot: shade(color, 0.6),
@@ -2214,7 +2361,11 @@ fn wear(sculpt: &mut Sculpt, accessory: Accessory, crown: Frame, neck: Option<(F
                     glows: false,
                 },
             );
-            sculpt.ball(Vec3::new(0.0, 0.17, 0.0), 0.02, Paint::Plain(Vec3::new(1.0, 0.95, 0.5)));
+            sculpt.ball(
+                Vec3::new(0.0, 0.17, 0.0),
+                0.02,
+                Paint::Plain(Vec3::new(1.0, 0.95, 0.5)),
+            );
         }),
         Accessory::WitchHat => sculpt.within(tilt, |sculpt| {
             sculpt.ellipsoid(
@@ -2250,7 +2401,13 @@ fn wear(sculpt: &mut Sculpt, accessory: Accessory, crown: Frame, neck: Option<(F
                         .map_or(palette[0], |color| color.rgb())
                 };
                 sculpt.within(frame, |sculpt| {
-                    sculpt.ring(Vec3::ZERO, Mat3::IDENTITY, radius, 0.022, Paint::Plain(wool));
+                    sculpt.ring(
+                        Vec3::ZERO,
+                        Mat3::IDENTITY,
+                        radius,
+                        0.022,
+                        Paint::Plain(wool),
+                    );
                     sculpt.cone(
                         Vec3::new(radius * 0.5, 0.0, radius * 0.8),
                         Vec3::new(radius * 0.7, -0.09, radius * 1.0),
@@ -2262,12 +2419,18 @@ fn wear(sculpt: &mut Sculpt, accessory: Accessory, crown: Frame, neck: Option<(F
             }
         }
         Accessory::Flower(kind) => sculpt.within(crown, |sculpt| {
-            let petal = super::shapes::Material::Flower(kind).albedo(&crate::world::Plant::default());
-            let middle = super::shapes::Material::Center(kind).albedo(&crate::world::Plant::default());
+            let petal =
+                super::shapes::Material::Flower(kind).albedo(&crate::world::Plant::default());
+            let middle =
+                super::shapes::Material::Center(kind).albedo(&crate::world::Plant::default());
             let at = Vec3::new(0.08, 0.0, 0.03);
             for index in 0..5 {
                 let angle = index as f32 / 5.0 * TAU;
-                sculpt.ball(at + Vec3::new(angle.cos() * 0.025, angle.sin() * 0.025, 0.0), 0.02, Paint::Plain(petal));
+                sculpt.ball(
+                    at + Vec3::new(angle.cos() * 0.025, angle.sin() * 0.025, 0.0),
+                    0.02,
+                    Paint::Plain(petal),
+                );
             }
             sculpt.ball(at + Vec3::Z * 0.008, 0.015, Paint::Plain(middle));
         }),
@@ -2283,8 +2446,18 @@ fn wear(sculpt: &mut Sculpt, accessory: Accessory, crown: Frame, neck: Option<(F
         Accessory::LuckyPouch => {
             if let Some((frame, radius)) = neck {
                 sculpt.within(frame, |sculpt| {
-                    sculpt.ring(Vec3::ZERO, Mat3::IDENTITY, radius, 0.006, Paint::Plain(Vec3::new(1.0, 0.86, 0.4)));
-                    sculpt.ball(Vec3::new(0.0, -0.03, radius + 0.015), 0.03, Paint::Plain(Vec3::new(1.0, 0.43, 0.55)));
+                    sculpt.ring(
+                        Vec3::ZERO,
+                        Mat3::IDENTITY,
+                        radius,
+                        0.006,
+                        Paint::Plain(Vec3::new(1.0, 0.86, 0.4)),
+                    );
+                    sculpt.ball(
+                        Vec3::new(0.0, -0.03, radius + 0.015),
+                        0.03,
+                        Paint::Plain(Vec3::new(1.0, 0.43, 0.55)),
+                    );
                 });
             }
         }
@@ -2296,7 +2469,11 @@ fn wear(sculpt: &mut Sculpt, accessory: Accessory, crown: Frame, neck: Option<(F
                     Paint::Plain(Vec3::new(0.4, 0.88, 0.57)),
                 );
             }
-            sculpt.ball(Vec3::new(0.07, 0.012, 0.035), 0.013, Paint::Plain(Vec3::new(1.0, 0.4, 0.48)));
+            sculpt.ball(
+                Vec3::new(0.07, 0.012, 0.035),
+                0.013,
+                Paint::Plain(Vec3::new(1.0, 0.4, 0.48)),
+            );
         }),
     });
 }
@@ -2328,7 +2505,9 @@ mod tests {
     fn every_body_is_seen_from_the_front_and_finite_in_any_pose() {
         for species in Species::ALL {
             for coat in 0..species.coats() {
-                for (pace, asleep, airborne) in [(0.0, 0.0, false), (1.5, 0.0, true), (0.0, 1.0, false)] {
+                for (pace, asleep, airborne) in
+                    [(0.0, 0.0, false), (1.5, 0.0, true), (0.0, 1.0, false)]
+                {
                     let mut figure = figure(species);
                     figure.genome.coat = coat;
                     figure.motion.pace = pace;
@@ -2362,7 +2541,10 @@ mod tests {
             for part in &model.parts {
                 let (middle, reach) = part.bound;
                 let world = figure.position + model.turn * middle * model.scale;
-                assert!(world.distance(center) + reach * model.scale <= radius + 1e-3, "{species:?}");
+                assert!(
+                    world.distance(center) + reach * model.scale <= radius + 1e-3,
+                    "{species:?}"
+                );
             }
         }
     }
@@ -2383,14 +2565,19 @@ mod tests {
         let model = Model::of(&figure);
         let plate = model.plate.unwrap();
         // Straight at the left eye's middle.
-        let eye_local = plate.center + plate.right * (-0.17 * plate.unit) - plate.up * (0.03 * plate.unit);
+        let eye_local =
+            plate.center + plate.right * (-0.17 * plate.unit) - plate.up * (0.03 * plate.unit);
         let target = figure.position + eye_local;
         let eye = target + Vec3::Z * 3.0;
-        let hit = model.trace(eye, (target - eye).normalize(), 100.0, 0.001, 0.0).unwrap();
+        let hit = model
+            .trace(eye, (target - eye).normalize(), 100.0, 0.001, 0.0)
+            .unwrap();
         assert!(hit.albedo.length() < 0.5, "{}", hit.albedo);
         let cheek = figure.position + plate.center + plate.up * (0.3 * plate.unit);
         let eye = cheek + Vec3::Z * 3.0;
-        let hit = model.trace(eye, (cheek - eye).normalize(), 100.0, 0.001, 0.0).unwrap();
+        let hit = model
+            .trace(eye, (cheek - eye).normalize(), 100.0, 0.001, 0.0)
+            .unwrap();
         assert!(hit.albedo.length() > 0.8, "{}", hit.albedo);
     }
 
@@ -2402,18 +2589,25 @@ mod tests {
         // Its nose now points along +x.
         let ahead = figure.position + Vec3::new(3.0, 0.1, 0.0);
         let hit = model
-            .trace(ahead, (figure.position + Vec3::Y * 0.1 - ahead).normalize(), 100.0, 0.002, 0.0)
+            .trace(
+                ahead,
+                (figure.position + Vec3::Y * 0.1 - ahead).normalize(),
+                100.0,
+                0.002,
+                0.0,
+            )
             .unwrap();
         assert!(hit.point.x > 0.15, "{}", hit.point);
     }
 
     #[test]
     fn round_cones_measure_exactly_on_their_axis() {
-        let a = Vec3::ZERO;
-        let b = Vec3::Y;
-        assert!((round_cone(Vec3::new(0.5, 0.5, 0.0), a, b, 0.2, 0.2) - 0.3).abs() < 1e-4);
-        assert!((round_cone(Vec3::new(0.0, -1.0, 0.0), a, b, 0.2, 0.1) - 0.8).abs() < 1e-4);
-        assert!((round_cone(Vec3::new(0.0, 2.0, 0.0), a, b, 0.2, 0.1) - 0.9).abs() < 1e-4);
-        assert!(round_cone(Vec3::new(0.0, 0.5, 0.0), a, b, 0.2, 0.1) < 0.0);
+        let start = Vec3::ZERO;
+        let end = Vec3::Y;
+        let at = |point: Vec3, radii: (f32, f32)| round_cone(point, start, end, radii.0, radii.1);
+        assert!((at(Vec3::new(0.5, 0.5, 0.0), (0.2, 0.2)) - 0.3).abs() < 1e-4);
+        assert!((at(Vec3::new(0.0, -1.0, 0.0), (0.2, 0.1)) - 0.8).abs() < 1e-4);
+        assert!((at(Vec3::new(0.0, 2.0, 0.0), (0.2, 0.1)) - 0.9).abs() < 1e-4);
+        assert!(at(Vec3::new(0.0, 0.5, 0.0), (0.2, 0.1)) < 0.0);
     }
 }

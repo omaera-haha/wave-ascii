@@ -8,8 +8,8 @@ use crate::color::ColorMode;
 use crate::face;
 use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
-use crate::postcard::{self, Postcard};
 use crate::portrait::{self, Handling};
+use crate::postcard::{self, Postcard};
 use crate::render::creature::{Figure, Model};
 use crate::render::ghost::{Aura, Body, Pose, friend_color};
 use crate::render::sky::Outside;
@@ -264,7 +264,11 @@ impl App {
         mind.write_letter(&world);
         let aura = mood_color(world.ghost.mood);
         let host = world.host();
-        let others: Vec<u32> = world.roster().into_iter().filter(|id| *id != host).collect();
+        let others: Vec<u32> = world
+            .roster()
+            .into_iter()
+            .filter(|id| *id != host)
+            .collect();
         let minds = others
             .iter()
             .map(|id| (*id, mind.sibling(Journal::default())))
@@ -442,7 +446,8 @@ impl App {
         }
         self.aura = self.aura.lerp(color, ease);
         let host = self.world.host();
-        self.glows.retain(|(id, _)| self.world.creature(*id).is_some());
+        self.glows
+            .retain(|(id, _)| self.world.creature(*id).is_some());
         for ghost in self.world.creatures() {
             if ghost.id == host {
                 continue;
@@ -543,7 +548,8 @@ impl App {
         self.minds.sort_by_key(|(id, _)| *id);
         if let Some(index) = self.borns.iter().position(|(other, _)| *other == id) {
             let (_, born) = self.borns.remove(index);
-            self.borns.push((host, std::mem::replace(&mut self.born, born)));
+            self.borns
+                .push((host, std::mem::replace(&mut self.born, born)));
         }
         let glow = self
             .glows
@@ -551,7 +557,8 @@ impl App {
             .find(|(other, _)| *other == id)
             .map_or(mood_color(self.world.ghost.mood), |(_, glow)| *glow);
         self.glows.retain(|(other, _)| *other != id);
-        self.glows.push((host, std::mem::replace(&mut self.aura, glow)));
+        self.glows
+            .push((host, std::mem::replace(&mut self.aura, glow)));
         self.selected_at = self.world.time;
         self.stroke = None;
         self.drawing_mode = false;
@@ -579,9 +586,17 @@ impl App {
     /// A new creature of `species` comes to live here. Returns its name, or
     /// `None` when the cottage is full.
     pub fn adopt(&mut self, species: crate::world::Species, name: Option<&str>) -> Option<String> {
-        let taken: Vec<String> = self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+        let taken: Vec<String> = self
+            .world
+            .creatures()
+            .map(|ghost| ghost.name.clone())
+            .collect();
         let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
-            Some(name) => name.chars().filter(|character| !character.is_control()).take(24).collect(),
+            Some(name) => name
+                .chars()
+                .filter(|character| !character.is_control())
+                .take(24)
+                .collect(),
             None => {
                 let mut random = crate::world::Random::new(
                     self.world.time.to_bits() ^ u64::from(self.world.household_size() as u32) << 40,
@@ -609,7 +624,11 @@ impl App {
             .iter()
             .position(|species| *species == stranger.species)
             .unwrap_or(0);
-        let taken: Vec<String> = self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+        let taken: Vec<String> = self
+            .world
+            .creatures()
+            .map(|ghost| ghost.name.clone())
+            .collect();
         let mut random = crate::world::Random::new(mind::now() as u64 ^ 0x5157);
         let name = crate::world::species::pick_name(&mut random, &taken);
         self.adoption.naming = Some(Line::from(name.as_str()));
@@ -620,9 +639,17 @@ impl App {
     /// Asks the stranger at the glass in to live here, under `name` or one
     /// it is given. Returns its name.
     pub fn invite_stranger(&mut self, name: Option<&str>) -> Option<String> {
-        let taken: Vec<String> = self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+        let taken: Vec<String> = self
+            .world
+            .creatures()
+            .map(|ghost| ghost.name.clone())
+            .collect();
         let name: String = match name.map(str::trim).filter(|name| !name.is_empty()) {
-            Some(name) => name.chars().filter(|character| !character.is_control()).take(24).collect(),
+            Some(name) => name
+                .chars()
+                .filter(|character| !character.is_control())
+                .take(24)
+                .collect(),
             None => {
                 let mut random = crate::world::Random::new(mind::now() as u64 ^ 0x5157);
                 crate::world::species::pick_name(&mut random, &taken)
@@ -991,7 +1018,10 @@ impl App {
                     self.mode = Mode::Watching;
                     self.adoption.naming = None;
                     if std::mem::take(&mut self.adoption.stranger)
-                        && self.world.stranger.is_some_and(|stranger| stranger.species == species)
+                        && self
+                            .world
+                            .stranger
+                            .is_some_and(|stranger| stranger.species == species)
                     {
                         match self.invite_stranger(Some(&name)) {
                             Some(name) => self.post(format!(
@@ -1029,8 +1059,11 @@ impl App {
             Key::Up => self.adoption.index = index.saturating_sub(across),
             Key::Down => self.adoption.index = (index + across).min(kinds - 1),
             Key::Enter if self.world.household_size() < crate::world::household::MOST => {
-                let taken: Vec<String> =
-                    self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+                let taken: Vec<String> = self
+                    .world
+                    .creatures()
+                    .map(|ghost| ghost.name.clone())
+                    .collect();
                 let mut random = crate::world::Random::new(mind::now() as u64 ^ index as u64);
                 let suggestion = crate::world::species::pick_name(&mut random, &taken);
                 self.adoption.naming = Some(Line::from(suggestion.as_str()));
@@ -2124,20 +2157,37 @@ mod tests {
         let mut world = World::new(11, 15.0);
         world.found_household(&[Species::Fox, Species::Bunny, Species::Owl, Species::Robot]);
         let mind = Mind::new(&Config::default(), Journal::default(), true);
-        let mut app = App::new(world, mind, Config::default(), Style::Braille, ColorMode::Plain);
+        let mut app = App::new(
+            world,
+            mind,
+            Config::default(),
+            Style::Braille,
+            ColorMode::Plain,
+        );
         let mut last: Vec<(u32, String)> = Vec::new();
         let mut counts: std::collections::BTreeMap<String, u32> = Default::default();
         let steps = (hours * 3600.0 / 0.1) as usize;
         for step in 0..steps {
             app.world.hour = (15.0 + step as f32 * 0.1 / 3600.0) % 24.0;
-            app.world.viewer.active_at = if step % 6000 < 3000 { app.world.time } else { app.world.viewer.active_at };
+            app.world.viewer.active_at = if step % 6000 < 3000 {
+                app.world.time
+            } else {
+                app.world.viewer.active_at
+            };
             app.advance(0.1);
             for id in app.world.roster() {
                 let ghost = app.world.creature(id).unwrap();
                 let doing = if ghost.asleep > 0.5 {
                     "asleep".to_owned()
                 } else {
-                    format!("{:?}{}", ghost.plan.activity, ghost.plan.pastime.map_or(String::new(), |p| format!("/{p:?}")))
+                    format!(
+                        "{:?}{}",
+                        ghost.plan.activity,
+                        ghost
+                            .plan
+                            .pastime
+                            .map_or(String::new(), |p| format!("/{p:?}"))
+                    )
                 };
                 match last.iter_mut().find(|(other, _)| *other == id) {
                     Some((_, before)) if *before == doing => {}
@@ -2145,7 +2195,15 @@ mod tests {
                         *before = doing.clone();
                         *counts.entry(doing.clone()).or_default() += 1;
                         if std::env::var_os("WATCH_VERBOSE").is_some() {
-                            println!("{:>7.0}s h{:>5.2} {} {} at {:.1?} body {:.2?}", app.world.time, app.world.hour, ghost.name, doing, ghost.position, ghost.body());
+                            println!(
+                                "{:>7.0}s h{:>5.2} {} {} at {:.1?} body {:.2?}",
+                                app.world.time,
+                                app.world.hour,
+                                ghost.name,
+                                doing,
+                                ghost.position,
+                                ghost.body()
+                            );
                         }
                     }
                     None => last.push((id, doing)),

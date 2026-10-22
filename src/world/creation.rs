@@ -163,7 +163,8 @@ impl WrittenBook {
         };
         let hangul = |text: &str| {
             let mut text = text.to_owned();
-            for (consonant, vowel) in [("이", "가"), ("은", "는"), ("과", "와"), ("을", "를")] {
+            for (consonant, vowel) in [("이", "가"), ("은", "는"), ("과", "와"), ("을", "를")]
+            {
                 text = text.replace(
                     &format!("유령{consonant}"),
                     &format!(

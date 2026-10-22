@@ -697,10 +697,9 @@ impl EventKind {
             }
             Self::Recovered { cared: false } => "got over my little cold".to_owned(),
             Self::MovedIn { names } if names.is_empty() => "came to live in the cottage".to_owned(),
-            Self::MovedIn { names } => format!(
-                "came to live in the cottage with {}",
-                together::list(names)
-            ),
+            Self::MovedIn { names } => {
+                format!("came to live in the cottage with {}", together::list(names))
+            }
             Self::Newcomer { name, species, .. } => {
                 format!("{name} the {} came to live with us", species.noun())
             }
@@ -3513,9 +3512,7 @@ impl World {
                 self.wish_on_moon();
                 self.find_constellation();
             }
-            Activity::Visit if host && self.comforting.is_some() => {
-                look = self.carry_out_comfort()
-            }
+            Activity::Visit if host && self.comforting.is_some() => look = self.carry_out_comfort(),
             Activity::Visit => {
                 if host
                     && self

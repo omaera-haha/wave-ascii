@@ -2720,7 +2720,11 @@ impl Life {
     pub fn habit(&self, activity: Activity) -> f32 {
         if matches!(
             activity,
-            Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show | Activity::Together
+            Activity::Float
+                | Activity::Comfort
+                | Activity::Fold
+                | Activity::Show
+                | Activity::Together
         ) {
             return 1.0;
         }

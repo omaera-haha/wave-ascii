@@ -458,7 +458,11 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
                 let fond = world
                     .together_partner()
                     .map_or(0.0, |partner| world.fondness_for(partner.id));
-                let present = if present && !world.companion { 0.5 } else { 1.0 };
+                let present = if present && !world.companion {
+                    0.5
+                } else {
+                    1.0
+                };
                 (0.05 + 0.3 * (1.0 - needs.company) + 0.15 * (1.0 - needs.fun) + 0.15 * fond)
                     * needs.energy
                     * present

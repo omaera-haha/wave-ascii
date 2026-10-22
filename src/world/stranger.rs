@@ -4,8 +4,8 @@
 
 use glam::Vec3;
 
-use super::species::{Genome, Species};
 use super::home::{SILL, SILL_HALF};
+use super::species::{Genome, Species};
 use super::{EventKind, Sky, World, household};
 
 /// Seconds it takes to walk up to the glass, and back away.

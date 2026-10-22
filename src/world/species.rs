@@ -125,13 +125,17 @@ impl Species {
     pub fn portrait(self) -> &'static str {
         match self {
             Self::Ghost => "a small glowing ghost who floats and can turn faint",
-            Self::Fox => "a fox kit with big ears and a bushy white-tipped tail, who trots on four paws",
+            Self::Fox => {
+                "a fox kit with big ears and a bushy white-tipped tail, who trots on four paws"
+            }
             Self::Bunny => "a round little bunny with long ears and a cotton tail, who hops",
             Self::Penguin => "a fluffy penguin chick who waddles and flaps its flippers",
             Self::Frog => "a squat little frog with big eyes on top of its head, who hops",
             Self::Slime => "a wobbly see-through slime who bounces and squishes",
             Self::Owl => "a round fluffy owlet with ear tufts, who flies and perches",
-            Self::Robot => "a tiny round robot on one wheel, with an antenna light and a screen face",
+            Self::Robot => {
+                "a tiny round robot on one wheel, with an antenna light and a screen face"
+            }
             Self::Hedgehog => "a prickly little hedgehog who scurries on tiny feet",
             Self::Mushroom => "a mushroom sprite with a spotted cap, who toddles on tiny feet",
             Self::Axolotl => "a pink axolotl with frilly gills and a wide smile, who crawls",

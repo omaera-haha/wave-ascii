@@ -45,10 +45,7 @@ impl Quirk {
     pub fn thoughts(self) -> &'static [&'static str] {
         match self {
             Self::Hiccups => &["Hic! …excuse me.", "My whole body keeps jumping."],
-            Self::Sneeze => &[
-                "Achoo! Something tickles.",
-                "Even I get a tickly nose.",
-            ],
+            Self::Sneeze => &["Achoo! Something tickles.", "Even I get a tickly nose."],
             Self::Yawn => &["Haaah… so sleepy.", "That yawn caught me too."],
             Self::Shiver => &[
                 "Brr. The lamp looks warm.",
@@ -1184,8 +1181,7 @@ mod tests {
                     let body = Body {
                         position: world.ghost.position,
                         scale: 1.0,
-                        pose: Pose::new(time, 3.0, world.ghost.velocity.y, 0.0)
-                            .in_breeze(1.0, 1.0),
+                        pose: Pose::new(time, 3.0, world.ghost.velocity.y, 0.0).in_breeze(1.0, 1.0),
                         face,
                         aura: Aura {
                             color: Vec3::ONE,

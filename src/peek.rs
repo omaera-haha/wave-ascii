@@ -42,12 +42,22 @@ pub fn glance(save: &Save, now: DateTime, away: i64) -> String {
         .household
         .housemates
         .iter()
-        .map(|mate| mate.name.trim().chars().filter(|character| !character.is_control()).take(24).collect::<String>())
+        .map(|mate| {
+            mate.name
+                .trim()
+                .chars()
+                .filter(|character| !character.is_control())
+                .take(24)
+                .collect::<String>()
+        })
         .filter(|name| !name.is_empty())
         .collect();
     let household = !others.is_empty();
-    let everyone =
-        crate::world::together::list(&std::iter::once(name.clone()).chain(others).collect::<Vec<_>>());
+    let everyone = crate::world::together::list(
+        &std::iter::once(name.clone())
+            .chain(others)
+            .collect::<Vec<_>>(),
+    );
     let pottering = if save.household.species.airborne() {
         "is floating about"
     } else {
@@ -153,7 +163,10 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(glance(&save, at(23), 60), "☾ Pip and Mochi are asleep");
-        assert_eq!(glance(&save, at(13), 60), "~ Pip and Mochi are playing together");
+        assert_eq!(
+            glance(&save, at(13), 60),
+            "~ Pip and Mochi are playing together"
+        );
     }
 
     #[test]

@@ -1505,10 +1505,7 @@ mod tests {
         world.notice_viewer();
         world.viewer.pointer = Some(glam::Vec3::new(0.0, 1.0, 1.5));
         world.viewer.typing = true;
-        assert_eq!(
-            viewer(&world),
-            "typing a message to you, pointer still"
-        );
+        assert_eq!(viewer(&world), "typing a message to you, pointer still");
         world.look_away(true);
         world.step(25.0);
         assert_eq!(viewer(&world), "away");

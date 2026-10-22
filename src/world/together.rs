@@ -168,11 +168,20 @@ impl World {
         let energy = self.ghost.needs.energy;
         let lively = matches!(self.ghost.mood, Mood::Excited | Mood::Cheerful);
         let weights = [
-            if energy > 0.45 { 1.2 + if lively { 0.6 } else { 0.0 } } else { 0.1 },
+            if energy > 0.45 {
+                1.2 + if lively { 0.6 } else { 0.0 }
+            } else {
+                0.1
+            },
             1.3,
             0.4 + fond,
-            if energy > 0.35 { 0.5 + if lively { 0.6 } else { 0.0 } } else { 0.0 },
-            if (night && clear) || self.weather.sky == Sky::Rainbow || self.weather.sky == Sky::Snow {
+            if energy > 0.35 {
+                0.5 + if lively { 0.6 } else { 0.0 }
+            } else {
+                0.0
+            },
+            if (night && clear) || self.weather.sky == Sky::Rainbow || self.weather.sky == Sky::Snow
+            {
                 1.0
             } else {
                 0.2
@@ -188,7 +197,8 @@ impl World {
             return false;
         };
         let pastime = self.choose_pastime(&partner);
-        self.invitations.retain(|invitation| invitation.from != self.ghost.id);
+        self.invitations
+            .retain(|invitation| invitation.from != self.ghost.id);
         self.invitations.push(Invitation {
             from: self.ghost.id,
             to: partner.id,
@@ -222,7 +232,10 @@ impl World {
         let time = self.time;
         self.invitations
             .retain(|invitation| time - invitation.at < ANSWER_WITHIN);
-        let Some(index) = self.invitations.iter().position(|invitation| invitation.to == id)
+        let Some(index) = self
+            .invitations
+            .iter()
+            .position(|invitation| invitation.to == id)
         else {
             return;
         };
@@ -236,7 +249,8 @@ impl World {
                     plan.activity,
                     Activity::Float | Activity::Explore | Activity::Window
                 )
-                || (plan.activity == Activity::Visit && (self.companion || !self.viewer_present())));
+                || (plan.activity == Activity::Visit
+                    && (self.companion || !self.viewer_present())));
         if !free {
             return;
         }
@@ -294,14 +308,21 @@ impl World {
                 self.ghost.plan.target = if chasing || plan.arrived.is_none() {
                     partner.position
                 } else {
-                    let away = (position - partner.position).with_y(0.0).normalize_or(Vec3::X);
+                    let away = (position - partner.position)
+                        .with_y(0.0)
+                        .normalize_or(Vec3::X);
                     let swerve = Vec3::new(-away.z, 0.0, away.x) * (time as f32 * 1.3).sin() * 0.6;
                     self.within_reach(position + away * 1.1 + swerve)
                 };
                 if chasing && apart.length() < 0.32 && self.ghost.plan.count < 1000 {
                     self.hop(1.8);
                     self.ghost.plan.count += 2;
-                    if self.ghost.speech.as_ref().is_none_or(|line| time - line.time > 4.0) {
+                    if self
+                        .ghost
+                        .speech
+                        .as_ref()
+                        .is_none_or(|line| time - line.time > 4.0)
+                    {
                         let tag = self.spoken("Tag!", "잡았다!");
                         self.say(tag);
                     }
@@ -431,7 +452,11 @@ impl World {
     fn think_about_partner(&mut self, partner: &Peer, joined: bool) {
         if !joined && self.ghost.asleep < 0.3 {
             let line = if self.speaks_korean() {
-                format!("{}{} 바쁜가 봐.", partner.name, super::writing::particle(&partner.name, "은", "는"))
+                format!(
+                    "{}{} 바쁜가 봐.",
+                    partner.name,
+                    super::writing::particle(&partner.name, "은", "는")
+                )
             } else {
                 format!("{} must be busy.", partner.name)
             };
@@ -473,7 +498,9 @@ impl World {
         // The middle of a chat: about the other, the weather, or the viewer.
         let compliment = admire(partner.species, korean);
         let weather = match self.weather.sky {
-            Sky::Rain if self.weather.storm => ("Thunder! Stay close to me.", "천둥이야! 내 옆에 있어."),
+            Sky::Rain if self.weather.storm => {
+                ("Thunder! Stay close to me.", "천둥이야! 내 옆에 있어.")
+            }
             Sky::Rain => ("Listen to the rain.", "빗소리 들어 봐."),
             Sky::Snow => ("Snow! Let's go out and play.", "눈이다! 나가서 놀자."),
             Sky::Rainbow => ("Did you see the rainbow?", "무지개 봤어?"),
@@ -483,7 +510,10 @@ impl World {
         let viewer = if self.viewer_present() {
             ("Our friend is watching us!", "친구가 우리를 보고 있어!")
         } else {
-            ("I miss our friend at the glass.", "유리창 너머 친구가 보고 싶어.")
+            (
+                "I miss our friend at the glass.",
+                "유리창 너머 친구가 보고 싶어.",
+            )
         };
         let options = [
             compliment,
@@ -495,7 +525,12 @@ impl World {
                 "I caught a light mote earlier. Yummy!".to_owned()
             },
         ];
-        let weights = [1.2, 1.0, 0.8, if self.life.today.motes > 0 { 0.8 } else { 0.0 }];
+        let weights = [
+            1.2,
+            1.0,
+            0.8,
+            if self.life.today.motes > 0 { 0.8 } else { 0.0 },
+        ];
         options[self.pick(&weights).unwrap_or(0)].clone()
     }
 }
@@ -544,7 +579,10 @@ mod tests {
         assert_eq!(list(&names(&[])), "");
         assert_eq!(list(&names(&["Pip"])), "Pip");
         assert_eq!(list(&names(&["Pip", "Mochi"])), "Pip and Mochi");
-        assert_eq!(list(&names(&["Pip", "Mochi", "Bean"])), "Pip, Mochi, and Bean");
+        assert_eq!(
+            list(&names(&["Pip", "Mochi", "Bean"])),
+            "Pip, Mochi, and Bean"
+        );
     }
 
     #[test]
@@ -561,13 +599,22 @@ mod tests {
         run(&mut world, 1.0);
         let joined = world
             .with_creature(1, |world| {
-                (world.ghost.plan.activity, world.ghost.plan.with, world.ghost.plan.pastime)
+                (
+                    world.ghost.plan.activity,
+                    world.ghost.plan.with,
+                    world.ghost.plan.pastime,
+                )
             })
             .unwrap();
         assert_eq!(joined, (Activity::Together, Some(0), Some(pastime)));
         run(&mut world, 60.0);
         assert!(world.fondness_for(1) > 0.0, "{pastime:?}");
-        assert!(world.with_creature(1, |world| world.fondness_for(0)).unwrap() > 0.0);
+        assert!(
+            world
+                .with_creature(1, |world| world.fondness_for(0))
+                .unwrap()
+                > 0.0
+        );
         assert!(world.events.iter().any(|event| matches!(
             &event.kind,
             EventKind::Together { what, .. } if *what == pastime
@@ -577,7 +624,9 @@ mod tests {
     #[test]
     fn a_chat_opens_with_a_hello_from_the_one_who_asked() {
         let mut world = pair();
-        let partner = world.with_creature(1, |world| world.ghost.name.clone()).unwrap();
+        let partner = world
+            .with_creature(1, |world| world.ghost.name.clone())
+            .unwrap();
         world.with_creature(1, |world| world.ghost.plan.done = true);
         world.look_at_housemates();
         world.invitations.push(Invitation {
@@ -600,7 +649,8 @@ mod tests {
             }
         }
         assert!(
-            said.iter().any(|line| line.starts_with(&format!("Hi, {partner}!"))),
+            said.iter()
+                .any(|line| line.starts_with(&format!("Hi, {partner}!"))),
             "{said:?}"
         );
     }
@@ -625,6 +675,9 @@ mod tests {
         world.join(1, Pastime::Chat, true);
         run(&mut world, 10.0);
         assert!(world.ghost.plan.done || world.ghost.plan.activity != Activity::Together);
-        assert_eq!(world.with_creature(1, |world| world.ghost.plan.activity), Some(Activity::Rest));
+        assert_eq!(
+            world.with_creature(1, |world| world.ghost.plan.activity),
+            Some(Activity::Rest)
+        );
     }
 }

@@ -1,6 +1,6 @@
 mod bubbles;
-mod dream;
 pub mod creature;
+mod dream;
 pub mod ghost;
 mod shapes;
 pub mod sky;

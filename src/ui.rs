@@ -9,9 +9,9 @@ use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::Status;
 use crate::render::View;
 use crate::render::creature::{Figure, Model, signature};
-use crate::world::EventKind;
 use crate::settings::{Field, cache_name, effort_name};
 use crate::store::{Speaker, mask};
+use crate::world::EventKind;
 use crate::world::Skill;
 
 const PANEL: Rgb = Rgb([17, 19, 27]);
@@ -47,7 +47,15 @@ pub fn draw_moment(app: &App, screen: &mut Canvas, view: &View, scene_rows: usiz
         .iter()
         .find(|figure| figure.id == app.world.host())
         .and_then(|figure| {
-            speech_bubble(app, screen, view, scene_rows, &app.world.ghost, figure, &mut taken)
+            speech_bubble(
+                app,
+                screen,
+                view,
+                scene_rows,
+                &app.world.ghost,
+                figure,
+                &mut taken,
+            )
         });
     emote_puffs(app, screen, view, scene_rows, bubble_right);
     words_line(app, screen, scene_rows);
@@ -260,7 +268,11 @@ fn speech_bubble(
     let world = &app.world;
     let speech = creature.speech.as_ref()?;
     let host = creature.id == world.host();
-    let shows = if host { SPEECH_SHOWS } else { SPEECH_SHOWS * 0.5 };
+    let shows = if host {
+        SPEECH_SHOWS
+    } else {
+        SPEECH_SHOWS * 0.5
+    };
     if world.time - speech.time > shows {
         return None;
     }
@@ -289,9 +301,13 @@ fn speech_bubble(
         .saturating_sub(box_width / 2)
         .min(columns - box_width);
     let bottom = top + lines.len();
-    let overlaps = |(other_left, other_top, other_right, other_bottom): &(usize, usize, usize, usize)| {
-        left < *other_right && *other_left < left + box_width && top <= *other_bottom && *other_top <= bottom
-    };
+    let overlaps =
+        |(other_left, other_top, other_right, other_bottom): &(usize, usize, usize, usize)| {
+            left < *other_right
+                && *other_left < left + box_width
+                && top <= *other_bottom
+                && *other_top <= bottom
+        };
     // A housemate's words give way to anyone already speaking there.
     if !host && taken.iter().any(overlaps) {
         return None;
@@ -523,7 +539,9 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
         app.shown()
             .iter()
             .find(|figure| figure.id == id)
-            .map_or(TITLE, |figure| rgb(signature(figure.species, figure.genome.coat)))
+            .map_or(TITLE, |figure| {
+                rgb(signature(figure.species, figure.genome.coat))
+            })
     };
     // Housemates in a word each, on the right of the creature in view.
     let mates: Vec<(String, Rgb, String, Rgb)> = world
@@ -542,7 +560,12 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
             } else {
                 mate.plan.activity.name().to_owned()
             };
-            (mate.name.clone(), host_color(mate.id), doing, rgb(mood_color(mate.mood)))
+            (
+                mate.name.clone(),
+                host_color(mate.id),
+                doing,
+                rgb(mood_color(mate.mood)),
+            )
         })
         .collect();
     let mates_width: usize = mates
@@ -551,8 +574,24 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
         .sum();
     let marker = if mates.is_empty() { "" } else { "▸ " };
     let mut column = write(screen, 1, row, columns, marker, ACCENT, Some(BAR));
-    column = write(screen, column, row, columns, &ghost.name, host_color(ghost.id), Some(BAR));
-    column = write(screen, column, row, columns, " ● ", rgb(mood_color(ghost.mood)), Some(BAR));
+    column = write(
+        screen,
+        column,
+        row,
+        columns,
+        &ghost.name,
+        host_color(ghost.id),
+        Some(BAR),
+    );
+    column = write(
+        screen,
+        column,
+        row,
+        columns,
+        " ● ",
+        rgb(mood_color(ghost.mood)),
+        Some(BAR),
+    );
     column = write(
         screen,
         column,
@@ -575,7 +614,11 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
         if !meters {
             break;
         }
-        let gap = if wordy { format!("  {label} ") } else { " ".to_owned() };
+        let gap = if wordy {
+            format!("  {label} ")
+        } else {
+            " ".to_owned()
+        };
         column = write(screen, column, row, columns, &gap, DIM, Some(BAR));
         column = write(
             screen,
@@ -606,7 +649,15 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
         column = write(screen, column, row, end, "  │ ", BORDER, Some(BAR));
         column = write(screen, column, row, end, name, *color, Some(BAR));
         column = write(screen, column, row, end, " ●", *mood, Some(BAR));
-        column = write(screen, column, row, end, &format!(" {doing}"), DIM, Some(BAR));
+        column = write(
+            screen,
+            column,
+            row,
+            end,
+            &format!(" {doing}"),
+            DIM,
+            Some(BAR),
+        );
     }
 
     let right_width: usize = right.iter().map(|(text, _)| width(text)).sum();
@@ -897,7 +948,13 @@ fn adopt_panel(app: &mut App, screen: &mut Canvas) {
     let rows = screen.rows();
     let kinds = Species::ALL.len();
     let card_width = 16usize;
-    let image_rows = if rows >= 34 { 6 } else if rows >= 24 { 4 } else { 3 };
+    let image_rows = if rows >= 34 {
+        6
+    } else if rows >= 24 {
+        4
+    } else {
+        3
+    };
     let card_height = image_rows + 1;
     let across = (columns.saturating_sub(6) / (card_width + 1)).clamp(1, 7);
     app.adoption.across = across;
@@ -975,9 +1032,19 @@ fn adopt_panel(app: &mut App, screen: &mut Canvas) {
             let frame = study(&figure, grid, backdrop, turn);
             screen.paste(&app.style.canvas(&frame, app.color), left, top);
             let label = species.noun();
-            let label = if picked { format!("▸ {label}") } else { label.to_owned() };
+            let label = if picked {
+                format!("▸ {label}")
+            } else {
+                label.to_owned()
+            };
             let pad = card_width.saturating_sub(width(&label)) / 2;
-            fill(screen, top + image_rows, left, left + card_width, if picked { ACCENT } else { PANEL });
+            fill(
+                screen,
+                top + image_rows,
+                left,
+                left + card_width,
+                if picked { ACCENT } else { PANEL },
+            );
             write(
                 screen,
                 left + pad,
@@ -992,31 +1059,92 @@ fn adopt_panel(app: &mut App, screen: &mut Canvas) {
     let species = Species::ALL[index];
     let below = bounds.top + 1 + shown_lines * card_height;
     let right = bounds.right;
-    write(screen, bounds.left + 2, below, right, &format!("A {}.", species.portrait()), TEXT, Some(PANEL));
+    write(
+        screen,
+        bounds.left + 2,
+        below,
+        right,
+        &format!("A {}.", species.portrait()),
+        TEXT,
+        Some(PANEL),
+    );
     let count = format!(
         "{} of {} live here: {}",
         app.world.household_size(),
         crate::world::household::MOST,
         crate::world::together::list(
-            &app.world.creatures().map(|ghost| ghost.name.clone()).collect::<Vec<_>>()
+            &app.world
+                .creatures()
+                .map(|ghost| ghost.name.clone())
+                .collect::<Vec<_>>()
         )
     );
-    write(screen, bounds.left + 2, below + 1, right, &count, DIM, Some(PANEL));
+    write(
+        screen,
+        bounds.left + 2,
+        below + 1,
+        right,
+        &count,
+        DIM,
+        Some(PANEL),
+    );
     match &app.adoption.naming {
         Some(name) => {
-            let column = write(screen, bounds.left + 2, below + 3, right, "Name: ", ACCENT, Some(PANEL));
+            let column = write(
+                screen,
+                bounds.left + 2,
+                below + 3,
+                right,
+                "Name: ",
+                ACCENT,
+                Some(PANEL),
+            );
             let text: Vec<char> = name.text().chars().collect();
             let cursor = name.cursor().min(text.len());
             let before: String = text[..cursor].iter().collect();
-            let column = write(screen, column, below + 3, right, &before, TITLE, Some(PANEL));
-            let under: String = text.get(cursor).map_or(" ".to_owned(), |character| character.to_string());
-            let next = write(screen, column, below + 3, right, &under, PANEL, Some(ACCENT));
+            let column = write(
+                screen,
+                column,
+                below + 3,
+                right,
+                &before,
+                TITLE,
+                Some(PANEL),
+            );
+            let under: String = text
+                .get(cursor)
+                .map_or(" ".to_owned(), |character| character.to_string());
+            let next = write(
+                screen,
+                column,
+                below + 3,
+                right,
+                &under,
+                PANEL,
+                Some(ACCENT),
+            );
             let after: String = text.iter().skip(cursor + 1).collect();
             let next = write(screen, next, below + 3, right, &after, TITLE, Some(PANEL));
-            write(screen, next + 2, below + 3, right, "Enter welcomes them · Esc goes back", DIM, Some(PANEL));
+            write(
+                screen,
+                next + 2,
+                below + 3,
+                right,
+                "Enter welcomes them · Esc goes back",
+                DIM,
+                Some(PANEL),
+            );
         }
         None if full => {
-            write(screen, bounds.left + 2, below + 3, right, "The cottage is full. Esc closes.", BAD, Some(PANEL));
+            write(
+                screen,
+                bounds.left + 2,
+                below + 3,
+                right,
+                "The cottage is full. Esc closes.",
+                BAD,
+                Some(PANEL),
+            );
         }
         None => {
             write(

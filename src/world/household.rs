@@ -299,9 +299,7 @@ impl World {
     pub fn addressed(&self, text: &str) -> Option<u32> {
         let lower = text.trim().to_lowercase();
         let words: Vec<&str> = lower
-            .split(|character: char| {
-                character.is_whitespace() || ",.!?~:;".contains(character)
-            })
+            .split(|character: char| character.is_whitespace() || ",.!?~:;".contains(character))
             .filter(|word| !word.is_empty())
             .take(2)
             .collect();
@@ -334,18 +332,35 @@ impl World {
         let korean = self.speaks_korean();
         let has = |words: &[&str]| words.iter().any(|word| lower.contains(word));
         self.attend("viewer", 4.0);
-        if has(&["good night", "goodnight", "night night", "잘 자", "잘자", "굿나잇"]) {
+        if has(&[
+            "good night",
+            "goodnight",
+            "night night",
+            "잘 자",
+            "잘자",
+            "굿나잇",
+        ]) {
             if self.bedtime() {
                 self.begin(Activity::Rest);
             }
             self.say(if korean { "잘 자!" } else { "Good night!" });
         } else if has(&["hello", "hey", "morning", "안녕", "좋은 아침"])
-            || lower.split_whitespace().any(|word| word.trim_matches(|c: char| !c.is_alphanumeric()) == "hi")
+            || lower
+                .split_whitespace()
+                .any(|word| word.trim_matches(|c: char| !c.is_alphanumeric()) == "hi")
         {
             let sound = self.ghost.species.sound();
             self.say(&format!("{} {sound}", if korean { "안녕!" } else { "Hi!" }));
             self.hop(1.4);
-        } else if has(&["good job", "well done", "love you", "proud", "잘했어", "사랑해", "최고"]) {
+        } else if has(&[
+            "good job",
+            "well done",
+            "love you",
+            "proud",
+            "잘했어",
+            "사랑해",
+            "최고",
+        ]) {
             self.suggest_mood(Mood::Cheerful, 8.0);
             self.hop(1.4);
         } else if has(&["come here", "come over", "이리 와", "이리와", "모여"]) {
@@ -442,7 +457,10 @@ impl World {
         if self.ghost.id == id {
             return Some(act(self));
         }
-        let index = self.housemates.iter().position(|soul| soul.ghost.id == id)?;
+        let index = self
+            .housemates
+            .iter()
+            .position(|soul| soul.ghost.id == id)?;
         let mut peers: Vec<Peer> = std::iter::once(self.as_peer())
             .chain(self.others(Some(index)))
             .collect();
@@ -538,7 +556,8 @@ impl World {
         newcomer.ghost.genome = super::Genome::roll(species, &mut self.random);
         newcomer.ghost.name = name.to_owned();
         newcomer.ghost.position = super::home::DOOR_OUTSIDE;
-        newcomer.ghost.plan = Plan::new(Activity::Explore, self.time, super::home::DOOR_INSIDE, 6.0);
+        newcomer.ghost.plan =
+            Plan::new(Activity::Explore, self.time, super::home::DOOR_INSIDE, 6.0);
         newcomer.ghost.plan.count = 2;
         newcomer.viewer_gone = self.viewer_gone;
         newcomer.viewer_present = self.viewer_present;
@@ -608,7 +627,11 @@ impl World {
         let mut personal = personal.sanitized();
         personal.trade(&mut returning.life);
         // Each one sleeps and wakes in its own spot, a little apart.
-        let spot = Vec3::new(-1.0 + 0.55 * (id % 4) as f32, 1.0, 0.4 - 0.25 * (id % 3) as f32);
+        let spot = Vec3::new(
+            -1.0 + 0.55 * (id % 4) as f32,
+            1.0,
+            0.4 - 0.25 * (id % 3) as f32,
+        );
         returning.ghost.position = spot;
         returning.ghost.plan = Plan::new(Activity::Float, self.time, spot, 3.0);
         returning.restore_wardrobe();
@@ -719,14 +742,15 @@ impl World {
         let mut pushes = vec![Vec2::ZERO; bodies.len()];
         for first in 0..bodies.len() {
             for second in first + 1..bodies.len() {
-                let (a, reach_a, still_a) = bodies[first];
-                let (b, reach_b, still_b) = bodies[second];
-                if (a.y - b.y).abs() > 0.35 {
+                let (one, one_reach, one_still) = bodies[first];
+                let (other, other_reach, other_still) = bodies[second];
+                if (one.y - other.y).abs() > 0.35 {
                     continue;
                 }
-                let offset = Vec2::new(a.x - b.x, a.z - b.z);
+                let offset = Vec2::new(one.x - other.x, one.z - other.z);
                 // Those settled in snuggle up close.
-                let room = (reach_a + reach_b) * if still_a && still_b { 0.0 } else { 1.0 };
+                let room =
+                    (one_reach + other_reach) * if one_still && other_still { 0.0 } else { 1.0 };
                 let distance = offset.length();
                 if distance >= room {
                     continue;
@@ -741,7 +765,7 @@ impl World {
                     .normalize_or(Vec2::X)
                 };
                 let overlap = room - distance;
-                let share = match (still_a, still_b) {
+                let share = match (one_still, other_still) {
                     (true, true) => (0.0, 0.0),
                     (true, false) => (0.0, 1.0),
                     (false, true) => (1.0, 0.0),
@@ -863,7 +887,9 @@ mod tests {
                 super::super::home::indoors(at)
                     || super::super::home::in_doorway(at)
                     || super::super::home::in_inner_doorway(at)
-                    || (!super::super::home::in_house(at) && at.cmpge(low).all() && at.cmple(high).all()),
+                    || (!super::super::home::in_house(at)
+                        && at.cmpge(low).all()
+                        && at.cmple(high).all()),
                 "{at}"
             );
         }
@@ -977,7 +1003,10 @@ mod tests {
         let mut world = household();
         let mut adopted = 0;
         for index in 0..10 {
-            if world.adopt(Species::Frog, &format!("Frog {index}"), index).is_some() {
+            if world
+                .adopt(Species::Frog, &format!("Frog {index}"), index)
+                .is_some()
+            {
                 adopted += 1;
             }
         }
@@ -1005,6 +1034,10 @@ mod tests {
             })
         };
         assert!(started(&world.events));
-        assert!(world.with_creature(2, |world| started(&world.events)).unwrap());
+        assert!(
+            world
+                .with_creature(2, |world| started(&world.events))
+                .unwrap()
+        );
     }
 }
