@@ -1164,7 +1164,12 @@ impl App {
                 None => format!("with {}", partner.name),
             }
         } else {
-            self.world.ghost.plan.activity.doing().to_owned()
+            self.world
+                .ghost
+                .plan
+                .activity
+                .doing_as(self.world.ghost.species)
+                .to_owned()
         }
     }
 

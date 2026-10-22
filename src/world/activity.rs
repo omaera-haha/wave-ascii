@@ -130,6 +130,16 @@ impl Activity {
             .find(|activity| activity.name() == name)
     }
 
+    /// The activity as it reads for a creature of `species`, which floats,
+    /// flies, or keeps to the ground.
+    pub fn doing_as(self, species: super::Species) -> &'static str {
+        match (self, species.gait()) {
+            (Self::Float, super::Gait::Walk | super::Gait::Hop) => "pottering about",
+            (Self::Float, super::Gait::Fly) => "fluttering about",
+            _ => self.doing(),
+        }
+    }
+
     /// The activity as the status line and the minds' notes describe it.
     pub fn doing(self) -> &'static str {
         match self {

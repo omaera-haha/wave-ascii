@@ -1536,8 +1536,9 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     let mut header = vec![
         (
             format!(
-                "{} · {age}{life_day} · {} · born {}",
+                "{} the {} · {age}{life_day} · {} · born {}",
                 ghost.name,
+                ghost.species.noun(),
                 app.world.stage().words(),
                 date(app.born())
             ),
@@ -1610,6 +1611,30 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             })
             .collect()
     };
+    // Each housemate, and how fond of it this one has grown.
+    let mates: Vec<String> = app
+        .world
+        .roster()
+        .into_iter()
+        .filter(|id| *id != ghost.id)
+        .filter_map(|id| app.world.creature(id))
+        .map(|mate| {
+            let warmth = app.world.fondness_for(mate.id);
+            let feeling = if warmth < 0.1 {
+                "getting to know"
+            } else if warmth < 0.35 {
+                "friends"
+            } else if warmth < 0.65 {
+                "good friends"
+            } else {
+                "best friends"
+            };
+            format!("{} the {} ({feeling})", mate.name, mate.species.noun())
+        })
+        .collect();
+    if !mates.is_empty() {
+        header.extend(labeled("Friends", crate::world::together::list(&mates)));
+    }
     if life.cold.is_some() {
         header.extend(labeled(
             "Health",

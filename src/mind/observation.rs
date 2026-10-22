@@ -69,11 +69,11 @@ pub fn observe(world: &World) -> Value {
     } else if plan.activity == Activity::Yard && !plan.done {
         world.outing_words().to_owned()
     } else if plan.done {
-        format!("just finished {}", plan.activity.doing())
+        format!("just finished {}", plan.activity.doing_as(ghost.species))
     } else if plan.activity == Activity::Hide && plan.arrived.is_some() {
         format!("{} and waiting to be found", plan.activity.doing())
     } else {
-        plan.activity.doing().to_owned()
+        plan.activity.doing_as(ghost.species).to_owned()
     };
     json!({
         "you": {
