@@ -375,6 +375,27 @@ impl World {
                 .any(|plant| plant.droop > 0.0 && plant.thirst < 0.3)
     }
 
+    /// The watering can while it waters: where the can is, where the water
+    /// lands, and how far it is tipped, from 0 upright to 1 pouring.
+    pub fn watering(&self) -> Option<(Vec3, Vec3, f32)> {
+        let Some(Tending::Water(plant)) = self.tending else {
+            return None;
+        };
+        if self.ghost.plan.done || self.ghost.plan.activity != Activity::Tend {
+            return None;
+        }
+        let landing = match plant {
+            Some(index) => SPOTS[index] + Vec3::Y * (self.seedlings[index].height() + 0.02),
+            None => self.plant.top(),
+        };
+        // Held out at its side, toward the front, so it shows beside it.
+        let size = self.size();
+        let can = self.ghost.position + Vec3::new(0.36, -0.12, 0.12) * size;
+        let pour = (self.ghost.plan.stayed(self.time) / 0.8).clamp(0.0, 1.0)
+            * (1.0 - ((self.ghost.plan.stayed(self.time) - 4.6) / 0.4).clamp(0.0, 1.0));
+        Some((can, landing, pour))
+    }
+
     pub fn carried_seed(&self) -> Option<Vec3> {
         (!self.ghost.plan.done
             && self.ghost.plan.activity == Activity::Tend

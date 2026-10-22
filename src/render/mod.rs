@@ -418,6 +418,21 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
     if let Some(seed) = world.carried_seed() {
         furniture.push(Furniture::Seed(seed));
     }
+    if let Some((can, landing, pour)) = world.watering() {
+        let toward = Vec3::new(landing.x - can.x, 0.0, landing.z - can.z);
+        let turn = (-toward.z).atan2(toward.x);
+        let rotation =
+            glam::Quat::from_rotation_y(turn) * glam::Quat::from_rotation_z(-0.85 * pour);
+        furniture.push(Furniture::WateringCan(can, rotation));
+        if pour > 0.6 {
+            let spout = can + rotation * Vec3::new(0.22, 0.08, 0.0);
+            for index in 0..6 {
+                let fall = ((world.time * 1.6 + index as f64 / 6.0).fract()) as f32;
+                let drop = spout.lerp(landing, fall) - Vec3::Y * 0.12 * fall * (1.0 - fall);
+                furniture.push(Furniture::Droplet(drop));
+            }
+        }
+    }
     if let Some(position) = world.bubble_wand() {
         furniture.push(Furniture::BubbleWand(position));
     }

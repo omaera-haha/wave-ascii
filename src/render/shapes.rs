@@ -55,6 +55,7 @@ pub enum Material {
     CraneThread,
     Cork(bool),
     ClockHand,
+    Tin,
 }
 
 impl Material {
@@ -140,6 +141,7 @@ impl Material {
                 .lerp(Vec3::ONE, if crease { 0.35 } else { 0.05 }),
             Self::CraneThread => Vec3::new(0.85, 0.82, 0.72),
             Self::ClockHand => Vec3::new(0.18, 0.17, 0.2),
+            Self::Tin => Vec3::new(0.5, 0.75, 0.66),
             Self::Cork(dotted) => {
                 if dotted {
                     Vec3::new(0.65, 0.43, 0.28)
@@ -209,6 +211,11 @@ pub enum Furniture<'a> {
     GalleryCard(Vec3),
     /// The wall clock above the window, showing the hour of the day.
     Clock(f32),
+    /// A little watering can, its spout turned toward the plant by the
+    /// rotation and tipped to pour.
+    WateringCan(Vec3, Quat),
+    /// A drop of water on its way down.
+    Droplet(Vec3),
     SongSheet(Vec3, Quat),
 }
 
@@ -264,6 +271,8 @@ impl Furniture<'_> {
             Self::BubbleWand(position) => (*position - Vec3::Y * 0.07, 0.19),
             Self::Gallery(_) => (crate::world::gallery::CENTER, 0.54),
             Self::Clock(_) => (CLOCK, 0.17),
+            Self::WateringCan(position, _) => (*position, 0.26),
+            Self::Droplet(position) => (*position, 0.015),
             Self::GalleryCard(position) => (*position, 0.21),
             Self::SongSheet(position, _) => (*position, 0.21),
         }
@@ -490,6 +499,13 @@ impl Furniture<'_> {
             }
             Self::Gallery(pins) => gallery_distance(point, pins),
             Self::Clock(hour) => clock_distance(point - CLOCK, *hour),
+            Self::WateringCan(position, rotation) => {
+                // Drawn small and enlarged a little.
+                let (distance, material) =
+                    watering_can_distance(rotation.conjugate() * (point - *position) / 1.3);
+                (distance * 1.3, material)
+            }
+            Self::Droplet(position) => (point.distance(*position) - 0.011, Material::Water),
             Self::GalleryCard(position) => gallery_card(point - *position, None, 0),
             Self::SongSheet(position, rotation) => {
                 let local = rotation.conjugate() * (point - *position);
@@ -769,6 +785,16 @@ fn envelope(point: Vec3) -> (f32, Material) {
             },
         )
     }
+}
+
+// A round can with its spout along +x and a handle arching over the back.
+fn watering_can_distance(point: Vec3) -> (f32, Material) {
+    let body = rounded_cylinder(point + Vec3::Y * 0.06, 0.07, 0.12, 0.012);
+    let spout = capsule(point, Vec3::new(0.05, -0.02, 0.0), Vec3::new(0.16, 0.06, 0.0), 0.012);
+    let rose = (point - Vec3::new(0.165, 0.065, 0.0)).length() - 0.02;
+    let handle = capsule(point, Vec3::new(-0.06, 0.05, 0.0), Vec3::new(-0.02, 0.1, 0.0), 0.011)
+        .min(capsule(point, Vec3::new(-0.02, 0.1, 0.0), Vec3::new(0.03, 0.065, 0.0), 0.011));
+    (body.min(spout).min(rose).min(handle), Material::Tin)
 }
 
 /// The clock's face middle, on the back wall above the window.
