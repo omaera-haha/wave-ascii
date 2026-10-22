@@ -1185,7 +1185,13 @@ fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32) -> Vec3 {
     let light = lights.at(hit.point, normal);
     let footprint = footprint.max(1e-4);
     let albedo = match (hit.axis, hit.high) {
-        (1, false) => floorboards(hit.point, footprint),
+        (1, false) => {
+            let shadow = lights.ghost.map_or(1.0, |ghost| {
+                let across = Vec2::new(hit.point.x - ghost.x, hit.point.z - ghost.z).length();
+                1.0 - 0.35 * (-(across * across) / (0.06 * ghost.y.max(0.3))).exp()
+            });
+            floorboards(hit.point, footprint) * shadow
+        }
         (1, true) => ceiling(hit.point, footprint),
         (0, true) if door_panel(hit.point, footprint).is_some() => {
             door_panel(hit.point, footprint).unwrap()
@@ -1306,6 +1312,8 @@ struct Lights {
     sun: Vec3,
     sunlight: Vec3,
     lift: f32,
+    /// The ghost floating in the room, for its soft shadow on the floor.
+    ghost: Option<Vec3>,
 }
 
 struct Light {
@@ -1370,6 +1378,9 @@ impl Lights {
             sun: scene.outside.sunlight_direction(),
             sunlight: scene.outside.sunlight(),
             lift: scene.outside.window_lift,
+            ghost: home::in_house(world.ghost.position)
+                .then_some(world.ghost.position)
+                .filter(|_| world.ghost.fade < 0.9),
         }
     }
 
