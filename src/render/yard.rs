@@ -1903,6 +1903,35 @@ mod tests {
     }
 
     #[test]
+    fn each_pieces_box_holds_everything_its_span_lets_rays_test() {
+        let outside = Outside::clear(12.0, 0.0);
+        let plant = Plant::default();
+        let mut yard = yard(&outside, &plant);
+        yard.pieces.extend([Piece::Snowman(0.2), Piece::Door(1.0), Piece::Pumpkin]);
+        for piece in &yard.pieces {
+            let (center, half) = piece.bounding_box();
+            for step in 0..400 {
+                let angle = step as f32 * 2.399;
+                let origin = center
+                    + Vec3::new(angle.cos() * 9.0, 0.5 + (step % 7) as f32, angle.sin() * 9.0);
+                let aim = center
+                    + Vec3::new(
+                        ((step * 7) % 11) as f32 / 11.0 - 0.5,
+                        ((step * 3) % 13) as f32 / 13.0 - 0.5,
+                        ((step * 5) % 17) as f32 / 17.0 - 0.5,
+                    ) * half
+                        * 2.4;
+                let direction = (aim - origin).normalize();
+                if let Some((enter, exit)) = piece.span(origin, direction) {
+                    let middle = origin + direction * ((enter.max(0.0) + exit) * 0.5);
+                    let outside = ((middle - center).abs() - half).max_element();
+                    assert!(outside < 1e-3, "{piece:?} {middle}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn every_yard_piece_has_finite_distances_and_normals_in_any_weather() {
         for season in [Season::Spring, Season::Summer, Season::Autumn, Season::Winter] {
             let outside = Outside {
