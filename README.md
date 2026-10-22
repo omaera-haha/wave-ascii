@@ -2,7 +2,7 @@
 
 a cute little life in your terminal.
 
-A ghost lives in a glass box drawn as text. Its days follow your local clock, so it sleeps at night, and its life is saved between runs. With API keys, Jev (TypeSafe) makes its quick choices and Claude gives it thoughts and words; without them it lives on instinct.
+A ghost lives in a little cottage drawn as text: a cozy room behind a glass front, and a fenced yard with a big tree, a swing, a garden bed, and a birdbath under a real sky, where the sun and moon cross, clouds drift, and rain and snow fall. It floats out the door to play in the yard and the view follows it. Its days follow your local clock, so it sleeps at night, and its life is saved between runs. With API keys, Jev (TypeSafe) makes its quick choices and Claude gives it thoughts and words; without them it lives on instinct.
 
 ## Run
 
@@ -51,7 +51,8 @@ Press `k` in the app to add API keys, or set `ANTHROPIC_API_KEY` and `TYPESAFE_A
 
 ## Mouse
 
-- Click the ghost to poke it (or find it when it hides), the ball to flick it, a block to nudge it or a tower to topple it, the window to open or shut it, the music box to wind it, a soap bubble to pop it, and an envelope to read it. Click anywhere else to drop a light mote.
+- Click the ghost to poke it (or find it when it hides), the ball to flick it, a block to nudge it or a tower to topple it, the window to open or shut it, the music box to wind it, a soap bubble to pop it, and an envelope to read it. Click the lawn to drop a light mote out in the yard, or anywhere else to drop one in the room.
+- Ask it to go outside (or "마당에 나가자", "ride the swing") and it heads out the door; "come in" brings it back.
 - Drag across the ghost to stroke it; drag elsewhere to turn the view, and scroll to zoom.
 - Right-drag to draw in the fog on the glass.
 - In the journal, help, life, letter, and album panels, the mouse selects text.

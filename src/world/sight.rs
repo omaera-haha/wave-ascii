@@ -39,11 +39,13 @@ pub enum Thing {
     Treasure,
     Cranes,
     Gallery,
+    Tree,
+    Swing,
 }
 
 impl Thing {
     /// The names minds use for things, as in `World::attend`.
-    pub const NAMES: [&str; 22] = [
+    pub const NAMES: [&str; 24] = [
         "viewer",
         "window",
         "plant",
@@ -58,7 +60,7 @@ impl Thing {
         "blocks",
         "friend",
         "drawing",
-        "pots",
+        "garden",
         "books",
         "music box",
         "mirror",
@@ -66,6 +68,8 @@ impl Thing {
         "treasure",
         "cranes",
         "gallery",
+        "tree",
+        "swing",
     ];
 
     pub fn name(self) -> &'static str {
@@ -84,7 +88,7 @@ impl Thing {
             Self::Shelf => "shelf",
             Self::Friend => "friend",
             Self::Drawing => "drawing",
-            Self::Seedlings => "pots",
+            Self::Seedlings => "garden",
             Self::Books => "books",
             Self::MusicBox => "music box",
             Self::ViewerLetter => "letter",
@@ -92,6 +96,8 @@ impl Thing {
             Self::Treasure => "treasure",
             Self::Cranes => "cranes",
             Self::Gallery => "gallery",
+            Self::Tree => "tree",
+            Self::Swing => "swing",
         }
     }
 }
@@ -183,6 +189,8 @@ impl World {
             Thing::Treasure => self.treasure()?.0,
             Thing::Cranes => super::cranes::CENTER,
             Thing::Gallery => super::gallery::CENTER,
+            Thing::Tree => super::home::TREE_CROWN - Vec3::Y * 0.9,
+            Thing::Swing => self.swing_seat(),
         })
     }
 
@@ -217,6 +225,8 @@ impl World {
             Thing::Treasure,
             Thing::Cranes,
             Thing::Gallery,
+            Thing::Tree,
+            Thing::Swing,
         ];
         let motes = self.motes.iter().map(|mote| Thing::Mote(mote.id));
         let mut in_view = Vec::new();
@@ -226,6 +236,14 @@ impl World {
                 continue;
             };
             if thing == Thing::Treasure && self.blocker(eye, position, thing).is_some() {
+                continue;
+            }
+            // Walls hide what is on their other side, but for the window,
+            // the glass front, and the open door.
+            if thing != Thing::Viewer && !super::home::seen_through(eye, position, self.door_open()) {
+                if !matches!(thing, Thing::Mote(_)) {
+                    out_of_view.push(thing);
+                }
                 continue;
             }
             let offset = position - eye;
@@ -291,6 +309,8 @@ impl World {
                 Thing::Treasure,
                 Thing::Cranes,
                 Thing::Gallery,
+                Thing::Tree,
+                Thing::Swing,
             ]
             .into_iter()
             .find(|thing| thing.name() == name && self.position_of(*thing).is_some()),

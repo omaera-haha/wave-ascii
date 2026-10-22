@@ -236,11 +236,16 @@ pub fn understand(text: &str, life: &Life, ghost_name: &str) -> Understood {
         "블록",
         "친구",
         "그림",
-        "화분",
+        "화단",
         "책",
         "오르골",
         "거울",
         "편지",
+        "보물",
+        "종이학",
+        "갤러리",
+        "나무",
+        "그네",
     ]) {
         recognize(english, korean);
     }

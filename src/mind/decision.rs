@@ -72,7 +72,8 @@ pub fn request_questions(options: &[Activity]) -> Questions {
     Questions::new().with(
         "request",
         Choice::new(
-            "The state is a message the viewer typed to a small ghost living in a glass box. \
+            "The state is a message the viewer typed to a small ghost living in a little \
+             cottage with a yard. \
              Does it ask the ghost to do one of these things?",
             criteria,
         ),

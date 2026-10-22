@@ -1,6 +1,6 @@
 use std::f32::consts::TAU;
 
-use glam::{Vec2, Vec3};
+use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use super::{

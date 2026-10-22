@@ -189,14 +189,6 @@ pub fn chart(direction: Vec3) -> Vec2 {
     )
 }
 
-/// The direction toward a chart point.
-pub fn toward(point: Vec2) -> Vec3 {
-    direction(
-        (point.x - 0.5) * CHART_WIDTH,
-        CHART_BASE + point.y * CHART_HEIGHT,
-    )
-}
-
 /// The sky's broad light, kept separate from the sun, stars, and rain so
 /// tiny animated details stay steady. Fireworks briefly tint this light.
 pub fn light_through(outside: &Outside) -> Vec3 {
@@ -762,10 +754,11 @@ mod tests {
     }
 
     #[test]
-    fn the_chart_and_its_inverse_agree() {
-        for point in [Vec2::ZERO, Vec2::ONE, Vec2::new(0.3, 0.7), Vec2::new(-0.8, 0.1)] {
-            assert!(chart(toward(point)).distance(point) < 1e-4, "{point}");
-        }
+    fn the_chart_runs_left_to_right_and_up_the_sky() {
+        let middle = chart(direction(0.0, CHART_BASE + CHART_HEIGHT * 0.5));
+        assert!(middle.distance(Vec2::new(0.5, 0.5)) < 1e-4);
+        assert!(chart(direction(0.2, 0.2)).x > chart(direction(-0.2, 0.2)).x);
+        assert!(chart(direction(0.0, 0.3)).y > chart(direction(0.0, 0.1)).y);
     }
 
     #[test]

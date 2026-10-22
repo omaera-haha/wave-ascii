@@ -238,6 +238,38 @@ impl World {
         })
     }
 
+    /// Where the ghost is, in or out, and how the yard looks, for the minds.
+    pub fn yard_words(&self) -> String {
+        let place = if home::in_doorway(self.ghost.position)
+            && !home::indoors(self.ghost.position)
+        {
+            "passing through the door".to_owned()
+        } else if home::in_house(self.ghost.position) {
+            "indoors in its room".to_owned()
+        } else {
+            match self.yard_spot().filter(|_| self.ghost.plan.arrived.is_some()) {
+                Some(spot) => format!("out in the yard, {}", spot.words()),
+                None => "out in the yard".to_owned(),
+            }
+        };
+        let ground = if self.weather.snow_cover > 0.4 {
+            "snow covers the lawn"
+        } else if self.weather.rain(self.time) > 0.2 {
+            "the lawn is wet with rain"
+        } else {
+            "the lawn is green"
+        };
+        let snowman = if crate::world::passerby::Passerby::Snowman
+            .at(self.meteor_seed, self.time, self.date, self.hour, &self.weather)
+            .is_some()
+        {
+            ", and a snowman stands on the lawn"
+        } else {
+            ""
+        };
+        format!("The ghost is {place}; {ground}{snowman}.")
+    }
+
     /// What the ghost is doing in the yard, in words.
     pub fn outing_words(&self) -> &'static str {
         self.yard_spot()

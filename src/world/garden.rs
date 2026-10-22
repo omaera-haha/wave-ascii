@@ -338,15 +338,15 @@ impl World {
             .map(|plant| plant.words(self.season()))
             .collect();
         let contents = match descriptions.as_slice() {
-            [] => return "no little pots planted yet".to_owned(),
+            [] => return "nothing planted in the garden bed yet".to_owned(),
             [one] => one.clone(),
             [one, two] => format!("{one} and {two}"),
             [one, two, three, ..] => format!("{one}, {two}, and {three}"),
         };
         let count = match descriptions.len() {
-            1 => "one little pot",
-            2 => "two little pots",
-            _ => "three little pots",
+            1 => "one plant in the garden bed",
+            2 => "two plants in the garden bed",
+            _ => "three plants in the garden bed",
         };
         format!("{count}: {contents}")
     }
@@ -418,10 +418,10 @@ impl World {
     pub fn tend_description(&self) -> String {
         let plant = self.thirstiest().map_or_else(
             || "the potted plant".to_owned(),
-            |index| format!("the little {} pot", self.seedlings[index].kind.name()),
+            |index| format!("the {} in the garden bed", self.seedlings[index].kind.name()),
         );
         let seeds = if self.seed_ready() {
-            " A ripe seed is ready to plant in a new pot."
+            " A ripe seed is ready to plant out in the garden bed."
         } else {
             ""
         };
@@ -953,7 +953,7 @@ mod tests {
                 .obstacles()
                 .contains(&(SPOTS[0], Seedling::POT_RADIUS))
         );
-        world.attend("pots", 20.0);
+        world.attend("garden", 20.0);
         assert!(world.position_of(Thing::Seedlings).is_some());
         assert_eq!(
             world.ghost.attention.map(|(thing, _)| thing),

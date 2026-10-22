@@ -44,11 +44,12 @@ static ALBUM_EXPORTS: AtomicU64 = AtomicU64::new(0);
 const HELP: &str = "\
 Usage: wave-ascii [OPTIONS]
 
-A ghost lives in a glass box in your terminal. It floats about, chases light
-motes, plays fetch, stacks toy blocks, tends a plant and its garden, watches
-the bird and the sky from the window, plays hide-and-seek and noughts and
-crosses, draws and writes in the fog on the glass, sleeps at night, and
-watches you. Over days it grows up, grows close to you, learns your words and
+A ghost lives in a little cottage in your terminal: a room behind a glass
+front, and a fenced yard with a tree, a swing, and a garden bed under a real
+sky. It floats about, chases light motes, plays fetch, stacks toy blocks,
+tends its plant and goes out to its garden, swings in the yard, watches the
+bird and the sky, plays hide-and-seek and noughts and crosses, draws and
+writes in the fog on the glass, sleeps at night, and watches you. Over days it grows up, grows close to you, learns your words and
 your name, forms habits, and keeps a diary. Jev (TypeSafe's System One model)
 makes its quick choices and Claude gives it thoughts and words; without API
 keys it lives on instinct. Press k in the app to add keys, or set
@@ -94,7 +95,8 @@ Keys:
 Mouse: click the ghost to poke it (or find it when it hides), the ball to
 flick it, a block to nudge it or a tower to topple it, the window to ask it
 to open or shut, the music box to wind it, a soap bubble to pop it, an envelope
-to read it, and elsewhere to drop a light mote. Ask for “bubbles!” to start.
+to read it, the lawn to drop a light mote out in the yard, and elsewhere to drop
+one in the room. Ask for “bubbles!” to start, or ask it to go outside.
 Press on the ghost and drag across it to stroke it; drag elsewhere to turn the view,
 and scroll to zoom. Right-drag draws in the fog on the glass. In the
 journal, help, life, letter, or album panel, the mouse selects text. In the journal,

@@ -154,6 +154,38 @@ pub fn near_house(point: Vec3, margin: f32) -> bool {
         && point.z <= HOUSE_MAX.z + margin
 }
 
+/// Whether a line of sight from `eye` to `target` gets through the walls:
+/// both on the same side of them, or through the back window, the glass
+/// front, or the door while it stands open.
+pub fn seen_through(eye: Vec3, target: Vec3, door: f32) -> bool {
+    if in_house(eye) == in_house(target) {
+        return true;
+    }
+    let along = target - eye;
+    let crossing = |axis: usize, plane: f32| -> Option<Vec3> {
+        if along[axis].abs() < 1e-6 {
+            return None;
+        }
+        let fraction = (plane - eye[axis]) / along[axis];
+        (0.0..=1.0)
+            .contains(&fraction)
+            .then(|| eye + along * fraction)
+    };
+    let window = crossing(2, ROOM_MIN.z).is_some_and(|point| {
+        let at = Vec2::new(point.x, point.y);
+        at.cmpge(Vec2::new(-0.75, 1.0)).all() && at.cmple(Vec2::new(0.75, 2.0)).all()
+    });
+    let glass = crossing(2, ROOM_MAX.z).is_some_and(|point| {
+        point.x > ROOM_MIN.x && point.x < ROOM_MAX.x && point.y < ROOM_MAX.y
+    });
+    let doorway = door > 0.3
+        && crossing(0, ROOM_MAX.x).is_some_and(|point| {
+            let at = Vec2::new(point.z, point.y);
+            at.cmpge(DOOR_LOW).all() && at.cmple(DOOR_HIGH).all()
+        });
+    window || glass || doorway
+}
+
 /// On the fenced lawn.
 pub fn on_lot(point: Vec3) -> bool {
     let at = flat(point);

@@ -21,11 +21,13 @@ pub fn observe(world: &World) -> Value {
     } else if world.telling.is_some() {
         "telling the viewer a story".to_owned()
     } else if world.carried_seed().is_some() {
-        "carrying a seed to a little pot".to_owned()
+        "carrying a seed out to the garden bed".to_owned()
     } else if let Some(gift) = ghost.keepsake {
         format!("carrying {} to the shelf of keepsakes", gift.name())
     } else if plan.activity == Activity::Air {
         world.air_doing().to_owned()
+    } else if plan.activity == Activity::Yard && !plan.done {
+        world.outing_words().to_owned()
     } else if plan.done {
         format!("just finished {}", plan.activity.doing())
     } else if plan.activity == Activity::Hide && plan.arrived.is_some() {
@@ -61,6 +63,7 @@ pub fn observe(world: &World) -> Value {
             .map(|day| format!("Today is its {} day of life.", crate::world::anniversary::ordinal(day))),
         "anniversaries": world.anniversary_observations(),
         "outside_the_window": outside_the_window(world),
+        "yard": world.yard_words(),
         "sight": sight(world),
         "room": {
             "window": if world.window_open { "open" } else { "shut" },
@@ -69,7 +72,7 @@ pub fn observe(world: &World) -> Value {
             "light": light(world),
             "lamp": if world.lamp.on { "on" } else { "off" },
             "plant": plant(&world.plant),
-            "pots": world.garden_words(),
+            "garden_bed": world.garden_words(),
             "tending": world.tend_description(),
             "bubbles": world.bubble_words(),
             "ball": ball(world),
@@ -393,6 +396,18 @@ fn thing(world: &World, thing: Thing) -> String {
         Thing::Treasure => "a treasure the viewer hid".to_owned(),
         Thing::Cranes => world.life.cranes.words(),
         Thing::Gallery => world.life.gallery_words(),
+        Thing::Tree => match world.season() {
+            crate::world::Season::Spring => "the big tree behind the house, in pink blossom",
+            crate::world::Season::Summer => "the big leafy tree behind the house",
+            crate::world::Season::Autumn => "the big tree behind the house, gone orange and gold",
+            crate::world::Season::Winter => "the big bare tree behind the house",
+        }
+        .to_owned(),
+        Thing::Swing => if world.swinging().is_some() {
+            "the swing in the yard, swinging with you on it".to_owned()
+        } else {
+            "the swing set out in the yard".to_owned()
+        },
     }
 }
 
@@ -1051,6 +1066,8 @@ mod tests {
         };
 
         let mut world = World::new(1, 12.0);
+        // At the window, where the walls don't hide the yard.
+        world.ghost.position = crate::world::WINDOW_CENTER + Vec3::new(0.0, -0.05, 0.4);
         let mut random = Random::new(1);
         let mut bird = Bird::new(0.0, 0.0, &mut random);
         for (time, perch, words) in [
@@ -1382,8 +1399,8 @@ mod tests {
         assert!(plant.contains("flowers fading"));
         assert!(plant.contains("has a seed ready"));
         assert_eq!(
-            observation["room"]["pots"],
-            "two little pots: a tulip in bud and a daisy sprout"
+            observation["room"]["garden_bed"],
+            "two plants in the garden bed: a tulip in bud and a daisy sprout"
         );
         assert!(thing(&world, Thing::Seedlings).contains("a tulip in bud"));
         assert!(
