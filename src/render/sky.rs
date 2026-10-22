@@ -1,8 +1,6 @@
-//! The open sky over the yard, seen by direction. The old window's picture
-//! now lives as a patch of the back sky, the "chart": picture coordinates
-//! from (0, 0) at its bottom left to (1, 1) at its top right, keeping the
-//! window's 1.5:1 proportions, so stars, constellations, shooting stars,
-//! fireworks, and things passing overhead keep their old places.
+//! The open sky over the yard, all by direction: azimuth from straight back
+//! (toward -z) turning positive toward +x, and elevation over the horizon.
+//! The back of the house faces the sun's side of the sky.
 
 use std::f32::consts::{PI, TAU};
 
@@ -11,19 +9,21 @@ use glam::{Vec2, Vec3};
 use crate::sdf::{capsule, coverage, mix, smoothstep};
 use crate::world::meteor::Streak;
 use crate::world::passerby::{Passerby, Passing};
-use crate::world::stars::{self, Constellation, hash};
+use crate::world::stars::{self, Constellation};
 use crate::world::{BirdPicture, Keepsake, Season};
 
-/// Radians of azimuth across the chart, and of elevation up it.
-pub const CHART_WIDTH: f32 = 0.57;
-pub const CHART_HEIGHT: f32 = CHART_WIDTH / 1.5;
-/// Elevation of the chart's bottom edge.
-pub const CHART_BASE: f32 = 0.02;
+/// Radians one unit of a sky drawing spans: discs, sparks, and things
+/// passing overhead are drawn in these.
+pub const UNIT: f32 = 0.38;
 /// Height of the cloud deck, in room units per unit of ray rise.
 const CLOUD_DECK: f32 = 14.0;
 /// The sky is drawn dimmer than its light so its glyphs stay airy and the
 /// house and the ghost stand out against it.
 const EXPOSURE: f32 = 0.27;
+/// A rainbow's radius around the point opposite the sun, and the second
+/// bow's.
+const BOW: f32 = 0.733;
+const SECOND_BOW: f32 = 0.89;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Outside {
@@ -53,12 +53,14 @@ pub struct Outside {
     pub passersby: [Option<Passing>; 2],
 }
 
+/// One line of a constellation, from star to star along the dome.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StarSegment {
-    start: Vec2,
-    end: Vec2,
-    minimum: Vec2,
-    maximum: Vec2,
+    start: Vec3,
+    end: Vec3,
+    middle: Vec3,
+    /// The cosine of how far from the middle it reaches.
+    reach: f32,
 }
 
 impl StarSegment {
@@ -67,16 +69,25 @@ impl StarSegment {
             .iter()
             .flat_map(|constellation| constellation.stars.windows(2))
             .filter_map(|pair| {
-                let start = stars::field().get(usize::from(pair[0]))?.position;
-                let end = stars::field().get(usize::from(pair[1]))?.position;
+                let start = stars::field().get(usize::from(pair[0]))?.direction;
+                let end = stars::field().get(usize::from(pair[1]))?.direction;
+                let middle = (start + end).normalize_or_zero();
                 Some(Self {
                     start,
                     end,
-                    minimum: start.min(end),
-                    maximum: start.max(end),
+                    middle,
+                    reach: (start.dot(middle).clamp(-1.0, 1.0).acos() + 0.01).cos(),
                 })
             })
             .collect()
+    }
+
+    /// Radians from `direction` to the line.
+    fn distance(&self, direction: Vec3) -> f32 {
+        let along = self.end - self.start;
+        let fraction = ((direction - self.start).dot(along) / along.length_squared().max(1e-12))
+            .clamp(0.0, 1.0);
+        direction.distance(self.start.lerp(self.end, fraction).normalize_or_zero())
     }
 }
 
@@ -110,33 +121,37 @@ impl Outside {
         }
     }
 
-    /// Where the sun's disc is on the chart.
+    /// The sun's (azimuth, elevation): up on the left, over the back of the
+    /// house, down on the right; high and wide in summer, low in winter.
     pub fn sun(&self) -> Vec2 {
+        let (width, height) = match self.season {
+            Season::Summer => (1.5, 1.12),
+            Season::Spring | Season::Autumn => (1.3, 0.85),
+            Season::Winter => (1.05, 0.56),
+        };
         let progress = (self.hour.rem_euclid(24.0) - 6.5) / 13.0;
-        Vec2::new(-0.9 + 2.8 * progress, 0.06 + 0.56 * (progress * PI).sin())
+        Vec2::new(
+            (progress - 0.5) * 2.0 * width,
+            height * (progress * PI).sin(),
+        )
     }
 
-    /// Where the moon is on the chart, crossing the sky through the night.
+    /// The moon's (azimuth, elevation), crossing the sky through the night.
     pub fn moon(&self) -> Vec2 {
         let progress = (self.hour - 18.5).rem_euclid(24.0) / 12.0;
-        Vec2::new(-0.9 + 2.8 * progress, 0.1 + 0.5 * (progress * PI).sin())
+        Vec2::new((progress - 0.5) * 2.4, 0.04 + 0.48 * (progress * PI).sin())
     }
 
-    /// The way the sunlight comes from, steeper than the drawn disc so
-    /// shadows stay short and it shines in through the back window.
+    /// The way the sunlight comes from, kept a little over the horizon so
+    /// shadows stay on the lawn.
     pub fn sunlight_direction(&self) -> Vec3 {
         let sun = self.sun();
-        let azimuth = (sun.x - 0.5) * CHART_WIDTH * 0.8;
-        let elevation = 0.14 + 0.94 * (sun.y / 0.62).clamp(0.0, 1.0);
-        direction(azimuth, elevation)
+        direction(sun.x, sun.y.max(0.1))
     }
 
     pub fn moonlight_direction(&self) -> Vec3 {
         let moon = self.moon();
-        direction(
-            (moon.x - 0.5) * CHART_WIDTH * 0.8,
-            0.15 + 0.6 * (moon.y / 0.6).clamp(0.0, 1.0),
-        )
+        direction(moon.x, moon.y.max(0.15))
     }
 
     /// How strong and what color the sun's direct light is.
@@ -162,6 +177,19 @@ impl Outside {
         weather_color(sky.horizon, cloud) * (1.0 - self.storm_dimming()) * EXPOSURE
     }
 
+    /// The middle of a rainbow: opposite the sun, swung round to the back
+    /// of the house where it can be seen, and never so low it hides.
+    fn bow_center(&self) -> Vec3 {
+        let sun = self.sun();
+        let opposite = (sun.x + PI + PI).rem_euclid(TAU) - PI;
+        let azimuth = if opposite.abs() > PI * 0.5 {
+            opposite.signum() * (PI - opposite.abs())
+        } else {
+            opposite
+        };
+        direction(azimuth * 0.5, -sun.y.clamp(0.3, 0.55))
+    }
+
     fn storm_dimming(&self) -> f32 {
         if self.storm {
             self.rain.clamp(0.0, 1.0) * 0.35
@@ -181,14 +209,16 @@ pub fn direction(azimuth: f32, elevation: f32) -> Vec3 {
     )
 }
 
-/// The chart point a direction looks toward.
-pub fn chart(direction: Vec3) -> Vec2 {
-    let azimuth = direction.x.atan2(-direction.z);
-    let elevation = direction.y.clamp(-1.0, 1.0).asin();
-    Vec2::new(
-        0.5 + azimuth / CHART_WIDTH,
-        (elevation - CHART_BASE) / CHART_HEIGHT,
-    )
+/// Where `direction` is from around `center`, in units, flattened onto the
+/// sky there: x to the right, y up. None from the far side.
+pub fn local(direction: Vec3, center: Vec3) -> Option<Vec2> {
+    let facing = direction.dot(center);
+    if facing <= 1e-3 {
+        return None;
+    }
+    let right = center.cross(Vec3::Y).normalize_or(Vec3::X);
+    let up = right.cross(center);
+    Some(Vec2::new(direction.dot(right), direction.dot(up)) / (facing * UNIT))
 }
 
 /// The sky's broad light, kept separate from the sun, stars, and rain so
@@ -250,8 +280,13 @@ pub struct Heavens<'a> {
     cloud: f32,
     night: f32,
     lunar_night: f32,
-    sun: Vec2,
-    moon: Vec2,
+    sun: Vec3,
+    moon: Vec3,
+    bow: Vec3,
+    /// Where tonight's lightning strikes, if it does.
+    bolt: Vec3,
+    /// Each passing thing's direction, and the cosine of its reach.
+    passing: [Option<(Vec3, f32)>; 2],
     cloud_color: Vec3,
     drift: f32,
     twinkle: f32,
@@ -276,6 +311,13 @@ impl<'a> Heavens<'a> {
             let land = land[index].lerp(white, outside.snow_cover.clamp(0.0, 1.0));
             weather_color(land * light, cloud).lerp(haze, 0.45 - index as f32 * 0.12)
         });
+        let sun = outside.sun();
+        let moon = outside.moon();
+        let passing = outside.passersby.map(|passing| {
+            let passing = passing?;
+            let reach = passerby_bounds(passing.kind)?.length() * UNIT + 0.02;
+            Some((toward(passing.position), reach.min(1.4).cos()))
+        });
         Self {
             rain,
             storm: if outside.storm { rain } else { 0.0 },
@@ -283,8 +325,11 @@ impl<'a> Heavens<'a> {
             cloud,
             night: (1.0 - sky.day) * (1.0 - sky.twilight * 0.85) * (1.0 - cloud).powi(2),
             lunar_night: (1.0 - sky.day) * (1.0 - cloud * 0.8),
-            sun: outside.sun(),
-            moon: outside.moon(),
+            sun: direction(sun.x, sun.y),
+            moon: direction(moon.x, moon.y),
+            bow: outside.bow_center(),
+            bolt: direction((unit_from(outside.last_flash, 0) - 0.5) * 1.4, 0.17),
+            passing,
             cloud_color: Vec3::new(0.055, 0.065, 0.1)
                 .lerp(Vec3::new(0.94, 0.96, 1.0), sky.day)
                 .lerp(Vec3::new(0.86, 0.57, 0.63), sky.twilight)
@@ -305,8 +350,7 @@ impl<'a> Heavens<'a> {
     pub fn sky(&self, direction: Vec3, spread: f32) -> Vec3 {
         let outside = self.outside;
         let sky = &self.sky;
-        let coordinates = chart(direction);
-        let footprint = (spread / CHART_HEIGHT).max(1e-5);
+        let footprint = (spread / UNIT).max(1e-5);
         let (rain, storm, flash, cloud, night) =
             (self.rain, self.storm, self.flash, self.cloud, self.night);
         let elevation = direction.y.clamp(-1.0, 1.0).asin();
@@ -316,45 +360,27 @@ impl<'a> Heavens<'a> {
             * EXPOSURE;
 
         if night > 0.0 && elevation > 0.0 {
-            let inside = coordinates.cmpge(Vec2::ZERO).all() && coordinates.cmple(Vec2::ONE).all();
-            let twinkle = |seed: f32| 0.65 + 0.35 * (self.twinkle + seed * TAU).sin();
-            if inside {
-                let stars = coordinates * stars::GRID;
-                let cell = stars.floor();
-                let seed = hash(cell);
-                let center = stars::center(cell);
-                let distance = ((stars - cell - center) / stars::GRID).length();
-                color += Vec3::new(0.78, 0.86, 1.0)
-                    * coverage(distance - 0.0025, footprint * 0.5)
-                    * stars::brightness(seed)
-                    * twinkle(seed)
-                    * night;
-            } else {
-                let (light, seed) = far_star(direction, spread);
-                color += Vec3::new(0.78, 0.86, 1.0) * light * twinkle(seed) * night;
-            }
+            let (light, seed) = star_light(direction, spread);
+            let twinkle = 0.65 + 0.35 * (self.twinkle + seed * TAU).sin();
+            color += Vec3::new(0.78, 0.86, 1.0) * light * twinkle * night;
         }
 
-        let proportions = Vec2::new(1.0, CHART_HEIGHT / CHART_WIDTH);
         if let Some(streak) = &outside.meteor {
-            color += Vec3::new(0.86, 0.92, 1.0)
-                * shooting_star(coordinates, footprint, streak, proportions)
-                * night;
+            color += Vec3::new(0.86, 0.92, 1.0) * shooting_star(direction, spread, streak) * night;
         }
 
-        let moon_point = (coordinates - self.moon) * proportions;
+        let moon_near = direction.dot(self.moon) > 0.92;
+        let moon_point = if moon_near {
+            local(direction, self.moon).unwrap_or(Vec2::splat(9.0))
+        } else {
+            Vec2::splat(9.0)
+        };
         let moon_distance = moon_point.length();
         if night > 0.0 && moon_distance > 0.06 && !outside.constellations.is_empty() {
-            let margin = Vec2::splat(0.0007 + footprint);
             let mut lines: f32 = 0.0;
             for segment in &outside.constellations {
-                if coordinates.cmpge(segment.minimum - margin).all()
-                    && coordinates.cmple(segment.maximum + margin).all()
-                {
-                    lines = lines.max(coverage(
-                        capsule(coordinates, segment.start, segment.end, 0.0007),
-                        footprint * 0.5,
-                    ));
+                if direction.dot(segment.middle) >= segment.reach {
+                    lines = lines.max(coverage(segment.distance(direction) - 0.0003, spread * 0.5));
                 }
             }
             color += Vec3::new(0.7, 0.8, 1.0)
@@ -380,13 +406,11 @@ impl<'a> Heavens<'a> {
             color += Vec3::new(0.78, 0.85, 1.0) * moon * self.lunar_night;
         }
 
-        if sky.day > 0.0 {
-            let sun_distance = ((coordinates - self.sun) * proportions).length();
-            if sun_distance < 0.6 {
-                let sunlight = coverage(sun_distance - 0.04, footprint * 0.5)
-                    + (-sun_distance.powi(2) / 0.02).exp() * 0.4;
-                color += Vec3::new(1.0, 0.77, 0.38) * sunlight * sky.day * (1.0 - cloud * 0.9);
-            }
+        if sky.day > 0.0 && direction.dot(self.sun) > 0.97 {
+            let sun_distance = direction.distance(self.sun) / UNIT;
+            let sunlight = coverage(sun_distance - 0.04, footprint * 0.5)
+                + (-sun_distance.powi(2) / 0.02).exp() * 0.4;
+            color += Vec3::new(1.0, 0.77, 0.38) * sunlight * sky.day * (1.0 - cloud * 0.9);
         }
 
         // A deck of clouds overhead, drifting with the wind.
@@ -417,31 +441,41 @@ impl<'a> Heavens<'a> {
             color = color.lerp(Vec3::new(0.75, 0.86, 1.0), flash * 0.85);
         }
 
-        if let Some(burst) = &self.firework {
-            color += burst.sparks(coordinates, footprint);
+        if let Some(burst) = &self.firework
+            && direction.dot(burst.center) > 0.97
+            && let Some(point) = local(direction, burst.center)
+        {
+            color += burst.sparks(point, footprint);
         }
 
-        if outside.rainbow > 0.0 {
-            let radius = coordinates.distance(Vec2::new(0.5, 0.04));
-            let primary = spectrum((radius - 0.72) / 0.06)
-                * coverage((radius - 0.75).abs() - 0.03, footprint * 0.5)
-                * 0.38;
-            let secondary = spectrum(1.0 - (radius - 0.815) / 0.09)
-                * coverage((radius - 0.86).abs() - 0.045, footprint * 0.5)
-                * 0.09;
-            color += (primary + secondary) * outside.rainbow.min(1.0) * (1.0 - rain * 0.65);
+        if outside.rainbow > 0.0 && elevation > -0.02 {
+            let radius = direction.dot(self.bow).clamp(-1.0, 1.0).acos();
+            if (BOW - 0.06..SECOND_BOW + 0.08).contains(&radius) {
+                let primary = spectrum((radius - (BOW - 0.032)) / 0.064)
+                    * coverage((radius - BOW).abs() - 0.03, spread * 0.5)
+                    * 0.38;
+                let secondary = spectrum(1.0 - (radius - (SECOND_BOW - 0.045)) / 0.09)
+                    * coverage((radius - SECOND_BOW).abs() - 0.045, spread * 0.5)
+                    * 0.09;
+                color += (primary + secondary) * outside.rainbow.min(1.0) * (1.0 - rain * 0.65);
+            }
         }
 
-        if flash > 0.0 {
+        if flash > 0.0
+            && direction.dot(self.bolt) > 0.9
+            && let Some(point) = local(direction, self.bolt)
+        {
             color += Vec3::new(0.85, 0.92, 1.0)
-                * lightning(coordinates, footprint, outside.last_flash)
+                * lightning(point, footprint, outside.last_flash)
                 * flash;
         }
-        for passing in outside.passersby.iter().flatten() {
-            if matches!(passing.kind, Passerby::Squirrel | Passerby::Snowman) {
-                continue;
+        for (passing, near) in outside.passersby.iter().zip(&self.passing) {
+            if let (Some(passing), Some((center, reach))) = (passing, near)
+                && direction.dot(*center) >= *reach
+                && let Some(point) = local(direction, *center)
+            {
+                color = passerby(color, point, footprint, passing, sky, cloud);
             }
-            color = passerby(color, coordinates, footprint, passing, sky, cloud);
         }
         self.over_hills(color, direction, spread, elevation)
     }
@@ -495,45 +529,46 @@ pub fn land_colors(season: Season) -> [Vec3; 3] {
     }
 }
 
-/// A faint star somewhere on the dome away from the chart, and its seed.
-fn far_star(direction: Vec3, spread: f32) -> (f32, f32) {
-    const CELLS: f32 = 40.0;
-    let scaled = direction * CELLS;
-    let cell = scaled.floor();
-    let seed = scramble(Vec2::new(cell.x + cell.z * 97.0, cell.y + cell.z * 31.0));
-    if stars::brightness(seed) <= 0.0 {
-        return (0.0, seed);
-    }
-    let offset = Vec3::new(
-        scramble(Vec2::new(cell.x, cell.y + 1000.0)),
-        scramble(Vec2::new(cell.y + 2000.0, cell.z)),
-        scramble(Vec2::new(cell.z + 3000.0, cell.x)),
-    ) * 0.6
-        + 0.2;
-    let star = (cell + offset).normalize();
+/// How much a star covers a pixel toward `direction`, and its seed.
+fn star_light(direction: Vec3, spread: f32) -> (f32, f32) {
+    let (column, row) = stars::cell(direction);
+    let Some((_, star, seed)) = stars::in_cell(column, row) else {
+        return (0.0, 0.0);
+    };
     let distance = direction.distance(star);
     (
-        coverage(distance - 0.0014, spread * 0.5) * stars::brightness(seed),
+        coverage(distance - 0.001, spread * 0.5) * stars::brightness(seed),
         seed,
     )
 }
 
+/// The direction of a sky position, (azimuth, elevation).
+pub fn toward(position: Vec2) -> Vec3 {
+    direction(position.x, position.y)
+}
+
+/// How far a passing thing's drawing reaches from its middle, in units.
+fn passerby_bounds(kind: Passerby) -> Option<Vec2> {
+    match kind {
+        Passerby::Geese => Some(Vec2::new(0.19, 0.10)),
+        Passerby::Balloon => Some(Vec2::new(0.055, 0.09)),
+        Passerby::Kite => Some(Vec2::new(0.17, 0.36)),
+        Passerby::Plane => Some(Vec2::new(0.045, 0.03)),
+        Passerby::Lanterns => Some(Vec2::new(0.11, 0.15)),
+        Passerby::Squirrel | Passerby::Snowman => None,
+    }
+}
+
 fn passerby(
     mut color: Vec3,
-    coordinates: Vec2,
+    mut point: Vec2,
     footprint: f32,
     passing: &Passing,
     sky: &Sky,
     cloud: f32,
 ) -> Vec3 {
-    let mut point = (coordinates - passing.position) * Vec2::new(1.5, 1.0);
-    let bounds = match passing.kind {
-        Passerby::Geese => Vec2::new(0.19, 0.10),
-        Passerby::Balloon => Vec2::new(0.055, 0.09),
-        Passerby::Kite => Vec2::new(0.17, 0.36),
-        Passerby::Plane => Vec2::new(0.045, 0.03),
-        Passerby::Lanterns => Vec2::new(0.11, 0.15),
-        Passerby::Squirrel | Passerby::Snowman => return color,
+    let Some(bounds) = passerby_bounds(passing.kind) else {
+        return color;
     };
     if point.abs().cmpgt(bounds + Vec2::splat(footprint)).any() {
         return color;
@@ -652,56 +687,64 @@ fn passerby(
 
 // How brightly a shooting star's streak covers a point of the sky: a thin
 // line, brightest at its head and fading along its tail.
-fn shooting_star(coordinates: Vec2, footprint: f32, streak: &Streak, proportions: Vec2) -> f32 {
-    let reach = 0.03 + footprint;
-    let low = streak.head.min(streak.tail) - Vec2::splat(reach);
-    let high = streak.head.max(streak.tail) + Vec2::splat(reach);
-    if streak.brightness <= 0.0 || coordinates.cmplt(low).any() || coordinates.cmpgt(high).any() {
+fn shooting_star(direction: Vec3, spread: f32, streak: &Streak) -> f32 {
+    let head = toward(streak.head);
+    let tail = toward(streak.tail);
+    if streak.brightness <= 0.0 || direction.dot((head + tail) * 0.5) < 0.9 {
         return 0.0;
     }
-    let point = (coordinates - streak.tail) * proportions;
-    let along = (streak.head - streak.tail) * proportions;
-    let fraction = if along.length_squared() > 1e-8 {
-        (point.dot(along) / along.length_squared()).clamp(0.0, 1.0)
+    let along = head - tail;
+    let fraction = if along.length_squared() > 1e-10 {
+        ((direction - tail).dot(along) / along.length_squared()).clamp(0.0, 1.0)
     } else {
         1.0
     };
-    let distance = point.distance(along * fraction);
-    let line = coverage(distance - 0.002 - 0.003 * fraction, footprint * 0.5);
-    let head = (-point.distance_squared(along) / 0.0004).exp();
+    let nearest = tail.lerp(head, fraction).normalize_or_zero();
+    let distance = direction.distance(nearest) / UNIT;
+    let line = coverage(distance - 0.002 - 0.003 * fraction, spread / UNIT * 0.5);
+    let to_head = direction.distance(head) / UNIT;
+    let head = (-to_head.powi(2) / 0.0004).exp();
     (line * fraction.powf(1.5) + head * 0.8) * streak.brightness
 }
 
-fn lightning(coordinates: Vec2, footprint: f32, last_flash: f64) -> f32 {
-    let random = |salt: u64| {
-        let mut bits = last_flash.to_bits() ^ salt.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        bits = (bits ^ (bits >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        bits = (bits ^ (bits >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        ((bits ^ (bits >> 31)) >> 40) as f32 / (1u64 << 24) as f32
-    };
-    let across = 0.3 + random(0) * 0.4;
+/// A value from 0 to 1 for a lightning flash and a salt, steady through
+/// the flash.
+fn unit_from(last_flash: f64, salt: u64) -> f32 {
+    let mut bits = last_flash.to_bits() ^ salt.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    bits = (bits ^ (bits >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    bits = (bits ^ (bits >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    ((bits ^ (bits >> 31)) >> 40) as f32 / (1u64 << 24) as f32
+}
+
+/// The bolt around its middle, in units, from up in the clouds down to the
+/// hills.
+fn lightning(point: Vec2, footprint: f32, last_flash: f64) -> f32 {
     let points: [Vec2; 6] = std::array::from_fn(|index| {
         let side = if index % 2 == 0 { -1.0 } else { 1.0 };
         Vec2::new(
-            across + side * (0.025 + random(index as u64 + 1) * 0.065),
-            0.88 - index as f32 * 0.17,
+            side * (0.04 + unit_from(last_flash, index as u64 + 1) * 0.1),
+            0.4 - index as f32 * 0.17,
         )
     });
     let mut distance = f32::INFINITY;
     for segment in points.windows(2) {
-        distance = distance.min(capsule(coordinates, segment[0], segment[1], 0.0025));
+        distance = distance.min(capsule(point, segment[0], segment[1], 0.0025));
     }
-    let side = if random(7) < 0.5 { -1.0 } else { 1.0 };
-    let branch = points[2] + Vec2::new(side * 0.1, -0.06);
-    let end = branch + Vec2::new(side * 0.05, -0.1);
+    let side = if unit_from(last_flash, 7) < 0.5 {
+        -1.0
+    } else {
+        1.0
+    };
+    let branch = points[2] + Vec2::new(side * 0.15, -0.06);
+    let end = branch + Vec2::new(side * 0.075, -0.1);
     distance = distance
-        .min(capsule(coordinates, points[2], branch, 0.0015))
-        .min(capsule(coordinates, branch, end, 0.001));
+        .min(capsule(point, points[2], branch, 0.0015))
+        .min(capsule(point, branch, end, 0.001));
     coverage(distance, footprint * 0.5) + 0.2 * coverage(distance - 0.008, footprint * 0.5)
 }
 
 struct Firework {
-    center: Vec2,
+    center: Vec3,
     color: Vec3,
     age: f32,
     seed: f32,
@@ -712,8 +755,9 @@ impl Firework {
         smoothstep(0.0, 0.12, self.age) * (1.0 - self.age / 1.8).max(0.0).powi(2)
     }
 
+    /// The sparks at `point`, in units from the burst's middle.
     fn sparks(&self, point: Vec2, footprint: f32) -> Vec3 {
-        if point.distance_squared(self.center) > 0.09 {
+        if point.length_squared() > 0.36 {
             return Vec3::ZERO;
         }
         let mut light = 0.0;
@@ -721,8 +765,8 @@ impl Firework {
             let seed = Vec2::new(self.seed, index as f32);
             let angle = index as f32 * TAU / 14.0 + hash(seed) * 0.18;
             let velocity =
-                Vec2::new(angle.cos(), angle.sin()) * (0.08 + 0.07 * hash(seed + Vec2::Y));
-            let position = |age: f32| self.center + velocity * age - Vec2::Y * 0.045 * age * age;
+                Vec2::new(angle.cos(), angle.sin()) * (0.14 + 0.11 * hash(seed + Vec2::Y));
+            let position = |age: f32| velocity * age - Vec2::Y * 0.05 * age * age;
             let start = position((self.age - 0.08).max(0.0));
             let end = position(self.age);
             let distance = if start.distance_squared(end) > 1e-12 {
@@ -755,14 +799,18 @@ fn firework(outside: &Outside) -> Option<Firework> {
         Vec3::new(0.8, 0.55, 1.0),
     ];
     Some(Firework {
-        center: Vec2::new(
-            0.2 + 0.6 * hash(Vec2::new(slot, 1.0)),
-            0.45 + 0.3 * hash(Vec2::new(slot, 2.0)),
+        center: direction(
+            (hash(Vec2::new(slot, 1.0)) - 0.5) * 1.3,
+            0.22 + 0.12 * hash(Vec2::new(slot, 2.0)),
         ),
         color: colors[(hash(Vec2::new(slot, 3.0)) * colors.len() as f32) as usize % colors.len()],
         age,
         seed: slot,
     })
+}
+
+fn hash(cell: Vec2) -> f32 {
+    scramble(cell * 7.0 + Vec2::new(311.0, 127.0))
 }
 
 pub fn weather_color(color: Vec3, rain: f32) -> Vec3 {
@@ -806,8 +854,7 @@ pub fn noise(point: Vec2) -> f32 {
     )
 }
 
-/// A quick value from 0 to 1 for a lattice cell, for textures; the star
-/// field keeps `stars::hash`, which saved constellations depend on.
+/// A quick value from 0 to 1 for a lattice cell, for textures.
 pub fn scramble(cell: Vec2) -> f32 {
     let mut bits = (cell.x as i32 as u32).wrapping_mul(0x8DA6_B343)
         ^ (cell.y as i32 as u32).wrapping_mul(0xD816_3841);
@@ -834,11 +881,12 @@ mod tests {
     }
 
     #[test]
-    fn the_chart_runs_left_to_right_and_up_the_sky() {
-        let middle = chart(direction(0.0, CHART_BASE + CHART_HEIGHT * 0.5));
-        assert!(middle.distance(Vec2::new(0.5, 0.5)) < 1e-4);
-        assert!(chart(direction(0.2, 0.2)).x > chart(direction(-0.2, 0.2)).x);
-        assert!(chart(direction(0.0, 0.3)).y > chart(direction(0.0, 0.1)).y);
+    fn a_direction_flattens_around_itself_to_the_middle_with_right_and_up_kept() {
+        let center = direction(0.4, 0.3);
+        assert!(local(center, center).unwrap().length() < 1e-5);
+        assert!(local(direction(0.45, 0.3), center).unwrap().x > 0.0);
+        assert!(local(direction(0.4, 0.35), center).unwrap().y > 0.0);
+        assert!(local(-center, center).is_none());
     }
 
     #[test]
@@ -860,8 +908,8 @@ mod tests {
                     fireworks: true,
                     meteor: Some(Meteor::at(1, 0.0, None).map_or(
                         Streak {
-                            head: Vec2::new(0.5, 0.6),
-                            tail: Vec2::new(0.5, 0.6),
+                            head: Vec2::new(0.1, 0.3),
+                            tail: Vec2::new(0.1, 0.3),
                             brightness: 1.0,
                         },
                         |meteor| meteor.streak(0.3),
@@ -903,8 +951,26 @@ mod tests {
         let at = |hour| Outside::clear(hour, 0.0).sun();
         assert!(at(7.0).x < at(12.0).x && at(12.0).x < at(18.0).x);
         assert!(at(13.0).y > at(8.0).y && at(13.0).y > at(18.5).y);
+        assert!(at(6.0).y < 0.0 && at(20.0).y < 0.0);
         let light = Outside::clear(13.0, 0.0).sunlight_direction();
         assert!(light.y > 0.5 && light.z < 0.0);
+        let winter = Outside {
+            season: Season::Winter,
+            ..Outside::clear(13.0, 0.0)
+        };
+        assert!(winter.sun().y < at(13.0).y);
+    }
+
+    #[test]
+    fn a_rainbow_stands_opposite_the_sun_across_the_back_sky() {
+        for (hour, side) in [(8.0, 1.0), (17.0, -1.0)] {
+            let outside = Outside::clear(hour, 0.0);
+            let center = outside.bow_center();
+            assert!(center.z < 0.0 && center.y < 0.0);
+            assert_eq!(center.x.signum(), side);
+            // Its top clears the hills.
+            assert!(center.y.asin() + BOW > 0.15);
+        }
     }
 
     #[test]

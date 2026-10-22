@@ -436,9 +436,14 @@ impl World {
         let time = self.time;
         let following = (self.ghost.plan.activity == super::Activity::Window
             && self.focus.is_none())
-        .then(|| self.passersby().into_iter().flatten().next())
+        .then(|| {
+            self.passersby()
+                .into_iter()
+                .flatten()
+                .find(|passing| passing.overhead())
+        })
         .flatten()
-        .map(super::passerby::Passing::window_position);
+        .map(super::passerby::Passing::sky_point);
         let ghost = &self.ghost;
         let attended = ghost
             .attention

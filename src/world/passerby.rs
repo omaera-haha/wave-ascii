@@ -151,8 +151,9 @@ impl Passerby {
     }
 }
 
-/// A small picture-space visitor. Snowmen instead hold for the settled snow
-/// spell; their phase measures melting rather than travel.
+/// Something passing overhead, at (azimuth, elevation) in radians. Snowmen
+/// and squirrels stay in the yard; a snowman's phase measures melting
+/// rather than travel.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Passing {
     pub kind: Passerby,
@@ -167,8 +168,20 @@ pub struct Passing {
 }
 
 impl Passing {
-    pub fn window_position(self) -> Vec3 {
-        super::WINDOW_CENTER + Vec3::new((self.position.x - 0.5) * 1.5, self.position.y - 0.5, 0.0)
+    /// A point far off toward it, for eyes to follow.
+    pub fn sky_point(self) -> Vec3 {
+        let (azimuth, elevation) = (self.position.x, self.position.y);
+        super::WINDOW_CENTER
+            + Vec3::new(
+                azimuth.sin() * elevation.cos(),
+                elevation.sin(),
+                -azimuth.cos() * elevation.cos(),
+            ) * 8.0
+    }
+
+    /// Whether it is up in the sky over the hills.
+    pub fn overhead(self) -> bool {
+        !matches!(self.kind, Passerby::Squirrel | Passerby::Snowman) && self.position.y > 0.04
     }
 }
 
@@ -185,7 +198,7 @@ fn snowman(time: f64, weather: &Weather) -> Option<Passing> {
         return Some(Passing {
             kind: Passerby::Snowman,
             identity: settled.to_bits(),
-            position: Vec2::new(0.69, 0.185),
+            position: Vec2::ZERO,
             phase: (1.0 - weather.snow_cover).clamp(0.0, 1.0),
             motion: 0.0,
             facing: 1.0,
@@ -240,31 +253,19 @@ pub fn at(seed: u64, time: f64, date: Date, hour: f32, weather: &Weather) -> [Op
         let height = draw.unit();
         let motion = ((time - began) * 3.0).rem_euclid(f64::from(TAU)) as f32;
         let position = match kind {
-            Passerby::Geese => Vec2::new(-0.12 + across * 1.24, 0.5 + height * 0.16),
+            Passerby::Geese => Vec2::new(-1.1 + across * 2.2, 0.17 + height * 0.08),
             Passerby::Balloon => {
-                Vec2::new(-0.07 + across * 1.14, 0.42 + height * 0.12 + phase * 0.06)
+                Vec2::new(-0.85 + across * 1.7, 0.13 + height * 0.06 + phase * 0.03)
             }
             Passerby::Kite => Vec2::new(
-                0.59 + 0.035 * (motion * 0.3).sin(),
-                0.52 + height * 0.1 + 0.025 * motion.sin(),
+                0.05 + 0.02 * (motion * 0.3).sin(),
+                0.19 + height * 0.05 + 0.01 * motion.sin(),
             ),
-            Passerby::Squirrel => {
-                let along = if phase < 0.4 {
-                    phase / 0.4
-                } else if phase < 0.65 {
-                    1.0
-                } else {
-                    (1.0 - phase) / 0.35
-                };
-                if height < 0.5 {
-                    Vec2::new(0.253 + along * 0.005, 0.2 + along * 0.15)
-                } else {
-                    Vec2::new(0.256 - along * 0.096, 0.265 + along * 0.15)
-                }
-            }
-            Passerby::Plane => Vec2::new(-0.04 + across * 1.08, 0.62 + height * 0.08),
+            // The squirrel stays in the tree.
+            Passerby::Squirrel => Vec2::ZERO,
+            Passerby::Plane => Vec2::new(-1.0 + across * 2.0, 0.25 + height * 0.05),
             Passerby::Lanterns => {
-                Vec2::new(0.54 + height * 0.2 + 0.04 * phase, 0.23 + phase * 0.88)
+                Vec2::new(0.05 + height * 0.15 + 0.03 * phase, 0.06 + phase * 0.4)
             }
             Passerby::Snowman => unreachable!(),
         };
@@ -299,9 +300,7 @@ impl World {
 
     pub(super) fn notice_passersby(&mut self) {
         let pictures = self.passersby();
-        for passing in pictures.into_iter().flatten().filter(|passing| {
-            passing.position.cmpge(Vec2::ZERO).all() && passing.position.cmple(Vec2::ONE).all()
-        }) {
+        for passing in pictures.into_iter().flatten() {
             let seen = &mut self.seen_passersby[passing.kind as usize];
             if *seen != Some(passing.identity) {
                 *seen = Some(passing.identity);
@@ -668,7 +667,7 @@ mod tests {
         for _ in 0..20 {
             world.look_around(0.1);
         }
-        let direction = (passing.window_position() - world.ghost.position).normalize();
+        let direction = (passing.sky_point() - world.ghost.position).normalize();
         assert!(world.ghost.heading.is_finite());
         assert!(world.ghost.heading.angle_between(direction) < 0.01);
         assert!(world.life.total.passerby_kinds.contains(&Passerby::Balloon));

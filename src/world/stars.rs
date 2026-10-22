@@ -1,14 +1,21 @@
 use std::sync::OnceLock;
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use super::{Activity, EventKind, LearnedPicture, Random, Sky, World, recognizer};
 use crate::sdf::smoothstep;
 
-pub const GRID: Vec2 = Vec2::new(22.0, 16.0);
-const STEP_LIMIT: f32 = 0.23;
+/// The star grid over the dome: columns around the horizon, rows up the
+/// sine of elevation, so every cell holds the same patch of sky.
+pub const COLUMNS: u32 = 256;
+pub const ROWS: u32 = 40;
+/// How far apart, in radians, two stars of a constellation may be.
+const STEP_LIMIT: f32 = 0.1;
+/// Where new constellations are found: the back sky, as seen through the
+/// window or from the yard, as (azimuth, elevation) bounds.
+const WINDOW_SKY: (Vec2, Vec2) = (Vec2::new(-0.75, 0.12), Vec2::new(0.75, 0.5));
 const SAMPLES: usize = 224;
 const KEPT: usize = 12;
 // Sparse chains cut corners more than finger drawings; the recognizer's
@@ -27,8 +34,17 @@ const ADJECTIVES: [(&str, &str); 8] = [
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Star {
+    /// (azimuth, elevation) in radians, azimuth from straight back toward +x.
     pub position: Vec2,
+    pub direction: Vec3,
     pub brightness: f32,
+}
+
+impl Star {
+    /// Roughly flat coordinates for drawing a chain of nearby stars.
+    pub fn flat(&self) -> Vec2 {
+        Vec2::new(self.position.x * self.position.y.cos(), self.position.y)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -58,39 +74,67 @@ impl Constellation {
     }
 }
 
-pub fn hash(cell: Vec2) -> f32 {
-    let cell = Vec2::new(cell.x.rem_euclid(64.0), cell.y.rem_euclid(64.0));
-    (cell.dot(Vec2::new(127.1, 311.7)).sin() * 43_758.547)
-        .fract()
-        .abs()
-}
-
-pub fn center(cell: Vec2) -> Vec2 {
-    Vec2::new(hash(cell + Vec2::X), hash(cell + Vec2::Y)) * 0.6 + 0.2
+/// A star cell's own seed, from 0 to 1.
+pub fn hash(column: u32, row: u32) -> f32 {
+    let mut bits = column.wrapping_mul(0x8DA6_B343) ^ row.wrapping_mul(0xD816_3841) ^ 0x5747_A125;
+    bits ^= bits >> 15;
+    bits = bits.wrapping_mul(0x2C1B_3C6D);
+    bits ^= bits >> 12;
+    bits = bits.wrapping_mul(0x297A_2D39);
+    bits ^= bits >> 15;
+    (bits >> 8) as f32 / (1u32 << 24) as f32
 }
 
 pub fn brightness(seed: f32) -> f32 {
     smoothstep(0.78, 0.9, seed)
 }
 
-/// The bright, unobscured stars, in a fixed order used by saved pictures.
+/// The cell `direction` falls in.
+pub fn cell(direction: Vec3) -> (u32, u32) {
+    let azimuth = direction.x.atan2(-direction.z);
+    let around = (azimuth / std::f32::consts::TAU).rem_euclid(1.0) * COLUMNS as f32;
+    let up = direction.y.clamp(0.0, 0.999_999) * ROWS as f32;
+    ((around as u32).min(COLUMNS - 1), up as u32)
+}
+
+/// The star in a cell, if it shines at all: where it is and its seed.
+pub fn in_cell(column: u32, row: u32) -> Option<(Vec2, Vec3, f32)> {
+    let seed = hash(column, row);
+    if brightness(seed) <= 0.0 {
+        return None;
+    }
+    let along = hash(column + COLUMNS, row) * 0.6 + 0.2;
+    let up = hash(column, row + ROWS) * 0.6 + 0.2;
+    let azimuth = ((column as f32 + along) / COLUMNS as f32) * std::f32::consts::TAU;
+    let azimuth = if azimuth > std::f32::consts::PI {
+        azimuth - std::f32::consts::TAU
+    } else {
+        azimuth
+    };
+    let elevation = ((row as f32 + up) / ROWS as f32).asin();
+    let direction = Vec3::new(
+        azimuth.sin() * elevation.cos(),
+        elevation.sin(),
+        -azimuth.cos() * elevation.cos(),
+    );
+    Some((Vec2::new(azimuth, elevation), direction, seed))
+}
+
+/// The bright stars over the hills, in a fixed order used by saved pictures.
 pub fn field() -> &'static [Star] {
     static FIELD: OnceLock<Vec<Star>> = OnceLock::new();
     FIELD.get_or_init(|| {
         let mut stars = Vec::new();
-        for row in 0..16 {
-            for column in 0..22 {
-                let cell = Vec2::new(column as f32, row as f32);
-                let position = (cell + center(cell)) / GRID;
-                let brightness = brightness(hash(cell));
-                // The highest hill is below this line. Keep the whole leafy
-                // tree's bounds clear even when winter exposes its branches.
-                let tree = (0.08..0.43).contains(&position.x) && position.y < 0.6;
-                let moon =
-                    ((position - Vec2::new(0.79, 0.8)) * Vec2::new(1.0, 2.0 / 3.0)).length() < 0.06;
-                if brightness >= 0.35 && position.y > 0.26 && !tree && !moon {
+        for row in 0..ROWS {
+            for column in 0..COLUMNS {
+                let Some((position, direction, seed)) = in_cell(column, row) else {
+                    continue;
+                };
+                let brightness = brightness(seed);
+                if brightness >= 0.35 && position.y > 0.12 && position.y < 1.2 {
                     stars.push(Star {
                         position,
+                        direction,
                         brightness,
                     });
                 }
@@ -103,25 +147,41 @@ pub fn field() -> &'static [Star] {
 fn neighbors() -> &'static [Vec<usize>] {
     static NEIGHBORS: OnceLock<Vec<Vec<usize>>> = OnceLock::new();
     NEIGHBORS.get_or_init(|| {
-        field()
+        let field = field();
+        field
             .iter()
             .enumerate()
             .map(|(index, star)| {
-                let mut near: Vec<usize> = field()
+                let mut near: Vec<usize> = field
                     .iter()
                     .enumerate()
                     .filter(|(other, candidate)| {
-                        *other != index && star.position.distance(candidate.position) <= STEP_LIMIT
+                        *other != index
+                            && star.direction.distance(candidate.direction) <= STEP_LIMIT
                     })
                     .map(|(other, _)| other)
                     .collect();
                 near.sort_by(|&first, &second| {
-                    star.position
-                        .distance_squared(field()[first].position)
-                        .total_cmp(&star.position.distance_squared(field()[second].position))
+                    star.direction
+                        .distance_squared(field[first].direction)
+                        .total_cmp(&star.direction.distance_squared(field[second].direction))
                 });
                 near
             })
+            .collect()
+    })
+}
+
+/// The stars a new constellation may start from.
+fn window_stars() -> &'static [usize] {
+    static STARTS: OnceLock<Vec<usize>> = OnceLock::new();
+    STARTS.get_or_init(|| {
+        let (low, high) = WINDOW_SKY;
+        field()
+            .iter()
+            .enumerate()
+            .filter(|(_, star)| star.position.cmpge(low).all() && star.position.cmple(high).all())
+            .map(|(index, _)| index)
             .collect()
     })
 }
@@ -136,7 +196,8 @@ pub fn find(
     let mut found = None;
     for _ in 0..SAMPLES {
         let length = 4 + (random.unit() * 4.0) as usize;
-        let mut chain = vec![(random.unit() * field().len() as f32) as usize];
+        let starts = window_stars();
+        let mut chain = vec![starts[(random.unit() * starts.len() as f32) as usize % starts.len()]];
         while chain.len() < length {
             let nearest: Vec<usize> = neighbors()[*chain.last().unwrap()]
                 .iter()
@@ -160,7 +221,7 @@ pub fn find(
         {
             continue;
         }
-        let stroke = chain.iter().map(|&index| field()[index].position).collect();
+        let stroke = chain.iter().map(|&index| field()[index].flat()).collect();
         if let Some((recognition, distance)) = recognizer::best_match(&[stroke], learned, best)
             && distance < best
         {
@@ -301,45 +362,21 @@ mod tests {
     }
 
     #[test]
-    fn every_cell_keeps_the_original_star_placement_and_brightness() {
-        let old_hash = |cell: Vec2| {
-            let cell = Vec2::new(cell.x.rem_euclid(64.0), cell.y.rem_euclid(64.0));
-            (cell.dot(Vec2::new(127.1, 311.7)).sin() * 43_758.547)
-                .fract()
-                .abs()
-        };
-        for row in 0..16 {
-            for column in 0..22 {
-                let cell = Vec2::new(column as f32, row as f32);
-                let old_center =
-                    Vec2::new(old_hash(cell + Vec2::X), old_hash(cell + Vec2::Y)) * 0.6 + 0.2;
-                assert_eq!(hash(cell), old_hash(cell));
-                assert_eq!(center(cell), old_center);
-                assert_eq!(
-                    brightness(hash(cell)),
-                    smoothstep(0.78, 0.9, old_hash(cell))
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_cached_field_is_stable_and_stays_above_the_hills_and_clear_of_the_tree_and_moon() {
+    fn the_cached_field_is_stable_and_every_star_sits_in_its_own_cell_above_the_hills() {
         assert!(std::ptr::eq(field(), field()));
-        assert!(field().len() >= 30, "{} stars", field().len());
+        assert!(field().len() >= 600, "{} stars", field().len());
+        assert!(
+            window_stars().len() >= 40,
+            "{} in the window",
+            window_stars().len()
+        );
         for star in field() {
-            assert!(star.position.is_finite());
-            assert!(star.position.cmpge(Vec2::ZERO).all() && star.position.cmple(Vec2::ONE).all());
+            assert!(star.position.is_finite() && star.position.y > 0.12);
             assert!(star.brightness >= 0.35 && star.brightness <= 1.0);
-            let hill = 0.215
-                + 0.025 * (star.position.x * 8.0 + 0.6).sin()
-                + 0.012 * (star.position.x * 19.0).sin();
-            assert!(star.position.y > hill);
-            assert!(!(0.08..0.43).contains(&star.position.x) || star.position.y >= 0.6);
-            assert!(
-                ((star.position - Vec2::new(0.79, 0.8)) * Vec2::new(1.0, 2.0 / 3.0)).length()
-                    >= 0.06
-            );
+            assert!((star.direction.length() - 1.0).abs() < 1e-4);
+            let (column, row) = cell(star.direction);
+            let (position, _, _) = in_cell(column, row).unwrap();
+            assert!(position.distance(star.position) < 1e-4);
         }
     }
 
@@ -364,8 +401,8 @@ mod tests {
             for pair in first.stars.windows(2) {
                 assert!(
                     field()[usize::from(pair[0])]
-                        .position
-                        .distance(field()[usize::from(pair[1])].position)
+                        .direction
+                        .distance(field()[usize::from(pair[1])].direction)
                         <= STEP_LIMIT
                 );
             }
@@ -425,7 +462,7 @@ mod tests {
         let stroke = first
             .stars
             .iter()
-            .map(|&index| field()[usize::from(index)].position)
+            .map(|&index| field()[usize::from(index)].flat())
             .collect();
         let learned = LearnedPicture {
             name: "little dragon".to_owned(),

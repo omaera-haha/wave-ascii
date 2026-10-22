@@ -409,7 +409,7 @@ impl World {
         let stroke = constellation
             .stars
             .iter()
-            .map(|&index| super::stars::field()[usize::from(index)].position)
+            .map(|&index| super::stars::field()[usize::from(index)].flat())
             .collect();
         self.queue_pin(Pin::new(
             Kind::Constellation,

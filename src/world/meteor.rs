@@ -5,8 +5,8 @@ use jiff::civil::Date;
 const SLOT: f64 = 10.0;
 /// Mean seconds between shooting stars on an ordinary dark, clear night.
 const ORDINARY: f64 = 480.0;
-/// How long a shooting star's glowing tail grows, in picture coordinates.
-const TAIL: f32 = 0.13;
+/// How long a shooting star's glowing tail grows, in radians.
+const TAIL: f32 = 0.06;
 
 /// A yearly meteor shower and the evenings that begin its best nights.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -89,8 +89,8 @@ pub fn dark(hour: f32) -> bool {
     !(5.0..20.5).contains(&hour.rem_euclid(24.0))
 }
 
-/// A shooting star crossing the window's sky, in picture coordinates from
-/// the window's bottom left to its top right.
+/// A shooting star crossing the back sky, as (azimuth, elevation) in
+/// radians.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Meteor {
     /// The slot of time it belongs to, so it is seen only once.
@@ -101,7 +101,7 @@ pub struct Meteor {
     pub duration: f64,
 }
 
-/// What the window draws of a shooting star at one moment.
+/// What the sky draws of a shooting star at one moment.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Streak {
     pub head: Vec2,
@@ -129,20 +129,13 @@ impl Meteor {
         if !(began..began + duration).contains(&time) {
             return None;
         }
-        let start = Vec2::new(0.15 + 0.7 * draw.unit(), 0.7 + 0.25 * draw.unit());
+        let start = Vec2::new(-0.6 + 1.2 * draw.unit(), 0.24 + 0.16 * draw.unit());
         let angle = 0.3 + 0.55 * draw.unit();
+        // It heads back toward the middle of the sky rather than away.
         let side = if draw.unit() < 0.5 { -1.0 } else { 1.0 };
-        // It heads back across the window rather than out of it, and ends
-        // inside the frame.
-        let room = |side: f32| {
-            if side > 0.0 {
-                0.97 - start.x
-            } else {
-                start.x - 0.03
-            }
-        };
-        let side = if room(side) < 0.2 { -side } else { side };
-        let length = (0.22 + 0.2 * draw.unit()).min(room(side) / angle.cos());
+        let side = if start.x * side > 0.3 { -side } else { side };
+        // And ends over the hills.
+        let length = (0.1 + 0.08 * draw.unit()).min((start.y - 0.08) / angle.sin());
         Some(Self {
             slot,
             start,
@@ -236,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn a_shooting_star_crosses_the_sky_once_within_its_slot_and_stays_in_the_window() {
+    fn a_shooting_star_crosses_the_sky_once_within_its_slot_and_stays_over_the_hills() {
         let mut seen = 0;
         for slot in 0..20_000_u64 {
             let start = slot as f64 * SLOT;
@@ -259,7 +252,7 @@ mod tests {
             for progress in [0.0, 0.3, 0.7, 1.0] {
                 let streak = meteor.streak(meteor.began + meteor.duration * progress);
                 for point in [streak.head, streak.tail] {
-                    assert!(point.cmpge(Vec2::ZERO).all() && point.cmple(Vec2::ONE).all());
+                    assert!(point.x.abs() <= 1.0 && (0.075..=0.41).contains(&point.y));
                 }
                 assert!(streak.tail.distance(streak.head) <= TAIL + 1e-5);
                 assert!((0.0..=1.0).contains(&streak.brightness));
