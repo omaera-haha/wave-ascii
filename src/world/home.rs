@@ -167,6 +167,19 @@ fn over_house(point: Vec3) -> bool {
         && point.z <= HOUSE_MAX.z
 }
 
+/// How far along a ray it first meets the cottage, walls or roof, if it
+/// does.
+pub fn house_entry(eye: Vec3, direction: Vec3) -> Option<f32> {
+    let low = Vec3::new(HOUSE_MIN.x - GABLE, 0.0, HOUSE_MIN.z - EAVE);
+    let high = Vec3::new(HOUSE_MAX.x + GABLE, RIDGE, HOUSE_MAX.z + EAVE);
+    let inverse = direction.recip();
+    let first = (low - eye) * inverse;
+    let second = (high - eye) * inverse;
+    let enter = first.min(second).max_element();
+    let exit = first.max(second).min_element();
+    (enter <= exit && exit > 0.0 && enter > 0.0).then_some(enter)
+}
+
 /// Inside the cottage's footprint or within `margin` of its walls.
 pub fn near_house(point: Vec3, margin: f32) -> bool {
     point.x >= HOUSE_MIN.x - margin

@@ -501,6 +501,7 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         // comes off like a dollhouse's.
         roofless: home::in_house(world.ghost.position) && scene.view.eye.y > home::RIDGE,
         snow_ghost: world.snow_ghost_shape(),
+        shaken: world.tree_shake(),
     });
     let tiles = Tiles::new(grid, scene.view, &indoor, &yard, &outdoor);
     let tracer = Tracer {
@@ -1464,6 +1465,7 @@ mod tests {
             occasion: None,
             roofless: false,
             snow_ghost: None,
+            shaken: None,
         })
     }
 

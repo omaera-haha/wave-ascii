@@ -36,7 +36,7 @@ pub mod music;
 mod nature;
 mod needs;
 pub mod occasion;
-mod outing;
+pub mod outing;
 pub mod passerby;
 pub mod penpal;
 mod photo;
@@ -984,6 +984,8 @@ pub struct World {
     last_outing: Option<f64>,
     /// The snow ghost it sculpted, for which snowfall, and how far along.
     pub snow_ghost: Option<(f64, f32)>,
+    /// When the viewer last shook the big tree.
+    tree_shaken: Option<f64>,
     pending_pins: Vec<gallery::Pin>,
     pub showing: Option<show::Showing>,
     show_praise_until: Option<f64>,
@@ -1147,6 +1149,7 @@ impl World {
             bubbles_finished_at: None,
             last_outing: None,
             snow_ghost: None,
+            tree_shaken: None,
             pending_pins: Vec::new(),
             showing: None,
             show_praise_until: None,

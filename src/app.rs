@@ -1162,6 +1162,18 @@ impl App {
             self.world.ask_window(!self.world.window_open);
             return;
         }
+        if let Some(thing) = self.world.yard_thing_at(view.eye, direction) {
+            use crate::world::outing::YardThing;
+            if thing == YardThing::Mailbox {
+                if self.world.unread_letter().is_some() {
+                    self.open_letter();
+                    return;
+                }
+            } else {
+                self.world.click_yard(thing);
+                return;
+            }
+        }
         // A mote appears where the ray meets the floor, a little above it,
         // or behind the glass if the ray misses the floor.
         let floor = view
@@ -2205,6 +2217,40 @@ mod tests {
             .to_pixels()
             .transform_point2(point);
         (pixel.x as usize, pixel.y as usize)
+    }
+
+    #[test]
+    fn clicking_the_swing_sends_the_ghost_out_and_shaking_the_tree_shoos_its_bird() {
+        let mut yard = app();
+        yard.world.ghost.needs.energy = 1.0;
+        // Look at the yard, as when the ghost is out there.
+        yard.camera.target = Vec3::new(4.3, 1.3, -0.7);
+        yard.frame(100, 32);
+        let (column, row) = cell_of(&yard, yard.world.swing_seat() + Vec3::Y * 0.3);
+        click(&mut yard, column, row);
+        assert_eq!(yard.world.ghost.plan.activity, Activity::Yard);
+        assert_eq!(yard.world.yard_spot(), Some(crate::world::home::Spot::Swing));
+
+        let mut shaken = app();
+        let mut bird = crate::world::visitor::Bird::new(
+            -10.0,
+            1.0,
+            &mut crate::world::Random::new(2),
+        );
+        bird.perch = crate::world::Perch::Tree;
+        shaken.world.visitors.bird = Some(bird);
+        // The crown shows above the roof from the room's view.
+        let crown = crate::world::home::TREE_CROWN + Vec3::Y * 1.0;
+        let (column, row) = cell_of(&shaken, crown);
+        click(&mut shaken, column, row);
+        assert!(shaken.world.tree_shake().is_some());
+        assert!(
+            shaken.world
+                .events
+                .iter()
+                .any(|event| event.kind == EventKind::BirdFlewOff { startled: false })
+        );
+        assert!(shaken.world.motes.is_empty());
     }
 
     #[test]

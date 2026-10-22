@@ -309,30 +309,7 @@ impl World {
                     ("I'm already inside.", "나 벌써 안에 있어.")
                 }
             }
-            Request::Out(spot) => {
-                let rain = self.weather.rain(self.time);
-                if self.ghost.asleep >= 0.3 {
-                    ("Mm… tomorrow…", "음… 내일…")
-                } else if self.weather.storm || rain >= 0.45 {
-                    ("It's too wet out there.", "밖에 비가 너무 와.")
-                } else if self.ghost.needs.energy < 0.2 {
-                    ("I'm too tired to go out.", "너무 졸려서 못 나가겠어.")
-                } else {
-                    self.begin(Activity::Yard);
-                    if let Some(spot) = spot {
-                        let position = spot.position(self.size());
-                        self.ghost.plan.target = position;
-                        self.ghost.plan.anchor = position;
-                        self.ghost.plan.cat = false;
-                        self.ghost.plan.arrived = None;
-                    }
-                    self.last_outing = Some(self.time);
-                    match spot {
-                        Some(Spot::Swing) => ("To the swing!", "그네 타러 가자!"),
-                        _ => ("Out to the yard!", "마당에 나가자!"),
-                    }
-                }
-            }
+            Request::Out(spot) => self.go_out(spot),
         };
         self.say(if korean { lines.1 } else { lines.0 });
         Some(Heard {
@@ -345,6 +322,106 @@ impl World {
             given_name: None,
             korean,
         })
+    }
+
+    /// Sets out for the yard, or a spot in it, when it can: its answer.
+    fn go_out(&mut self, spot: Option<Spot>) -> (&'static str, &'static str) {
+        let rain = self.weather.rain(self.time);
+        if self.ghost.asleep >= 0.3 {
+            ("Mm… tomorrow…", "음… 내일…")
+        } else if self.weather.storm || rain >= 0.45 {
+            ("It's too wet out there.", "밖에 비가 너무 와.")
+        } else if self.ghost.needs.energy < 0.2 {
+            ("I'm too tired to go out.", "너무 졸려서 못 나가겠어.")
+        } else {
+            self.begin(Activity::Yard);
+            if let Some(spot) = spot {
+                let position = spot.position(self.size());
+                self.ghost.plan.target = position;
+                self.ghost.plan.anchor = position;
+                self.ghost.plan.cat = false;
+                self.ghost.plan.arrived = None;
+            }
+            self.last_outing = Some(self.time);
+            match spot {
+                Some(Spot::Swing) => ("To the swing!", "그네 타러 가자!"),
+                _ => ("Out to the yard!", "마당에 나가자!"),
+            }
+        }
+    }
+
+    /// The yard thing a ray from `eye` along `direction` meets first, past
+    /// anything of the house in the way.
+    pub fn yard_thing_at(&self, eye: Vec3, direction: Vec3) -> Option<YardThing> {
+        let meet = |center: Vec3, radius: f32| {
+            let offset = eye - center;
+            let along = -offset.dot(direction);
+            let miss = (offset + direction * along).length();
+            (along > 0.0 && miss < radius).then_some(along)
+        };
+        let mut things = vec![
+            (YardThing::Swing, meet(self.swing_seat() + Vec3::Y * 0.4, 0.55)),
+            (YardThing::Mailbox, meet(home::MAILBOX + Vec3::Y * 1.05, 0.3)),
+            (
+                YardThing::Tree,
+                meet(home::TREE_CROWN, home::TREE_CROWN_RADIUS * 0.9)
+                    .or_else(|| meet(home::TREE + Vec3::Y * 1.1, 0.45)),
+            ),
+        ];
+        if let Some(cat) = &self.visitors.cat {
+            things.push((YardThing::Cat, meet(cat.position(self.time) + Vec3::Y * 0.2, 0.35)));
+        }
+        // The house hides what is behind it.
+        let house = home::house_entry(eye, direction);
+        things
+            .into_iter()
+            .filter_map(|(thing, distance)| distance.map(|distance| (thing, distance)))
+            .filter(|(_, distance)| house.is_none_or(|house| *distance < house))
+            .min_by(|first, second| first.1.total_cmp(&second.1))
+            .map(|(thing, _)| thing)
+    }
+
+    /// The viewer clicked something in the yard. The mailbox is the app's.
+    pub fn click_yard(&mut self, thing: YardThing) {
+        self.notice_viewer();
+        let korean = self.speaks_korean();
+        match thing {
+            YardThing::Swing => {
+                let lines = self.go_out(Some(Spot::Swing));
+                self.say(if korean { lines.1 } else { lines.0 });
+            }
+            YardThing::Cat => {
+                if self.ghost.asleep < 0.3
+                    && let Some(spot) = self.beside_cat()
+                {
+                    self.begin(Activity::Yard);
+                    self.ghost.plan.target = spot;
+                    self.ghost.plan.anchor = spot;
+                    self.ghost.plan.cat = true;
+                    self.ghost.plan.arrived = None;
+                    self.last_outing = Some(self.time);
+                    self.think(if korean { "고양이다!" } else { "The cat!" });
+                }
+            }
+            YardThing::Tree => {
+                self.tree_shaken = Some(self.time);
+                if self
+                    .visitors
+                    .bird
+                    .as_ref()
+                    .is_some_and(|bird| bird.perch == super::Perch::Tree)
+                {
+                    self.shoo_bird();
+                }
+            }
+            YardThing::Mailbox => {}
+        }
+    }
+
+    /// Seconds since the viewer last shook the tree, while its leaves fall.
+    pub fn tree_shake(&self) -> Option<f32> {
+        let since = (self.time - self.tree_shaken?) as f32;
+        (0.0..6.0).contains(&since).then_some(since)
     }
 
     /// Where the ghost is, in or out, and how the yard looks, for the minds.
@@ -398,6 +475,15 @@ impl World {
             .filter(|_| self.ghost.plan.arrived.is_some())
             .map_or("heading out to the yard", Spot::words)
     }
+}
+
+/// Something out in the yard the viewer can click.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum YardThing {
+    Swing,
+    Cat,
+    Tree,
+    Mailbox,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

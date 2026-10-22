@@ -326,6 +326,18 @@ impl Moth {
 }
 
 impl World {
+    /// Sends a perched bird off, as when the viewer shakes its tree.
+    pub(super) fn shoo_bird(&mut self) {
+        let time = self.time;
+        if let Some(bird) = self.visitors.bird.as_mut()
+            && bird.departing.is_none()
+            && bird.perched(time)
+        {
+            bird.departing = Some((time, bird.picture(time).position));
+            self.record(EventKind::BirdFlewOff { startled: false });
+        }
+    }
+
     pub(super) fn advance_visitors(&mut self, seconds: f32) {
         let time = self.time;
         let daytime = (7.0..18.5).contains(&self.hour);

@@ -2,8 +2,6 @@
 
 a cute little life in your terminal.
 
-A ghost lives in a little cottage drawn as text: a cozy room behind a glass front, with a clock that keeps your time, and a fenced yard with a big tree, a swing, a garden bed, and a birdbath under a real sky, where the sun and moon cross, clouds drift, and rain and snow fall. It floats out the door to play in the yard, waters its garden, climbs onto the roof to watch the stars, sculpts a snow ghost after a snowfall, and keeps a visiting neighborhood cat company; the view follows it. Its days follow your local clock, so it sleeps at night, and its life is saved between runs. With API keys, Jev (TypeSafe) makes its quick choices and Claude gives it thoughts and words; without them it lives on instinct.
-
 ## Run
 
 ```
@@ -16,19 +14,19 @@ cargo run --release -- [OPTIONS]
 | `--color auto\|truecolor\|256\|never` | color mode; auto follows `NO_COLOR` and `COLORTERM` |
 | `--fps N` | frames per second (default 60) |
 | `--offline` | don't call any model, even with keys |
-| `--peek` | print one line about what the saved ghost is probably doing, for a prompt or status bar |
+| `--peek` | print one line about what's probably happening, for a prompt or status bar |
 | `--album-html PATH` | export the saved album as one HTML page (`--force` replaces an existing file) |
 | `-h`, `--help` | show help |
 
-Piped, it prints one frame of a fresh ghost and exits, sized by `COLUMNS` and `LINES`. `--time SECONDS`, `--hour HOUR` (default 12), `--date YYYY-MM-DD` (default 2026-06-21), and `--born YYYY-MM-DD` pick the moment.
+Piped, it prints one frame of a fresh start and exits, sized by `COLUMNS` and `LINES`. `--time SECONDS`, `--hour HOUR` (default 12), `--date YYYY-MM-DD` (default 2026-06-21), and `--born YYYY-MM-DD` pick the moment.
 
-Press `k` in the app to add API keys, or set `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` (these aren't saved). The life is saved in `~/.local/share/wave-ascii/ghost.json`, and settings, keys included, in `~/.config/wave-ascii/config.json`.
+It runs on instinct alone. Press `k` in the app to add API keys for Jev (TypeSafe) and Claude, or set `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` (these aren't saved). The life is saved under `~/.local/share/wave-ascii/`, and settings, keys included, in `~/.config/wave-ascii/config.json`.
 
 ## Keys
 
 | Key | |
 |---|---|
-| `t`, Enter | talk to the ghost |
+| `t`, Enter | talk |
 | arrows, WASD | turn the view |
 | `+` / `-` | zoom |
 | `r` | reset the view |
@@ -36,10 +34,10 @@ Press `k` in the app to add API keys, or set `ANTHROPIC_API_KEY` and `TYPESAFE_A
 | space | pause |
 | `k` | API keys and models |
 | `j` | journal |
-| `l` | its life and growth |
+| `l` | life and growth |
 | `b` | album of moments |
 | `p` | save a postcard |
-| `P` | ask it to pose, then save a postcard |
+| `P` | ask for a pose, then save a postcard |
 | `g`, then `1`–`9` | noughts and crosses |
 | `o` | focus together for twenty-five minutes (`o` again ends it) |
 | `f` | draw in the fog with left drags (`f` or Esc stops) |
@@ -51,8 +49,7 @@ Press `k` in the app to add API keys, or set `ANTHROPIC_API_KEY` and `TYPESAFE_A
 
 ## Mouse
 
-- Click the ghost to poke it (or find it when it hides), the ball to flick it, a block to nudge it or a tower to topple it, the window to open or shut it, the music box to wind it, a soap bubble to pop it, and an envelope to read it. Click the lawn to drop a light mote out in the yard, or anywhere else to drop one in the room.
-- Ask it to go outside (or "마당에 나가자", "ride the swing") and it heads out the door; "come in" brings it back.
-- Drag across the ghost to stroke it; drag elsewhere to turn the view, and scroll to zoom.
+- Click things to see what they do; click empty floor or lawn to drop a light mote.
+- Drag across someone to stroke them; drag elsewhere to turn the view, and scroll to zoom.
 - Right-drag to draw in the fog on the glass.
 - In the journal, help, life, letter, and album panels, the mouse selects text.

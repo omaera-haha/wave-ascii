@@ -307,6 +307,8 @@ pub struct Setting<'a> {
     pub roofless: bool,
     /// The ghost's snow sculpture: how built and how melted.
     pub snow_ghost: Option<(f32, f32)>,
+    /// Seconds since the viewer shook the big tree, while it rains leaves.
+    pub shaken: Option<f32>,
 }
 
 impl<'a> Yard<'a> {
@@ -368,6 +370,9 @@ impl<'a> Yard<'a> {
         }
         if matches!(outside.season, Season::Spring | Season::Autumn) {
             critters.extend(falling(outside));
+        }
+        if let Some(since) = setting.shaken {
+            critters.extend(shaken(outside, since));
         }
         // Nearest first, so what they hide is skipped sooner.
         let eye = setting.view.eye;
@@ -1813,6 +1818,39 @@ fn falling(outside: &Outside) -> impl Iterator<Item = Critter> + '_ {
     })
 }
 
+/// A shower from the crown just after the tree is shaken: petals, leaves
+/// green or gold, or snow off bare branches.
+fn shaken(outside: &Outside, since: f32) -> impl Iterator<Item = Critter> + '_ {
+    (0..14).filter_map(move |index| {
+        let seed = scramble(Vec2::new(index as f32, 61.0));
+        let start_at = seed * 1.2;
+        let fall = ((since - start_at) / 3.5).clamp(0.0, 1.0);
+        if fall <= 0.0 || fall >= 1.0 {
+            return None;
+        }
+        let start = TREE_CROWN
+            + Vec3::new(
+                (seed - 0.5) * 2.6,
+                -0.9 + scramble(Vec2::new(index as f32, 5.0)) * 1.0,
+                (scramble(Vec2::new(index as f32, 8.0)) - 0.3) * 2.2,
+            );
+        let sway = (since * 2.5 + seed * TAU).sin();
+        let position = start
+            + Vec3::new(
+                outside.wind * 0.8 * fall + sway * 0.12,
+                -start.y * fall * fall,
+                fall * 0.4,
+            );
+        let tint = match outside.season {
+            Season::Spring => Vec3::new(1.0, 0.8, 0.88),
+            Season::Summer => Vec3::new(0.4, 0.75, 0.38),
+            Season::Autumn => Vec3::new(0.95, 0.38, 0.18).lerp(Vec3::new(1.0, 0.78, 0.3), seed),
+            Season::Winter => Vec3::new(0.9, 0.94, 1.0),
+        };
+        Some(Critter::Leaf(position, tint))
+    })
+}
+
 /// Where the squirrel is on the tree as it scurries up the trunk and out
 /// along the low branch, and back.
 fn squirrel_at(passing: &Passing) -> Vec3 {
@@ -2079,6 +2117,7 @@ mod tests {
             occasion: Some(Occasion::Halloween),
             roofless: false,
             snow_ghost: Some((0.6, 0.2)),
+            shaken: Some(1.0),
         })
     }
 
