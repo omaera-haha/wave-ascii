@@ -27,6 +27,8 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use glam::Vec3;
+
 use app::{App, Response};
 use canvas::Style;
 use color::ColorMode;
@@ -361,6 +363,18 @@ fn print_frame(options: &Options) -> io::Result<()> {
     let steps = (time / 0.05 - 1e-9).ceil().max(0.0) as u64;
     for step in 0..steps {
         app.advance((time - step as f64 * 0.05).min(0.05) as f32);
+    }
+    // For checking looks without a terminal: the raw pixels as a PPM image.
+    if let Some(path) = env::var_os("WAVE_ASCII_IMAGE") {
+        let picture = app.picture(size.columns * 4, size.rows * 8);
+        let mut bytes = format!("P6 {} {} 255\n", picture.width(), picture.height()).into_bytes();
+        for row in 0..picture.height() {
+            for column in 0..picture.width() {
+                let rgb = picture.shade(column, row).rgb().clamp(Vec3::ZERO, Vec3::ONE);
+                bytes.extend(rgb.to_array().map(|channel| (channel.powf(1.0 / 2.2) * 255.0) as u8));
+            }
+        }
+        return fs::write(path, bytes);
     }
     let canvas = app.frame(size.columns, size.rows);
     io::stdout().lock().write_all(canvas.ansi(color).as_bytes())

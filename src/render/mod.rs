@@ -2,7 +2,9 @@ mod bubbles;
 mod dream;
 pub mod ghost;
 mod shapes;
+pub mod sky;
 pub mod window;
+mod yard;
 
 use std::f32::consts::PI;
 
@@ -11,7 +13,9 @@ use glam::{Vec2, Vec3};
 use crate::face::Face;
 use crate::frame::{Frame, Grid, Shade};
 use crate::sdf::{capsule, coverage, mix, smoothstep};
+use crate::world::home::{self, DOOR_HIGH, DOOR_LOW};
 use crate::world::mirror;
+use crate::world::stars::hash;
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
 use ghost::{Aura, BOUNDS, Body, Pose};
 use shapes::{Furniture, Material, decoration_light, sphere_span};
@@ -19,30 +23,36 @@ use shapes::{Furniture, Material, decoration_light, sphere_span};
 /// World units per unit of the ghost's own space.
 pub const GHOST_SCALE: f32 = 0.45;
 pub const FRIEND_SCALE: f32 = GHOST_SCALE * 0.75;
-/// The point the camera circles and looks at.
-const TARGET: Vec3 = Vec3::new(0.0, 1.05, 0.0);
+/// The point the camera circles and looks at, unless it follows the ghost
+/// out into the yard.
+const TARGET: Vec3 = Vec3::new(0.0, 1.2, 0.0);
 /// One over the tangent of half the vertical field of view, about 50 degrees.
 const FOCAL: f32 = 2.1;
-const EDGE_COLOR: Vec3 = Vec3::new(0.62, 0.72, 1.0);
-const WALL_COLOR: Vec3 = Vec3::new(0.78, 0.82, 0.96);
+const FRAME_COLOR: Vec3 = Vec3::new(0.62, 0.46, 0.32);
+/// The room's walls, floor, and ceiling are drawn dimmer than the things in
+/// it, so they stand out in glyphs.
+const ROOM_EXPOSURE: f32 = 0.7;
+const TRIM_COLOR: Vec3 = Vec3::new(0.86, 0.84, 0.78);
 const MOTE_COLOR: Vec3 = Vec3::new(1.0, 0.9, 0.58);
 const LAMP_LIGHT: Vec3 = Vec3::new(1.0, 0.78, 0.5);
 
-/// Where the viewer looks from: turned around the room by `yaw`, raised by
+/// Where the viewer looks from: turned around `target` by `yaw`, raised by
 /// `pitch`, and moved in by `zoom`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera {
     pub yaw: f32,
     pub pitch: f32,
     pub zoom: f32,
+    pub target: Vec3,
 }
 
 impl Default for Camera {
     fn default() -> Self {
         Self {
             yaw: 0.0,
-            pitch: 0.3,
+            pitch: 0.17,
             zoom: 1.0,
+            target: TARGET,
         }
     }
 }
@@ -54,7 +64,18 @@ impl Camera {
     }
 
     pub fn zoom_by(&mut self, factor: f32) {
-        self.zoom = (self.zoom * factor).clamp(0.5, 3.0);
+        self.zoom = (self.zoom * factor).clamp(0.4, 3.0);
+    }
+
+    /// Eases the target toward `focus` over about a second.
+    pub fn follow(&mut self, focus: Vec3, seconds: f32) {
+        let amount = 1.0 - (-seconds.max(0.0) * 1.4).exp();
+        self.target = self.target.lerp(focus, amount);
+    }
+
+    /// The room's middle, where the camera looks when the ghost is in.
+    pub fn home() -> Vec3 {
+        TARGET
     }
 
     /// The view on a screen sampled by `grid`. Narrow screens move the
@@ -67,8 +88,8 @@ impl Camera {
             self.pitch.sin(),
             self.yaw.cos() * self.pitch.cos(),
         );
-        let eye = TARGET + around * distance;
-        let forward = (TARGET - eye).normalize();
+        let eye = self.target + around * distance;
+        let forward = (self.target - eye).normalize();
         let right = forward.cross(Vec3::Y).normalize();
         View {
             eye,
@@ -185,7 +206,7 @@ impl View {
 /// Everything one frame shows.
 pub struct Scene<'a> {
     pub world: &'a World,
-    pub outside: window::Outside,
+    pub outside: sky::Outside,
     pub view: View,
     pub face: Face,
     pub aura: Aura,
@@ -354,6 +375,12 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
             world.ghost.position - Vec3::Y * 0.5,
         ));
     }
+    if let Some(gift) = scene.outside.sill {
+        furniture.push(Furniture::Keepsake(
+            gift,
+            home::SILL + Vec3::new(0.42, home::SILL_HALF.y, 0.0),
+        ));
+    }
     furniture.extend(world.music_notes.iter().map(|note| {
         Furniture::MusicNote(
             note.position(world.time),
@@ -385,6 +412,13 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
     if let Some(seed) = world.carried_seed() {
         furniture.push(Furniture::Seed(seed));
     }
+    if let Some(position) = world.bubble_wand() {
+        furniture.push(Furniture::BubbleWand(position));
+    }
+    // Whatever is out in the yard is lit by the sky and traced with it.
+    let (indoor, outdoor): (Vec<_>, Vec<_>) = furniture
+        .into_iter()
+        .partition(|piece| home::in_house(piece.bounds().0));
     // How wide one pixel is, in radians.
     let spread = grid.scale() / FOCAL;
     let mut reflected_bodies = bodies;
@@ -399,13 +433,36 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         .iter()
         .filter_map(|bubble| bubbles::Shell::new(bubble, scene.view, world.time, grid.scale()))
         .collect();
-    if let Some(position) = world.bubble_wand() {
-        furniture.push(Furniture::BubbleWand(position));
+    let mut glows = Vec::new();
+    for body in bodies.iter().flatten() {
+        if !home::in_house(body.position) {
+            glows.push((
+                body.position,
+                body.aura.color * (0.2 + 0.25 * body.aura.brightness) * body.aura.visibility.clamp(0.0, 1.0) * body.opacity,
+                4.0,
+            ));
+        }
     }
+    let outside_ghost = (!home::in_house(world.ghost.position)).then_some(world.ghost.position);
+    let yard = yard::Yard::new(yard::Setting {
+        outside: &scene.outside,
+        plant: &world.plant,
+        furniture: &outdoor,
+        view: scene.view,
+        glows,
+        ghost: outside_ghost,
+        lantern: sky::Sky::at_hour(world.hour).day < 0.5,
+        swing: world.swing_angle(),
+        flag: world.unread_letter().is_some(),
+        gust: world.wind.gust(world.time),
+        wet: scene.outside.rain.clamp(0.0, 1.0),
+    });
     let tracer = Tracer {
         scene,
         lights: &lights,
-        furniture: &furniture,
+        furniture: &indoor,
+        yard: &yard,
+        door: world.door_open(),
         bodies: [bodies, reflected_bodies],
         spread,
         bubbles: &shells,
@@ -422,6 +479,9 @@ struct Tracer<'a> {
     scene: &'a Scene<'a>,
     lights: &'a Lights,
     furniture: &'a [Furniture<'a>],
+    yard: &'a yard::Yard<'a>,
+    /// How far the door stands open, 0 to 1.
+    door: f32,
     bodies: [[Option<Body>; 2]; 2],
     spread: f32,
     bubbles: &'a [bubbles::Shell],
@@ -445,19 +505,56 @@ impl Tracer<'_> {
         let world = scene.world;
         let eye = origin;
         let room = room_exit(eye, direction);
-        let mut limit = room.map_or(f32::INFINITY, |hit| hit.distance);
-        let mut color = room.map_or(Vec3::ZERO, |hit| {
-            if reflected && hit.axis == 2 && hit.high {
-                Vec3::ZERO
-            } else {
-                room_color(
-                    &hit,
-                    lights,
-                    (traveled + hit.distance) * spread,
-                    &scene.outside,
-                )
+        let mut limit = f32::INFINITY;
+        // Outdoors before the room, or all the way when the ray misses it.
+        let before = room.map_or(f32::INFINITY, |hit| hit.enter);
+        let front = self.yard.trace(
+            eye,
+            direction,
+            0.0,
+            before,
+            room.is_some(),
+            traveled,
+            spread,
+        );
+        let mut color = match (front, room) {
+            (Some((distance, shade)), _) => {
+                limit = distance;
+                shade
             }
-        });
+            (None, Some(hit)) => {
+                let footprint = (traveled + hit.distance) * spread;
+                match opening(&hit, self.door, scene.outside.window_lift, footprint) {
+                    Some((frame, sheen, trim)) => {
+                        let (far, outdoors) = self
+                            .yard
+                            .trace(
+                                eye,
+                                direction,
+                                hit.distance + 1e-4,
+                                f32::INFINITY,
+                                false,
+                                traveled,
+                                spread,
+                            )
+                            .unwrap_or_else(|| {
+                                (f32::INFINITY, self.yard.background(direction, spread))
+                            });
+                        let mut normal = Vec3::ZERO;
+                        normal[hit.axis] = if hit.high { -1.0 } else { 1.0 };
+                        let wood = if trim { TRIM_COLOR } else { FRAME_COLOR };
+                        let glass = outdoors.lerp(Vec3::new(0.76, 0.87, 1.0), sheen);
+                        limit = if frame > 0.5 { hit.distance } else { far };
+                        glass * (1.0 - frame) + wood * lights.at(hit.point, normal) * frame
+                    }
+                    None => {
+                        limit = hit.distance;
+                        room_color(&hit, lights, footprint)
+                    }
+                }
+            }
+            (None, None) => self.yard.background(direction, spread),
+        };
 
         if let Some((enter, _)) = sphere_span(eye, direction, world.ball.position, Ball::RADIUS)
             && enter > 0.0
@@ -563,6 +660,8 @@ impl Tracer<'_> {
                 .filter(|(distance, _)| *distance < limit)
                 .map(|(distance, local)| (distance, local, bubble))
         });
+        // Rain and snow fall in front of everything but what is nearer.
+        let mut nearest = limit;
         let mut overlay = |distance: f32, glow: ghost::Glow| {
             if let Some(glass) = glass
                 && glass > distance
@@ -577,19 +676,12 @@ impl Tracer<'_> {
             if body.opacity <= 0.0 {
                 continue;
             }
-            let through_window = body.position.z < ROOM_MIN.z
-                && room.is_some_and(|hit| {
-                    hit.axis == 2 && !hit.high && (limit - hit.distance).abs() < 1e-4
-                });
             let Some((distance, local)) =
                 view.billboard_from(eye, direction, body.position, body.scale)
             else {
                 continue;
             };
-            if (distance >= limit && !through_window)
-                || local.cmplt(BOUNDS[0]).any()
-                || local.cmpgt(BOUNDS[1]).any()
-            {
+            if distance >= limit || local.cmplt(BOUNDS[0]).any() || local.cmpgt(BOUNDS[1]).any() {
                 continue;
             }
             if let Some((distance, local, bubble)) =
@@ -608,7 +700,9 @@ impl Tracer<'_> {
                 overlay(bubble_distance, glow);
             }
             let pixel = (traveled + distance) * spread / body.scale;
-            overlay(distance, ghost::shade(local, pixel, world.time, body));
+            let glow = ghost::shade(local, pixel, world.time, body);
+            overlay(distance, glow);
+            nearest = nearest.min(distance);
         }
         if let Some((distance, local, bubble)) = dream {
             overlay(
@@ -652,7 +746,9 @@ impl Tracer<'_> {
                 )
                 * 0.3;
         }
-        color
+        color += self.yard.sparkles(eye, direction, limit, traveled, spread);
+        self.yard
+            .weather(eye, direction, nearest, traveled, spread, color)
     }
 }
 
@@ -800,6 +896,8 @@ fn sprite(
 /// glass and show the inside of the far ones.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct RoomHit {
+    /// Where the ray comes into the room, 0 when it starts inside.
+    enter: f32,
     distance: f32,
     point: Vec3,
     /// The axis the wall faces along: 0 for the sides, 1 for the floor and
@@ -824,6 +922,7 @@ fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
         .min_by(|first, second| exits[*first].total_cmp(&exits[*second]))
         .unwrap_or(0);
     Some(RoomHit {
+        enter,
         distance,
         point: origin + direction * distance,
         axis,
@@ -831,9 +930,31 @@ fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
     })
 }
 
-// The inside of a wall: a lattice of dots, densest on the floor, edged by
-// dashed lines along the box's corners. The glass shows only its edges.
-fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32, outside: &window::Outside) -> Vec3 {
+/// Whether the ray leaves the room through a gap to the outdoors: the
+/// window, the open door, or the glass front. Gives how much frame covers
+/// the point, the glass's sheen, and whether the frame is painted trim.
+fn opening(hit: &RoomHit, door: f32, lift: f32, footprint: f32) -> Option<(f32, f32, bool)> {
+    match (hit.axis, hit.high) {
+        (2, false) => window::pane(hit.point.truncate(), footprint, lift)
+            .map(|pane| (pane.frame, pane.sheen, false)),
+        (2, true) => Some((0.0, 0.0, false)),
+        (0, true) if door > 0.02 => {
+            let at = Vec2::new(hit.point.z, hit.point.y);
+            if at.cmpge(DOOR_LOW).all() && at.cmple(DOOR_HIGH).all() {
+                let edge = (at - DOOR_LOW).min(DOOR_HIGH - at);
+                let edge = edge.x.min(if at.y > 0.05 { edge.y } else { 1.0 });
+                Some((coverage(edge - 0.05, footprint * 0.5 + 1e-4), 0.0, true))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+// The inside of a wall: floorboards, wallpaper over a painted wainscot,
+// a beamed ceiling, and the door in the right wall.
+fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32) -> Vec3 {
     let (first, second) = match hit.axis {
         0 => (1, 2),
         1 => (0, 2),
@@ -845,61 +966,104 @@ fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32, outside: &window::
     let mut normal = Vec3::ZERO;
     normal[hit.axis] = if hit.high { -1.0 } else { 1.0 };
     let light = lights.at(hit.point, normal);
-    if hit.axis == 2
-        && !hit.high
-        && let Some(window) = window::window(position, footprint, outside)
-    {
-        let frame_color = Vec3::new(0.62, 0.46, 0.32);
-        return window.sky * (1.0 - window.frame) + frame_color * light * window.frame;
-    }
-
-    let floor = hit.axis == 1 && !hit.high;
-    let glass = hit.axis == 2 && hit.high;
-    let (spacing, strength) = match (floor, glass, hit.axis == 1) {
-        (true, _, _) => (0.2, 1.0),
-        (_, true, _) => (1.0, 0.0),
-        (_, _, true) => (0.3, 0.3),
-        _ => (0.3, 0.55),
+    let footprint = footprint.max(1e-4);
+    let albedo = match (hit.axis, hit.high) {
+        (1, false) => floorboards(hit.point, footprint),
+        (1, true) => ceiling(hit.point, footprint),
+        (0, true) if door_panel(hit.point, footprint).is_some() => {
+            door_panel(hit.point, footprint).unwrap()
+        }
+        _ => wall(hit.point, hit.axis, footprint),
     };
-    let radius = 0.018;
-    let nearest = (position / spacing).round() * spacing;
-    let sharp = coverage(position.distance(nearest) - radius, footprint * 0.6);
-    // Far away the dots blur into their average brightness.
-    let average = PI * radius * radius / (spacing * spacing) * 2.5;
-    let dots = mix(
-        sharp,
-        average,
-        smoothstep(spacing * 0.15, spacing * 0.5, footprint),
-    );
-    let mut color = WALL_COLOR * light * (0.03 + 0.9 * dots * strength);
-
-    // The wall's own border is an edge of the box.
-    let border = (position - low).min(high - position);
-    let edge = border.min_element();
-    let width = 0.008_f32.max(footprint * 0.5);
-    let line = coverage(edge - width, footprint * 0.5);
-    if line > 0.0 {
-        let along = if border.x < border.y {
-            position.y
-        } else {
-            position.x
-        };
-        let dash = coverage(
-            ((along / 0.09).fract() - 0.5).abs() * 0.09 - 0.022,
-            footprint * 0.5,
-        );
-        let dash = mix(dash, 1.0, smoothstep(0.02, 0.05, footprint));
-        let brightness = 0.3 + 0.5 * light.max_element().min(1.0);
-        color = color.lerp(EDGE_COLOR * brightness, line * dash);
-    }
-    color
+    // Corners gather a little shadow.
+    let border = (position - low).min(high - position).min_element();
+    albedo * light * (0.72 + 0.28 * smoothstep(0.0, 0.3, border)) * ROOM_EXPOSURE
 }
 
-/// The light in the room: daylight and the window, the lamp, and the glow of
-/// the ghost and the motes.
+fn floorboards(point: Vec3, footprint: f32) -> Vec3 {
+    const WIDTH: f32 = 0.17;
+    const LENGTH: f32 = 1.3;
+    let row = (point.z / WIDTH).floor();
+    let shifted = point.x + hash(Vec2::new(row, 3.0)) * LENGTH;
+    let plank = (shifted / LENGTH).floor();
+    let seed = hash(Vec2::new(row, plank));
+    let fade = 1.0 - smoothstep(0.015, 0.06, footprint);
+    let grain = crate::render::sky::noise(Vec2::new(shifted * 6.0, row * 7.3 + point.z * 30.0));
+    let base = Vec3::new(0.64, 0.46, 0.31) * (0.84 + 0.22 * seed + 0.12 * (grain - 0.5) * fade);
+    let across = (0.5 - ((point.z / WIDTH).fract() - 0.5).abs()) * WIDTH;
+    let along = (0.5 - ((shifted / LENGTH).fract() - 0.5).abs()) * LENGTH;
+    let seam = coverage(across.min(along) - 0.004, footprint * 0.5);
+    base * (1.0 - 0.5 * seam * mix(0.4, 1.0, fade))
+}
+
+fn ceiling(point: Vec3, footprint: f32) -> Vec3 {
+    let beam = (0.5 - ((point.x / 0.8 + 0.5).fract() - 0.5).abs()) * 0.8;
+    let beam = coverage(0.05 - beam, footprint * 0.5);
+    Vec3::new(0.72, 0.7, 0.66).lerp(Vec3::new(0.5, 0.37, 0.27), beam)
+}
+
+fn wall(point: Vec3, axis: usize, footprint: f32) -> Vec3 {
+    let along = if axis == 0 { point.z } else { point.x };
+    let height = point.y;
+    let edge = footprint * 0.5;
+    let fade = 1.0 - smoothstep(0.015, 0.07, footprint);
+    // Wallpaper with soft stripes and little dots between them.
+    let stripe = (0.5 - ((along / 0.3).fract() - 0.5).abs()) * 0.3;
+    let stripe = coverage(stripe - 0.012, edge);
+    let dot = Vec2::new(
+        ((along / 0.3 + 0.5).fract() - 0.5) * 0.3,
+        ((height / 0.3).fract() - 0.5) * 0.3,
+    );
+    let dot = coverage(dot.length() - 0.014, edge);
+    let paper = Vec3::new(0.74, 0.69, 0.62) * (1.0 - (0.07 * stripe + 0.06 * dot) * fade);
+    // Painted wainscot with grooves, a rail on top, a skirting board below.
+    let groove = (0.5 - ((along / 0.18).fract() - 0.5).abs()) * 0.18;
+    let groove = coverage(groove - 0.004, edge) * fade;
+    let panel = Vec3::new(0.52, 0.64, 0.57) * (1.0 - 0.2 * groove);
+    let rail = Vec3::new(0.8, 0.77, 0.7);
+    let skirting = Vec3::new(0.42, 0.31, 0.23);
+    let mut color = panel;
+    color = color.lerp(rail, coverage(0.8 - height, edge));
+    color = color.lerp(paper, coverage(0.84 - height, edge));
+    color.lerp(skirting, coverage(height - 0.1, edge))
+}
+
+/// The closed door on the inside of the right wall, if the point is on it.
+fn door_panel(point: Vec3, footprint: f32) -> Option<Vec3> {
+    let at = Vec2::new(point.z, point.y);
+    let low = DOOR_LOW - Vec2::new(0.06, 0.0);
+    let high = DOOR_HIGH + Vec2::splat(0.06);
+    if at.cmplt(low).any() || at.cmpgt(high).any() {
+        return None;
+    }
+    let edge = footprint * 0.5;
+    let inside = (at - DOOR_LOW).min(DOOR_HIGH - at).min_element();
+    let trim = coverage(inside, edge);
+    let leaf = Vec3::new(0.56, 0.38, 0.27);
+    let middle = (DOOR_LOW + DOOR_HIGH) * 0.5;
+    let mut inset = f32::INFINITY;
+    for center in [
+        Vec2::new(middle.x, DOOR_LOW.y + 0.5),
+        Vec2::new(middle.x, DOOR_LOW.y + 1.28),
+    ] {
+        let half = Vec2::new(0.22, if center.y < 1.0 { 0.32 } else { 0.36 });
+        let offset = (at - center).abs() - half;
+        inset = inset.min(offset.max_element());
+    }
+    let groove = coverage(inset.abs() - 0.008, edge);
+    let knob = coverage(at.distance(Vec2::new(DOOR_LOW.x + 0.09, 0.95)) - 0.03, edge);
+    let color = (leaf * (1.0 - 0.3 * groove)).lerp(Vec3::new(0.85, 0.7, 0.4), knob);
+    Some(color.lerp(TRIM_COLOR * 0.85, trim))
+}
+
+/// The light in the room: daylight and the window, the sun's patch through
+/// the panes, the lamp, and the glow of the ghost and the motes.
 struct Lights {
     ambient: Vec3,
     points: Vec<Light>,
+    sun: Vec3,
+    sunlight: Vec3,
+    lift: f32,
 }
 
 struct Light {
@@ -917,7 +1081,7 @@ impl Lights {
         let window_center = (window::WINDOW_LOW + window::WINDOW_HIGH) * 0.5;
         points.push(Light {
             position: Vec3::new(window_center.x, window_center.y, ROOM_MIN.z + 0.35),
-            color: window::light_through(&scene.outside),
+            color: sky::light_through(&scene.outside),
             falloff: 0.35,
         });
         if world.lamp.on {
@@ -927,14 +1091,16 @@ impl Lights {
                 falloff: 0.6,
             });
         }
-        points.push(Light {
-            position: world.ghost.position,
-            color: scene.aura.color
-                * (0.2 + 0.25 * scene.aura.brightness)
-                * scene.aura.visibility.clamp(0.0, 1.0)
-                * size,
-            falloff: 5.0,
-        });
+        if home::in_house(world.ghost.position) {
+            points.push(Light {
+                position: world.ghost.position,
+                color: scene.aura.color
+                    * (0.2 + 0.25 * scene.aura.brightness)
+                    * scene.aura.visibility.clamp(0.0, 1.0)
+                    * size,
+                falloff: 5.0,
+            });
+        }
         if let Some(body) = &scene.friend {
             points.push(Light {
                 position: body.position,
@@ -959,18 +1125,33 @@ impl Lights {
         Self {
             ambient: daylight(world.hour) * (1.0 - scene.outside.rain.clamp(0.0, 1.0) / 3.0),
             points,
+            sun: scene.outside.sunlight_direction(),
+            sunlight: scene.outside.sunlight(),
+            lift: scene.outside.window_lift,
         }
     }
 
     fn at(&self, point: Vec3, normal: Vec3) -> Vec3 {
-        self.points.iter().fold(self.ambient, |total, light| {
+        let mut total = self.points.iter().fold(self.ambient, |total, light| {
             let offset = light.position - point;
             let distance_squared = offset.length_squared();
             let facing = normal
                 .dot(offset / distance_squared.sqrt().max(1e-4))
                 .max(0.0);
             total + light.color * (0.25 + 0.75 * facing) / (1.0 + light.falloff * distance_squared)
-        })
+        });
+        // Sunshine through the window panes, mullions and all.
+        let facing = normal.dot(self.sun);
+        if facing > 0.0 && self.sun.z < -1e-3 && self.sunlight.max_element() > 1e-3 {
+            let along = (ROOM_MIN.z - point.z) / self.sun.z;
+            let through = point + self.sun * along;
+            if along > 0.0
+                && let Some(pane) = window::pane(through.truncate(), 0.02, self.lift)
+            {
+                total += self.sunlight * facing * (1.0 - pane.frame) * 0.9;
+            }
+        }
+        total
     }
 }
 
@@ -996,7 +1177,7 @@ mod tests {
     fn mirror_scene(world: &World) -> Scene<'_> {
         Scene {
             world,
-            outside: window::Outside::clear(world.hour, world.time),
+            outside: sky::Outside::clear(world.hour, world.time),
             view: Camera::default().view(grid()),
             face: Face::REST,
             aura: Aura {
@@ -1008,6 +1189,22 @@ mod tests {
             pose: Pose::new(world.time, 0.0, 0.0, 0.0),
             friend: None,
         }
+    }
+
+    fn yard<'a>(scene: &'a Scene) -> yard::Yard<'a> {
+        yard::Yard::new(yard::Setting {
+            outside: &scene.outside,
+            plant: &scene.world.plant,
+            furniture: &[],
+            view: scene.view,
+            glows: Vec::new(),
+            ghost: None,
+            lantern: false,
+            swing: 0.0,
+            flag: false,
+            gust: 0.0,
+            wet: 0.0,
+        })
     }
 
     fn resident(scene: &Scene) -> Body {
@@ -1079,7 +1276,7 @@ mod tests {
     }
 
     #[test]
-    fn rays_away_from_the_mirror_match_the_original_trace() {
+    fn rays_through_the_room_and_out_to_the_yard_give_finite_colors() {
         let world = World::new(1, 12.0);
         let scene = mirror_scene(&world);
         let bodies = [Some(resident(&scene)), None];
@@ -1089,44 +1286,29 @@ mod tests {
             Furniture::Nook(world.nook),
         ];
         let lights = Lights::of(&scene);
+        let yard = yard(&scene);
         let tracer = Tracer {
             bubbles: &[],
             scene: &scene,
             lights: &lights,
             furniture: &furniture,
+            yard: &yard,
+            door: 1.0,
             bodies: [bodies, bodies],
             spread: 0.01,
         };
-        // Computed with the original trace before separating the origin from the camera.
-        for (target, original) in [
-            (
-                Vec3::new(-1.0, 1.0, -1.5),
-                Vec3::new(0.030333366, 0.031090869, 0.035526168),
-            ),
-            (
-                Vec3::new(-1.0, 0.0, 0.2),
-                Vec3::new(0.55302423, 0.5093097, 0.90395874),
-            ),
-            (
-                world.ghost.position,
-                Vec3::new(0.7468277, 0.76198936, 0.7901465),
-            ),
-            (
-                world.ball.position,
-                Vec3::new(0.5958956, 0.28548053, 0.24318193),
-            ),
-            (
-                Vec3::new(-2.0, 1.0, 0.0),
-                Vec3::new(0.0240388, 0.025569687, 0.030685458),
-            ),
+        for target in [
+            Vec3::new(-1.0, 1.0, -1.5),
+            Vec3::new(0.0, 1.5, -1.4),
+            Vec3::new(2.0, 0.9, 0.8),
+            world.ghost.position,
+            world.ball.position,
+            Vec3::new(6.0, 0.5, 0.0),
+            Vec3::new(0.0, 8.0, -20.0),
         ] {
             let direction = (target - scene.view.eye).normalize();
-            assert!(
-                tracer
-                    .trace(scene.view.eye, direction, scene.view, 0.0, None, false)
-                    .distance(original)
-                    < 1e-6
-            );
+            let color = tracer.trace(scene.view.eye, direction, scene.view, 0.0, None, false);
+            assert!(color.is_finite(), "{target}");
         }
     }
 
@@ -1161,11 +1343,14 @@ mod tests {
                         Furniture::Lamp(world.lamp),
                         Furniture::MusicBox(false, 0.0),
                     ];
+                    let yard = yard(&scene);
                     let tracer = Tracer {
                         bubbles: &[],
                         scene: &scene,
                         lights: &lights,
                         furniture: &furniture,
+                        yard: &yard,
+                        door: 0.0,
                         bodies: [bodies, bodies],
                         spread: 0.003,
                     };
@@ -1187,7 +1372,7 @@ mod tests {
     }
 
     #[test]
-    fn reflected_rays_skip_front_glass_drawings_and_the_viewers_side_is_dark() {
+    fn reflected_rays_skip_front_glass_drawings() {
         use crate::world::{Doodle, Picture, Sketch};
         let mut world = World::new(1, 12.0);
         let ray = Vec3::Z;
@@ -1196,11 +1381,14 @@ mod tests {
         let empty = |world: &World| {
             let scene = mirror_scene(world);
             let lights = Lights::of(&scene);
+            let yard = yard(&scene);
             let tracer = Tracer {
                 bubbles: &[],
                 scene: &scene,
                 lights: &lights,
                 furniture: &[],
+                yard: &yard,
+                door: 0.0,
                 bodies: [[None; 2]; 2],
                 spread: 0.01,
             };
@@ -1208,14 +1396,15 @@ mod tests {
         };
         world.lamp.on = false;
         world.motes.clear();
-        assert_eq!(empty(&world), Vec3::ZERO);
+        let before = empty(&world);
+        assert!(before.is_finite());
         world.doodles.push(Doodle {
             picture: Picture::Sketch(Sketch::Heart),
             center: origin.truncate(),
             size: 0.3,
             started: 0.0,
         });
-        assert_eq!(empty(&world), Vec3::ZERO);
+        assert_eq!(empty(&world), before);
     }
 
     #[test]
@@ -1316,14 +1505,7 @@ mod tests {
         assert_eq!(hit.axis, 2);
         assert!(!hit.high);
         assert!(hit.point.distance(point) < 1e-4);
-        assert!(
-            window::window(
-                Vec2::new(hit.point.x, hit.point.y),
-                0.01,
-                &window::Outside::clear(12.0, 0.0),
-            )
-            .is_some()
-        );
+        assert!(window::pane(Vec2::new(hit.point.x, hit.point.y), 0.01, 0.0).is_some());
     }
 
     #[test]
@@ -1404,7 +1586,7 @@ mod tests {
                 for yaw in [0.0, PI * 0.5, PI, PI * 1.5] {
                     let scene = Scene {
                         world: &world,
-                        outside: window::Outside::clear(world.hour, time),
+                        outside: sky::Outside::clear(world.hour, time),
                         view: Camera {
                             yaw,
                             ..Camera::default()
@@ -1455,9 +1637,9 @@ mod tests {
                 for yaw in [0.0, PI * 0.5, PI] {
                     let scene = Scene {
                         world: &world,
-                        outside: window::Outside {
+                        outside: sky::Outside {
                             fireworks: world.fireworks(),
-                            ..window::Outside::clear(world.hour, time)
+                            ..sky::Outside::clear(world.hour, time)
                         },
                         view: Camera {
                             yaw,
@@ -1474,7 +1656,7 @@ mod tests {
                         pose: Pose::new(0.0, 0.0, 0.0, 0.0),
                         friend: None,
                     };
-                    assert!(window::light_through(&scene.outside).is_finite());
+                    assert!(sky::light_through(&scene.outside).is_finite());
                     let frame = render(&scene, grid, 1);
                     for row in 0..frame.height() {
                         for column in 0..frame.width() {

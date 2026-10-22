@@ -23,6 +23,7 @@ pub mod gallery;
 pub mod game;
 pub mod garden;
 pub mod growth;
+pub mod home;
 pub mod hunt;
 pub mod jostle;
 mod letters;
@@ -34,6 +35,7 @@ pub mod music;
 mod nature;
 mod needs;
 pub mod occasion;
+mod outing;
 pub mod passerby;
 pub mod penpal;
 mod photo;
@@ -61,7 +63,7 @@ mod weather;
 pub mod wish;
 pub mod writing;
 
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 pub use activity::{Activity, Plan};
 pub use blocks::Block;
@@ -968,6 +970,8 @@ pub struct World {
     pub bubbles: Vec<bubbles::Bubble>,
     bubble_session: Option<bubbles::Session>,
     bubbles_finished_at: Option<f64>,
+    /// When it last went out to the yard on its own.
+    last_outing: Option<f64>,
     pending_pins: Vec<gallery::Pin>,
     pub showing: Option<show::Showing>,
     show_praise_until: Option<f64>,
@@ -1129,6 +1133,7 @@ impl World {
             bubbles: Vec::new(),
             bubble_session: None,
             bubbles_finished_at: None,
+            last_outing: None,
             pending_pins: Vec::new(),
             showing: None,
             show_praise_until: None,
@@ -1506,6 +1511,7 @@ impl World {
                 Activity::Pin => self.pin_is_open(),
                 Activity::Show => self.show_is_open(),
                 Activity::Tidy => self.tidy_is_open(),
+                Activity::Yard => self.yard_is_open(),
             })
             .collect()
     }
@@ -1635,6 +1641,7 @@ impl World {
             Activity::Fold => "Fold a colored paper crane for the viewer, then hang it on the ceiling garland. A quiet pastime, a few cranes each day.".to_owned(),
             Activity::Show => "Fetch a treasure from your life, show it at the glass, tell its little story, and put it back. Only during a quiet visit.".to_owned(),
             Activity::Tidy => "Gather the loose blocks into neat corner stacks and put the ball beside the cushion before bed. Leave a standing tower alone.".to_owned(),
+            Activity::Yard => "Float out the door into the yard: ride the swing, look over the garden bed, peer into the birdbath, sit on the bench, lie on the lawn under the sky, or lean on the back fence. Good on fair days and clear evenings; not in storms or at bedtime.".to_owned(),
         }
     }
 
@@ -1853,6 +1860,10 @@ impl World {
             Activity::Pin => gallery::APPROACH,
             Activity::Show => position,
             Activity::Tidy => position,
+            Activity::Yard => {
+                let spot = self.first_spot();
+                spot.position(self.size())
+            }
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         if activity == Activity::Explore
@@ -3076,6 +3087,7 @@ impl World {
                     | Activity::Fold
                     | Activity::Bubbles
                     | Activity::Pin
+                    | Activity::Yard
             ) && self.ghost.plan.arrived.is_some());
         if self.ghost.plan.elapsed(time) > GIVE_UP && !waiting {
             self.put_keepsake_away();
@@ -3097,6 +3109,7 @@ impl World {
             Activity::Read => look = self.carry_out_read(),
             Activity::Music => look = self.carry_out_music(),
             Activity::Air => look = self.carry_out_air(),
+            Activity::Yard => look = self.carry_out_outing(seconds),
             Activity::Company => look = self.keep_company(),
             Activity::Friend => {
                 self.play_with_friend();
@@ -3490,6 +3503,21 @@ impl World {
                 (phase * 0.33).cos() * 0.12,
             );
         }
+        // Out through the door and back in; the yard is past the walls.
+        // A place just past a wall, as a push at the ball behind it can
+        // aim for, stays in the room.
+        let target = if !home::in_house(target) && home::near_house(target, 0.6) {
+            target.clamp(ROOM_MIN, ROOM_MAX)
+        } else {
+            target
+        };
+        let leaving = home::in_house(ghost.position) != home::in_house(target);
+        let target = home::waypoint(ghost.position, target);
+        let outdoors = !home::in_house(ghost.position);
+        let passing = |position: Vec3| {
+            home::in_doorway(position) && (leaving || !home::indoors(position))
+        };
+        let doorway = passing(ghost.position);
         let speed = match ghost.plan.activity {
             Activity::Chase => 1.3 * growth::chase_speed(self.life.skills.level(Skill::Catching)),
             Activity::Fetch if self.ball.held => {
@@ -3534,6 +3562,40 @@ impl World {
             high.x = ROOM_MAX.x - 0.08;
             high.y = ROOM_MAX.y - 0.06;
         }
+        if outdoors {
+            (low, high) = home::yard_bounds();
+            low.y = 0.45 * size;
+        }
+        if doorway {
+            low.x = f32::NEG_INFINITY;
+            high.x = f32::INFINITY;
+            low.z = home::DOOR_LOW.x + 0.15;
+            high.z = home::DOOR_HIGH.x - 0.15;
+            high.y = home::DOOR_HIGH.y - 0.45;
+        }
+        if outdoors && !doorway {
+            // Keep off the cottage's walls.
+            let at = flat(ghost.position);
+            let nearest = at.clamp(
+                Vec2::new(home::HOUSE_MIN.x, home::HOUSE_MIN.z),
+                Vec2::new(home::HOUSE_MAX.x, home::HOUSE_MAX.z),
+            );
+            let away = at - nearest;
+            let distance = away.length();
+            if distance < 0.4 && distance > 1e-4 {
+                let push = away / distance * (0.4 - distance) * 8.0;
+                steer += Vec3::new(push.x, 0.0, push.y);
+            }
+            for (center, radius, top) in home::yard_obstacles() {
+                let offset = flat(ghost.position - center);
+                let reach = radius + 0.3;
+                let distance = offset.length();
+                if ghost.position.y < top && distance < reach && distance > 1e-4 {
+                    let push = offset / distance * (reach - distance) * 6.0;
+                    steer += Vec3::new(push.x, 0.0, push.y);
+                }
+            }
+        }
         for axis in 0..3 {
             if ghost.position[axis] < low[axis] {
                 steer[axis] += (low[axis] - ghost.position[axis]) * 8.0;
@@ -3568,6 +3630,7 @@ impl World {
             .chain(decoration)
             .chain(tower)
             .chain(tidy_stacks.into_iter().flatten())
+            .filter(|_| !outdoors)
         {
             let offset = flat(ghost.position - center);
             // Hiding tucks the ghost closer behind furniture than its
@@ -3597,12 +3660,36 @@ impl World {
 
         let steer = steer.clamp_length_max(3.0);
         ghost.velocity += steer * seconds;
+        let before = ghost.position;
         ghost.position += ghost.velocity * seconds;
         let mut minimum = ROOM_MIN + Vec3::new(0.12, 0.38 * size, 0.12);
         if reaching {
             minimum.z = ROOM_MIN.z - 0.04;
         }
-        ghost.position = ghost.position.clamp(minimum, ROOM_MAX - Vec3::splat(0.12));
+        let was_inside = home::in_house(before) && !passing(before);
+        if passing(ghost.position) {
+            ghost.position.z = ghost
+                .position
+                .z
+                .clamp(home::DOOR_LOW.x + 0.1, home::DOOR_HIGH.x - 0.1);
+            ghost.position.y = ghost
+                .position
+                .y
+                .clamp(0.38 * size, home::DOOR_HIGH.y - 0.25);
+        } else if was_inside || home::in_house(ghost.position) && passing(before) {
+            ghost.position = ghost.position.clamp(minimum, ROOM_MAX - Vec3::splat(0.12));
+        } else if home::in_house(ghost.position) {
+            // Outside, it can't drift in through a wall.
+            ghost.position.x = before.x;
+            ghost.position.z = before.z;
+            ghost.velocity.x = 0.0;
+            ghost.velocity.z = 0.0;
+        } else {
+            let (low, high) = home::yard_bounds();
+            ghost.position = ghost
+                .position
+                .clamp(Vec3::new(low.x, 0.38 * size, low.z), high);
+        }
     }
 
     fn update_needs(&mut self, seconds: f32) {
@@ -4222,8 +4309,16 @@ mod tests {
         point.cmpge(ROOM_MIN).all() && point.cmple(ROOM_MAX).all()
     }
 
+    // In the room, passing through the door, or out on the lawn.
+    fn at_home(point: Vec3) -> bool {
+        let (low, high) = home::yard_bounds();
+        inside(point)
+            || home::in_doorway(point)
+            || !home::in_house(point) && point.cmpge(low).all() && point.cmple(high).all()
+    }
+
     #[test]
-    fn the_ghost_stays_in_the_room_whatever_it_does() {
+    fn the_ghost_stays_at_home_whatever_it_does() {
         for activity in Activity::ALL {
             let mut world = World::new(5, 12.0);
             world.drop_mote(Vec3::new(1.0, 1.0, 0.0));
@@ -4233,10 +4328,17 @@ mod tests {
             for _ in 0..1400 {
                 world.step(0.05);
                 assert!(
-                    inside(world.ghost.position),
+                    at_home(world.ghost.position),
                     "{activity:?}: {:?}",
                     world.ghost.position
                 );
+                if !matches!(activity, Activity::Yard | Activity::Tend | Activity::Show) {
+                    assert!(
+                        home::in_house(world.ghost.position),
+                        "{activity:?}: {:?}",
+                        world.ghost.position
+                    );
+                }
                 assert!(inside(world.ball.position));
             }
         }
@@ -4247,7 +4349,7 @@ mod tests {
                 world.begin(options[round % options.len()]);
             }
             run(&mut world, 1.5);
-            assert!(inside(world.ghost.position), "{:?}", world.ghost.position);
+            assert!(at_home(world.ghost.position), "{:?}", world.ghost.position);
             assert!(inside(world.ball.position));
         }
     }

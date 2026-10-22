@@ -143,6 +143,7 @@ pub fn setting_out(world: &World, activity: Activity) -> Vec<&'static str> {
         Activity::Pin => vec!["This picture belongs on my wall."],
         Activity::Show => vec!["I have something precious to show you."],
         Activity::Tidy => vec!["Everything in its place.", "One more block…"],
+        Activity::Yard => vec!["Fresh air, here I come!", "I'll be in the yard."],
     };
     if activity == Activity::Window {
         for passing in world.passersby().into_iter().flatten() {
@@ -606,6 +607,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
             Activity::Pin => "I should pin that picture to my wall.",
             Activity::Show => "I like sharing my little treasures with you.",
             Activity::Tidy => "Everything in its place.",
+            Activity::Yard => "The swing is calling me.",
         });
     }
     if lines.is_empty() {
@@ -2229,6 +2231,7 @@ fn korean_doing(activity: Activity) -> &'static str {
         Activity::Pin => "벽에 그림 붙이는 중",
         Activity::Show => "보물을 보여주는 중",
         Activity::Tidy => "방 정리하는 중",
+        Activity::Yard => "마당에서 노는 중",
     }
 }
 
@@ -2268,6 +2271,7 @@ fn korean_favorite(activity: Activity) -> &'static str {
         Activity::Pin => "벽에 그림 붙이기",
         Activity::Show => "보물 보여주기",
         Activity::Tidy => "방 정리하기",
+        Activity::Yard => "마당에서 놀기",
     }
 }
 

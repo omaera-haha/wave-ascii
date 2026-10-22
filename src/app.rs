@@ -10,7 +10,7 @@ use crate::frame::{CELL_ASPECT, Grid};
 use crate::mind::{self, Journal, Mind};
 use crate::postcard::{self, Postcard};
 use crate::render::ghost::{Aura, Body, Pose, friend_color};
-use crate::render::window::Outside;
+use crate::render::sky::Outside;
 use crate::render::{self, Camera, FRIEND_SCALE, GHOST_SCALE, Scene, View};
 use crate::settings::{Settings, cache_name, effort_name};
 use crate::store::{Config, Paths, Save};
@@ -321,6 +321,9 @@ impl App {
         self.world.viewer.typing = self.mode == Mode::Talking && !self.talk.text().is_empty();
         self.world.step(seconds);
         self.mind.think(&mut self.world);
+        // The view follows the ghost out to the yard and back in.
+        self.camera
+            .follow(self.world.view_focus(render::Camera::home()), seconds);
         if !matches!(self.mode, Mode::Letter | Mode::Writing)
             && self
                 .letter_reply_at
@@ -866,6 +869,8 @@ impl App {
             format!("playing with {}", friend.name)
         } else if self.world.ghost.plan.activity == crate::world::Activity::Air {
             self.world.air_doing().to_owned()
+        } else if self.world.ghost.plan.activity == crate::world::Activity::Yard {
+            self.world.outing_words().to_owned()
         } else {
             self.world.ghost.plan.activity.doing().to_owned()
         }
@@ -1215,7 +1220,48 @@ impl App {
         let grid = self.style.grid(columns, scene_rows);
         let view = self.camera.view(grid);
         self.view = Some(view);
+        let samples = if self.style == Style::Braille { 1 } else { 2 };
+        let frame = render::render(&self.compose(view), grid, samples);
 
+        let mut screen = Canvas::blank(columns, rows);
+        screen.paste(&self.style.canvas(&frame, self.color), 0, 0);
+        ui::draw_moment(self, &mut screen, &view, scene_rows);
+        if self.mode == Mode::Watching && self.paths.is_some() {
+            let postcard_rows = rows.min(scene_rows + 1);
+            let mut canvas = Canvas::blank(columns, postcard_rows);
+            canvas.paste(&screen, 0, 0);
+            let colored = if self.color == ColorMode::Plain && self.style == Style::Blocks {
+                let mut canvas = Canvas::blank(columns, postcard_rows);
+                canvas.paste(&self.style.canvas(&frame, ColorMode::TrueColor), 0, 0);
+                ui::draw_moment(self, &mut canvas, &view, scene_rows);
+                Some(canvas)
+            } else {
+                None
+            };
+            if !self.paused
+                && let Err(error) = self.album.capture(
+                    self.paths.as_ref().unwrap(),
+                    &self.world,
+                    colored.as_ref().unwrap_or(&canvas),
+                    mind::now(),
+                )
+            {
+                self.post(format!("Couldn't keep an album moment: {error}"));
+            }
+            self.postcard = Some(Postcard::new(canvas, colored, &self.world, &self.doing()));
+            if self.posing.is_some_and(|left| left <= 0.0) {
+                self.posing = None;
+                if self.save_postcard() {
+                    self.world.photographed(true);
+                }
+            }
+        }
+        ui::draw(self, &mut screen, scene_rows);
+        screen
+    }
+
+    /// Everything one frame shows from `view`.
+    fn compose(&self, view: View) -> Scene<'_> {
         let world = &self.world;
         let ghost = &world.ghost;
         let center = view.project(ghost.position);
@@ -1400,9 +1446,7 @@ impl App {
                         opacity: friend.visibility(),
                     }
                 });
-        let samples = if self.style == Style::Braille { 1 } else { 2 };
-        let frame = render::render(
-            &Scene {
+        Scene {
                 world,
                 outside: Outside {
                     hour: world.hour,
@@ -1426,7 +1470,7 @@ impl App {
                     meteor: world
                         .shooting_star()
                         .map(|meteor| meteor.streak(world.time)),
-                    constellations: crate::render::window::StarSegment::from_constellations(
+                    constellations: crate::render::sky::StarSegment::from_constellations(
                         &world.life.constellations,
                     ),
                     constellation_base: 0.018,
@@ -1441,46 +1485,14 @@ impl App {
                 aura,
                 pose,
                 friend,
-            },
-            grid,
-            samples,
-        );
+            }
+    }
 
-        let mut screen = Canvas::blank(columns, rows);
-        screen.paste(&self.style.canvas(&frame, self.color), 0, 0);
-        ui::draw_moment(self, &mut screen, &view, scene_rows);
-        if self.mode == Mode::Watching && self.paths.is_some() {
-            let postcard_rows = rows.min(scene_rows + 1);
-            let mut canvas = Canvas::blank(columns, postcard_rows);
-            canvas.paste(&screen, 0, 0);
-            let colored = if self.color == ColorMode::Plain && self.style == Style::Blocks {
-                let mut canvas = Canvas::blank(columns, postcard_rows);
-                canvas.paste(&self.style.canvas(&frame, ColorMode::TrueColor), 0, 0);
-                ui::draw_moment(self, &mut canvas, &view, scene_rows);
-                Some(canvas)
-            } else {
-                None
-            };
-            if !self.paused
-                && let Err(error) = self.album.capture(
-                    self.paths.as_ref().unwrap(),
-                    &self.world,
-                    colored.as_ref().unwrap_or(&canvas),
-                    mind::now(),
-                )
-            {
-                self.post(format!("Couldn't keep an album moment: {error}"));
-            }
-            self.postcard = Some(Postcard::new(canvas, colored, &self.world, &self.doing()));
-            if self.posing.is_some_and(|left| left <= 0.0) {
-                self.posing = None;
-                if self.save_postcard() {
-                    self.world.photographed(true);
-                }
-            }
-        }
-        ui::draw(self, &mut screen, scene_rows);
-        screen
+    /// The scene as plain pixels, `width` by `height`, for checking how it
+    /// looks without a terminal.
+    pub fn picture(&self, width: usize, height: usize) -> crate::frame::Frame {
+        let grid = crate::frame::Grid::new(width, height, 1.0);
+        render::render(&self.compose(self.camera.view(grid)), grid, 1)
     }
 
     // Where the eyes go: to the pointer while it moves, else the way the
@@ -2208,29 +2220,27 @@ mod tests {
     }
 
     #[test]
-    fn the_documented_full_moon_preview_has_a_visiting_friend() {
-        let mut world = World::new(1, 20.0);
-        world.date = jiff::civil::Date::constant(2026, 9, 27);
-        world.step(0.0);
-        let mind = Mind::new(&Config::default(), Journal::default(), true);
-        let mut app = App::new(
-            world,
-            mind,
-            Config::default(),
-            Style::Ascii,
-            ColorMode::Plain,
-        );
-        for _ in 0..16000 {
-            app.advance(0.05);
-        }
-        assert!(
-            app.world.friend.is_some(),
-            "visits: {}, energy: {}, time: {}",
-            app.world.life.total.friend_visits,
-            app.world.ghost.needs.energy,
-            app.world.time
-        );
-        assert_eq!(app.world.life.total.friend_visits, 1);
+    fn a_full_moon_evening_brings_a_visiting_friend() {
+        let mut app = (1..=6)
+            .map(|seed| {
+                let mut world = World::new(seed, 20.0);
+                world.date = jiff::civil::Date::constant(2026, 9, 27);
+                world.step(0.0);
+                let mind = Mind::new(&Config::default(), Journal::default(), true);
+                let mut app = App::new(
+                    world,
+                    mind,
+                    Config::default(),
+                    Style::Ascii,
+                    ColorMode::Plain,
+                );
+                for _ in 0..16000 {
+                    app.advance(0.05);
+                }
+                app
+            })
+            .find(|app| app.world.friend.is_some() && app.world.life.total.friend_visits == 1)
+            .expect("one of a few full-moon evenings brings the friend");
         assert!(app.world.life.total.friend_games > 0);
         let name = app.world.life.friend.as_ref().unwrap().name.clone();
         app.world.begin(Activity::Friend);

@@ -11,6 +11,7 @@ real-time life simulation app with llm. rust app.
 - claude schema no `pattern`, no length/count/number limit. request no `thinking`, `temperature`, prefill. api say 400. check in code.
 - yo, just dont waste your time for test too much. it's not good for this style app. feel free to overhaul and create anything you want. for visual test, do it when you REALLY need it. meaning you can imagine roughly, just dont waste your time.
 - commit and push easily. dont care bout semantic of each commit or branch or whatever. ez ez.
+- for comments in code thingy, write roughly. verbal is always bad xd.
 
 ## Conventions
 

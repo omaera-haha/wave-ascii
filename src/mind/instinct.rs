@@ -454,6 +454,16 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             }
             // Quiet visits offer show and tell on their own timer.
             Activity::Show => 0.0,
+            Activity::Yard => {
+                if world.yard_is_open() {
+                    let fair = if world.weather.sky == Sky::Clear { 1.0 } else { 0.6 };
+                    let snowy = 0.5 * world.weather.snow_cover.clamp(0.0, 1.0);
+                    let starry = if world.starry_night() { 0.4 } else { 0.0 };
+                    (0.25 + 0.6 * (1.0 - needs.fun) + snowy + starry) * needs.energy * fair
+                } else {
+                    0.0
+                }
+            }
         })
         .zip(options)
         .map(|(weight, activity)| {

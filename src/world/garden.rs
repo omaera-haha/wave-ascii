@@ -6,16 +6,29 @@ use super::{Activity, EventKind, Plant, Random, Season, World};
 const HOUR: f32 = 3600.0;
 const DAY: f32 = 24.0 * HOUR;
 const REST: f32 = DAY * 0.5;
-/// The pots sit below the window, clear of the lamp and the decoration.
 /// How dry a plant must be before the ghost sets out to water the garden.
 pub const TENDS_FROM: f32 = 0.6;
 /// How dry a plant must be to be watered on a round already under way.
 const ROUND_THIRST: f32 = 0.2;
 
+/// Where the seedlings grow in the raised bed out in the yard, set so a
+/// pot's height down from each is the soil.
 pub const SPOTS: [Vec3; 3] = [
-    Vec3::new(0.35, 0.0, -1.14),
-    Vec3::new(-0.20, 0.0, -1.14),
-    Vec3::new(-0.75, 0.0, -1.14),
+    Vec3::new(
+        super::home::GARDEN.x - 0.52,
+        super::home::GARDEN_HALF.y * 2.0 - 0.04 - Seedling::POT_HEIGHT,
+        super::home::GARDEN.z,
+    ),
+    Vec3::new(
+        super::home::GARDEN.x,
+        super::home::GARDEN_HALF.y * 2.0 - 0.04 - Seedling::POT_HEIGHT,
+        super::home::GARDEN.z,
+    ),
+    Vec3::new(
+        super::home::GARDEN.x + 0.52,
+        super::home::GARDEN_HALF.y * 2.0 - 0.04 - Seedling::POT_HEIGHT,
+        super::home::GARDEN.z,
+    ),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -706,13 +719,14 @@ mod tests {
     }
 
     fn finish_tend(world: &mut World) {
-        for _ in 0..600 {
+        for _ in 0..2400 {
             world.step(0.1);
             if world.ghost.plan.done {
                 return;
             }
-            assert!(world.ghost.position.cmpge(ROOM_MIN).all());
-            assert!(world.ghost.position.cmple(ROOM_MAX).all());
+            let (low, high) = super::super::home::yard_bounds();
+            assert!(world.ghost.position.cmpge(ROOM_MIN.min(low)).all());
+            assert!(world.ghost.position.cmple(ROOM_MAX.max(high)).all());
         }
         panic!("tending did not finish");
     }

@@ -652,7 +652,7 @@ impl Garland {
     }
 }
 
-fn box_span(origin: Vec3, direction: Vec3, center: Vec3, half: Vec3) -> Option<(f32, f32)> {
+pub(super) fn box_span(origin: Vec3, direction: Vec3, center: Vec3, half: Vec3) -> Option<(f32, f32)> {
     let mut enter = 0.0f32;
     let mut exit = f32::MAX;
     for axis in 0..3 {
@@ -765,7 +765,7 @@ fn envelope(point: Vec3) -> (f32, Material) {
     }
 }
 
-fn box_distance(point: Vec3, half: Vec3) -> f32 {
+pub(super) fn box_distance(point: Vec3, half: Vec3) -> f32 {
     let corner = point.abs() - half;
     corner.max(Vec3::ZERO).length() + corner.max_element().min(0.0)
 }
@@ -1145,30 +1145,20 @@ fn plant_distance(point: Vec3, plant: &Plant) -> (f32, Material) {
 // Each little pot has its own bounded field; stages share the same stem
 // and leaves, with the flower head chosen by kind.
 fn seedling_distance(point: Vec3, plant: &Seedling, season: Season) -> (f32, Material) {
-    let half = Seedling::POT_HEIGHT * 0.5;
-    let radial = Vec2::new(point.x, point.z).length();
-    let pot = trapezoid(
-        Vec2::new(radial, point.y - half),
-        0.075,
-        Seedling::POT_RADIUS,
-        half,
-    ) - 0.006;
-    let hollow = (radial - 0.092).max(Seedling::POT_HEIGHT - 0.032 - point.y);
-    let pot = pot.max(-hollow);
-    let soil = rounded_cylinder(
-        point - Vec3::Y * (Seedling::POT_HEIGHT - 0.013),
-        0.092,
-        0.014,
-        0.003,
-    );
-    let mut nearest = if soil < pot {
-        (soil, Material::Soil)
-    } else {
-        (pot, Material::Pot)
-    };
+    // Planted in the garden bed: the soil is the bed's, no pot.
+    let mut nearest = (f32::INFINITY, Material::Soil);
     if plant.growth < Seedling::SPROUT {
-        return nearest;
+        let mound = ellipsoid(
+            point - Vec3::Y * Seedling::POT_HEIGHT,
+            Vec3::new(0.07, 0.025, 0.07),
+        );
+        return (mound, Material::Soil);
     }
+    seedling_plant(point, plant, season, &mut nearest);
+    nearest
+}
+
+fn seedling_plant(point: Vec3, plant: &Seedling, season: Season, nearest: &mut (f32, Material)) {
     let base = Vec3::Y * Seedling::POT_HEIGHT;
     let top = Vec3::new(
         0.12 * plant.droop,
@@ -1177,7 +1167,7 @@ fn seedling_distance(point: Vec3, plant: &Seedling, season: Season) -> (f32, Mat
     );
     let stem = capsule(point, base, top, 0.009);
     if stem < nearest.0 {
-        nearest = (stem, Material::Stem);
+        *nearest = (stem, Material::Stem);
     }
     let leaves = if plant.growth < 0.35 { 2 } else { 4 };
     for index in 0..leaves {
@@ -1186,7 +1176,7 @@ fn seedling_distance(point: Vec3, plant: &Seedling, season: Season) -> (f32, Mat
         let center = attach + Vec3::new(outward * 0.045, 0.015 - plant.droop * 0.035, 0.0);
         let leaf = ellipsoid(point - center, Vec3::new(0.055, 0.012, 0.024));
         if leaf < nearest.0 {
-            nearest = (leaf, Material::Stem);
+            *nearest = (leaf, Material::Stem);
         }
     }
     if plant.growth >= Seedling::BUD {
@@ -1199,10 +1189,9 @@ fn seedling_distance(point: Vec3, plant: &Seedling, season: Season) -> (f32, Mat
             )
         };
         if flower.0 < nearest.0 {
-            nearest = flower;
+            *nearest = flower;
         }
     }
-    nearest
 }
 
 fn flower_distance(point: Vec3, kind: Flower) -> (f32, Material) {

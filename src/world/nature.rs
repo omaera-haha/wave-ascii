@@ -124,6 +124,7 @@ impl Nature {
             Activity::Pin => 0.0,
             Activity::Show => signed(self.tender),
             Activity::Tidy => (self.tender - self.playful) * 0.5,
+            Activity::Yard => (signed(self.curious) + signed(self.playful)) / 2.0,
         };
         let strength = if inclination > 0.0 { 0.35 } else { 0.25 };
         (1.0 + strength * inclination).clamp(0.75, 1.35)

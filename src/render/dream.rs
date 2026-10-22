@@ -108,7 +108,7 @@ mod tests {
     use crate::face::Face;
     use crate::frame::Grid;
     use crate::render::ghost::{Aura, Pose};
-    use crate::render::{Camera, GHOST_SCALE, window};
+    use crate::render::{Camera, GHOST_SCALE, sky};
     use crate::world::{Dream, World};
 
     #[test]
@@ -126,7 +126,7 @@ mod tests {
                 world.time = time;
                 let scene = Scene {
                     world: &world,
-                    outside: window::Outside::clear(23.0, time),
+                    outside: sky::Outside::clear(23.0, time),
                     view,
                     face: Face::REST,
                     aura: Aura {

@@ -41,10 +41,11 @@ pub enum Activity {
     Pin,
     Show,
     Tidy,
+    Yard,
 }
 
 impl Activity {
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 34] = [
         Self::Float,
         Self::Explore,
         Self::Chase,
@@ -78,6 +79,7 @@ impl Activity {
         Self::Pin,
         Self::Show,
         Self::Tidy,
+        Self::Yard,
     ];
 
     pub fn name(self) -> &'static str {
@@ -115,6 +117,7 @@ impl Activity {
             Self::Pin => "pin",
             Self::Show => "show",
             Self::Tidy => "tidy",
+            Self::Yard => "yard",
         }
     }
 
@@ -160,6 +163,7 @@ impl Activity {
             Self::Pin => "pinning a picture to the gallery wall",
             Self::Show => "showing the viewer a treasure",
             Self::Tidy => "tidying the blocks into neat stacks before bed",
+            Self::Yard => "out in the yard",
         }
     }
 }

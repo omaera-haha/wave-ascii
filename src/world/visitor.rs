@@ -103,7 +103,8 @@ pub enum Perch {
     Sill,
 }
 
-/// A bird outside, crossing the window's picture rather than the room.
+/// A bird outside in the yard: it flies in, perches on the tree's low
+/// branch or the window's outer sill, and flies off again.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bird {
     pub perch: Perch,
@@ -111,17 +112,17 @@ pub struct Bird {
     landed: bool,
     arrived_at: f64,
     leaves_at: f64,
-    departing: Option<(f64, Vec2)>,
+    departing: Option<(f64, Vec3)>,
     side: f32,
     phase: f32,
     next_song: f64,
     sang_at: f64,
 }
 
-/// The bird in picture coordinates, from the window's bottom left to top right.
+/// How the bird looks right now: where it is in the world, and its pose.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BirdPicture {
-    pub position: Vec2,
+    pub position: Vec3,
     pub flying: bool,
     pub flap: f32,
     pub facing: f32,
@@ -157,18 +158,22 @@ impl Bird {
     pub fn picture(&self, time: f64) -> BirdPicture {
         let hopping = phase(time, 0.8) + self.phase;
         let anchor = match self.perch {
-            Perch::Tree => Vec2::new(0.375, 0.44),
-            Perch::Sill => Vec2::new(0.72, 0.095),
+            Perch::Tree => super::home::PERCH + Vec3::new(0.06, 0.12, 0.0),
+            Perch::Sill => super::home::SILL + Vec3::new(-0.42, 0.1, 0.0),
         };
         let hop = hopping.sin().max(0.0).powi(18);
-        let perched = anchor + Vec2::new(0.012 * hopping.sin(), hop * 0.025);
-        let side = Vec2::new(0.5 + 0.46 * self.side, 0.78);
+        let perched = anchor + Vec3::new(0.02 * hopping.sin(), hop * 0.04, 0.0);
+        // Far off over the fence, to one side.
+        let away = Vec3::new(self.side * 7.5, 3.6, -7.0);
+        let arc = |from: Vec3, to: Vec3, progress: f32| {
+            from.lerp(to, progress) + Vec3::Y * (progress * std::f32::consts::PI).sin() * 0.6
+        };
         let (position, flying, facing) = if let Some((start, from)) = self.departing {
             let progress = ((time - start) / BIRD_FLIGHT).clamp(0.0, 1.0) as f32;
-            (from.lerp(side, progress), true, self.side)
+            (arc(from, away, progress), true, self.side)
         } else if time < self.arrived_at {
             let progress = (1.0 - (self.arrived_at - time) / BIRD_FLIGHT).clamp(0.0, 1.0) as f32;
-            (side.lerp(anchor, progress), true, -self.side)
+            (arc(away, anchor, progress), true, -self.side)
         } else {
             (
                 perched,
@@ -195,8 +200,7 @@ impl Bird {
     }
 
     pub fn position(&self, time: f64) -> Vec3 {
-        let picture = self.picture(time).position;
-        Vec3::new(-0.75 + 1.5 * picture.x, 1.0 + picture.y, ROOM_MIN.z - 0.02)
+        self.picture(time).position
     }
 }
 
@@ -333,10 +337,9 @@ impl World {
                 self.record(EventKind::BirdLanded);
             }
             let offset = bird.position(time) - self.ghost.position;
-            let depth = self.ghost.position.z - ROOM_MIN.z;
+            let near = offset.length();
             let sensitivity = startle_scale(self.life.bird_trust);
-            let in_front = Vec2::new(offset.x, offset.y).length() < 0.5;
-            let rushing = depth < 0.8 * sensitivity
+            let rushing = near < 1.1 * sensitivity
                 && self.ghost.velocity.length() * sensitivity > 0.9
                 && self.ghost.velocity.dot(offset.normalize_or_zero()) * sensitivity > 0.5;
             // A friend lets it reach gently through the pane for a gift.
@@ -344,8 +347,7 @@ impl World {
                 && self.ghost.plan.activity == Activity::Window
                 && !self.ghost.plan.done
                 && matches!(self.ghost.plan.count, 1 | 2);
-            let startled =
-                perched && in_front && (rushing || depth < 0.35 * sensitivity && !reaching);
+            let startled = perched && (rushing || near < 0.5 * sensitivity && !reaching);
             if perched
                 && bird.noticed
                 && !startled
@@ -695,7 +697,7 @@ mod tests {
 
     #[test]
     fn a_rushing_or_too_close_ghost_startles_a_bird_but_calm_window_watching_does_not() {
-        for (depth, velocity, startled) in [
+        for (distance, velocity, startled) in [
             (0.3, Vec3::ZERO, true),
             (0.7, -Vec3::Z * 1.2, true),
             (0.7, Vec3::Z * 1.2, false),
@@ -704,8 +706,7 @@ mod tests {
             let mut world = quiet_world(12.0);
             let bird = Bird::new(0.0, 0.0, &mut world.random);
             world.time = 4.0;
-            world.ghost.position = bird.position(world.time) + Vec3::Z * depth;
-            world.ghost.position.z = ROOM_MIN.z + depth;
+            world.ghost.position = bird.position(world.time) + Vec3::Z * distance;
             world.ghost.velocity = velocity;
             world.visitors.bird = Some(bird);
             world.advance_visitors(0.1);
@@ -883,7 +884,7 @@ mod tests {
     }
 
     #[test]
-    fn bird_positions_stay_finite_and_inside_the_window_through_a_visit() {
+    fn birds_fly_in_from_over_the_fence_and_perch_outside_the_house() {
         for seed in 0..20 {
             let mut world = quiet_world(12.0);
             world.visitors.bird = Some(Bird::new(0.0, 0.0, &mut Random::new(seed)));
@@ -893,9 +894,15 @@ mod tests {
                 if let Some(bird) = world.visitors.bird {
                     let position = bird.position(world.time);
                     assert!(position.is_finite());
-                    assert!((-0.75..=0.75).contains(&position.x));
-                    assert!((1.0..=2.0).contains(&position.y));
-                    assert_eq!(position.z, ROOM_MIN.z - 0.02);
+                    assert!(position.y > 0.5);
+                    assert!(!super::super::home::indoors(position));
+                    if bird.perched(world.time) {
+                        let perch = match bird.perch {
+                            Perch::Tree => super::super::home::PERCH,
+                            Perch::Sill => super::super::home::SILL,
+                        };
+                        assert!(position.distance(perch) < 0.6);
+                    }
                 }
             }
         }
