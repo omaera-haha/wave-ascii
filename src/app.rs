@@ -1257,8 +1257,33 @@ impl App {
         if self.paths.is_none() {
             self.post("Postcards need a saved life");
         } else if self.posing.is_none() && !self.paused && self.world.pose_for_photo() {
-            self.posing = Some(POSING);
-            self.post("Say cheese…");
+            // The whole household lines up along the glass for the picture.
+            let roster = self.world.roster();
+            let count = roster.len();
+            let mut gathered = 1;
+            for (place, id) in roster.into_iter().enumerate() {
+                let x = if count > 1 {
+                    (place as f32 / (count - 1) as f32 - 0.5) * 2.4
+                } else {
+                    0.0
+                };
+                self.world.with_creature(id, |world| {
+                    let posing = id == world.host() && !world.companion || world.pose_for_photo();
+                    if posing && world.ghost.plan.activity == crate::world::Activity::Visit {
+                        world.ghost.plan.target.x = x;
+                        world.ghost.plan.anchor.x = x;
+                    }
+                    if world.companion && posing {
+                        gathered += 1;
+                    }
+                });
+            }
+            self.posing = Some(if gathered > 1 { POSING * 2.0 } else { POSING });
+            self.post(if gathered > 1 {
+                "Everyone, say cheese…"
+            } else {
+                "Say cheese…"
+            });
         } else if self.posing.is_none() && self.save_postcard() {
             self.world.photographed(false);
         }

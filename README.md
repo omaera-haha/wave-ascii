@@ -42,7 +42,7 @@ It runs on instinct alone. Press `k` in the app to add API keys for Jev (TypeSaf
 | `l` | life and growth |
 | `b` | album of moments |
 | `p` | save a postcard |
-| `P` | ask for a pose, then save a postcard |
+| `P` | gather everyone to pose, then save a postcard |
 | `g`, then `1`–`9` | noughts and crosses |
 | `o` | focus together for twenty-five minutes (`o` again ends it) |
 | `f` | draw in the fog with left drags (`f` or Esc stops) |
