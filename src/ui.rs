@@ -1013,19 +1013,27 @@ fn adopt_panel(app: &mut App, screen: &mut Canvas) {
             let top = bounds.top + 1 + (line - first_line) * card_height;
             // The picked one turns and shows off its coats, or the one
             // chosen for it while naming.
-            let coat = match (picked, app.adoption.coat) {
-                (true, Some(coat)) => coat.min(species.coats().saturating_sub(1)),
-                (true, None) => ((time / 2.0) as u64 % u64::from(species.coats())) as u8,
+            let stranger = app
+                .world
+                .stranger
+                .filter(|stranger| app.adoption.stranger && stranger.species == species);
+            let coat = match (picked, app.adoption.coat, stranger) {
+                (true, _, Some(stranger)) => stranger.genome.coat,
+                (true, Some(coat), None) => coat.min(species.coats().saturating_sub(1)),
+                (true, None, None) => ((time / 2.0) as u64 % u64::from(species.coats())) as u8,
                 _ => 0,
             };
             let figure = Figure {
                 id: kind as u32,
                 species,
-                genome: Genome {
-                    coat,
-                    build: 0.0,
-                    seed: 7,
-                },
+                genome: stranger.filter(|_| picked).map_or(
+                    Genome {
+                        coat,
+                        build: 0.0,
+                        seed: 7,
+                    },
+                    |stranger| stranger.genome,
+                ),
                 position: glam::Vec3::ZERO,
                 facing: 0.0,
                 size: 1.0,

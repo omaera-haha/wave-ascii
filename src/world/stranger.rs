@@ -194,22 +194,47 @@ impl World {
     }
 }
 
-/// Whether a message asks the stranger in.
-pub fn invitation(text: &str) -> bool {
+/// Whether a message asks the stranger, a creature of `species`, to stay.
+/// Asking it to live here is enough; "come in" and the like count only when
+/// they name it, since they also call the one the viewer is with indoors.
+pub fn invitation(text: &str, species: Species) -> bool {
     let lower = text.to_lowercase();
-    [
+    let staying = [
+        "stay with us",
+        "live with us",
+        "live here",
+        "come live",
+        "join us",
+        "같이 살자",
+        "우리랑 살자",
+        "같이 살래",
+        "여기 살아",
+    ]
+    .iter()
+    .any(|words| lower.contains(words));
+    let named = lower.contains(species.noun())
+        || lower.contains(species.noun_korean())
+        || [
+            "little one",
+            "stranger",
+            "on the sill",
+            "at the window",
+            "창가",
+            "꼬마",
+        ]
+        .iter()
+        .any(|words| lower.contains(words));
+    let asked_in = [
         "come in",
         "come inside",
         "welcome",
-        "stay with us",
-        "live with us",
         "들어와",
         "어서 와",
         "어서와",
-        "같이 살자",
     ]
     .iter()
-    .any(|words| lower.contains(words))
+    .any(|words| lower.contains(words));
+    staying || (asked_in && named)
 }
 
 #[cfg(test)]
@@ -245,9 +270,17 @@ mod tests {
         world.viewer.active_at = world.time;
         world.advance_stranger();
         let stranger = world.stranger.unwrap();
-        assert!(invitation("Come in, little one!"));
-        assert!(invitation("들어와!"));
-        assert!(!invitation("hello"));
+        assert!(invitation("Come in, little one!", stranger.species));
+        assert!(invitation("stay with us!", stranger.species));
+        assert!(invitation(
+            &format!("welcome, little {}", stranger.species.noun()),
+            stranger.species
+        ));
+        // Words that call the one the viewer is with indoors don't count.
+        assert!(!invitation("come in!", stranger.species));
+        assert!(!invitation("들어와!", stranger.species));
+        assert!(!invitation("welcome back", stranger.species));
+        assert!(!invitation("hello", stranger.species));
         let id = world.invite_stranger("Pip", 9).unwrap();
         assert!(world.stranger.is_none());
         let newcomer = world.creature(id).unwrap();

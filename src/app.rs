@@ -427,10 +427,18 @@ impl App {
             && self.announced_stranger != Some(stranger.came)
         {
             self.announced_stranger = Some(stranger.came);
-            self.post(format!(
-                "A little {} is peeking in through the glass. Click it, or say “come in”, to ask it to stay.",
-                stranger.species.noun()
-            ));
+            let notice = if self.world.speaks_korean() {
+                format!(
+                    "꼬마 {}가 창문으로 들여다봐. 눌러 보거나 “같이 살자”고 말해 봐.",
+                    stranger.species.noun_korean()
+                )
+            } else {
+                format!(
+                    "A little {} is peeking in at the window. Click it, or say “stay with us”, to ask it to stay.",
+                    stranger.species.noun()
+                )
+            };
+            self.post(notice);
         }
         self.world.share_anniversary();
         if self.paths.is_some() {
@@ -617,13 +625,19 @@ impl App {
 
     /// Opens the adoption cards on the stranger at the glass, ready to name.
     fn welcome_stranger(&mut self) {
-        let Some(stranger) = self.world.stranger else {
+        let Some(stranger) = self
+            .world
+            .stranger
+            .filter(|stranger| stranger.looking_in(self.world.time))
+        else {
             return;
         };
         if self.world.household_size() >= crate::world::household::MOST {
-            self.post("The cottage is full.");
+            self.post(self.full_house());
             return;
         }
+        // It keeps its own coat.
+        self.adoption.coat = None;
         self.adoption.index = crate::world::Species::ALL
             .iter()
             .position(|species| *species == stranger.species)
@@ -638,6 +652,30 @@ impl App {
         self.adoption.naming = Some(Line::from(name.as_str()));
         self.adoption.stranger = true;
         self.mode = Mode::Adopt;
+    }
+
+    /// The notice that a stranger is coming in to live here.
+    fn moving_in(&self, name: &str, species: crate::world::Species) -> String {
+        if self.world.speaks_korean() {
+            format!(
+                "{name}{} 같이 살러 들어와! (꼬마 {})",
+                crate::world::writing::particle(name, "이", "가"),
+                species.noun_korean()
+            )
+        } else {
+            format!(
+                "{name} the {} is coming in to live with you!",
+                species.noun()
+            )
+        }
+    }
+
+    fn full_house(&self) -> &'static str {
+        if self.world.speaks_korean() {
+            "오두막이 꽉 찼어."
+        } else {
+            "The cottage is full."
+        }
     }
 
     /// Asks the stranger at the glass in to live here, under `name` or one
@@ -845,16 +883,15 @@ impl App {
                                 self.select(id);
                             }
                             // Asking the stranger at the glass in.
-                            if self.world.stranger.is_some_and(|stranger| {
-                                stranger.leaving.is_none() && stranger.looking_in(self.world.time)
-                            }) && crate::world::stranger::invitation(&text)
-                            {
-                                let species = self.world.stranger.unwrap().species;
-                                if let Some(name) = self.invite_stranger(None) {
-                                    self.post(format!(
-                                        "{name} the {} is coming in to live with you!",
-                                        species.noun()
-                                    ));
+                            if let Some(stranger) = self.world.stranger.filter(|stranger| {
+                                stranger.looking_in(self.world.time)
+                                    && crate::world::stranger::invitation(&text, stranger.species)
+                            }) {
+                                match self.invite_stranger(None) {
+                                    Some(name) => {
+                                        self.post(self.moving_in(&name, stranger.species))
+                                    }
+                                    None => self.post(self.full_house()),
                                 }
                             }
                             self.mind.hear(&mut self.world, &text);
@@ -1027,18 +1064,25 @@ impl App {
                     let species = crate::world::Species::ALL[self.adoption.index.min(kinds - 1)];
                     self.mode = Mode::Watching;
                     self.adoption.naming = None;
-                    if std::mem::take(&mut self.adoption.stranger)
-                        && self
-                            .world
-                            .stranger
-                            .is_some_and(|stranger| stranger.species == species)
-                    {
+                    if std::mem::take(&mut self.adoption.stranger) {
+                        // Named or not, a stranger who wandered off in the
+                        // meantime is gone; nobody else comes in its place.
+                        let here = self.world.stranger.is_some_and(|stranger| {
+                            stranger.species == species && stranger.leaving.is_none()
+                        });
+                        self.adoption.coat = None;
+                        if !here {
+                            let line = if self.world.speaks_korean() {
+                                format!("꼬마 {}는 가 버렸어.", species.noun_korean())
+                            } else {
+                                format!("The little {} wandered off.", species.noun())
+                            };
+                            self.post(line);
+                            return;
+                        }
                         match self.invite_stranger(Some(&name)) {
-                            Some(name) => self.post(format!(
-                                "{name} the {} is coming in to live with you!",
-                                species.noun()
-                            )),
-                            None => self.post("The cottage is full."),
+                            Some(name) => self.post(self.moving_in(&name, species)),
+                            None => self.post(self.full_house()),
                         }
                         return;
                     }
@@ -1100,7 +1144,9 @@ impl App {
                 let mut random = crate::world::Random::new(mind::now() as u64 ^ index as u64);
                 let suggestion = crate::world::species::pick_name(&mut random, &taken);
                 self.adoption.naming = Some(Line::from(suggestion.as_str()));
-                self.adoption.coat = Some(0);
+                // A coat to start from, which up and down change.
+                let coats = crate::world::Species::ALL[index].coats().max(1);
+                self.adoption.coat = Some((mind::now() as u64 % u64::from(coats)) as u8);
             }
             _ => {}
         }
@@ -1313,6 +1359,7 @@ impl App {
                     if posing && world.ghost.plan.activity == crate::world::Activity::Visit {
                         world.ghost.plan.target.x = x;
                         world.ghost.plan.anchor.x = x;
+                        world.ghost.plan.posed = true;
                     }
                     if world.companion && posing {
                         gathered += 1;
@@ -1573,7 +1620,17 @@ impl App {
         if self.shown.is_empty() {
             return None;
         }
-        let models: Vec<Model> = self.shown.iter().map(Model::of).collect();
+        // The stranger is only within reach once it sits at the window.
+        let looking_in = self
+            .world
+            .stranger
+            .is_some_and(|stranger| stranger.looking_in(self.world.time));
+        let models: Vec<Model> = self
+            .shown
+            .iter()
+            .filter(|figure| figure.id != portrait::STRANGER || looking_in)
+            .map(Model::of)
+            .collect();
         let (columns, rows) = self.area;
         let cell = Grid::new(columns.max(1), rows.max(1), CELL_ASPECT).scale();
         [

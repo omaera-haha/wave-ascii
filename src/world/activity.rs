@@ -209,6 +209,9 @@ pub struct Plan {
     pub gallery_visit: bool,
     /// An outing to keep the visiting cat company.
     pub cat: bool,
+    /// Whether it holds its spot at the glass for a picture, wherever the
+    /// pointer is.
+    pub posed: bool,
     /// The housemate it is doing this with, if any, and what.
     pub with: Option<u32>,
     pub pastime: Option<super::together::Pastime>,
@@ -231,6 +234,7 @@ impl Plan {
             window: None,
             gallery_visit: false,
             cat: false,
+            posed: false,
             with: None,
             pastime: None,
         }

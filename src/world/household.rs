@@ -999,6 +999,20 @@ mod tests {
     }
 
     #[test]
+    fn a_creature_posed_at_the_glass_keeps_its_spot_wherever_the_pointer_is() {
+        let mut world = household();
+        world.viewer.pointer = Some(Vec3::new(1.5, 1.2, super::super::ROOM_MAX.z));
+        world.begin(Activity::Visit);
+        world.ghost.plan.target.x = -1.0;
+        world.ghost.plan.posed = true;
+        world.step(0.1);
+        assert_eq!(world.ghost.plan.target.x, -1.0);
+        world.ghost.plan.posed = false;
+        world.step(0.1);
+        assert!(world.ghost.plan.target.x > 1.0);
+    }
+
+    #[test]
     fn the_house_holds_at_most_six() {
         let mut world = household();
         let mut adopted = 0;

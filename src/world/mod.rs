@@ -3524,7 +3524,7 @@ impl World {
                     return;
                 }
                 let bowing = host && self.sebae.is_some();
-                if self.viewer.pointer.is_some() && !bowing {
+                if self.viewer.pointer.is_some() && !bowing && !self.ghost.plan.posed {
                     self.ghost.plan.target = self.glass_spot();
                 }
                 if bowing {

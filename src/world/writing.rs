@@ -21,7 +21,7 @@ pub(super) fn final_consonant(text: &str) -> bool {
     })
 }
 
-pub(super) fn particle<'a>(name: &str, consonant: &'a str, vowel: &'a str) -> &'a str {
+pub(crate) fn particle<'a>(name: &str, consonant: &'a str, vowel: &'a str) -> &'a str {
     let rieul = name.trim_end().chars().last().is_some_and(|letter| {
         ('가'..='힣').contains(&letter) && (u32::from(letter) - u32::from('가')) % 28 == 8
     });

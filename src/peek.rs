@@ -53,11 +53,13 @@ pub fn glance(save: &Save, now: DateTime, away: i64) -> String {
         .filter(|name| !name.is_empty())
         .collect();
     let household = !others.is_empty();
-    let everyone = crate::world::together::list(
-        &std::iter::once(name.clone())
-            .chain(others)
-            .collect::<Vec<_>>(),
-    );
+    let all: Vec<String> = std::iter::once(name.clone()).chain(others).collect();
+    // Korean lists the names with a middle dot, which needs no particles.
+    let everyone = if korean {
+        all.join("·")
+    } else {
+        crate::world::together::list(&all)
+    };
     let pottering = if save.household.species.airborne() {
         "is floating about"
     } else {
@@ -167,6 +169,8 @@ mod tests {
             glance(&save, at(13), 60),
             "~ Pip and Mochi are playing together"
         );
+        save.life.korean = 1.0;
+        assert_eq!(glance(&save, at(23), 60), "☾ Pip·Mochi, 쿨쿨 자는 중");
     }
 
     #[test]

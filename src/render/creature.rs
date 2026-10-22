@@ -849,7 +849,9 @@ struct Rig {
 impl Rig {
     fn new(figure: &Figure) -> Self {
         let motion = figure.motion;
-        let time = (motion.time.rem_euclid(3600.0)) as f32 + figure.id as f32 * 1.7;
+        // Each body keeps its own beat; ids as large as a visitor's are folded
+        // small first, or the time would round away.
+        let time = (motion.time.rem_euclid(3600.0)) as f32 + (figure.id % 97) as f32 * 1.7;
         let walk = smoothstep(0.03, 0.35, motion.pace) * (1.0 - motion.asleep);
         let landing = (1.0 - motion.landed / 0.18).clamp(0.0, 1.0);
         let stretch = if motion.airborne {
@@ -2525,6 +2527,25 @@ pub(crate) mod tests {
                     assert!(hit.normal.z > 0.0, "{species:?} {:?}", hit.normal);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn visitors_with_huge_ids_still_move_from_moment_to_moment() {
+        for species in [Species::Ghost, Species::Fox] {
+            let mut figure = figure(species);
+            figure.id = u32::MAX;
+            figure.motion.wag = 1.0;
+            figure.motion.time = 10.0;
+            let before = Model::of(&figure);
+            figure.motion.time = 10.4;
+            let after = Model::of(&figure);
+            let moved = before
+                .parts
+                .iter()
+                .zip(&after.parts)
+                .any(|(first, second)| first.bound.0.distance(second.bound.0) > 1e-3);
+            assert!(moved, "{species:?}");
         }
     }
 
