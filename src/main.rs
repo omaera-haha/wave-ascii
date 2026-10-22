@@ -355,9 +355,43 @@ fn print_frame(options: &Options) -> io::Result<()> {
     let mut world = World::new(1, options.hour);
     world.date = options.date;
     world.birthday = options.born;
+    // For checking looks: set the weather for the preview.
+    if let Ok(weather) = env::var("WAVE_ASCII_WEATHER") {
+        let sky = match weather.as_str() {
+            "rain" | "storm" => world::Sky::Rain,
+            "snow" => world::Sky::Snow,
+            "rainbow" => world::Sky::Rainbow,
+            _ => world::Sky::Clear,
+        };
+        world.weather.sky = sky;
+        world.weather.storm = weather == "storm";
+        world.weather.since = -100.0;
+        world.weather.until = 1e9;
+        if sky == world::Sky::Snow {
+            world.weather.snow_cover = 0.9;
+            world.weather.settled_snow = Some(-100.0);
+        }
+    }
+    if let Ok(perch) = env::var("WAVE_ASCII_BIRD") {
+        let mut random = world::Random::new(3);
+        let mut bird = world::visitor::Bird::new(-10.0, 1.0, &mut random);
+        bird.perch = if perch == "sill" {
+            world::Perch::Sill
+        } else {
+            world::Perch::Tree
+        };
+        world.visitors.bird = Some(bird);
+    }
     world.step(0.0);
     let mind = Mind::new(&Config::default(), Journal::default(), true);
     let mut app = App::new(world, mind, Config::default(), options.style, color);
+    // For checking looks: start the preview with the ghost at an activity.
+    if let Some(activity) = env::var("WAVE_ASCII_ACTIVITY")
+        .ok()
+        .and_then(|name| world::Activity::parse(&name))
+    {
+        app.world.begin(activity);
+    }
     // Counted in whole steps so long previews don't drift with rounding.
     let time = f64::from(options.time);
     let steps = (time / 0.05 - 1e-9).ceil().max(0.0) as u64;

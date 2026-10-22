@@ -25,19 +25,20 @@ use crate::world::{BirdPicture, Plant, Season};
 const LANTERN_LIGHT: Vec3 = Vec3::new(1.0, 0.74, 0.42);
 /// Big plain surfaces are drawn dimmer than the things on them, so the
 /// yard's things and the ghost stand out in glyphs.
-const GROUND_EXPOSURE: f32 = 0.5;
+const GROUND_EXPOSURE: f32 = 0.55;
 const SHELL_EXPOSURE: f32 = 0.7;
 const SNOW: Vec3 = Vec3::new(0.9, 0.94, 1.0);
 /// Where the snowman stands when there is one.
-const SNOWMAN: Vec3 = Vec3::new(5.75, 0.0, 2.25);
+const SNOWMAN: Vec3 = Vec3::new(-2.8, 0.0, 1.7);
 /// Stepping stones from the door to the mailbox, (x, z) and radius.
-const STONES: [(Vec2, f32); 6] = [
+const STONES: [(Vec2, f32); 7] = [
     (Vec2::new(2.45, 0.8), 0.2),
-    (Vec2::new(2.85, 1.15), 0.18),
-    (Vec2::new(3.1, 1.6), 0.19),
-    (Vec2::new(3.2, 2.05), 0.17),
-    (Vec2::new(3.42, 2.42), 0.18),
-    (Vec2::new(3.9, 2.0), 0.16),
+    (Vec2::new(2.9, 1.05), 0.18),
+    (Vec2::new(3.25, 1.75), 0.19),
+    (Vec2::new(3.75, 2.05), 0.17),
+    (Vec2::new(4.35, 2.2), 0.18),
+    (Vec2::new(5.0, 2.3), 0.17),
+    (Vec2::new(5.65, 2.45), 0.18),
 ];
 
 /// What a yard surface is made of.
@@ -97,15 +98,26 @@ impl Piece {
                 box_span(origin, direction, center, half)
             }
             Self::Tree => {
-                let (near, far) = sphere_span(
+                let crown = sphere_span(origin, direction, TREE_CROWN, TREE_CROWN_RADIUS + 0.75);
+                let wood = box_span(
                     origin,
                     direction,
-                    TREE_CROWN - Vec3::Y * 0.9,
-                    TREE_CROWN_RADIUS + 1.6,
-                )?;
-                Some((near, far))
+                    TREE + Vec3::new(-0.2, 2.3, 0.35),
+                    Vec3::new(1.85, 2.35, 1.0),
+                );
+                match (crown, wood) {
+                    (Some(first), Some(second)) => {
+                        Some((first.0.min(second.0), first.1.max(second.1)))
+                    }
+                    (one, other) => one.or(other),
+                }
             }
-            Self::Swing => sphere_span(origin, direction, SWING_TOP - Vec3::Y * 1.0, 1.75),
+            Self::Swing => box_span(
+                origin,
+                direction,
+                SWING_TOP - Vec3::Y * (SWING_TOP.y * 0.5 - 0.05),
+                Vec3::new(SWING_HALF_WIDTH + 0.35, SWING_TOP.y * 0.5 + 0.12, 0.72),
+            ),
             Self::Garden => sphere_span(origin, direction, GARDEN + Vec3::Y * 0.12, 0.95),
             Self::Birdbath => sphere_span(origin, direction, BIRDBATH + Vec3::Y * 0.45, 0.6),
             Self::Bench => sphere_span(origin, direction, BENCH + Vec3::Y * 0.45, 0.85),
@@ -229,6 +241,13 @@ impl<'a> Yard<'a> {
         if let Some(bird) = outside.bird {
             critters.push(Critter::Bird(bird, bird.position));
         }
+        // Nearest first, so what they hide is skipped sooner.
+        let eye = setting.view.eye;
+        pieces.sort_by(|first, second| {
+            piece_center(first)
+                .distance_squared(eye)
+                .total_cmp(&piece_center(second).distance_squared(eye))
+        });
         let lantern = if setting.lantern { 1.0 } else { 0.0 };
         let mut glows: Vec<_> = setting
             .glows
@@ -252,7 +271,7 @@ impl<'a> Yard<'a> {
             sunlight: outside.sunlight(),
             moon: outside.moonlight_direction(),
             moonlight: outside.moonlight(),
-            ambient: sky::light_through(outside) * 0.8
+            ambient: sky::light_through(outside) * 0.95
                 + Vec3::new(0.03, 0.035, 0.055)
                 + Vec3::splat(flash * 0.2),
             haze: outside.haze(),
@@ -326,7 +345,8 @@ impl<'a> Yard<'a> {
                 }
                 let point = origin + direction * distance;
                 let (gap, surface) = self.distance(piece, point);
-                if gap < 0.0015 * distance.max(1.0) {
+                let close = (0.0015 * distance).max((traveled + distance) * spread * 0.35);
+                if gap < close.max(0.0015) {
                     limit = distance;
                     let normal = self.normal(piece, point);
                     hit = Some((distance, self.shade(surface, point, normal, direction)));
@@ -373,7 +393,7 @@ impl<'a> Yard<'a> {
                 Critter::Squirrel(passing, _) => squirrel_shade(local, pixel, passing),
             };
             if cover > 0.0 {
-                let lit = color * self.light(position, -direction).max(Vec3::splat(0.08));
+                let lit = color * self.lit(position, -direction, 1.0).max(Vec3::splat(0.12));
                 let behind = hit.map_or_else(|| self.background(direction, spread), |hit| hit.1);
                 hit = Some((
                     if cover > 0.5 { along } else { limit },
@@ -392,12 +412,15 @@ impl<'a> Yard<'a> {
         sky::sky(direction, spread, self.outside)
     }
 
-    /// Rain and snow falling between the eye and `limit`, wherever the ray
-    /// is outdoors.
+    /// Rain and snow falling between `shelter` and `limit` along the ray,
+    /// wherever it is outdoors. Rays looking into the room through the
+    /// glass start past it, so the room stays clear to see.
+    #[allow(clippy::too_many_arguments)]
     pub fn weather(
         &self,
         origin: Vec3,
         direction: Vec3,
+        shelter: f32,
         limit: f32,
         traveled: f32,
         spread: f32,
@@ -412,6 +435,9 @@ impl<'a> Yard<'a> {
         for (layer, depth) in [1.4_f32, 2.6, 4.4, 7.0, 11.0].into_iter().enumerate() {
             if depth >= limit {
                 break;
+            }
+            if depth < shelter {
+                continue;
             }
             let point = origin + direction * depth;
             if point.y < 0.0 || home::in_house(point) && point.y < HOUSE_MAX.y {
@@ -441,10 +467,10 @@ impl<'a> Yard<'a> {
                 let cells = Vec2::new(drifting / 0.3, (point.y + falling) / 0.3);
                 let cell = cells.floor();
                 let seed = hash(cell + Vec2::splat(layer as f32 * 7.0));
-                if seed < snow * 0.75 {
+                if seed < snow * 0.55 {
                     let center = Vec2::new(hash(cell + Vec2::X), hash(cell + Vec2::Y)) * 0.6 + 0.2;
                     let distance = ((cells - cell - center) * 0.3).length();
-                    let flake = coverage(distance - 0.018, pixel * 0.6 + 0.004);
+                    let flake = coverage(distance - 0.011, pixel * 0.6 + 0.003);
                     color = color.lerp(SNOW * (0.35 + self.ambient.max_element()), flake * 0.85);
                 }
             }
@@ -578,18 +604,20 @@ impl<'a> Yard<'a> {
         ) - mix(0.22, 0.1, trunk_fraction)
             - 0.08 * (1.0 - (local.y / 0.35).clamp(0.0, 1.0));
         let mut wood = trunk;
-        for (start, end, radius) in [
-            (Vec3::new(0.0, 1.3, 0.0), PERCH - TREE, 0.075),
-            (Vec3::new(0.0, 1.9, 0.0), Vec3::new(-0.95, 3.05, 0.25), 0.075),
-            (Vec3::new(0.0, 2.1, 0.0), Vec3::new(0.85, 3.2, -0.2), 0.07),
-            (Vec3::new(0.0, 2.45, 0.0), Vec3::new(0.05, 3.95, 0.1), 0.065),
-            (Vec3::new(0.0, 1.85, 0.0), Vec3::new(0.95, 2.55, 0.55), 0.055),
-        ] {
-            wood = wood.min(limb(local, start, end, radius));
+        let bare = self.outside.season == Season::Winter;
+        // Twigs hide inside the crown unless the tree is bare.
+        let limbs = if bare { BRANCHES.len() } else { 5 };
+        for (start, end, radius) in &BRANCHES[..limbs] {
+            wood = wood.min(limb(local, *start, *end, *radius));
         }
         let mut nearest = (wood, Surface::Bark);
-        if self.outside.season != Season::Winter {
-            let crown = point - TREE_CROWN - (local - (point - TREE));
+        if !bare {
+            let crown = local - (TREE_CROWN - TREE);
+            // Far from the crown, its outer bound will do.
+            let bound = crown.length() - (TREE_CROWN_RADIUS + 0.55);
+            if bound > 0.3 {
+                return (nearest.0.min(bound), if nearest.0 < bound { Surface::Bark } else { Surface::Foliage });
+            }
             let mut blob = crown.length() - 1.2;
             for (offset, radius) in [
                 (Vec3::new(-0.95, -0.35, 0.25), 0.85),
@@ -735,7 +763,7 @@ impl<'a> Yard<'a> {
     /// Light with `wrap` letting some of it come around the edges, as it
     /// glows through leaves.
     fn lit(&self, point: Vec3, normal: Vec3, wrap: f32) -> Vec3 {
-        let mut total = self.ambient * (0.62 + 0.38 * normal.y.max(-0.5));
+        let mut total = self.ambient * (0.72 + 0.28 * normal.y.max(-0.5));
         let facing = (normal.dot(self.sun) + wrap) / (1.0 + wrap);
         if facing > 0.0 && self.sunlight.max_element() > 1e-3 {
             total += self.sunlight * facing * self.shadow(point, normal, self.sun);
@@ -857,7 +885,7 @@ impl<'a> Yard<'a> {
             }
             Surface::Picket | Surface::Trim => Vec3::new(0.93, 0.92, 0.87),
             Surface::Timber => {
-                Vec3::new(0.66, 0.48, 0.33) * (0.85 + 0.25 * noise(Vec2::new(point.x * 3.0, point.y * 40.0 + point.z * 3.0)))
+                Vec3::new(0.8, 0.6, 0.42) * (0.85 + 0.25 * noise(Vec2::new(point.x * 3.0, point.y * 40.0 + point.z * 3.0)))
             }
             Surface::Soil => Vec3::new(0.42, 0.3, 0.22),
             Surface::Stone => Vec3::new(0.68, 0.69, 0.7) * (0.9 + 0.15 * noise(Vec2::new(point.x + point.z, point.y) * 11.0)),
@@ -965,6 +993,44 @@ impl<'a> Yard<'a> {
         let cloud = self.outside.rain.max(self.outside.snow * 0.85);
         let color = weather_color(color, cloud * 0.4) * GROUND_EXPOSURE;
         color.lerp(self.haze, 1.0 - (-distance / 55.0).exp())
+    }
+}
+
+/// The tree's limbs from the trunk, start, end, and radius, relative to its
+/// foot; the twigs only show in winter, inside the crown otherwise.
+const BRANCHES: [(Vec3, Vec3, f32); 15] = [
+    (Vec3::new(0.0, 1.05, 0.0), Vec3::new(-1.3, 1.32, 0.85), 0.075),
+    (Vec3::new(0.0, 1.9, 0.0), Vec3::new(-0.95, 3.05, 0.25), 0.075),
+    (Vec3::new(0.0, 2.1, 0.0), Vec3::new(0.85, 3.2, -0.2), 0.07),
+    (Vec3::new(0.0, 2.45, 0.0), Vec3::new(0.05, 3.95, 0.1), 0.065),
+    (Vec3::new(0.0, 1.85, 0.0), Vec3::new(0.95, 2.55, 0.55), 0.055),
+    (Vec3::new(-0.95, 3.05, 0.25), Vec3::new(-1.55, 3.55, 0.5), 0.03),
+    (Vec3::new(-0.95, 3.05, 0.25), Vec3::new(-0.8, 3.85, -0.1), 0.03),
+    (Vec3::new(-0.5, 2.45, 0.12), Vec3::new(-1.4, 2.7, -0.35), 0.03),
+    (Vec3::new(0.85, 3.2, -0.2), Vec3::new(1.5, 3.65, -0.45), 0.03),
+    (Vec3::new(0.85, 3.2, -0.2), Vec3::new(0.7, 4.0, 0.2), 0.03),
+    (Vec3::new(0.45, 2.65, -0.1), Vec3::new(1.35, 2.85, 0.35), 0.028),
+    (Vec3::new(0.05, 3.95, 0.1), Vec3::new(-0.4, 4.45, 0.05), 0.025),
+    (Vec3::new(0.05, 3.95, 0.1), Vec3::new(0.45, 4.4, -0.2), 0.025),
+    (Vec3::new(0.95, 2.55, 0.55), Vec3::new(1.5, 2.95, 1.0), 0.028),
+    (Vec3::new(-0.65, 1.19, 0.42), Vec3::new(-0.95, 1.75, 0.75), 0.03),
+];
+
+/// About where a piece stands, for drawing order.
+fn piece_center(piece: &Piece) -> Vec3 {
+    match *piece {
+        Piece::Tree => TREE + Vec3::Y * 2.0,
+        Piece::Fence(start, end) => (start + end) * 0.5,
+        Piece::Swing => SWING_TOP,
+        Piece::Garden => GARDEN,
+        Piece::Birdbath => BIRDBATH,
+        Piece::Bench => BENCH,
+        Piece::Lantern => LANTERN,
+        Piece::Mailbox => home::MAILBOX,
+        Piece::Clothesline => (CLOTHESLINE[0] + CLOTHESLINE[1]) * 0.5,
+        Piece::Bush(center, _) => center,
+        Piece::Sill => SILL,
+        Piece::Snowman(_) => SNOWMAN,
     }
 }
 
@@ -1159,7 +1225,7 @@ fn squirrel_at(passing: &Passing) -> Vec3 {
 /// billboard, and its color.
 fn bird_shade(local: Vec2, pixel: f32, bird: BirdPicture, season: Season) -> (f32, Vec3) {
     // Drawn at picture scale and enlarged to room size.
-    const SCALE: f32 = 1.7;
+    const SCALE: f32 = 2.0;
     let footprint = (pixel / SCALE).max(1e-5);
     let mut point = local / SCALE;
     point.x *= bird.facing;
@@ -1199,11 +1265,11 @@ fn bird_shade(local: Vec2, pixel: f32, bird: BirdPicture, season: Season) -> (f3
         footprint * 0.5,
     );
     let warm = if season == Season::Winter {
-        Vec3::new(0.85, 0.3, 0.16)
+        Vec3::new(1.0, 0.36, 0.2)
     } else {
-        Vec3::new(0.7, 0.5, 0.36)
+        Vec3::new(1.0, 0.58, 0.3)
     };
-    let feather = Vec3::new(0.32, 0.29, 0.27).lerp(warm, breast);
+    let feather = Vec3::new(0.62, 0.5, 0.4).lerp(warm, breast);
     let eye = coverage(point.distance(head + Vec2::new(0.008, 0.006)) - 0.004, footprint * 0.5);
     (
         coverage(distance, footprint * 0.5),
@@ -1311,9 +1377,13 @@ mod tests {
                     .trace(eye, direction, 0.0, f32::INFINITY, false, 0.0, 0.004)
                     .map_or(yard.background(direction, 0.004), |hit| hit.1);
                 assert!(color.is_finite());
-                assert!(yard.weather(eye, direction, 20.0, 0.0, 0.004, color).is_finite());
+                assert!(
+                    yard.weather(eye, direction, 0.0, 20.0, 0.0, 0.004, color)
+                        .is_finite()
+                );
                 assert!(yard.sparkles(eye, direction, 20.0, 0.0, 0.004).is_finite());
             }
         }
     }
 }
+

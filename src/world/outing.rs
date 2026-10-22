@@ -4,7 +4,7 @@
 use glam::Vec3;
 
 use super::home::{self, Spot};
-use super::{Activity, Season, Sky, World, meteor};
+use super::{Activity, EventKind, Heard, Listening, Season, Sky, Understanding, World, meteor};
 
 /// Seconds it stays at a spot once there.
 const DWELL: (f32, f32) = (14.0, 26.0);
@@ -186,12 +186,119 @@ impl World {
         riding * (self.time * 1.9).sin() as f32 * 0.45
     }
 
+    /// Asked to go out ("go outside", "마당에 나가자", "ride the swing"), or
+    /// to come back in.
+    pub(super) fn hear_outing(&mut self, text: &str, korean: bool) -> Option<Heard> {
+        let request = requested(text)?;
+        self.listening = Listening::default();
+        self.record(EventKind::Heard(text.to_owned()));
+        let outside = !home::in_house(self.ghost.position);
+        let lines = match request {
+            Request::In => {
+                if self.ghost.plan.activity == Activity::Yard && !self.ghost.plan.done || outside {
+                    self.ghost.plan.done = true;
+                    ("Coming in!", "들어갈게!")
+                } else {
+                    ("I'm already inside.", "나 벌써 안에 있어.")
+                }
+            }
+            Request::Out(spot) => {
+                let rain = self.weather.rain(self.time);
+                if self.ghost.asleep >= 0.3 {
+                    ("Mm… tomorrow…", "음… 내일…")
+                } else if self.weather.storm || rain >= 0.45 {
+                    ("It's too wet out there.", "밖에 비가 너무 와.")
+                } else if self.ghost.needs.energy < 0.2 {
+                    ("I'm too tired to go out.", "너무 졸려서 못 나가겠어.")
+                } else {
+                    self.begin(Activity::Yard);
+                    if let Some(spot) = spot {
+                        let position = spot.position(self.size());
+                        self.ghost.plan.target = position;
+                        self.ghost.plan.anchor = position;
+                    }
+                    self.last_outing = Some(self.time);
+                    match spot {
+                        Some(Spot::Swing) => ("To the swing!", "그네 타러 가자!"),
+                        _ => ("Out to the yard!", "마당에 나가자!"),
+                    }
+                }
+            }
+        };
+        self.say(if korean { lines.1 } else { lines.0 });
+        Some(Heard {
+            tone: None,
+            understanding: Understanding::Outing,
+            named: false,
+            learned: Vec::new(),
+            stopped: false,
+            learned_name: None,
+            given_name: None,
+            korean,
+        })
+    }
+
     /// What the ghost is doing in the yard, in words.
     pub fn outing_words(&self) -> &'static str {
         self.yard_spot()
             .filter(|_| self.ghost.plan.arrived.is_some())
             .map_or("heading out to the yard", Spot::words)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Request {
+    Out(Option<Spot>),
+    In,
+}
+
+fn requested(text: &str) -> Option<Request> {
+    let lower = text.to_lowercase();
+    let words: Vec<&str> = lower
+        .split(|character: char| !character.is_alphanumeric() && character != '\'')
+        .filter(|word| !word.is_empty())
+        .collect();
+    let has = |phrase: &str| {
+        let phrase: Vec<&str> = phrase.split_whitespace().collect();
+        words.windows(phrase.len()).any(|run| run == phrase)
+    };
+    if ["come in", "come inside", "come back in", "go inside", "stay inside"]
+        .iter()
+        .any(|phrase| has(phrase))
+        || ["들어와", "들어가", "안으로"].iter().any(|word| lower.contains(word))
+    {
+        return Some(Request::In);
+    }
+    if words
+        .iter()
+        .any(|word| matches!(*word, "not" | "dont" | "don't" | "never"))
+        || lower.contains("말자")
+        || lower.contains("하지 마")
+        || lower.contains("나가지")
+    {
+        return None;
+    }
+    let swing = words.iter().any(|word| matches!(*word, "swing" | "swings"))
+        || lower.contains("그네");
+    if swing {
+        return Some(Request::Out(Some(Spot::Swing)));
+    }
+    let english = [
+        "go outside",
+        "go out",
+        "play outside",
+        "go out to the yard",
+        "to the yard",
+        "in the yard",
+        "the backyard",
+        "outside",
+    ]
+    .iter()
+    .any(|phrase| has(phrase));
+    let korean = ["마당", "밖에 나가", "밖에서 놀", "나가자", "나가 놀", "산책"]
+        .iter()
+        .any(|word| lower.contains(word));
+    (english || korean).then_some(Request::Out(None))
 }
 
 #[cfg(test)]
@@ -240,6 +347,31 @@ mod tests {
         assert!(world.swinging().is_some());
         assert!(world.swing_angle().abs() > 0.0);
         assert!(world.swing_seat().distance(home::SWING_SEAT) < 0.8);
+    }
+
+    #[test]
+    fn asking_to_go_out_or_come_in_works_in_both_languages() {
+        for message in ["let's go outside!", "play in the yard", "마당에 나가자", "밖에 나가서 놀자"] {
+            let mut world = World::new(3, 11.0);
+            world.ghost.needs.energy = 1.0;
+            let heard = world.hear(message);
+            assert_eq!(heard.understanding, Understanding::Outing, "{message}");
+            assert_eq!(world.ghost.plan.activity, Activity::Yard, "{message}");
+        }
+        let mut world = World::new(3, 11.0);
+        world.ghost.needs.energy = 1.0;
+        world.hear("ride the swing");
+        assert_eq!(world.yard_spot(), Some(Spot::Swing));
+        world.hear("come back in");
+        assert!(world.ghost.plan.done);
+        for message in ["don't go outside", "hello", "the window is open"] {
+            let mut world = World::new(3, 11.0);
+            assert_ne!(world.hear(message).understanding, Understanding::Outing, "{message}");
+        }
+        let mut world = World::new(3, 11.0);
+        world.weather.storm = true;
+        world.hear("go outside");
+        assert_ne!(world.ghost.plan.activity, Activity::Yard);
     }
 
     #[test]

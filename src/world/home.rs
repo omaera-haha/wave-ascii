@@ -34,9 +34,9 @@ pub const TREE: Vec3 = Vec3::new(0.95, 0.0, -4.4);
 pub const TREE_CROWN: Vec3 = Vec3::new(0.85, 3.45, -4.3);
 pub const TREE_CROWN_RADIUS: f32 = 1.6;
 /// The low branch's tip, where the bird perches, seen through the window.
-pub const PERCH: Vec3 = Vec3::new(-0.35, 1.78, -3.55);
+pub const PERCH: Vec3 = Vec3::new(-0.35, 1.32, -3.55);
 /// Outer sill under the back window, where gifts and the bird sit.
-pub const SILL: Vec3 = Vec3::new(0.0, 1.0, HOUSE_MIN.z - 0.08);
+pub const SILL: Vec3 = Vec3::new(0.0, 1.04, HOUSE_MIN.z - 0.08);
 pub const SILL_HALF: Vec3 = Vec3::new(0.86, 0.025, 0.09);
 
 /// Swing set: middle of the top bar, and the seat at rest.
@@ -50,7 +50,7 @@ pub const BIRDBATH: Vec3 = Vec3::new(6.85, 0.0, 0.55);
 pub const BENCH: Vec3 = Vec3::new(7.2, 0.0, -2.75);
 pub const LANTERN: Vec3 = Vec3::new(2.75, 0.0, 1.75);
 pub const LANTERN_HEIGHT: f32 = 1.25;
-pub const MAILBOX: Vec3 = Vec3::new(3.25, 0.0, 2.85);
+pub const MAILBOX: Vec3 = Vec3::new(6.3, 0.0, 2.7);
 /// Clothesline posts in the left yard.
 pub const CLOTHESLINE: [Vec3; 2] = [Vec3::new(-5.6, 0.0, -1.0), Vec3::new(-3.0, 0.0, -2.1)];
 pub const CLOTHESLINE_HEIGHT: f32 = 1.55;
@@ -92,7 +92,7 @@ impl Spot {
             Self::Garden => GARDEN + Vec3::new(0.0, 0.8, -0.62),
             Self::Birdbath => BIRDBATH + Vec3::new(-0.5, 0.95, 0.2),
             Self::Bench => BENCH + Vec3::new(0.0, 0.42 + 0.34 * size, 0.08),
-            Self::Lawn => Vec3::new(5.9, 0.32 * size + 0.06, 1.75),
+            Self::Lawn => Vec3::new(5.3, 0.32 * size + 0.06, 1.55),
             Self::Fence => Vec3::new(7.6, 1.05, -5.2),
         }
     }

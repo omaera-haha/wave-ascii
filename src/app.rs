@@ -1171,7 +1171,13 @@ impl App {
             self.open_letter();
             return;
         }
+        // Out on the lawn, too: the ghost goes out to catch it.
+        let lawn = view
+            .on_plane(point, 0.0)
+            .filter(|spot| crate::world::home::on_lot(*spot) && !crate::world::home::in_house(*spot))
+            .filter(|_| floor.is_none() && view.on_glass(point).is_none());
         let spot = floor
+            .or(lawn)
             .map(|spot| spot + Vec3::Y * 0.9)
             .or_else(|| view.on_glass(point).map(|spot| spot - Vec3::Z * 0.5));
         if let Some(spot) = spot {

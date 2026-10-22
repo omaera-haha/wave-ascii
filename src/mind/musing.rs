@@ -931,6 +931,7 @@ pub fn reply(world: &World, heard: &Heard, guessed: Option<Activity>) -> Vec<Str
             | Understanding::PlanAnswered { .. }
             | Understanding::Folding
             | Understanding::Tidying
+            | Understanding::Outing
             | Understanding::Bubbles { .. }
             | Understanding::Showing
     ) && heard.learned_name.is_none()
@@ -966,6 +967,7 @@ fn reply_in_words(world: &World, heard: &Heard, guessed: Option<Activity>) -> Ve
             | Understanding::Folding
             | Understanding::Showing
             | Understanding::Tidying
+            | Understanding::Outing
     ) {
         return world
             .ghost

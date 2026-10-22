@@ -206,7 +206,19 @@ impl Mote {
             -0.25 + 0.6 * (phase * 0.45 + self.seed).sin(),
             (phase * 0.6 + self.seed * 2.0).cos(),
         ) * 0.14;
+        let outdoors = !super::home::in_house(self.position);
         self.position += (velocity + breeze) * seconds;
+        if outdoors {
+            let (low, high) = super::home::yard_bounds();
+            let moved = self.position.clamp(low + Vec3::Y * 0.3, high);
+            // Out on the lawn it drifts about but never in through a wall.
+            if super::home::in_house(moved) {
+                self.position = (self.position - velocity * seconds).clamp(low, high);
+            } else {
+                self.position = moved;
+            }
+            return;
+        }
         let margin = Vec3::new(0.25, 0.3, 0.25);
         self.position = self
             .position

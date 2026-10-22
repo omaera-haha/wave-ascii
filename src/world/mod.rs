@@ -751,6 +751,8 @@ pub enum Understanding {
     },
     Showing,
     Tidying,
+    /// Asked to go out to the yard, or to come back in.
+    Outing,
     Cared,
 }
 
@@ -2197,6 +2199,7 @@ impl World {
         } else if !matches!(
             heard.understanding,
             Understanding::Tidying
+                | Understanding::Outing
                 | Understanding::Showing
                 | Understanding::Cared
                 | Understanding::Folding
@@ -2316,6 +2319,12 @@ impl World {
         if introduction.is_none()
             && naming.is_none()
             && let Some(heard) = self.hear_tidy(text, korean)
+        {
+            return heard;
+        }
+        if introduction.is_none()
+            && naming.is_none()
+            && let Some(heard) = self.hear_outing(text, korean)
         {
             return heard;
         }
@@ -2691,9 +2700,16 @@ impl World {
     fn add_mote(&mut self, position: Vec3) -> u32 {
         self.next_mote += 1;
         let seed = self.random.unit();
+        // Motes dropped out on the lawn stay out there.
+        let position = if home::in_house(position) {
+            position.clamp(ROOM_MIN + Vec3::splat(0.25), ROOM_MAX - Vec3::splat(0.25))
+        } else {
+            let (low, high) = home::yard_bounds();
+            position.clamp(low + Vec3::Y * 0.3, high)
+        };
         self.motes.push(Mote {
             id: self.next_mote,
-            position: position.clamp(ROOM_MIN + Vec3::splat(0.25), ROOM_MAX - Vec3::splat(0.25)),
+            position,
             born: self.time,
             seed,
         });

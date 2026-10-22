@@ -353,14 +353,16 @@ pub fn sky(direction: Vec3, spread: f32, outside: &Outside) -> Vec3 {
         color += burst.sparks(coordinates, footprint);
     }
 
-    let radius = coordinates.distance(Vec2::new(0.5, 0.04));
-    let primary = spectrum((radius - 0.72) / 0.06)
-        * coverage((radius - 0.75).abs() - 0.03, footprint * 0.5)
-        * 0.38;
-    let secondary = spectrum(1.0 - (radius - 0.815) / 0.09)
-        * coverage((radius - 0.86).abs() - 0.045, footprint * 0.5)
-        * 0.09;
-    color += (primary + secondary) * outside.rainbow.clamp(0.0, 1.0) * (1.0 - rain * 0.65);
+    if outside.rainbow > 0.0 {
+        let radius = coordinates.distance(Vec2::new(0.5, 0.04));
+        let primary = spectrum((radius - 0.72) / 0.06)
+            * coverage((radius - 0.75).abs() - 0.03, footprint * 0.5)
+            * 0.38;
+        let secondary = spectrum(1.0 - (radius - 0.815) / 0.09)
+            * coverage((radius - 0.86).abs() - 0.045, footprint * 0.5)
+            * 0.09;
+        color += (primary + secondary) * outside.rainbow.min(1.0) * (1.0 - rain * 0.65);
+    }
 
     if flash > 0.0 {
         color += Vec3::new(0.85, 0.92, 1.0)

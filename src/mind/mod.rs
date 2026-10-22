@@ -471,6 +471,7 @@ impl Mind {
                 | Understanding::Folding
                 | Understanding::Showing
                 | Understanding::Tidying
+                | Understanding::Outing
                 | Understanding::Cared
         ) {
             self.next_id += 1;
@@ -987,6 +988,7 @@ fn routes_to_jev(heard: &Heard) -> bool {
                 | Understanding::BreakReply { .. }
                 | Understanding::Folding
                 | Understanding::Tidying
+                | Understanding::Outing
                 | Understanding::Bubbles { .. }
                 | Understanding::Showing
                 | Understanding::Cared

@@ -471,7 +471,8 @@ pub fn render(scene: &Scene, grid: Grid, samples: usize) -> Frame {
         let direction = scene.view.ray(point);
         let dream = dream.as_ref().filter(|bubble| bubble.contains(point));
         let color = tracer.trace(scene.view.eye, direction, scene.view, 0.0, dream, false);
-        Shade::from_rgb(color.min(Vec3::ONE))
+        // A gentle lift of the mid-tones, which glyphs otherwise lose.
+        Shade::from_rgb(color.clamp(Vec3::ZERO, Vec3::ONE).powf(0.85))
     })
 }
 
@@ -747,8 +748,12 @@ impl Tracer<'_> {
                 * 0.3;
         }
         color += self.yard.sparkles(eye, direction, limit, traveled, spread);
+        let shelter = match (front, room) {
+            (None, Some(hit)) => hit.enter,
+            _ => 0.0,
+        };
         self.yard
-            .weather(eye, direction, nearest, traveled, spread, color)
+            .weather(eye, direction, shelter, nearest, traveled, spread, color)
     }
 }
 
@@ -1667,6 +1672,49 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn bench_frames() {
+        let mut world = World::new(1, 13.0);
+        world.step(0.0);
+        let grid = Grid::new(400, 240, 1.0);
+        for (name, camera) in [
+            ("room", Camera::default()),
+            (
+                "yard",
+                Camera {
+                    target: Vec3::new(4.3, 1.2, -0.7),
+                    ..Camera::default()
+                },
+            ),
+        ] {
+            let scene = Scene {
+                world: &world,
+                outside: sky::Outside::clear(13.0, 10.0),
+                view: camera.view(grid),
+                face: Face::REST,
+                aura: Aura {
+                    color: Vec3::ONE,
+                    visibility: 1.0,
+                    brightness: 0.7,
+                    beat: 1.0,
+                },
+                pose: Pose::new(0.0, 0.0, 0.0, 0.0),
+                friend: None,
+            };
+            let start = std::time::Instant::now();
+            for _ in 0..10 {
+                std::hint::black_box(render(&scene, grid, 1));
+            }
+            println!("{name}: {:?} per frame", start.elapsed() / 10);
         }
     }
 }
