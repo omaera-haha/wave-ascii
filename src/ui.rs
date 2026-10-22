@@ -509,29 +509,6 @@ fn idle_tip(time: f64) -> &'static str {
 fn status_line(app: &App, screen: &mut Canvas, row: usize) {
     let columns = screen.columns();
     fill(screen, row, 0, columns, BAR);
-    // The right end: the minds and the help key, kept when the rest is cut.
-    let mut right = vec![
-        (" jev ".to_owned(), DIM),
-        status_mark(&app.mind.one),
-        (
-            format!(
-                "  {} ",
-                app.config
-                    .claude_model
-                    .strip_prefix("claude-")
-                    .unwrap_or(&app.config.claude_model)
-            ),
-            DIM,
-        ),
-        status_mark(&app.mind.two),
-    ];
-    if app.paused {
-        right.push(("  paused".to_owned(), ACCENT));
-    }
-    if app.world.household_size() > 1 {
-        right.push(("  Tab ⇄".to_owned(), DIM));
-    }
-    right.push(("  ? help ".to_owned(), DIM));
     let world = &app.world;
     let ghost = &world.ghost;
     let host_color = |id: u32| {
@@ -567,10 +544,50 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
             )
         })
         .collect();
-    let mates_width: usize = mates
+    // The right end: the minds and the help key, kept when the rest is cut,
+    // and shorter on a narrow screen so everyone at home still fits.
+    let full_mates: usize = mates
         .iter()
         .map(|(name, _, doing, _)| width(name) + width(doing) + 6)
         .sum();
+    let narrow = 1 + width(&ghost.name) + 14 + full_mates + 40 > columns;
+    let mut right = if narrow {
+        vec![status_mark(&app.mind.one), status_mark(&app.mind.two)]
+    } else {
+        vec![
+            (" jev ".to_owned(), DIM),
+            status_mark(&app.mind.one),
+            (
+                format!(
+                    "  {} ",
+                    app.config
+                        .claude_model
+                        .strip_prefix("claude-")
+                        .unwrap_or(&app.config.claude_model)
+                ),
+                DIM,
+            ),
+            status_mark(&app.mind.two),
+        ]
+    };
+    if app.paused {
+        right.push(("  paused".to_owned(), ACCENT));
+    }
+    if app.world.household_size() > 1 && !narrow {
+        right.push(("  Tab ⇄".to_owned(), DIM));
+    }
+    right.push((if narrow { " ? " } else { "  ? help " }.to_owned(), DIM));
+    // Housemates lose their word for what they're doing before anyone is
+    // left out.
+    let terse = narrow;
+    let mates: Vec<(String, Rgb, String, Rgb)> = if terse {
+        mates
+            .into_iter()
+            .map(|(name, color, _, mood)| (name, color, String::new(), mood))
+            .collect()
+    } else {
+        mates
+    };
     let marker = if mates.is_empty() { "" } else { "▸ " };
     let mut column = write(screen, 1, row, columns, marker, ACCENT, Some(BAR));
     column = write(
@@ -603,6 +620,10 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
     // The right end's minds and help, kept whatever else must go.
     let right_width: usize = right.iter().map(|(text, _)| width(text)).sum::<usize>() + 1;
     let doing = app.doing();
+    let mates_width: usize = mates
+        .iter()
+        .map(|(name, _, doing, _)| width(name) + width(doing) + 6)
+        .sum();
     let wordy = column + 3 * 14 + width(&doing) + 3 + mates_width + right_width < columns;
     let meters = column + 3 * 7 + mates_width + right_width < columns;
     for (label, level) in [
@@ -648,15 +669,17 @@ fn status_line(app: &App, screen: &mut Canvas, row: usize) {
         column = write(screen, column, row, end, "  │ ", BORDER, Some(BAR));
         column = write(screen, column, row, end, name, *color, Some(BAR));
         column = write(screen, column, row, end, " ●", *mood, Some(BAR));
-        column = write(
-            screen,
-            column,
-            row,
-            end,
-            &format!(" {doing}"),
-            DIM,
-            Some(BAR),
-        );
+        if !doing.is_empty() {
+            column = write(
+                screen,
+                column,
+                row,
+                end,
+                &format!(" {doing}"),
+                DIM,
+                Some(BAR),
+            );
+        }
     }
 
     let right_width: usize = right.iter().map(|(text, _)| width(text)).sum();
