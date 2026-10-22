@@ -395,7 +395,27 @@ impl World {
             &self.ghost.name,
             korean,
         );
-        if let Some(lines) = lines {
+        if let Some(mut lines) = lines {
+            // Housemates send their love too, when there's room for it.
+            let names: Vec<String> = self
+                .creatures()
+                .filter(|ghost| ghost.id != self.ghost.id)
+                .map(|ghost| ghost.name.clone())
+                .collect();
+            if !names.is_empty() && lines.len() < 6 {
+                let say = if names.len() == 1 { "says" } else { "say" };
+                let names = super::together::list(&names);
+                let postscript = if korean {
+                    format!("추신: {names}도 안부 전해!")
+                } else {
+                    format!("P.S. {names} {say} hello too!")
+                };
+                let mut with = lines.clone();
+                with.insert(with.len() - 1, postscript);
+                if Letter::valid_lines(&with) {
+                    lines = with;
+                }
+            }
             self.deliver(lines, korean);
         }
     }
@@ -440,6 +460,32 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_weekly_letter_carries_the_housemates_hello() {
+        let mut world = super::World::new(3, 20.0);
+        world.date = super::Date::constant(2026, 10, 25);
+        world.birthday = Some(super::Date::constant(2026, 10, 1));
+        world.found_household(&[crate::world::Species::Fox, crate::world::Species::Owl]);
+        world.life.milestones.push(crate::world::Entry {
+            day: "2026-10-22".to_owned(),
+            text: "I learned to hop.".to_owned(),
+            korean: None,
+        });
+        let mate = world
+            .with_creature(1, |world| world.ghost.name.clone())
+            .unwrap();
+        world.write_weekly_letter();
+        let letter = world.life.letters.last().expect("a letter for the week");
+        assert!(
+            letter
+                .lines
+                .iter()
+                .any(|line| line == &format!("P.S. {mate} says hello too!")),
+            "{:?}",
+            letter.lines
+        );
+    }
+
     #[test]
     fn a_week_with_milestones_brings_one_sunday_evening_letter() {
         let mut world = World::new(5, 12.0);
