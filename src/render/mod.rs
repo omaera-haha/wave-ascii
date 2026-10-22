@@ -476,7 +476,8 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         swing: world.swing_angle(),
         flag: world.unread_letter().is_some(),
         gust: world.wind.gust(world.time),
-        wet: scene.outside.rain.clamp(0.0, 1.0),
+        // Puddles linger while the rainbow shines after the rain.
+        wet: scene.outside.rain.max(scene.outside.rainbow * 0.7).clamp(0.0, 1.0),
         door: world.door_open(),
         smoke: match world.season() {
             crate::world::Season::Winter => true,
