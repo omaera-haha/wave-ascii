@@ -38,7 +38,8 @@ impl World {
     fn snow_ghost_due(&self) -> bool {
         self.weather.snow_cover > 0.4
             && self.weather.settled_snow.is_some_and(|spell| {
-                self.snow_ghost.is_none_or(|(made, progress)| made != spell || progress < 1.0)
+                self.snow_ghost
+                    .is_none_or(|(made, progress)| made != spell || progress < 1.0)
             })
     }
 
@@ -360,8 +361,14 @@ impl World {
             (along > 0.0 && miss < radius).then_some(along)
         };
         let mut things = vec![
-            (YardThing::Swing, meet(self.swing_seat() + Vec3::Y * 0.4, 0.55)),
-            (YardThing::Mailbox, meet(home::MAILBOX + Vec3::Y * 1.05, 0.3)),
+            (
+                YardThing::Swing,
+                meet(self.swing_seat() + Vec3::Y * 0.4, 0.55),
+            ),
+            (
+                YardThing::Mailbox,
+                meet(home::MAILBOX + Vec3::Y * 1.05, 0.3),
+            ),
             (
                 YardThing::Tree,
                 meet(home::TREE_CROWN, home::TREE_CROWN_RADIUS * 0.9)
@@ -369,7 +376,10 @@ impl World {
             ),
         ];
         if let Some(cat) = &self.visitors.cat {
-            things.push((YardThing::Cat, meet(cat.position(self.time) + Vec3::Y * 0.2, 0.35)));
+            things.push((
+                YardThing::Cat,
+                meet(cat.position(self.time) + Vec3::Y * 0.2, 0.35),
+            ));
         }
         // The house hides what is behind it.
         let house = home::house_entry(eye, direction);
@@ -510,28 +520,66 @@ fn requested(text: &str) -> Option<Request> {
     let refused = words.iter().any(|word| {
         matches!(
             *word,
-            "not" | "dont" | "don't" | "never" | "can't" | "cant" | "cannot" | "won't" | "shouldn't"
+            "not"
+                | "dont"
+                | "don't"
+                | "never"
+                | "can't"
+                | "cant"
+                | "cannot"
+                | "won't"
+                | "shouldn't"
         )
-    }) || ["말자", "하지 마", "나가지", "안 돼", "안돼", "안 되", "안되"]
-        .iter()
-        .any(|word| lower.contains(word));
+    }) || [
+        "말자",
+        "하지 마",
+        "나가지",
+        "안 돼",
+        "안돼",
+        "안 되",
+        "안되",
+    ]
+    .iter()
+    .any(|word| lower.contains(word));
     let themselves = words
         .iter()
         .any(|word| *word == "i" || word.starts_with("i'") || *word == "im")
-        || ["갈게", "다녀올", "갔다 올", "나갈 거", "나가볼게", "나갔다", "들어와서", "들어왔"]
-            .iter()
-            .any(|word| lower.contains(word));
+        || [
+            "갈게",
+            "다녀올",
+            "갔다 올",
+            "나갈 거",
+            "나가볼게",
+            "나갔다",
+            "들어와서",
+            "들어왔",
+        ]
+        .iter()
+        .any(|word| lower.contains(word));
     if refused || themselves {
         return None;
     }
-    if ["come in", "come inside", "come back in", "come back inside", "come in now"]
-        .iter()
-        .any(|phrase| ends(phrase))
+    if [
+        "come in",
+        "come inside",
+        "come back in",
+        "come back inside",
+        "come in now",
+    ]
+    .iter()
+    .any(|phrase| ends(phrase))
         || has("stay inside")
-        || ["이제 들어와", "안으로 들어와", "그만 들어와", "들어와 들어와"]
-            .iter()
-            .any(|word| lower.contains(word))
-        || lower.trim_end_matches(['!', '.', '~', ' ']).ends_with("들어와")
+        || [
+            "이제 들어와",
+            "안으로 들어와",
+            "그만 들어와",
+            "들어와 들어와",
+        ]
+        .iter()
+        .any(|word| lower.contains(word))
+        || lower
+            .trim_end_matches(['!', '.', '~', ' '])
+            .ends_with("들어와")
             && !lower.contains("잘 들어와")
     {
         return Some(Request::In);
@@ -742,7 +790,11 @@ mod tests {
             let mut ate = false;
             for _ in 0..(90.0 / 0.05) as usize {
                 world.step(0.05);
-                if world.events.iter().any(|event| event.kind == EventKind::AteMote) {
+                if world
+                    .events
+                    .iter()
+                    .any(|event| event.kind == EventKind::AteMote)
+                {
                     ate = true;
                     break;
                 }

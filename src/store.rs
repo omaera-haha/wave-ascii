@@ -26,7 +26,7 @@ pub struct Paths {
 
 impl Paths {
     /// `$XDG_CONFIG_HOME/wave-ascii/config.json` and
-    /// `$XDG_DATA_HOME/wave-ascii/ghost.json`, under `~/.config` and
+    /// `$XDG_DATA_HOME/wave-ascii/life.json`, under `~/.config` and
     /// `~/.local/share` when those aren't set.
     pub fn from_environment() -> Option<Self> {
         let home = env::var_os("HOME").map(PathBuf::from);
@@ -42,7 +42,7 @@ impl Paths {
                 .join("config.json"),
             save: base("XDG_DATA_HOME", ".local/share")?
                 .join(APP)
-                .join("ghost.json"),
+                .join("life.json"),
         })
     }
 
@@ -61,7 +61,7 @@ impl Paths {
     pub fn in_directory(directory: &Path) -> Self {
         Self {
             config: directory.join("config.json"),
-            save: directory.join("ghost.json"),
+            save: directory.join("life.json"),
         }
     }
 }
@@ -184,8 +184,7 @@ pub struct Save {
     pub goal: Option<String>,
     pub memories: Vec<Memory>,
     pub conversation: Vec<Remark>,
-    /// Its bond with the viewer, what it has done, and its diary. Saves
-    /// from before there was a life start a fresh one.
+    /// Its bond with the viewer, what it has done, and its diary.
     #[serde(default)]
     pub life: Life,
     #[serde(default)]
@@ -195,7 +194,22 @@ pub struct Save {
 }
 
 impl Save {
-    pub const VERSION: u32 = 1;
+    /// Saves of any other version are left behind for a fresh start.
+    pub const VERSION: u32 = 2;
+}
+
+/// The saved life at `path`, or `None` when there is none, or only one of
+/// another version.
+pub fn load_save(path: &Path) -> io::Result<Option<Save>> {
+    let Some(value) = load_json::<serde_json::Value>(path)? else {
+        return Ok(None);
+    };
+    if value.get("version").and_then(serde_json::Value::as_u64) != Some(u64::from(Save::VERSION)) {
+        return Ok(None);
+    }
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
 /// Something the ghost decided to remember.
@@ -285,6 +299,26 @@ mod tests {
     }
 
     #[test]
+    fn saves_of_another_version_are_left_for_a_fresh_start() {
+        let directory = std::env::temp_dir().join(format!(
+            "wave-ascii-version-{}-{}",
+            std::process::id(),
+            SAVES.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("life.json");
+        fs::write(
+            &path,
+            r#"{"version": 1, "name": "Old", "anything": [1, 2]}"#,
+        )
+        .unwrap();
+        assert_eq!(load_save(&path).unwrap(), None);
+        fs::write(&path, r#"{"version": 2, "broken": true}"#).unwrap();
+        assert!(load_save(&path).is_err());
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
     fn settings_round_trip_through_a_private_file() {
         let directory = scratch("settings");
         let paths = Paths::in_directory(&directory.join("nested"));
@@ -351,7 +385,7 @@ mod tests {
     #[test]
     fn saving_twice_replaces_the_file_and_leaves_nothing_else_behind() {
         let directory = scratch("twice");
-        let path = directory.join("ghost.json");
+        let path = directory.join("life.json");
         save_json(&path, &1).unwrap();
         save_json(&path, &2).unwrap();
         assert_eq!(load_json::<i32>(&path).unwrap(), Some(2));
@@ -362,7 +396,7 @@ mod tests {
     #[test]
     fn a_save_from_before_the_ghost_had_a_life_still_loads() {
         let directory = scratch("old-save");
-        let path = directory.join("ghost.json");
+        let path = directory.join("life.json");
         fs::create_dir_all(&directory).unwrap();
         fs::write(
             &path,
@@ -398,7 +432,7 @@ mod tests {
     #[test]
     fn a_damaged_file_is_an_error_rather_than_a_fresh_start() {
         let directory = scratch("damaged");
-        let path = directory.join("ghost.json");
+        let path = directory.join("life.json");
         fs::create_dir_all(&directory).unwrap();
         fs::write(&path, "{not json").unwrap();
         assert!(load_json::<Save>(&path).is_err());

@@ -55,7 +55,7 @@ makes its quick choices and Claude gives it thoughts and words; without API
 keys it lives on instinct. Press k in the app to add keys, or set
 ANTHROPIC_API_KEY and TYPESAFE_API_KEY.
 
-Its life is saved between runs in ~/.local/share/wave-ascii/ghost.json, and
+Its life is saved between runs in ~/.local/share/wave-ascii/life.json, and
 its settings, keys included, in ~/.config/wave-ascii/config.json.
 
 Options:
@@ -268,7 +268,7 @@ fn run() -> io::Result<()> {
         None => Config::default(),
     };
     let save: Option<Save> = match &paths {
-        Some(paths) => store::load_json(&paths.save).map_err(|error| {
+        Some(paths) => store::load_save(&paths.save).map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!(
@@ -450,7 +450,7 @@ fn print_frame(options: &Options) -> io::Result<()> {
 // One line about the saved ghost, read without touching anything.
 fn print_peek(paths: Option<&Paths>) -> io::Result<()> {
     let save: Option<Save> = match paths {
-        Some(paths) => store::load_json(&paths.save)?,
+        Some(paths) => store::load_save(&paths.save)?,
         None => None,
     };
     let line = match save {
@@ -475,7 +475,7 @@ fn export_album(paths: Option<&Paths>, path: &Path, force: bool) -> io::Result<S
     let Some(paths) = paths else {
         return Ok(peek::nobody().to_owned());
     };
-    let Some(save): Option<Save> = store::load_json(&paths.save)? else {
+    let Some(save): Option<Save> = store::load_save(&paths.save)? else {
         return Ok(peek::nobody().to_owned());
     };
     let milestones: Vec<_> = save

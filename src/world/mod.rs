@@ -333,7 +333,7 @@ pub enum EventKind {
     ReadViewerLetter,
     AskedViewer(acquaintance::Topic),
     LearnedAboutViewer(acquaintance::Topic),
-    /// The glass box shook; `rattled` once it kept shaking a while.
+    /// The house shook; `rattled` once it kept shaking a while.
     Jostled {
         rattled: bool,
     },
@@ -841,7 +841,7 @@ pub struct Viewer {
     pub looked_away_at: Option<f64>,
 }
 
-/// The glass box and everything in it. `step` moves it forward in time;
+/// The house, the yard, and everything in them. `step` moves it forward in time;
 /// minds only choose what the ghost does next, through `begin`.
 #[derive(Clone, Debug)]
 pub struct World {

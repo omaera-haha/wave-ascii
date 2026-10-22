@@ -188,8 +188,8 @@ impl Bird {
             (arc(away, anchor, progress), true, -self.side)
         } else {
             // In the birdbath it flutters its wings now and then, splashing.
-            let splashing = self.perch == Perch::Birdbath
-                && (phase(time, 0.9) + self.phase).sin() > 0.72;
+            let splashing =
+                self.perch == Perch::Birdbath && (phase(time, 0.9) + self.phase).sin() > 0.72;
             (
                 perched,
                 splashing,

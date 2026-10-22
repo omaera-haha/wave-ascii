@@ -1,7 +1,7 @@
 use glam::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
-/// The inside of the glass box: the floor is at y = 0 and the glass front
+/// The room inside the house: the floor is at y = 0 and the glass front
 /// faces +z, toward the viewer.
 pub const ROOM_MIN: Vec3 = Vec3::new(-2.0, 0.0, -1.4);
 pub const ROOM_MAX: Vec3 = Vec3::new(2.0, 2.4, 1.4);

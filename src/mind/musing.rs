@@ -477,11 +477,11 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
         ]),
         Some(Occasion::Birthday) => lines.extend([
             "It's my birthday!",
-            "Another year in my glass box.",
+            "Another year in my little house.",
             "I made a wish. It's a secret.",
         ]),
         Some(Occasion::HundredDays) => lines.extend([
-            "A hundred days in my little glass box. Every one matters.",
+            "A hundred days in my little house. Every one matters.",
             "White rice cake for my hundredth day. Shall we share?",
         ]),
         Some(Occasion::ThousandDays) => lines.extend([
@@ -613,7 +613,7 @@ fn idle_lines(world: &World) -> Vec<&'static str> {
     if lines.is_empty() {
         lines.extend([
             "Hm.",
-            "A ghost in a glass box. That's me.",
+            "A little life in a little house. That's me.",
             "I wonder what the viewer is doing.",
             "The glass is cool.",
         ]);
@@ -1795,13 +1795,13 @@ fn story_threads(world: &World) -> Vec<[StoryBeat; 2]> {
     if life
         .milestones
         .iter()
-        .any(|entry| entry.text == "I came into being in a glass box.")
+        .any(|entry| entry.text == "I came into being in my little house.")
         && life.total.heard > 0
     {
         threads.push([
             (
-                "I first woke inside this glass box.",
-                "처음 이 유리 상자 안에서 눈을 떴어.",
+                "I first woke up here, in this little house.",
+                "처음 이 작은 집에서 눈을 떴어.",
             ),
             (
                 "Then you arrived, and the room felt warmer.",

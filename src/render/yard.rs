@@ -31,7 +31,7 @@ const SHELL_EXPOSURE: f32 = 0.7;
 const SNOW: Vec3 = Vec3::new(0.9, 0.94, 1.0);
 /// The jack-o'-lantern on the step by the door at Halloween.
 const PUMPKIN: Vec3 = Vec3::new(2.32, 0.0, 1.66);
-use crate::world::home::{SNOWMAN, SNOW_GHOST};
+use crate::world::home::{SNOW_GHOST, SNOWMAN};
 /// Stepping stones from the door to the mailbox, (x, z) and radius.
 const STONES: [(Vec2, f32); 7] = [
     (Vec2::new(2.45, 0.8), 0.2),

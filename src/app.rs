@@ -2229,14 +2229,14 @@ mod tests {
         let (column, row) = cell_of(&yard, yard.world.swing_seat() + Vec3::Y * 0.3);
         click(&mut yard, column, row);
         assert_eq!(yard.world.ghost.plan.activity, Activity::Yard);
-        assert_eq!(yard.world.yard_spot(), Some(crate::world::home::Spot::Swing));
+        assert_eq!(
+            yard.world.yard_spot(),
+            Some(crate::world::home::Spot::Swing)
+        );
 
         let mut shaken = app();
-        let mut bird = crate::world::visitor::Bird::new(
-            -10.0,
-            1.0,
-            &mut crate::world::Random::new(2),
-        );
+        let mut bird =
+            crate::world::visitor::Bird::new(-10.0, 1.0, &mut crate::world::Random::new(2));
         bird.perch = crate::world::Perch::Tree;
         shaken.world.visitors.bird = Some(bird);
         // The crown shows above the roof from the room's view.
@@ -2245,7 +2245,8 @@ mod tests {
         click(&mut shaken, column, row);
         assert!(shaken.world.tree_shake().is_some());
         assert!(
-            shaken.world
+            shaken
+                .world
                 .events
                 .iter()
                 .any(|event| event.kind == EventKind::BirdFlewOff { startled: false })

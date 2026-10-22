@@ -525,7 +525,10 @@ mod tests {
                     assert!(in_doorway(position), "into the wall at {position}");
                 }
             }
-            assert!(position.distance(goal) < 0.05, "{start} to {goal} stopped at {position}");
+            assert!(
+                position.distance(goal) < 0.05,
+                "{start} to {goal} stopped at {position}"
+            );
         }
     }
 

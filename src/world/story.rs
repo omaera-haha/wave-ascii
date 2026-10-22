@@ -113,7 +113,7 @@ mod tests {
         let mut world = listening(12.0);
         world.tell(vec![
             "A light.".to_owned(),
-            "A little light found a home in the glass box.".to_owned(),
+            "A little light found a home in a little house.".to_owned(),
             "The end.".to_owned(),
         ]);
         let mut pauses = Vec::new();

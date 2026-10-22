@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind, World, life::Tally};
+use super::{Activity, EventKind, World};
 
 /// The first month of a ghost's life.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,8 +134,7 @@ impl Skill {
     }
 }
 
-/// Practice kept between runs. The missing-field default marks old saves
-/// for migration without mistaking an explicitly saved beginner for one.
+/// Practice kept between runs.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Skills {
@@ -145,18 +144,9 @@ pub struct Skills {
     pub games: f32,
     pub writing: f32,
     pub dancing: f32,
-    #[serde(skip)]
-    from_old_save: bool,
 }
 
 impl Skills {
-    pub(super) fn from_old_save() -> Self {
-        Self {
-            from_old_save: true,
-            ..Self::default()
-        }
-    }
-
     pub fn practice(&self, skill: Skill) -> f32 {
         match skill {
             Skill::Stacking => self.stacking,
@@ -219,25 +209,7 @@ impl Skills {
         Some(skill)
     }
 
-    pub(super) fn migrate(&mut self, total: &Tally) {
-        if self.from_old_save {
-            *self = std::mem::take(self).sanitized(total);
-        }
-    }
-
-    pub(super) fn sanitized(mut self, total: &Tally) -> Self {
-        if self.from_old_save {
-            self = Self {
-                // Old tallies kept towers, not individual placements.
-                stacking: (total.towers as f32 * 3.0).max(total.tallest as f32),
-                catching: total.motes as f32,
-                fetching: total.fetches as f32,
-                games: total.games as f32,
-                writing: total.writings as f32,
-                dancing: total.dances as f32,
-                ..Self::default()
-            };
-        }
+    pub(super) fn sanitized(mut self) -> Self {
         for practice in [
             &mut self.stacking,
             &mut self.catching,
@@ -375,27 +347,6 @@ mod tests {
     }
 
     #[test]
-    fn older_tallies_supply_practice_once_and_saved_counts_survive_restoring() {
-        let old = r#"{"total":{"towers":20,"tallest":5,"motes":28,"fetches":10,"games":8,"writings":7,"dances":8}}"#;
-        let life: Life = serde_json::from_str(old).unwrap();
-        let mut life = life.sanitized();
-        for (skill, practice) in Skill::ALL
-            .into_iter()
-            .zip([60.0, 28.0, 10.0, 8.0, 7.0, 8.0])
-        {
-            assert_eq!(life.skills.practice(skill), practice);
-            assert!(life.skills.level(skill) > 0.45);
-        }
-        life.note(&EventKind::Fetched);
-        assert_eq!(life.skills.fetching, 11.0);
-        let saved = serde_json::to_string(&life).unwrap();
-        let loaded: Life = serde_json::from_str(&saved).unwrap();
-        assert_eq!(loaded.sanitized(), life);
-        let explicit: Life = serde_json::from_str(r#"{"total":{"motes":28},"skills":{}}"#).unwrap();
-        assert_eq!(explicit.sanitized().skills.catching, 0.0);
-    }
-
-    #[test]
     fn levels_and_words_follow_practice_with_diminishing_returns() {
         let mut skills = Skills::default();
         assert_eq!(skills.level(Skill::Writing), 0.0);
@@ -437,7 +388,7 @@ mod tests {
             dancing: 12.0,
             ..Skills::default()
         };
-        let skills = skills.sanitized(&Tally::default());
+        let skills = skills.sanitized();
         for skill in Skill::ALL {
             assert!(skills.practice(skill).is_finite());
             assert!((0.0..=1.0).contains(&skills.level(skill)));

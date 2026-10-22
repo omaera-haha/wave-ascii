@@ -149,7 +149,8 @@ fn weekly_lines(
                 .is_ok_and(|day| (since..=today).contains(&day))
         })
         .filter(|entry| {
-            entry.text != "I came into being in a glass box." && !entry.text.contains("light mote")
+            entry.text != "I came into being in my little house."
+                && !entry.text.contains("light mote")
         })
         .map(|entry| entry.in_language(korean).to_owned())
         .filter(|line| Letter::valid_lines(&[line.clone(), line.clone()]))
@@ -448,7 +449,7 @@ mod tests {
         world.life.viewer_name = Some("Mina".to_owned());
         for (day, text) in [
             ("2026-10-12", "Saw my first rainbow."),
-            ("2026-10-20", "I came into being in a glass box."),
+            ("2026-10-20", "I came into being in my little house."),
             ("2026-10-21", "Ate my hundredth light mote."),
             ("2026-10-22", "I built my first tower of blocks."),
             ("2026-10-24", "You told me your exam went well."),

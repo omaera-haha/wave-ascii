@@ -135,7 +135,7 @@ pub fn recalled(span: Span, text: &str) -> String {
 /// Relationship milestones come before first discoveries and routine counts.
 fn rank(text: &str) -> Option<u8> {
     let words = text.to_lowercase();
-    if text == "I came into being in a glass box."
+    if text == "I came into being in my little house."
         || (words.starts_with("ate my ") && words.contains("light mote"))
     {
         return None;
@@ -529,7 +529,7 @@ mod tests {
                 ),
                 milestone("2026-05-09", "I learned your name: Sam."),
                 milestone("2026-05-09", "Ate my hundredth light mote."),
-                milestone("2026-05-09", "I came into being in a glass box."),
+                milestone("2026-05-09", "I came into being in my little house."),
                 milestone("damaged", "We got to know each other."),
                 milestone("2026-05-09", "I'm good at catching motes now."),
             ],
@@ -665,9 +665,9 @@ mod tests {
                 assert_eq!(world.life.letters[0].korean, korean);
                 assert!(world.life.milestones.iter().any(|entry| entry.text
                     == if elapsed == 99 {
-                        "My hundredth day in the glass box."
+                        "My hundredth day in my little house."
                     } else {
-                        "My thousandth day in the glass box."
+                        "My thousandth day in my little house."
                     }));
                 let saved = serde_json::to_string(&world.life).unwrap();
                 world.life = serde_json::from_str::<Life>(&saved).unwrap().sanitized();

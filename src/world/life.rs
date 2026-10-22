@@ -2097,10 +2097,6 @@ pub struct Life {
     /// leave a gift, and whether one is still to come that day.
     #[serde(default)]
     pub gift_decision: Option<(String, bool)>,
-    /// The day a gift was last left, as saves briefly kept it before
-    /// `gift_decision`; read once and folded into it.
-    #[serde(default, skip_serializing)]
-    pub gift_day: Option<String>,
     /// The local evening the friend last decided whether to come, and
     /// whether it would.
     #[serde(default)]
@@ -2123,8 +2119,8 @@ pub struct Life {
     pub last_arrival: Option<(String, f32)>,
     #[serde(default)]
     pub viewer_name: Option<String>,
-    /// Completed practice, migrated from lifetime totals in older saves.
-    #[serde(default = "super::Skills::from_old_save")]
+    /// Completed practice.
+    #[serde(default)]
     pub skills: super::Skills,
     #[serde(default)]
     pub friend: Option<super::Companion>,
@@ -2333,7 +2329,6 @@ impl Life {
             self.today.remember_writing(english.clone(), korean.clone());
             self.total.remember_writing(english, korean);
         }
-        self.skills.migrate(&self.total);
         self.total.note(kind);
         self.today.note(kind);
         if matches!(kind, EventKind::FoldedCrane { .. })
@@ -2651,8 +2646,8 @@ impl Life {
     pub fn begin(&mut self, day: &str) -> Option<String> {
         self.begin_day(day);
         self.reach(
-            "I came into being in a glass box.".to_owned(),
-            "유리 상자 안에서 태어났어.",
+            "I came into being in my little house.".to_owned(),
+            "작은 집에서 태어났어.",
         )
     }
 
@@ -2862,7 +2857,7 @@ impl Life {
         self.constellation_night = self
             .constellation_night
             .filter(|night| night.parse::<jiff::civil::Date>().is_ok());
-        self.skills = self.skills.sanitized(&self.total);
+        self.skills = std::mem::take(&mut self.skills).sanitized();
         self.nature = self.nature.map(Nature::sanitized);
         self.upbringing.sanitize(&self.day);
         self.pictures.retain(LearnedPicture::valid);
@@ -3083,11 +3078,6 @@ impl Life {
         }
         if !self.alone.is_finite() || self.alone < 0.0 {
             self.alone = 0.0;
-        }
-        if let Some(day) = self.gift_day.take()
-            && self.gift_decision.is_none()
-        {
-            self.gift_decision = Some((day, false));
         }
         for decision in [&mut self.gift_decision, &mut self.friend_decision] {
             *decision = decision
@@ -3421,8 +3411,8 @@ impl Life {
                 "내 화분에 처음으로 꽃이 피었어.".to_owned(),
             ),
             EventKind::Morning if total.nights == 1 => (
-                "Slept through my first night in the glass box.".to_owned(),
-                "유리 상자에서 첫 밤을 푹 잤어.".to_owned(),
+                "Slept through my first night in my little house.".to_owned(),
+                "작은 집에서 첫 밤을 푹 잤어.".to_owned(),
             ),
             EventKind::Noticed(thing)
                 if thing.starts_with("the rainbow") && total.rainbows == 1 =>
@@ -3475,8 +3465,8 @@ impl Life {
             EventKind::Celebrated(occasion) => {
                 let (english, korean) = match occasion {
                     Occasion::Halloween => (
-                        "My first Halloween in the glass box.",
-                        "유리 상자에서 첫 할로윈을 보냈어.",
+                        "My first Halloween in my little house.",
+                        "작은 집에서 첫 할로윈을 보냈어.",
                     ),
                     Occasion::WinterHolidays => {
                         ("My first winter holidays.", "첫 겨울 명절을 보냈어.")
@@ -3491,12 +3481,12 @@ impl Life {
                         "처음으로 네 생일을 같이 축하했어.",
                     ),
                     Occasion::HundredDays => (
-                        "My hundredth day in the glass box.",
-                        "유리 상자에서 백일을 맞았어.",
+                        "My hundredth day in my little house.",
+                        "작은 집에서 백일을 맞았어.",
                     ),
                     Occasion::ThousandDays => (
-                        "My thousandth day in the glass box.",
-                        "유리 상자에서 천일을 맞았어.",
+                        "My thousandth day in my little house.",
+                        "작은 집에서 천일을 맞았어.",
                     ),
                     Occasion::Seollal => ("Celebrated my first Seollal.", "첫 설날을 보냈어."),
                     Occasion::Chuseok => (
@@ -4212,7 +4202,7 @@ mod tests {
     #[test]
     fn mornings_count_nights_and_remember_the_first_one_once() {
         let mut life = Life::default();
-        let first = "Slept through my first night in the glass box.";
+        let first = "Slept through my first night in my little house.";
         assert_eq!(life.note(&EventKind::Morning).as_deref(), Some(first));
         assert_eq!(life.today.nights, 1);
         assert_eq!(life.total.nights, 1);
@@ -4337,14 +4327,6 @@ mod tests {
         assert!(life.diary.is_empty());
         life.begin_day("2026-10-22");
         assert_eq!(life.diary.len(), 1);
-    }
-
-    #[test]
-    fn a_save_from_before_gift_decisions_still_keeps_todays_gift_given() {
-        let life: Life = serde_json::from_str(r#"{"gift_day": "2026-10-21"}"#).unwrap();
-        let life = life.sanitized();
-        assert_eq!(life.gift_decision, Some(("2026-10-21".to_owned(), false)));
-        assert!(!serde_json::to_string(&life).unwrap().contains("gift_day"));
     }
 
     #[test]
@@ -4814,7 +4796,7 @@ mod tests {
         let halloween = EventKind::Celebrated(Occasion::Halloween);
         assert_eq!(
             life.note(&halloween).as_deref(),
-            Some("My first Halloween in the glass box.")
+            Some("My first Halloween in my little house.")
         );
         assert_eq!(life.note(&halloween), None);
         assert!(
@@ -5618,7 +5600,7 @@ mod tests {
         let count = life.milestones.len();
         assert!(
             life.reach(
-                "I came into being in a glass box.".to_owned(),
+                "I came into being in my little house.".to_owned(),
                 "다른 한국어".to_owned()
             )
             .is_none()

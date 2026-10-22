@@ -865,7 +865,7 @@ mod tests {
             &canvas,
             &world,
             0,
-            "I came into being in a glass box.".to_owned(),
+            "I came into being in my little house.".to_owned(),
         )
         .save(&paths, "page-first")
         .unwrap();
@@ -874,12 +874,12 @@ mod tests {
                 .save(&paths, &format!("page-{captured}"))
                 .unwrap();
         }
-        let milestones = vec!["I came into being in a glass box.".to_owned()];
+        let milestones = vec!["I came into being in my little house.".to_owned()];
         let album = Album::load_remembering(&paths, 1000, milestones);
         assert_eq!(album.pages.len(), PAGES_KEPT + 1);
         assert_eq!(
             album.pages.last().unwrap().caption,
-            "I came into being in a glass box."
+            "I came into being in my little house."
         );
         fs::remove_dir_all(directory).unwrap();
     }

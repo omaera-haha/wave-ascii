@@ -11,7 +11,7 @@ const HARDEST: f32 = 2.2;
 /// Jolts this close together count as one shaking.
 const SHAKING_FOR: f64 = 8.0;
 
-/// The glass box was jostled: the terminal it lives in changed size, and
+/// The house was jostled: the terminal it lives in changed size, and
 /// like a snow globe the light motes swirl and slowly settle again. Kept
 /// only for this session.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
