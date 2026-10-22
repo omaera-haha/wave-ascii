@@ -23,7 +23,7 @@ pub const CHART_BASE: f32 = 0.02;
 const CLOUD_DECK: f32 = 14.0;
 /// The sky is drawn dimmer than its light so its glyphs stay airy and the
 /// house and the ghost stand out against it.
-const EXPOSURE: f32 = 0.36;
+const EXPOSURE: f32 = 0.27;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Outside {
@@ -288,7 +288,7 @@ impl<'a> Heavens<'a> {
             cloud_color: Vec3::new(0.055, 0.065, 0.1)
                 .lerp(Vec3::new(0.94, 0.96, 1.0), sky.day)
                 .lerp(Vec3::new(0.86, 0.57, 0.63), sky.twilight)
-                * (EXPOSURE + 0.24),
+                * (EXPOSURE + 0.33),
             drift: phase(outside.time, 0.25, 4096.0)
                 + (outside.wind_travel * 0.6).rem_euclid(4096.0) as f32,
             twinkle: phase(outside.time, 0.7, TAU),

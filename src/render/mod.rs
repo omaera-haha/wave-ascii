@@ -30,7 +30,7 @@ const FOCAL: f32 = 2.1;
 const FRAME_COLOR: Vec3 = Vec3::new(0.62, 0.46, 0.32);
 /// The room's walls, floor, and ceiling are drawn dimmer than the things in
 /// it, so they stand out in glyphs.
-const ROOM_EXPOSURE: f32 = 0.8;
+const ROOM_EXPOSURE: f32 = 0.95;
 const TRIM_COLOR: Vec3 = Vec3::new(0.86, 0.84, 0.78);
 const MOTE_COLOR: Vec3 = Vec3::new(1.0, 0.9, 0.58);
 const LAMP_LIGHT: Vec3 = Vec3::new(1.0, 0.78, 0.5);
