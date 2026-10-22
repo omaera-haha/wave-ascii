@@ -41,7 +41,6 @@ pub enum Gait {
 
 impl Species {
     pub const ALL: [Self; 13] = [
-        Self::Ghost,
         Self::Fox,
         Self::Bunny,
         Self::Penguin,
@@ -54,6 +53,7 @@ impl Species {
         Self::Axolotl,
         Self::Dragon,
         Self::Jelly,
+        Self::Ghost,
     ];
 
     pub fn key(self) -> &'static str {
