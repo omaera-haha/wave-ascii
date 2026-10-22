@@ -276,13 +276,24 @@ impl World {
                 != Some(self.star_night().to_string().as_str())
     }
 
-    pub(super) fn find_constellation(&mut self) {
+    /// Whether it's settled somewhere with the night sky in view: at the
+    /// window, or out on the roof, the lawn, or the bench.
+    pub fn sky_watching(&self) -> bool {
         let plan = &self.ghost.plan;
-        if plan.activity != Activity::Window
-            || plan.done
-            || plan.count != 0
-            || self.ghost.asleep >= 0.3
-            || plan.stayed(self.time) < 20.0
+        let settled = match plan.activity {
+            Activity::Window => plan.count == 0,
+            Activity::Yard => matches!(
+                self.yard_spot(),
+                Some(super::home::Spot::Roof | super::home::Spot::Lawn | super::home::Spot::Bench)
+            ),
+            _ => false,
+        };
+        settled && !plan.done && self.ghost.asleep < 0.3
+    }
+
+    pub(super) fn find_constellation(&mut self) {
+        if !self.sky_watching()
+            || self.ghost.plan.stayed(self.time) < 20.0
             || !self.constellation_pending()
         {
             return;
@@ -322,14 +333,8 @@ impl World {
     }
 
     pub fn constellation_glow(&self) -> f32 {
-        let plan = &self.ghost.plan;
-        let watching = if self.starry_night()
-            && plan.activity == Activity::Window
-            && !plan.done
-            && plan.count == 0
-            && self.ghost.asleep < 0.3
-        {
-            smoothstep(0.0, 3.0, plan.stayed(self.time))
+        let watching = if self.starry_night() && self.sky_watching() {
+            smoothstep(0.0, 3.0, self.ghost.plan.stayed(self.time))
         } else {
             0.0
         };
@@ -471,6 +476,20 @@ mod tests {
         let found = find(&mut Random::new(91), &[], &[learned]).unwrap();
         assert!(found.name.ends_with("little dragon"));
         assert!(found.korean.ends_with("little dragon"));
+    }
+
+    #[test]
+    fn a_night_on_the_roof_finds_pictures_in_the_stars_too() {
+        let found = (0..12).any(|seed| {
+            let mut world = watching(seed);
+            world.go_out(Some(super::super::home::Spot::Roof));
+            world.ghost.plan.arrived = Some(world.time);
+            world.time += 25.0;
+            assert!(world.sky_watching());
+            world.find_constellation();
+            !world.life.constellations.is_empty()
+        });
+        assert!(found);
     }
 
     #[test]

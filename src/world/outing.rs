@@ -326,7 +326,7 @@ impl World {
     }
 
     /// Sets out for the yard, or a spot in it, when it can: its answer.
-    fn go_out(&mut self, spot: Option<Spot>) -> (&'static str, &'static str) {
+    pub(super) fn go_out(&mut self, spot: Option<Spot>) -> (&'static str, &'static str) {
         let rain = self.weather.rain(self.time);
         if self.ghost.asleep >= 0.3 {
             ("Mm… tomorrow…", "음… 내일…")

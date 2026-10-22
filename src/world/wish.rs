@@ -233,7 +233,8 @@ impl Wish {
                 activity == Activity::Window
             }
             Self::ShootingStar | Self::Constellation => {
-                activity == Activity::Window && super::meteor::dark(world.hour)
+                matches!(activity, Activity::Window | Activity::Yard)
+                    && super::meteor::dark(world.hour)
             }
             Self::Tower { .. } => activity == Activity::Build,
             Self::Book { .. } => activity == Activity::Read,
