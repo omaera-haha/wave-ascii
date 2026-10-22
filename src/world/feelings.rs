@@ -552,6 +552,10 @@ impl World {
     }
 
     pub(super) fn abandon_comfort(&mut self) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         if self.comforting.take().is_some()
             && matches!(
                 self.ghost.plan.activity,

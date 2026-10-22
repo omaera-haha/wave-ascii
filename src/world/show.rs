@@ -437,6 +437,10 @@ impl World {
     }
 
     pub(super) fn stop_show(&mut self) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         if self.showing.take().is_some() && self.ghost.plan.activity == Activity::Show {
             self.ghost.plan.done = true;
         }

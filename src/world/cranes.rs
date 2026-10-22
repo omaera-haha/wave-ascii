@@ -339,6 +339,10 @@ impl World {
     }
 
     pub(super) fn stop_folding(&mut self) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         self.folding = None;
         if self
             .life

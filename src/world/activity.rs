@@ -42,10 +42,11 @@ pub enum Activity {
     Show,
     Tidy,
     Yard,
+    Together,
 }
 
 impl Activity {
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 35] = [
         Self::Float,
         Self::Explore,
         Self::Chase,
@@ -80,6 +81,7 @@ impl Activity {
         Self::Show,
         Self::Tidy,
         Self::Yard,
+        Self::Together,
     ];
 
     pub fn name(self) -> &'static str {
@@ -118,6 +120,7 @@ impl Activity {
             Self::Show => "show",
             Self::Tidy => "tidy",
             Self::Yard => "yard",
+            Self::Together => "together",
         }
     }
 
@@ -164,6 +167,7 @@ impl Activity {
             Self::Show => "showing the viewer a treasure",
             Self::Tidy => "tidying the blocks into neat stacks before bed",
             Self::Yard => "out in the yard",
+            Self::Together => "doing something with a housemate",
         }
     }
 }
@@ -195,6 +199,9 @@ pub struct Plan {
     pub gallery_visit: bool,
     /// An outing to keep the visiting cat company.
     pub cat: bool,
+    /// The housemate it is doing this with, if any, and what.
+    pub with: Option<u32>,
+    pub pastime: Option<super::together::Pastime>,
 }
 
 impl Plan {
@@ -214,6 +221,8 @@ impl Plan {
             window: None,
             gallery_visit: false,
             cat: false,
+            with: None,
+            pastime: None,
         }
     }
 

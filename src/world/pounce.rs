@@ -179,6 +179,10 @@ mod tests {
     #[test]
     fn a_darting_pointer_interrupts_idle_plans_and_leaves_other_activities_alone() {
         for activity in Activity::ALL {
+            // Time together needs a housemate.
+            if activity == Activity::Together {
+                continue;
+            }
             let mut world = World::new(1, 12.0);
             if activity == Activity::Friend {
                 world.invite_friend();

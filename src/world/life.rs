@@ -2195,6 +2195,9 @@ pub struct Life {
     pub last_cold: Option<String>,
     #[serde(default)]
     pub cold_recovered: bool,
+    /// How it feels about each housemate.
+    #[serde(default)]
+    pub fondness: Vec<super::together::Fondness>,
 }
 
 impl Life {
@@ -2657,18 +2660,23 @@ impl Life {
     pub fn habit(&self, activity: Activity) -> f32 {
         if matches!(
             activity,
-            Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show
+            Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show | Activity::Together
         ) {
             return 1.0;
         }
-        // Comfort follows a message; folding and showing have their own pacing.
-        let kinds = Activity::ALL.len() as f32 - 4.0;
+        // Comfort follows a message; folding and showing have their own
+        // pacing, and time together depends on who else lives here.
+        let kinds = Activity::ALL.len() as f32 - 5.0;
         let total: u32 = Activity::ALL
             .into_iter()
             .filter(|other| {
                 !matches!(
                     other,
-                    Activity::Float | Activity::Comfort | Activity::Fold | Activity::Show
+                    Activity::Float
+                        | Activity::Comfort
+                        | Activity::Fold
+                        | Activity::Show
+                        | Activity::Together
                 )
             })
             .map(|other| self.total.times(other))

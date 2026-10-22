@@ -454,6 +454,15 @@ pub fn weigh(world: &World, options: &[Activity]) -> Vec<(Activity, f32)> {
             }
             // Quiet visits offer show and tell on their own timer.
             Activity::Show => 0.0,
+            Activity::Together => {
+                let fond = world
+                    .together_partner()
+                    .map_or(0.0, |partner| world.fondness_for(partner.id));
+                let present = if present && !world.companion { 0.5 } else { 1.0 };
+                (0.12 + 0.5 * (1.0 - needs.company) + 0.3 * (1.0 - needs.fun) + 0.4 * fond)
+                    * needs.energy
+                    * present
+            }
             Activity::Yard => {
                 if world.yard_is_open() {
                     let fair = if world.weather.sky == Sky::Clear {

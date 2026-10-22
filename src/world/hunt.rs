@@ -218,6 +218,10 @@ impl World {
     }
 
     pub fn cancel_hunt(&mut self) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         if self.hunt.take().is_some() {
             self.ghost.plan.done = true;
         }

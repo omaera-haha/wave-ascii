@@ -25,6 +25,7 @@ pub mod game;
 pub mod garden;
 pub mod growth;
 pub mod home;
+pub mod household;
 pub mod hunt;
 pub mod jostle;
 mod letters;
@@ -32,6 +33,7 @@ mod life;
 pub mod mail;
 pub mod meteor;
 pub mod mirror;
+pub mod motion;
 pub mod music;
 mod nature;
 mod needs;
@@ -52,10 +54,12 @@ mod routine;
 pub mod show;
 mod sight;
 mod sleep;
+pub mod species;
 pub mod stars;
 mod story;
 mod things;
 pub mod tidy;
+pub mod together;
 pub mod upbringing;
 pub mod visitor;
 mod vocabulary;
@@ -79,6 +83,7 @@ pub use friend::{Companion, Friend};
 pub use game::{Game, Mark, Outcome};
 pub use garden::{Flower, Petal, Seedling};
 pub use growth::{Skill, Skills, Stage};
+pub use household::{Peer, Personal, Soul};
 pub use life::{Entry, Life};
 pub use nature::Nature;
 pub use needs::{Mood, Needs};
@@ -90,6 +95,7 @@ pub use quirks::Quirk;
 pub use random::Random;
 pub use room::Room;
 pub use sight::{Seen, Thing};
+pub use species::{Gait, Genome, Species};
 pub use story::Telling;
 pub use things::{
     Ball, Lamp, Mote, Nook, Plant, ROOM_MAX, ROOM_MIN, SHELF_POSITION, SILL_POSITION,
@@ -384,6 +390,20 @@ pub enum EventKind {
     Recovered {
         cared: bool,
     },
+    /// It came to live in the cottage, where `names` already lived.
+    MovedIn {
+        names: Vec<String>,
+    },
+    /// Someone new came to live in the cottage.
+    Newcomer {
+        name: String,
+        species: Species,
+    },
+    /// It and a housemate did something together.
+    Together {
+        with: String,
+        what: together::Pastime,
+    },
 }
 
 impl EventKind {
@@ -672,7 +692,44 @@ impl EventKind {
                 "got over my cold after the viewer looked after me".to_owned()
             }
             Self::Recovered { cared: false } => "got over my little cold".to_owned(),
+            Self::MovedIn { names } if names.is_empty() => "came to live in the cottage".to_owned(),
+            Self::MovedIn { names } => format!(
+                "came to live in the cottage with {}",
+                together::list(names)
+            ),
+            Self::Newcomer { name, species } => {
+                format!("{name} the {} came to live with us", species.noun())
+            }
+            Self::Together { with, what } => what.words(with),
         }
+    }
+
+    /// Whether it happened in the shared world, so every creature there
+    /// takes it in, not only the one it happened around.
+    pub fn shared(&self) -> bool {
+        matches!(
+            self,
+            Self::RainStarted
+                | Self::StormStarted
+                | Self::Thunder
+                | Self::RainStopped
+                | Self::SnowStarted
+                | Self::SnowStopped
+                | Self::RainbowAppeared
+                | Self::RainbowFaded
+                | Self::BirdLanded
+                | Self::CatArrived
+                | Self::CatLeft { .. }
+                | Self::BirdSang
+                | Self::BirdFlewOff { .. }
+                | Self::MothArrived
+                | Self::MothLeft
+                | Self::FriendArrived(_)
+                | Self::FriendLeft(_)
+                | Self::Jostled { .. }
+                | Self::Bloomed
+                | Self::Newcomer { .. }
+        )
     }
 }
 
@@ -790,6 +847,10 @@ pub struct Line {
 /// a plan it is carrying out.
 #[derive(Clone, Debug)]
 pub struct Ghost {
+    /// Which creature of the household it is, for good.
+    pub id: u32,
+    pub species: Species,
+    pub genome: Genome,
     pub name: String,
     pub position: Vec3,
     pub velocity: Vec3,
@@ -822,6 +883,9 @@ pub struct Ghost {
     pub saw_gift: bool,
     /// A gift riding just below it on the way to the shelf.
     pub keepsake: Option<Keepsake>,
+    /// For a body that keeps to the ground: whether it stands on something
+    /// now, and how far through its stride or hop it is.
+    pub footing: motion::Footing,
 }
 
 /// The person at the glass, as the world knows them.
@@ -996,6 +1060,18 @@ pub struct World {
     /// The previous offline tale, remembered only for this session.
     pub(crate) last_story_thread: Option<&'static str>,
     pub(crate) last_story_ending: Option<&'static str>,
+    /// The household's other creatures, waiting while this one has the world.
+    pub housemates: Vec<Soul>,
+    /// Whether the creature in the world is a housemate taking its turn,
+    /// rather than the one the viewer is with.
+    pub companion: bool,
+    /// The household's other creatures as this one sees them.
+    peers: Vec<Peer>,
+    /// What happened in the shared world this step, for the housemates.
+    news: Vec<EventKind>,
+    next_creature: u32,
+    /// Housemates asking each other to do something together.
+    pub invitations: Vec<together::Invitation>,
 }
 
 impl World {
@@ -1011,6 +1087,9 @@ impl World {
             date: jiff::civil::Date::constant(2026, 6, 21),
             birthday: None,
             ghost: Ghost {
+                id: 0,
+                species: Species::Ghost,
+                genome: Genome::default(),
                 name: "Boo".to_owned(),
                 position: start,
                 velocity: Vec3::ZERO,
@@ -1031,6 +1110,7 @@ impl World {
                 saw_snow: false,
                 saw_gift: false,
                 keepsake: None,
+                footing: Default::default(),
             },
             lamp: Lamp {
                 position: Vec3::new(-1.55, 0.0, -0.95),
@@ -1159,6 +1239,12 @@ impl World {
             chill: cold::Chill::default(),
             last_story_thread: None,
             last_story_ending: None,
+            housemates: Vec::new(),
+            companion: false,
+            peers: Vec::new(),
+            news: Vec::new(),
+            next_creature: 1,
+            invitations: Vec::new(),
         };
         world.scatter_blocks();
         world
@@ -1185,7 +1271,14 @@ impl World {
         while remaining > 0.0 {
             let slice = remaining.min(0.1);
             remaining -= slice;
-            self.advance(slice);
+            if self.housemates.is_empty() {
+                self.advance(slice);
+            } else {
+                self.look_at_housemates();
+                self.advance(slice);
+                let news = std::mem::take(&mut self.news);
+                self.step_housemates(slice, &news);
+            }
         }
         self.celebrate_wish();
         self.greet_favorite_season();
@@ -1199,21 +1292,136 @@ impl World {
     }
 
     fn advance(&mut self, seconds: f32) {
-        self.time += f64::from(seconds);
-        if self.hunt.is_some()
-            && (self.ghost.asleep >= 0.3
-                || self.focus.is_some()
-                || self.telling.is_some()
-                || self.ghost.plan.done)
-        {
-            self.cancel_hunt();
+        // A companion lives in the shared world as the one the viewer is
+        // with left it; only the latter moves the household along.
+        let host = !self.companion;
+        if host {
+            self.time += f64::from(seconds);
+            if self.hunt.is_some()
+                && (self.ghost.asleep >= 0.3
+                    || self.focus.is_some()
+                    || self.telling.is_some()
+                    || self.ghost.plan.done)
+            {
+                self.cancel_hunt();
+            }
+            self.advance_focus();
+            self.viewer.liveliness *= (-seconds / 0.7).exp();
         }
-        self.advance_focus();
-        self.viewer.liveliness *= (-seconds / 0.7).exp();
         self.petting *= (-seconds / PETTING_FADES).exp();
         if self.petting < 0.05 {
             self.petted = false;
         }
+        if host {
+            self.advance_household(seconds);
+        }
+        self.advance_wardrobe();
+        if host {
+            self.advance_music();
+            self.advance_cranes();
+        }
+
+        let present = self.viewer_present();
+        if present != self.viewer_present {
+            self.viewer_present = present;
+            if present {
+                self.absent_since = None;
+                if self.viewer_gone {
+                    self.viewer_gone = false;
+                    self.viewer_arrived();
+                }
+            } else {
+                self.absent_since = Some(self.time);
+                // A word game needs someone to guess, and a question someone
+                // to answer.
+                if host {
+                    self.abandon_puzzle();
+                    self.asking = None;
+                    self.abandon_comfort();
+                    self.feeling_visit_asked = false;
+                    self.agenda_answer = None;
+                    self.agenda_visit_asked = false;
+                    self.agenda_visit_question = false;
+                }
+            }
+        }
+        if !self.viewer_gone
+            && self
+                .absent_since
+                .is_some_and(|since| self.time - since >= GONE_AFTER)
+        {
+            self.viewer_gone = true;
+            self.record(EventKind::ViewerLeft);
+        }
+        if present {
+            if let Some(milestone) = self.life.pass(seconds, true) {
+                self.record(EventKind::Milestone(milestone));
+            }
+        } else if host {
+            self.life.miss_at(seconds, self.hour);
+        } else {
+            // The viewer's routine is the household's, learned once.
+            let routine = (self.life.arrivals, self.life.routine_days);
+            self.life.miss_at(seconds, self.hour);
+            (self.life.arrivals, self.life.routine_days) = routine;
+        }
+
+        if host {
+            self.holiday_greeting();
+            self.advance_fog();
+            self.advance_story();
+        }
+        self.advance_quirks();
+        self.advance_cold(seconds);
+        if host {
+            self.advance_letters(seconds);
+        }
+        if !self.invitations.is_empty() {
+            self.answer_invitations();
+        }
+        self.carry_out(seconds);
+        self.advance_dream();
+        let hiding = !self.ghost.plan.done
+            && self.ghost.plan.activity == Activity::Hide
+            && self.ghost.plan.arrived.is_some();
+        let fade = if hiding { 0.85 } else { 0.0 };
+        self.ghost.fade += (fade - self.ghost.fade) * (1.0 - (-seconds / 0.4).exp());
+        if let Some(born) = self.born_at {
+            let progress = ((self.time - born) / BIRTH_SECONDS) as f32;
+            if progress >= 1.0 {
+                self.born_at = None;
+            } else {
+                let forming = progress * progress * (3.0 - 2.0 * progress);
+                self.ghost.fade = self.ghost.fade.max(1.0 - forming);
+            }
+        }
+        self.move_ghost(seconds);
+        self.keep_footing(seconds);
+        if host {
+            self.advance_bubbles(seconds);
+            self.move_friend(seconds);
+            if self.ball.held {
+                self.ball.position = (self.ghost.position - Vec3::Y * 0.42).clamp(
+                    ROOM_MIN + Vec3::splat(Ball::RADIUS),
+                    ROOM_MAX - Vec3::splat(Ball::RADIUS),
+                );
+                self.ball.velocity = self.ghost.velocity;
+            }
+            self.follow_block();
+        }
+        self.update_needs(seconds);
+        self.ghost.mood = self.feeling();
+        self.look_around(seconds);
+
+        if self.events.len() > EVENTS_KEPT {
+            let excess = self.events.len() - EVENTS_KEPT;
+            self.events.drain(..excess);
+        }
+    }
+
+    /// The shared world through `seconds`: the glass, the motes, the
+    /// weather, the visitors, the toys and the garden.
+    fn advance_household(&mut self, seconds: f32) {
         self.doodles
             .retain(|doodle| doodle.opacity(self.time) > 0.0);
 
@@ -1300,89 +1508,6 @@ impl World {
 
         self.advance_blocks(seconds);
         self.advance_garden(seconds);
-        self.advance_wardrobe();
-        self.advance_music();
-        self.advance_cranes();
-
-        let present = self.viewer_present();
-        if present != self.viewer_present {
-            self.viewer_present = present;
-            if present {
-                self.absent_since = None;
-                if self.viewer_gone {
-                    self.viewer_gone = false;
-                    self.viewer_arrived();
-                }
-            } else {
-                self.absent_since = Some(self.time);
-                // A word game needs someone to guess, and a question someone
-                // to answer.
-                self.abandon_puzzle();
-                self.asking = None;
-                self.abandon_comfort();
-                self.feeling_visit_asked = false;
-                self.agenda_answer = None;
-                self.agenda_visit_asked = false;
-                self.agenda_visit_question = false;
-            }
-        }
-        if !self.viewer_gone
-            && self
-                .absent_since
-                .is_some_and(|since| self.time - since >= GONE_AFTER)
-        {
-            self.viewer_gone = true;
-            self.record(EventKind::ViewerLeft);
-        }
-        if present {
-            if let Some(milestone) = self.life.pass(seconds, true) {
-                self.record(EventKind::Milestone(milestone));
-            }
-        } else {
-            self.life.miss_at(seconds, self.hour);
-        }
-
-        self.holiday_greeting();
-        self.advance_fog();
-        self.advance_story();
-        self.advance_quirks();
-        self.advance_cold(seconds);
-        self.advance_letters(seconds);
-        self.carry_out(seconds);
-        self.advance_dream();
-        let hiding = !self.ghost.plan.done
-            && self.ghost.plan.activity == Activity::Hide
-            && self.ghost.plan.arrived.is_some();
-        let fade = if hiding { 0.85 } else { 0.0 };
-        self.ghost.fade += (fade - self.ghost.fade) * (1.0 - (-seconds / 0.4).exp());
-        if let Some(born) = self.born_at {
-            let progress = ((self.time - born) / BIRTH_SECONDS) as f32;
-            if progress >= 1.0 {
-                self.born_at = None;
-            } else {
-                let forming = progress * progress * (3.0 - 2.0 * progress);
-                self.ghost.fade = self.ghost.fade.max(1.0 - forming);
-            }
-        }
-        self.move_ghost(seconds);
-        self.advance_bubbles(seconds);
-        self.move_friend(seconds);
-        if self.ball.held {
-            self.ball.position = (self.ghost.position - Vec3::Y * 0.42).clamp(
-                ROOM_MIN + Vec3::splat(Ball::RADIUS),
-                ROOM_MAX - Vec3::splat(Ball::RADIUS),
-            );
-            self.ball.velocity = self.ghost.velocity;
-        }
-        self.follow_block();
-        self.update_needs(seconds);
-        self.ghost.mood = self.feeling();
-        self.look_around(seconds);
-
-        if self.events.len() > EVENTS_KEPT {
-            let excess = self.events.len() - EVENTS_KEPT;
-            self.events.drain(..excess);
-        }
     }
 
     /// Whether the viewer did anything recently and hasn't turned to
@@ -1529,7 +1654,10 @@ impl World {
                 Activity::Show => self.show_is_open(),
                 Activity::Tidy => self.tidy_is_open(),
                 Activity::Yard => self.yard_is_open(),
+                Activity::Together => self.together_partner().is_some(),
             })
+            .filter(|activity| !(self.companion && household::hosted(*activity)))
+            .filter(|activity| !self.claimed(*activity))
             .collect()
     }
 
@@ -1658,6 +1786,16 @@ impl World {
             Activity::Fold => "Fold a colored paper crane for the viewer, then hang it on the ceiling garland. A quiet pastime, a few cranes each day.".to_owned(),
             Activity::Show => "Fetch a treasure from your life, show it at the glass, tell its little story, and put it back. Only during a quiet visit.".to_owned(),
             Activity::Tidy => "Gather the loose blocks into neat corner stacks and put the ball beside the cushion before bed. Leave a standing tower alone.".to_owned(),
+            Activity::Together => match self.together_partner() {
+                Some(partner) => format!(
+                    "Do something with {}, the {} you live with: play tag, have a chat, \
+                     nuzzle, dance in a ring, or gaze out at the sky together. Fits when \
+                     lonely, playful, or fond of them.",
+                    partner.name,
+                    partner.species.noun()
+                ),
+                None => "Do something with a housemate.".to_owned(),
+            },
             Activity::Yard => "Float out the door into the yard: ride the swing, look over the garden bed, peer into the birdbath, sit on the bench, lie on the lawn under the sky, or lean on the back fence. Good on fair days and clear evenings; not in storms or at bedtime.".to_owned(),
         }
     }
@@ -1675,6 +1813,13 @@ impl World {
 
     /// Starts `activity`, dropping whatever plan was running.
     pub fn begin(&mut self, activity: Activity) {
+        if (self.companion && household::hosted(activity)) || self.claimed(activity) {
+            return;
+        }
+        if activity == Activity::Together {
+            self.begin_together();
+            return;
+        }
         if activity == Activity::Show && !self.show_can_begin() {
             return;
         }
@@ -1877,6 +2022,7 @@ impl World {
             Activity::Pin => gallery::APPROACH,
             Activity::Show => position,
             Activity::Tidy => position,
+            Activity::Together => position,
             Activity::Yard => match self.beside_cat().filter(|_| self.random.unit() < 0.8) {
                 Some(spot) => spot,
                 None => {
@@ -2787,6 +2933,9 @@ impl World {
     }
 
     fn record(&mut self, kind: EventKind) {
+        if !self.companion && !self.housemates.is_empty() && kind.shared() {
+            self.news.push(kind.clone());
+        }
         if matches!(
             kind,
             EventKind::ViewerLeft | EventKind::Scolded | EventKind::FellAsleep
@@ -2819,13 +2968,15 @@ impl World {
         ) {
             self.reconsider_wardrobe();
         }
-        if matches!(
-            kind,
-            EventKind::Poked { .. }
-                | EventKind::Scolded
-                | EventKind::ViewerLeft
-                | EventKind::FellAsleep
-        ) {
+        if !self.companion
+            && matches!(
+                kind,
+                EventKind::Poked { .. }
+                    | EventKind::Scolded
+                    | EventKind::ViewerLeft
+                    | EventKind::FellAsleep
+            )
+        {
             self.telling = None;
         }
         if matches!(
@@ -2845,7 +2996,7 @@ impl World {
         let morning = matches!(kind, EventKind::Morning);
         let shooting_star = matches!(kind, EventKind::ShootingStar);
         // Playing along makes the viewer welcome to the next invitation.
-        if matches!(kind, EventKind::WordGame { .. })
+        if !self.companion && matches!(kind, EventKind::WordGame { .. })
             || matches!(kind, EventKind::GameOver(outcome) if outcome.finished())
         {
             self.invitations_ignored = 0;
@@ -2961,6 +3112,10 @@ impl World {
 
     // Lets go of a held ball, which falls to the floor from where it was.
     fn drop_ball(&mut self) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         self.ball.held = false;
     }
 
@@ -3443,6 +3598,7 @@ impl World {
             Activity::Explore => look = self.visit_gallery(),
             Activity::Show => look = self.carry_out_show(),
             Activity::Tidy => look = self.carry_out_tidy(),
+            Activity::Together => look = self.carry_out_together(),
         }
         self.ghost.look = look;
         if self.tidy_rest && self.ghost.plan.activity == Activity::Lamp && self.ghost.plan.done {
@@ -3591,6 +3747,11 @@ impl World {
             Activity::Explore => 0.7,
             Activity::Mirror => 0.45,
             Activity::Dance | Activity::Friend => 1.5,
+            Activity::Together => match ghost.plan.pastime {
+                Some(together::Pastime::Tag) => 1.4,
+                Some(together::Pastime::Dance) => 1.2,
+                _ => 0.75,
+            },
             Activity::Pounce => 1.6,
             // It creeps up on the cat so as not to frighten it.
             Activity::Yard if ghost.plan.cat && ghost.position.distance(target) < 2.4 => 0.3,

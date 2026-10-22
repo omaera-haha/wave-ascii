@@ -114,6 +114,10 @@ impl World {
     }
 
     pub(super) fn note_rhythm(&mut self, kind: &EventKind) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         match kind {
             EventKind::ViewerLeft => {
                 self.rhythm.presence_started = None;

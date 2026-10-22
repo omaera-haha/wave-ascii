@@ -340,6 +340,10 @@ impl World {
     }
 
     pub(super) fn abandon_game(&mut self) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         if let Some(game) = &mut self.game
             && game.outcome.is_none()
         {

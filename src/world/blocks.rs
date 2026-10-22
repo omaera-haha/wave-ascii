@@ -462,6 +462,10 @@ impl World {
     }
 
     pub(super) fn drop_block(&mut self) {
+        // What the house shares is the host's to end.
+        if self.companion {
+            return;
+        }
         for block in &mut self.blocks {
             block.held = false;
         }
