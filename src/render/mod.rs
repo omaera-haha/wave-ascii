@@ -293,6 +293,7 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
     furniture.push(Furniture::Bed);
     furniture.push(Furniture::Nightstand(night_light(world)));
     furniture.push(Furniture::Dresser);
+    furniture.push(Furniture::WindowSeat);
     if let Some(position) = world.carried_pin() {
         furniture.push(Furniture::GalleryCard(position));
     }

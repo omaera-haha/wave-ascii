@@ -13,6 +13,11 @@ use super::home::{
 use super::species::Gait;
 use super::{Activity, Nook, ROOM_MIN, World, flat};
 
+/// The ledge under the living room's window, its middle and half size, for
+/// bodies that keep to the ground to sit on and look out.
+pub const WINDOW_SEAT: Vec3 = Vec3::new(0.0, 0.97, super::ROOM_MIN.z + 0.13);
+pub const WINDOW_SEAT_HALF: Vec3 = Vec3::new(0.78, 0.022, 0.13);
+
 /// How fast a body falls, in units per second per second: floatier than
 /// real, as befits small cartoon creatures.
 const GRAVITY: f32 = 7.5;
@@ -71,10 +76,12 @@ pub fn support(point: Vec3, nook: Vec3) -> f32 {
     if within(BED, Vec2::new(BED_HALF.x, BED_HALF.z)) {
         tops.push(BED_HALF.y * 2.0);
     }
-    // The sills inside the back windows, where a body can sit and look out.
-    if at.y < ROOM_MIN.z + 0.3 && at.y >= ROOM_MIN.z - 0.1 {
-        if at.x.abs() < 0.78 {
-            tops.push(1.0);
+    // The window seat in the living room, and the sill inside the bedroom's
+    // window, where a body can sit and look out. A point gazing out from a
+    // little in front of either still sits there.
+    if at.y < ROOM_MIN.z + 0.7 && at.y >= ROOM_MIN.z - 0.1 && point.y > 1.15 {
+        if at.x.abs() < WINDOW_SEAT_HALF.x {
+            tops.push(WINDOW_SEAT.y + WINDOW_SEAT_HALF.y);
         }
         if at.x > BEDROOM_WINDOW_LOW.x && at.x < BEDROOM_WINDOW_HIGH.x {
             tops.push(BEDROOM_WINDOW_LOW.y - 0.02);
@@ -97,6 +104,16 @@ pub fn support(point: Vec3, nook: Vec3) -> f32 {
     tops.into_iter()
         .filter(|top| *top <= point.y + 0.05)
         .fold(0.0, f32::max)
+}
+
+/// How far from the back wall a body sits when perched at a window to look
+/// out from `point`, if it is.
+fn window_perch(point: Vec3) -> Option<f32> {
+    let at = flat(point);
+    let near = at.y < ROOM_MIN.z + 0.7 && at.y >= ROOM_MIN.z - 0.1 && point.y > 1.15;
+    let living = at.x.abs() < WINDOW_SEAT_HALF.x;
+    let bedroom = at.x > BEDROOM_WINDOW_LOW.x && at.x < BEDROOM_WINDOW_HIGH.x;
+    (near && (living || bedroom)).then_some(ROOM_MIN.z + if living { 0.15 } else { 0.08 })
 }
 
 impl World {
@@ -171,7 +188,8 @@ impl World {
                         && (ghost.plan.arrived.is_some() || ghost.plan.done));
                 let goal = if settled { 1.0 } else { 0.0 };
                 footing.perched += (goal - footing.perched) * (1.0 - (-seconds / 0.35).exp());
-                let landed = Vec3::new(point.x, ground, point.z);
+                let depth = window_perch(point).map_or(point.z, |depth| point.z.min(depth));
+                let landed = Vec3::new(point.x, ground, depth);
                 footing.body = point.lerp(landed, footing.perched);
                 footing.grounded = footing.perched > 0.95;
             }
@@ -225,7 +243,15 @@ impl World {
                     }
                 }
                 footing.body.x = point.x;
-                footing.body.z = point.z;
+                // Up on a window seat it sits on the ledge itself, not in
+                // the air in front of it.
+                footing.body.z = match window_perch(point) {
+                    Some(depth) if footing.body.y > ground - 0.3 => {
+                        let toward = point.z.min(depth);
+                        footing.body.z + (toward - footing.body.z) * (1.0 - (-seconds * 6.0).exp())
+                    }
+                    _ => point.z,
+                };
             }
         }
         // Strides follow the ground covered; hops and flaps keep a beat.
@@ -297,7 +323,10 @@ mod tests {
         assert_eq!(support(nook + Vec3::Y * 0.5, nook), Nook::HEIGHT);
         let roof = home::Spot::Roof.position(1.0);
         assert!((support(roof, nook) - RIDGE).abs() < 0.05);
-        assert_eq!(support(Vec3::new(0.0, 1.5, ROOM_MIN.z + 0.1), nook), 1.0);
+        assert_eq!(
+            support(Vec3::new(0.0, 1.5, ROOM_MIN.z + 0.1), nook),
+            WINDOW_SEAT.y + WINDOW_SEAT_HALF.y
+        );
     }
 
     #[test]

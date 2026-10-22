@@ -233,6 +233,9 @@ pub enum Furniture<'a> {
     /// The bedside table with its little lamp, lit or not.
     Nightstand(bool),
     Dresser,
+    /// A deep wooden ledge under the living room's window, where those
+    /// who can't float sit to look out.
+    WindowSeat,
 }
 
 impl Furniture<'_> {
@@ -294,6 +297,7 @@ impl Furniture<'_> {
             Self::Bed => (BED + Vec3::Y * 0.42, 0.97),
             Self::Nightstand(_) => (NIGHTSTAND + Vec3::Y * 0.38, 0.4),
             Self::Dresser => (DRESSER + Vec3::Y * 0.46, 0.72),
+            Self::WindowSeat => (crate::world::motion::WINDOW_SEAT, 0.86),
         }
     }
 
@@ -521,6 +525,21 @@ impl Furniture<'_> {
             Self::Bed => bed_distance(point - BED),
             Self::Nightstand(lit) => nightstand_distance(point - NIGHTSTAND, *lit),
             Self::Dresser => dresser_distance(point - DRESSER),
+            Self::WindowSeat => {
+                let local = point - crate::world::motion::WINDOW_SEAT;
+                let ledge = box_distance(local, crate::world::motion::WINDOW_SEAT_HALF) - 0.006;
+                // Two little brackets under it.
+                let brackets = [-0.55f32, 0.55]
+                    .into_iter()
+                    .map(|x| {
+                        box_distance(
+                            local - Vec3::new(x, -0.09, -0.03),
+                            Vec3::new(0.02, 0.065, 0.06),
+                        )
+                    })
+                    .fold(f32::INFINITY, f32::min);
+                (ledge.min(brackets), Material::Wood)
+            }
             Self::WateringCan(position, rotation) => {
                 // Drawn small and enlarged a little.
                 let (distance, material) =
