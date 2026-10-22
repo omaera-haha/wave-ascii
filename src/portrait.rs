@@ -28,6 +28,41 @@ pub struct Handling {
     pub glow: Vec3,
 }
 
+/// The id the stranger at the glass goes by among the figures.
+pub const STRANGER: u32 = u32::MAX;
+
+/// The little stranger looking in at the glass, blinking as it peers.
+pub fn stranger(stranger: &crate::world::stranger::Stranger, time: f64) -> Figure {
+    let blink = (((time * 0.9).fract() - 0.5).abs() < 0.04) as u8 as f32;
+    Figure {
+        id: STRANGER,
+        species: stranger.species,
+        genome: stranger.genome,
+        position: stranger.position(time),
+        facing: stranger.facing(time),
+        size: crate::world::stranger::SIZE,
+        face: face::Face {
+            shut: [blink; 2],
+            widen: if stranger.looking_in(time) { 0.4 } else { 0.0 },
+            gaze: glam::Vec2::new(((time * 0.7).sin() * 0.3) as f32, 0.2),
+            ..face::Face::REST
+        },
+        glow: Vec3::new(0.6, 0.8, 1.0),
+        opacity: 1.0,
+        accessory: None,
+        motion: Motion {
+            time,
+            stride: (time * f64::from(stranger.pace(time).max(0.01)) * 2.5).fract() as f32,
+            pace: stranger.pace(time),
+            perk: 0.8,
+            wag: 0.5,
+            energy: 1.0,
+            perched: 1.0,
+            ..Motion::default()
+        },
+    }
+}
+
 /// The face of the creature in `world` at this moment.
 pub fn face(world: &World, view: &View, handling: &Handling) -> face::Face {
     let ghost = &world.ghost;

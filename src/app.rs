@@ -68,6 +68,8 @@ pub struct Adoption {
     pub index: usize,
     /// The name being typed, once a kind is chosen.
     pub naming: Option<Line>,
+    /// Whether it is the stranger at the glass being named, not a newcomer.
+    pub stranger: bool,
     /// How many cards fit across, as last drawn, for moving up and down.
     pub across: usize,
 }
@@ -245,6 +247,8 @@ pub struct App {
     pub hover: Option<u32>,
     /// Whether the camera stays close on the creature the viewer is with.
     pub follow: bool,
+    /// When the stranger the viewer was last told about came.
+    announced_stranger: Option<f64>,
 }
 
 impl App {
@@ -314,6 +318,7 @@ impl App {
             adoption: Adoption::default(),
             hover: None,
             follow: false,
+            announced_stranger: None,
         }
     }
 
@@ -401,6 +406,15 @@ impl App {
         self.world.celebrate_wish();
         if let Some(notice) = self.world.share_wish() {
             self.post(notice);
+        }
+        if let Some(stranger) = self.world.stranger
+            && self.announced_stranger != Some(stranger.came)
+        {
+            self.announced_stranger = Some(stranger.came);
+            self.post(format!(
+                "A little {} is peeking in through the glass. Click it, or say “come in”, to ask it to stay.",
+                stranger.species.noun()
+            ));
         }
         self.world.share_anniversary();
         if self.paths.is_some() {
@@ -569,6 +583,45 @@ impl App {
         };
         let seed = mind::now() as u64 ^ self.world.time.to_bits();
         let id = self.world.adopt(species, &name, seed)?;
+        self.minds.push((id, self.mind.sibling(Journal::default())));
+        self.borns.push((id, mind::now()));
+        Some(name)
+    }
+
+    /// Opens the adoption cards on the stranger at the glass, ready to name.
+    fn welcome_stranger(&mut self) {
+        let Some(stranger) = self.world.stranger else {
+            return;
+        };
+        if self.world.household_size() >= crate::world::household::MOST {
+            self.post("The cottage is full.");
+            return;
+        }
+        self.adoption.index = crate::world::Species::ALL
+            .iter()
+            .position(|species| *species == stranger.species)
+            .unwrap_or(0);
+        let taken: Vec<String> = self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+        let mut random = crate::world::Random::new(mind::now() as u64 ^ 0x5157);
+        let name = crate::world::species::pick_name(&mut random, &taken);
+        self.adoption.naming = Some(Line::from(name.as_str()));
+        self.adoption.stranger = true;
+        self.mode = Mode::Adopt;
+    }
+
+    /// Asks the stranger at the glass in to live here, under `name` or one
+    /// it is given. Returns its name.
+    pub fn invite_stranger(&mut self, name: Option<&str>) -> Option<String> {
+        let taken: Vec<String> = self.world.creatures().map(|ghost| ghost.name.clone()).collect();
+        let name: String = match name.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(name) => name.chars().filter(|character| !character.is_control()).take(24).collect(),
+            None => {
+                let mut random = crate::world::Random::new(mind::now() as u64 ^ 0x5157);
+                crate::world::species::pick_name(&mut random, &taken)
+            }
+        };
+        let seed = mind::now() as u64 ^ self.world.time.to_bits();
+        let id = self.world.invite_stranger(&name, seed)?;
         self.minds.push((id, self.mind.sibling(Journal::default())));
         self.borns.push((id, mind::now()));
         Some(name)
@@ -752,6 +805,19 @@ impl App {
                             if let Some(id) = self.world.addressed(&text) {
                                 self.select(id);
                             }
+                            // Asking the stranger at the glass in.
+                            if self.world.stranger.is_some_and(|stranger| {
+                                stranger.leaving.is_none() && stranger.looking_in(self.world.time)
+                            }) && crate::world::stranger::invitation(&text)
+                            {
+                                let species = self.world.stranger.unwrap().species;
+                                if let Some(name) = self.invite_stranger(None) {
+                                    self.post(format!(
+                                        "{name} the {} is coming in to live with you!",
+                                        species.noun()
+                                    ));
+                                }
+                            }
                             self.mind.hear(&mut self.world, &text);
                             if crate::world::household::to_everyone(&text) {
                                 for (id, mind) in &mut self.minds {
@@ -916,6 +982,18 @@ impl App {
                     let species = crate::world::Species::ALL[self.adoption.index.min(kinds - 1)];
                     self.mode = Mode::Watching;
                     self.adoption.naming = None;
+                    if std::mem::take(&mut self.adoption.stranger)
+                        && self.world.stranger.is_some_and(|stranger| stranger.species == species)
+                    {
+                        match self.invite_stranger(Some(&name)) {
+                            Some(name) => self.post(format!(
+                                "{name} the {} is coming in to live with you!",
+                                species.noun()
+                            )),
+                            None => self.post("The cottage is full."),
+                        }
+                        return;
+                    }
                     match self.adopt(species, Some(&name)) {
                         Some(name) => self.post(format!(
                             "{name} the {} is at the door! Tab turns to them.",
@@ -924,7 +1002,10 @@ impl App {
                         None => self.post("The cottage is full."),
                     }
                 }
-                Key::Escape => self.adoption.naming = None,
+                Key::Escape => {
+                    self.adoption.naming = None;
+                    self.adoption.stranger = false;
+                }
                 key => {
                     name.edit(&key);
                 }
@@ -956,6 +1037,7 @@ impl App {
             Key::BackTab | Key::Character('[') => self.select_next(false),
             Key::Character('n') => {
                 self.adoption.naming = None;
+                self.adoption.stranger = false;
                 self.mode = Mode::Adopt;
             }
             Key::Character('v') => {
@@ -1434,7 +1516,9 @@ impl App {
             return;
         }
         if let Some(id) = self.creature_at(view, point) {
-            if id == self.world.host() {
+            if id == portrait::STRANGER {
+                self.welcome_stranger();
+            } else if id == self.world.host() {
                 self.world.poke();
             } else {
                 self.select(id);
@@ -1760,6 +1844,9 @@ impl App {
             }
         }
         figures.sort_by_key(|figure| figure.id != host);
+        if let Some(stranger) = &self.world.stranger {
+            figures.push(portrait::stranger(stranger, self.world.time));
+        }
         self.shown = figures.clone();
         figures
     }

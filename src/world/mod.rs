@@ -57,6 +57,7 @@ mod sleep;
 pub mod species;
 pub mod stars;
 mod story;
+pub mod stranger;
 mod things;
 pub mod tidy;
 pub mod together;
@@ -399,6 +400,8 @@ pub enum EventKind {
         name: String,
         species: Species,
     },
+    /// A little stranger came to look in at the glass.
+    StrangerCame(Species),
     /// It and a housemate did something together.
     Together {
         with: String,
@@ -701,6 +704,9 @@ impl EventKind {
                 format!("{name} the {} came to live with us", species.noun())
             }
             Self::Together { with, what } => what.words(with),
+            Self::StrangerCame(species) => {
+                format!("a little {} came to look in at the glass", species.noun())
+            }
         }
     }
 
@@ -729,6 +735,7 @@ impl EventKind {
                 | Self::Jostled { .. }
                 | Self::Bloomed
                 | Self::Newcomer { .. }
+                | Self::StrangerCame(_)
         )
     }
 }
@@ -1072,6 +1079,9 @@ pub struct World {
     next_creature: u32,
     /// Housemates asking each other to do something together.
     pub invitations: Vec<together::Invitation>,
+    /// A little stranger looking in at the glass, and when the next may come.
+    pub stranger: Option<stranger::Stranger>,
+    next_stranger: f64,
 }
 
 impl World {
@@ -1245,6 +1255,8 @@ impl World {
             news: Vec::new(),
             next_creature: 1,
             invitations: Vec::new(),
+            stranger: None,
+            next_stranger: 900.0,
         };
         world.scatter_blocks();
         world
@@ -1510,6 +1522,9 @@ impl World {
 
         self.advance_blocks(seconds);
         self.advance_garden(seconds);
+        if !self.housemates.is_empty() || self.ghost.species != Species::Ghost {
+            self.advance_stranger();
+        }
     }
 
     /// Whether the viewer did anything recently and hasn't turned to

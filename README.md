@@ -31,7 +31,7 @@ It runs on instinct alone. Press `k` in the app to add API keys for Jev (TypeSaf
 | Tab, `[` `]` | turn to another creature |
 | `n` | adopt a new housemate (up to six) |
 | `v` | keep the view close on the one you're with |
-| `t`, Enter | talk; start with a name, like “Pip, come here”, to talk to that one |
+| `t`, Enter | talk; start with a name, like “Pip, come here”, to talk to that one, or say “everyone” to talk to them all |
 | arrows, WASD | turn the view |
 | `+` / `-` | zoom |
 | `r` | reset the view |

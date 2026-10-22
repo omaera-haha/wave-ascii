@@ -84,6 +84,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
     Some(match event {
         EventKind::MetReflection => Expression::Surprise,
         EventKind::Newcomer { .. } => Expression::Sparkle,
+        EventKind::StrangerCame(_) => Expression::Surprise,
         EventKind::MovedIn { .. } => Expression::LookAround,
         EventKind::Together { .. } => Expression::Smile,
         EventKind::RecognizedSelf => Expression::Sparkle,

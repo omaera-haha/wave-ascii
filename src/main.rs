@@ -424,6 +424,10 @@ fn print_frame(options: &Options) -> io::Result<()> {
             world.weather.settled_snow = Some(-100.0);
         }
     }
+    if env::var_os("WAVE_ASCII_STRANGER").is_some() {
+        world.viewer.active_at = 0.01;
+        world.expect_stranger();
+    }
     if env::var_os("WAVE_ASCII_CAT").is_some() {
         world.visitors.next_cat = 0.0;
     }

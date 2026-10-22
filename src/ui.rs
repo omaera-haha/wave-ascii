@@ -444,10 +444,11 @@ fn words_line(app: &App, screen: &mut Canvas, row: usize) {
 }
 
 /// Tips for a quiet words line, the basics first.
-const TIPS: [&str; 20] = [
+const TIPS: [&str; 21] = [
     "t to talk · Tab turns to another creature · click one to poke it, the floor to drop a mote",
     "drag across a creature to stroke it · right drag draws in the fog on the glass",
     "start a message with a name, like “Pip, come here”, to talk to that one",
+    "say “good night, everyone” or “얘들아 안녕” and the whole household hears it",
     "n invites a newcomer to live here, up to six · v keeps the view close on the one you're with",
     "housemates play tag, chat, nuzzle, and dance together · l shows how fond they've grown",
     "e reads its letters, and w there writes it one back",
