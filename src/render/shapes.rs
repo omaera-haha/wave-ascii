@@ -56,6 +56,12 @@ pub enum Material {
     Cork(bool),
     ClockHand,
     Tin,
+    /// Patchwork, in one of two colors.
+    Quilt(bool),
+    Linen,
+    /// The nightstand lamp's shade, glowing when lit.
+    NightLamp(bool),
+    PaintedWood,
 }
 
 impl Material {
@@ -142,6 +148,11 @@ impl Material {
             Self::CraneThread => Vec3::new(0.85, 0.82, 0.72),
             Self::ClockHand => Vec3::new(0.18, 0.17, 0.2),
             Self::Tin => Vec3::new(0.5, 0.75, 0.66),
+            Self::Quilt(true) => Vec3::new(0.95, 0.66, 0.6),
+            Self::Quilt(false) => Vec3::new(0.98, 0.9, 0.74),
+            Self::Linen => Vec3::new(0.96, 0.95, 0.92),
+            Self::NightLamp(_) => Vec3::new(1.0, 0.86, 0.66),
+            Self::PaintedWood => Vec3::new(0.7, 0.8, 0.78),
             Self::Cork(dotted) => {
                 if dotted {
                     Vec3::new(0.65, 0.43, 0.28)
@@ -217,6 +228,11 @@ pub enum Furniture<'a> {
     /// A drop of water on its way down.
     Droplet(Vec3),
     SongSheet(Vec3, Quat),
+    /// The bed in the bedroom, quilt and pillow and all.
+    Bed,
+    /// The bedside table with its little lamp, lit or not.
+    Nightstand(bool),
+    Dresser,
 }
 
 impl Furniture<'_> {
@@ -275,6 +291,9 @@ impl Furniture<'_> {
             Self::Droplet(position) => (*position, 0.015),
             Self::GalleryCard(position) => (*position, 0.21),
             Self::SongSheet(position, _) => (*position, 0.21),
+            Self::Bed => (BED + Vec3::Y * 0.42, 0.97),
+            Self::Nightstand(_) => (NIGHTSTAND + Vec3::Y * 0.38, 0.4),
+            Self::Dresser => (DRESSER + Vec3::Y * 0.46, 0.72),
         }
     }
 
@@ -499,6 +518,9 @@ impl Furniture<'_> {
             }
             Self::Gallery(pins) => gallery_distance(point, pins),
             Self::Clock(hour) => clock_distance(point - CLOCK, *hour),
+            Self::Bed => bed_distance(point - BED),
+            Self::Nightstand(lit) => nightstand_distance(point - NIGHTSTAND, *lit),
+            Self::Dresser => dresser_distance(point - DRESSER),
             Self::WateringCan(position, rotation) => {
                 // Drawn small and enlarged a little.
                 let (distance, material) =
@@ -847,6 +869,150 @@ fn clock_distance(point: Vec3, hour: f32) -> (f32, Material) {
     if tick < nearest.0 {
         nearest = (tick, Material::ClockHand);
     }
+    nearest
+}
+
+use crate::world::home::{BED, DRESSER, NIGHTSTAND};
+
+/// Keeps whichever of `candidate` and `nearest` is closer.
+fn closer(nearest: &mut (f32, Material), distance: f32, material: Material) {
+    if distance < nearest.0 {
+        *nearest = (distance, material);
+    }
+}
+
+fn rounded_box(point: Vec3, half: Vec3, radius: f32) -> f32 {
+    box_distance(point, half - Vec3::splat(radius)) - radius
+}
+
+fn bed_distance(point: Vec3) -> (f32, Material) {
+    // Headboard against the back wall, footboard at the other end, legs,
+    // a mattress, a pillow, and a quilt over the lower part.
+    let mut nearest = (
+        rounded_box(
+            point - Vec3::new(0.0, 0.45, -0.6),
+            Vec3::new(0.52, 0.45, 0.04),
+            0.02,
+        ),
+        Material::Wood,
+    );
+    closer(
+        &mut nearest,
+        rounded_box(
+            point - Vec3::new(0.0, 0.28, 0.6),
+            Vec3::new(0.52, 0.28, 0.04),
+            0.02,
+        ),
+        Material::Wood,
+    );
+    let rail = box_distance(point - Vec3::new(0.0, 0.17, 0.0), Vec3::new(0.5, 0.05, 0.6));
+    let leg = box_distance(
+        Vec3::new(point.x.abs() - 0.46, point.y - 0.07, point.z.abs() - 0.56),
+        Vec3::new(0.035, 0.07, 0.035),
+    );
+    closer(&mut nearest, rail.min(leg), Material::Wood);
+    let mattress = rounded_box(
+        point - Vec3::new(0.0, 0.3, -0.02),
+        Vec3::new(0.47, 0.09, 0.56),
+        0.05,
+    );
+    closer(&mut nearest, mattress, Material::Linen);
+    let pillow = rounded_box(
+        point - Vec3::new(0.0, 0.43, -0.4),
+        Vec3::new(0.3, 0.05, 0.13),
+        0.05,
+    );
+    closer(&mut nearest, pillow, Material::Linen);
+    let quilt = rounded_box(
+        point - Vec3::new(0.0, 0.33, 0.17),
+        Vec3::new(0.5, 0.1, 0.4),
+        0.03,
+    );
+    let patch = ((point.x / 0.17).floor() + (point.z / 0.17).floor()) as i32 & 1 == 0;
+    closer(&mut nearest, quilt, Material::Quilt(patch));
+    nearest
+}
+
+fn nightstand_distance(point: Vec3, lit: bool) -> (f32, Material) {
+    let body = rounded_box(
+        point - Vec3::new(0.0, 0.22, 0.0),
+        Vec3::new(0.19, 0.22, 0.17),
+        0.015,
+    );
+    // A drawer front with a knob.
+    let drawer = box_distance(
+        point - Vec3::new(0.0, 0.31, 0.17),
+        Vec3::new(0.15, 0.06, 0.01),
+    );
+    let knob = point.distance(Vec3::new(0.0, 0.31, 0.19)) - 0.018;
+    let mut nearest = (body, Material::Wood);
+    closer(&mut nearest, drawer, Material::PaintedWood);
+    closer(&mut nearest, knob, Material::Brass);
+    // The lamp: a little round base, a stem, and a flared shade.
+    let base = Vec2::new(
+        Vec2::new(point.x, point.z).length() - 0.06,
+        (point.y - 0.46).abs() - 0.015,
+    )
+    .max_element();
+    let stem = capsule(
+        point,
+        Vec3::new(0.0, 0.46, 0.0),
+        Vec3::new(0.0, 0.58, 0.0),
+        0.01,
+    );
+    closer(&mut nearest, base.min(stem), Material::Brass);
+    let height = point.y - 0.62;
+    let radius = 0.075 - height * 0.4;
+    let shade = Vec2::new(
+        (Vec2::new(point.x, point.z).length() - radius).abs() - 0.006,
+        height.abs() - 0.06,
+    )
+    .max_element();
+    closer(&mut nearest, shade, Material::NightLamp(lit));
+    nearest
+}
+
+fn dresser_distance(point: Vec3) -> (f32, Material) {
+    let body = rounded_box(
+        point - Vec3::new(0.0, 0.43, 0.0),
+        Vec3::new(0.24, 0.43, 0.46),
+        0.015,
+    );
+    let top = rounded_box(
+        point - Vec3::new(0.0, 0.87, 0.0),
+        Vec3::new(0.26, 0.025, 0.49),
+        0.01,
+    );
+    let mut nearest = (body.min(top), Material::Wood);
+    // Three drawers facing the room, two knobs each.
+    let row = ((point.y - 0.1) / 0.24).floor().clamp(0.0, 2.0);
+    let middle = 0.1 + row * 0.24 + 0.12;
+    let drawer = box_distance(
+        point - Vec3::new(0.24, middle, 0.0),
+        Vec3::new(0.012, 0.1, 0.41),
+    );
+    closer(&mut nearest, drawer, Material::PaintedWood);
+    let knob = Vec3::new(point.x - 0.26, point.y - middle, point.z.abs() - 0.2).length() - 0.02;
+    closer(&mut nearest, knob, Material::Brass);
+    // A small potted cactus and a framed photo on top.
+    let pot = Vec2::new(
+        Vec2::new(point.x, point.z - 0.28).length() - 0.05,
+        (point.y - 0.95).abs() - 0.05,
+    )
+    .max_element();
+    closer(&mut nearest, pot, Material::Pot);
+    let cactus = capsule(
+        point,
+        Vec3::new(0.0, 0.98, 0.28),
+        Vec3::new(0.0, 1.1, 0.28),
+        0.032,
+    );
+    closer(&mut nearest, cactus, Material::Stem);
+    let frame = box_distance(
+        point - Vec3::new(-0.05, 1.0, -0.2),
+        Vec3::new(0.012, 0.1, 0.08),
+    );
+    closer(&mut nearest, frame, Material::PaintedWood);
     nearest
 }
 

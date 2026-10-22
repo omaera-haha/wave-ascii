@@ -124,7 +124,7 @@ impl World {
         self.rhythm.presence_started.get_or_insert(self.time);
         self.music = None;
         if self.queued_tune.take().is_some() && self.ghost.plan.activity == Activity::Rest {
-            self.ghost.plan.target = self.nook.bed(self.size());
+            self.ghost.plan.target = self.sleeping_spot();
             self.ghost.plan.arrived = None;
         }
         self.break_until = 0.0;

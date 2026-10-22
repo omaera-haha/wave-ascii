@@ -874,7 +874,7 @@ impl World {
                 let tune = self.queued_tune.take().unwrap();
                 self.start_music(tune, true, 2);
                 self.ghost.plan.arrived = None;
-                self.ghost.plan.target = self.nook.bed(self.size());
+                self.ghost.plan.target = self.sleeping_spot();
             } else {
                 self.ghost.look = Some(POSITION + Vec3::Y * 0.3);
             }
@@ -1511,7 +1511,7 @@ mod tests {
             world.ghost.position = LISTEN;
             world.step(1.5);
             assert!(world.music.as_ref().unwrap().lullaby);
-            assert_eq!(world.ghost.plan.target, world.nook.bed(world.size()));
+            assert_eq!(world.ghost.plan.target, world.sleeping_spot());
             world.step(28.0);
             assert!(
                 world.ghost.asleep >= 0.9,

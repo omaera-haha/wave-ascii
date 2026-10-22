@@ -434,7 +434,7 @@ impl World {
         (self.season() == Season::Winter && self.is_night() && self.window_open)
             || (self.weather.snow(self.time) > 0.1
                 && (!self.lamp.on || self.ghost.position.distance(self.lamp.bulb()) > 1.1)
-                && self.ghost.position.distance(self.nook.bed(self.size())) > 0.9)
+                && self.ghost.position.distance(self.sleeping_spot()) > 0.9)
     }
 
     fn sleepy_yawn(&self) -> bool {

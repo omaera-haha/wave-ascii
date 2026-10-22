@@ -13,7 +13,7 @@ use glam::{Vec2, Vec3};
 use crate::face::Face;
 use crate::frame::{Frame, Grid, Shade};
 use crate::sdf::{capsule, coverage, mix, smoothstep};
-use crate::world::home::{self, DOOR_HIGH, DOOR_LOW};
+use crate::world::home::{self, Area, DOOR_HIGH, DOOR_LOW, INNER_HIGH, INNER_LOW};
 use crate::world::mirror;
 use crate::world::{Ball, Decoration, Occasion, ROOM_MAX, ROOM_MIN, World};
 use ghost::{Aura, BOUNDS, Body, Pose};
@@ -300,6 +300,9 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
     ];
     furniture.push(Furniture::Gallery(&world.life.gallery));
     furniture.push(Furniture::Clock(world.hour));
+    furniture.push(Furniture::Bed);
+    furniture.push(Furniture::Nightstand(night_light(world)));
+    furniture.push(Furniture::Dresser);
     if let Some(position) = world.carried_pin() {
         furniture.push(Furniture::GalleryCard(position));
     }
@@ -705,7 +708,7 @@ impl Tracer<'_> {
         let spread = self.spread;
         let world = scene.world;
         let eye = origin;
-        let room = room_exit(eye, direction);
+        let room = rooms_exit(eye, direction);
         let mut limit = f32::INFINITY;
         // Outdoors before the room, or all the way when the ray misses it.
         let before = room.map_or(f32::INFINITY, |hit| hit.enter);
@@ -788,6 +791,7 @@ impl Tracer<'_> {
                                 * (0.2 + 0.6 * (1.0 - normal.dot(-direction).abs()).powi(3))
                         }
                         Material::Bulb if world.lamp.on => albedo * 1.4,
+                        Material::NightLamp(true) => Vec3::new(1.0, 0.76, 0.48) * 0.9,
                         Material::Lampshade if world.lamp.on => LAMP_LIGHT * 0.35,
                         Material::Treasure => {
                             let brightness = if let Furniture::Treasure { brightness, .. } = piece {
@@ -803,6 +807,7 @@ impl Tracer<'_> {
         }
         if !reflected
             && let Some(hit) = room
+            && hit.area == Area::Living
             && hit.axis == 0
             && hit.high
             && mirror::contains(hit.point)
@@ -1124,12 +1129,69 @@ struct RoomHit {
     axis: usize,
     /// Whether the wall is at the high end of its axis.
     high: bool,
+    /// Which room, and its inside corners.
+    area: Area,
+    low: Vec3,
+    top: Vec3,
 }
 
+/// Where a ray leaves the rooms: in through the first it meets, through
+/// the inner doorway into the other if that's where it goes, and out at
+/// a far wall or an opening.
+fn rooms_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
+    let living = room_exit_in(origin, direction, Area::Living);
+    let bedroom = room_exit_in(origin, direction, Area::Bedroom);
+    let mut hit = match (living, bedroom) {
+        (Some(first), Some(second)) => {
+            if first.enter <= second.enter {
+                first
+            } else {
+                second
+            }
+        }
+        (one, other) => one.or(other)?,
+    };
+    let enter = hit.enter;
+    for _ in 0..2 {
+        if !inner_doorway(&hit) {
+            break;
+        }
+        let next = if hit.area == Area::Living {
+            bedroom
+        } else {
+            living
+        };
+        match next.filter(|next| next.distance > hit.distance) {
+            Some(next) => hit = next,
+            None => break,
+        }
+    }
+    hit.enter = enter;
+    Some(hit)
+}
+
+/// Whether the ray leaves its room through the inner doorway.
+fn inner_doorway(hit: &RoomHit) -> bool {
+    let shared = hit.axis == 0
+        && match hit.area {
+            Area::Living => !hit.high,
+            Area::Bedroom => hit.high,
+            Area::Yard => false,
+        };
+    let at = Vec2::new(hit.point.z, hit.point.y);
+    shared && at.cmpge(INNER_LOW).all() && at.cmple(INNER_HIGH).all()
+}
+
+#[cfg(test)]
 fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
+    room_exit_in(origin, direction, Area::Living)
+}
+
+fn room_exit_in(origin: Vec3, direction: Vec3, area: Area) -> Option<RoomHit> {
+    let (low, top) = home::room_bounds(area)?;
     let inverse = direction.recip();
-    let first = (ROOM_MIN - origin) * inverse;
-    let second = (ROOM_MAX - origin) * inverse;
+    let first = (low - origin) * inverse;
+    let second = (top - origin) * inverse;
     let enter = first.min(second).max_element().max(0.0);
     let exits = first.max(second);
     let distance = exits.min_element();
@@ -1146,6 +1208,9 @@ fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
         point: origin + direction * distance,
         axis,
         high: direction[axis] > 0.0,
+        area,
+        low,
+        top,
     })
 }
 
@@ -1154,10 +1219,18 @@ fn room_exit(origin: Vec3, direction: Vec3) -> Option<RoomHit> {
 /// the point, the glass's sheen, and whether the frame is painted trim.
 fn opening(hit: &RoomHit, door: f32, lift: f32, footprint: f32) -> Option<(f32, f32, bool)> {
     match (hit.axis, hit.high) {
+        (2, false) if hit.area == Area::Bedroom => window::pane_in(
+            hit.point.truncate(),
+            footprint,
+            0.0,
+            home::BEDROOM_WINDOW_LOW,
+            home::BEDROOM_WINDOW_HIGH,
+        )
+        .map(|pane| (pane.frame, pane.sheen, false)),
         (2, false) => window::pane(hit.point.truncate(), footprint, lift)
             .map(|pane| (pane.frame, pane.sheen, false)),
         (2, true) => Some((0.0, 0.0, false)),
-        (0, true) if door > 0.02 => {
+        (0, true) if door > 0.02 && hit.area == Area::Living => {
             let at = Vec2::new(hit.point.z, hit.point.y);
             if at.cmpge(DOOR_LOW).all() && at.cmple(DOOR_HIGH).all() {
                 let edge = (at - DOOR_LOW).min(DOOR_HIGH - at);
@@ -1180,8 +1253,8 @@ fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32) -> Vec3 {
         _ => (0, 1),
     };
     let position = Vec2::new(hit.point[first], hit.point[second]);
-    let low = Vec2::new(ROOM_MIN[first], ROOM_MIN[second]);
-    let high = Vec2::new(ROOM_MAX[first], ROOM_MAX[second]);
+    let low = Vec2::new(hit.low[first], hit.low[second]);
+    let high = Vec2::new(hit.top[first], hit.top[second]);
     let mut normal = Vec3::ZERO;
     normal[hit.axis] = if hit.high { -1.0 } else { 1.0 };
     let light = lights.at(hit.point, normal);
@@ -1192,26 +1265,61 @@ fn room_color(hit: &RoomHit, lights: &Lights, footprint: f32) -> Vec3 {
                 let across = Vec2::new(hit.point.x - ghost.x, hit.point.z - ghost.z).length();
                 1.0 - 0.35 * (-(across * across) / (0.06 * ghost.y.max(0.3))).exp()
             });
-            floorboards(hit.point, footprint) * shadow
+            floorboards(hit.point, footprint, hit.area) * shadow
         }
         (1, true) => ceiling(hit.point, footprint),
-        (0, true) if door_panel(hit.point, footprint).is_some() => {
+        (0, true) if hit.area == Area::Living && door_panel(hit.point, footprint).is_some() => {
             door_panel(hit.point, footprint).unwrap()
         }
-        _ => wall(hit.point, hit.axis, footprint),
+        _ => {
+            let paper = wall(hit.point, hit.axis, footprint, hit.area);
+            // Painted trim around the inner doorway.
+            let shared = hit.axis == 0
+                && (hit.area == Area::Living && !hit.high || hit.area == Area::Bedroom && hit.high);
+            let at = Vec2::new(hit.point.z, hit.point.y);
+            let outside = (INNER_LOW - at).max(at - INNER_HIGH).max_element();
+            if shared && outside < 0.06 {
+                paper.lerp(TRIM_COLOR * 0.85, coverage(outside - 0.06, footprint * 0.5))
+            } else {
+                paper
+            }
+        }
     };
     // Corners gather a little shadow.
     let border = (position - low).min(high - position).min_element();
     albedo * light * (0.72 + 0.28 * smoothstep(0.0, 0.3, border)) * ROOM_EXPOSURE
 }
 
-/// A round woven rug in the middle of the floor: its middle and radii.
+/// A round woven rug in the middle of each floor: its middle and radii.
 const RUG: Vec2 = Vec2::new(-0.15, 0.3);
 const RUG_RADII: Vec2 = Vec2::new(1.05, 0.62);
+const BEDROOM_RUG: Vec2 = Vec2::new(-3.75, 0.55);
+const BEDROOM_RUG_RADII: Vec2 = Vec2::new(0.85, 0.45);
 
-fn floorboards(point: Vec3, footprint: f32) -> Vec3 {
+fn floorboards(point: Vec3, footprint: f32, area: Area) -> Vec3 {
     let boards = planks(point, footprint);
-    let at = (Vec2::new(point.x, point.z) - RUG) / RUG_RADII;
+    let (middle, radii, colors) = if area == Area::Bedroom {
+        (
+            BEDROOM_RUG,
+            BEDROOM_RUG_RADII,
+            [
+                Vec3::new(0.62, 0.66, 0.86),
+                Vec3::new(0.88, 0.85, 0.78),
+                Vec3::new(0.78, 0.62, 0.78),
+            ],
+        )
+    } else {
+        (
+            RUG,
+            RUG_RADII,
+            [
+                Vec3::new(0.78, 0.5, 0.42),
+                Vec3::new(0.86, 0.76, 0.58),
+                Vec3::new(0.56, 0.62, 0.7),
+            ],
+        )
+    };
+    let at = (Vec2::new(point.x, point.z) - middle) / radii;
     let reach = at.length();
     if reach > 1.05 {
         return boards;
@@ -1219,14 +1327,9 @@ fn floorboards(point: Vec3, footprint: f32) -> Vec3 {
     // Rings of color, fading to the average when they're too fine.
     let ring = (reach * 7.0).floor();
     let fade = 1.0 - smoothstep(0.03, 0.09, footprint);
-    let colors = [
-        Vec3::new(0.78, 0.5, 0.42),
-        Vec3::new(0.86, 0.76, 0.58),
-        Vec3::new(0.56, 0.62, 0.7),
-    ];
     let average = (colors[0] + colors[1] + colors[2]) / 3.0;
     let woven = colors[ring as usize % 3].lerp(average, 1.0 - fade);
-    let edge = coverage((reach - 1.0) * RUG_RADII.min_element(), footprint * 0.5);
+    let edge = coverage((reach - 1.0) * radii.min_element(), footprint * 0.5);
     boards.lerp(woven * 0.85, edge)
 }
 
@@ -1252,7 +1355,7 @@ fn ceiling(point: Vec3, footprint: f32) -> Vec3 {
     Vec3::new(0.72, 0.7, 0.66).lerp(Vec3::new(0.5, 0.37, 0.27), beam)
 }
 
-fn wall(point: Vec3, axis: usize, footprint: f32) -> Vec3 {
+fn wall(point: Vec3, axis: usize, footprint: f32, area: Area) -> Vec3 {
     let along = if axis == 0 { point.z } else { point.x };
     let height = point.y;
     let edge = footprint * 0.5;
@@ -1265,11 +1368,17 @@ fn wall(point: Vec3, axis: usize, footprint: f32) -> Vec3 {
         ((height / 0.3).fract() - 0.5) * 0.3,
     );
     let dot = coverage(dot.length() - 0.014, edge);
-    let paper = Vec3::new(0.74, 0.69, 0.62) * (1.0 - (0.07 * stripe + 0.06 * dot) * fade);
+    // The bedroom's paper is a sleepy blue, its wainscot a soft rose.
+    let (paper, panel) = if area == Area::Bedroom {
+        (Vec3::new(0.62, 0.68, 0.8), Vec3::new(0.72, 0.58, 0.6))
+    } else {
+        (Vec3::new(0.74, 0.69, 0.62), Vec3::new(0.52, 0.64, 0.57))
+    };
+    let paper = paper * (1.0 - (0.07 * stripe + 0.06 * dot) * fade);
     // Painted wainscot with grooves, a rail on top, a skirting board below.
     let groove = (0.5 - ((along / 0.18).fract() - 0.5).abs()) * 0.18;
     let groove = coverage(groove - 0.004, edge) * fade;
-    let panel = Vec3::new(0.52, 0.64, 0.57) * (1.0 - 0.2 * groove);
+    let panel = panel * (1.0 - 0.2 * groove);
     let rail = Vec3::new(0.8, 0.77, 0.7);
     let skirting = Vec3::new(0.42, 0.31, 0.23);
     let mut color = panel;
@@ -1323,6 +1432,17 @@ struct Light {
     color: Vec3,
     /// How fast the light fades with the square of distance.
     falloff: f32,
+    /// The room it lights; walls keep it from the other.
+    room: Area,
+}
+
+/// Which room a point inside the house lights up with.
+fn room_of(point: Vec3) -> Area {
+    if point.x < home::PARTITION {
+        Area::Bedroom
+    } else {
+        Area::Living
+    }
 }
 
 impl Lights {
@@ -1330,17 +1450,36 @@ impl Lights {
         let world = scene.world;
         let size = world.size();
         let mut points = Vec::new();
-        let window_center = (window::WINDOW_LOW + window::WINDOW_HIGH) * 0.5;
-        points.push(Light {
-            position: Vec3::new(window_center.x, window_center.y, ROOM_MIN.z + 0.35),
-            color: sky::light_through(&scene.outside),
-            falloff: 0.35,
-        });
+        for (low, high, room) in [
+            (window::WINDOW_LOW, window::WINDOW_HIGH, Area::Living),
+            (
+                home::BEDROOM_WINDOW_LOW,
+                home::BEDROOM_WINDOW_HIGH,
+                Area::Bedroom,
+            ),
+        ] {
+            let middle = (low + high) * 0.5;
+            points.push(Light {
+                position: Vec3::new(middle.x, middle.y, ROOM_MIN.z + 0.35),
+                color: sky::light_through(&scene.outside),
+                falloff: 0.35,
+                room,
+            });
+        }
+        if night_light(world) {
+            points.push(Light {
+                position: NIGHT_LIGHT,
+                color: Vec3::new(1.0, 0.72, 0.42) * 0.55,
+                falloff: 2.2,
+                room: Area::Bedroom,
+            });
+        }
         if world.lamp.on {
             points.push(Light {
                 position: world.lamp.bulb() - Vec3::Y * 0.1,
                 color: LAMP_LIGHT * 1.1,
                 falloff: 0.6,
+                room: Area::Living,
             });
         }
         if home::in_house(world.ghost.position) {
@@ -1351,6 +1490,7 @@ impl Lights {
                     * scene.aura.visibility.clamp(0.0, 1.0)
                     * size,
                 falloff: 5.0,
+                room: room_of(world.ghost.position),
             });
         }
         if let Some(body) = &scene.friend {
@@ -1358,6 +1498,7 @@ impl Lights {
                 position: body.position,
                 color: body.aura.color * 0.15 * body.aura.visibility * body.opacity,
                 falloff: 6.0,
+                room: room_of(body.position),
             });
         }
         if let Some(decoration) = world.decoration() {
@@ -1365,6 +1506,7 @@ impl Lights {
                 position: Decoration::POSITION + Vec3::Y * decoration.height() * 0.65,
                 color: decoration_light(decoration, world.time),
                 falloff: 3.0,
+                room: Area::Living,
             });
         }
         for mote in &world.motes {
@@ -1372,6 +1514,7 @@ impl Lights {
                 position: mote.position,
                 color: mote_color(world) * 0.25 * mote.glow(world.time),
                 falloff: 10.0,
+                room: room_of(mote.position),
             });
         }
         Self {
@@ -1387,7 +1530,9 @@ impl Lights {
     }
 
     fn at(&self, point: Vec3, normal: Vec3) -> Vec3 {
-        let mut total = self.points.iter().fold(self.ambient, |total, light| {
+        let room = room_of(point);
+        let lit = self.points.iter().filter(|light| light.room == room);
+        let mut total = lit.fold(self.ambient, |total, light| {
             let offset = light.position - point;
             let distance_squared = offset.length_squared();
             let facing = normal
@@ -1400,14 +1545,35 @@ impl Lights {
         if facing > 0.0 && self.sun.z < -1e-3 && self.sunlight.max_element() > 1e-3 {
             let along = (ROOM_MIN.z - point.z) / self.sun.z;
             let through = point + self.sun * along;
+            let pane = if point.x < home::PARTITION {
+                window::pane_in(
+                    through.truncate(),
+                    0.02,
+                    0.0,
+                    home::BEDROOM_WINDOW_LOW,
+                    home::BEDROOM_WINDOW_HIGH,
+                )
+            } else {
+                window::pane(through.truncate(), 0.02, self.lift)
+            };
             if along > 0.0
-                && let Some(pane) = window::pane(through.truncate(), 0.02, self.lift)
+                && let Some(pane) = pane
             {
                 total += self.sunlight * facing * (1.0 - pane.frame) * 0.9;
             }
         }
         total
     }
+}
+
+/// The little lamp on the bedroom's nightstand.
+const NIGHT_LIGHT: Vec3 = Vec3::new(home::NIGHTSTAND.x, 0.62, home::NIGHTSTAND.z);
+
+/// Whether the nightstand's lamp glows: in the dark, when the lamp is on or
+/// the ghost has gone to bed.
+fn night_light(world: &World) -> bool {
+    sky::Sky::at_hour(world.hour).day < 0.5
+        && (world.lamp.on || home::area(world.ghost.position) == Area::Bedroom)
 }
 
 /// The light from outside at `hour`: bright by day, warm at dawn and dusk,
@@ -1479,6 +1645,24 @@ mod tests {
             opacity: 1.0,
             accessory: None,
         }
+    }
+
+    #[test]
+    fn a_ray_walks_through_the_inner_doorway_into_the_bedroom_but_not_through_the_wall() {
+        let start = Vec3::new(0.5, 1.0, 0.72);
+        let through = rooms_exit(start, -Vec3::X).unwrap();
+        assert_eq!(through.area, Area::Bedroom);
+        assert!((through.point.x - home::BEDROOM_MIN.x).abs() < 1e-3);
+        let blocked = rooms_exit(Vec3::new(0.5, 1.0, -0.6), -Vec3::X).unwrap();
+        assert_eq!(blocked.area, Area::Living);
+        assert!((blocked.point.x - ROOM_MIN.x).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_ray_from_the_front_into_the_bedroom_starts_there() {
+        let hit = rooms_exit(Vec3::new(-3.8, 1.2, 6.0), -Vec3::Z).unwrap();
+        assert_eq!(hit.area, Area::Bedroom);
+        assert!(hit.enter > 0.0 && hit.axis == 2 && !hit.high);
     }
 
     #[test]

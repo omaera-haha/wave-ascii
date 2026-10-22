@@ -140,7 +140,16 @@ impl World {
                 .viewer
                 .pointer
                 .unwrap_or(Vec3::new(0.0, 1.2, ROOM_MAX.z)),
-            Thing::Window => WINDOW_CENTER,
+            // The window of the room it's in.
+            Thing::Window => {
+                if super::home::area(self.ghost.position) == super::home::Area::Bedroom {
+                    let middle =
+                        (super::home::BEDROOM_WINDOW_LOW + super::home::BEDROOM_WINDOW_HIGH) * 0.5;
+                    Vec3::new(middle.x, middle.y, super::ROOM_MIN.z)
+                } else {
+                    WINDOW_CENTER
+                }
+            }
             Thing::Lamp => self.lamp.bulb(),
             Thing::Plant => self.plant.position + Vec3::Y * self.plant.height() * 0.6,
             Thing::Ball => self.ball.position,

@@ -18,21 +18,26 @@ pub struct Pane {
 /// The window at `point` on the back wall, as (x, y), with the lower sash
 /// lifted by `lift` from 0 shut to 1 open.
 pub fn pane(point: Vec2, footprint: f32, lift: f32) -> Option<Pane> {
-    if point.cmplt(WINDOW_LOW).any() || point.cmpgt(WINDOW_HIGH).any() {
+    pane_in(point, footprint, lift, WINDOW_LOW, WINDOW_HIGH)
+}
+
+/// A window like it filling the rectangle from `low` to `high`.
+pub fn pane_in(point: Vec2, footprint: f32, lift: f32, low: Vec2, high: Vec2) -> Option<Pane> {
+    if point.cmplt(low).any() || point.cmpgt(high).any() {
         return None;
     }
-    let size = WINDOW_HIGH - WINDOW_LOW;
-    let coordinates = (point - WINDOW_LOW) / size;
+    let size = high - low;
+    let coordinates = (point - low) / size;
     // A point sample still needs a nonzero edge at exact shape boundaries.
     let footprint = footprint.max(1e-5);
-    let border = (point - WINDOW_LOW).min(WINDOW_HIGH - point).min_element();
-    let middle = WINDOW_LOW.y + size.y * 0.5;
+    let border = (point - low).min(high - point).min_element();
+    let middle = low.y + size.y * 0.5;
     let lift = lift.clamp(0.0, 1.0);
-    let bottom = WINDOW_LOW.y + size.y * 0.5 * lift;
+    let bottom = low.y + size.y * 0.5 * lift;
     let glazed = point.y >= bottom;
     let distance = (border - 0.05)
         .min(if glazed {
-            (point.x - (WINDOW_LOW.x + size.x * 0.5)).abs() - 0.0175
+            (point.x - (low.x + size.x * 0.5)).abs() - 0.0175
         } else {
             1.0
         })

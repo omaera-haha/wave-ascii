@@ -202,11 +202,7 @@ impl World {
             && flat(self.ghost.position - WINDOW_CENTER).length_squared() < 0.8 * 0.8;
         let warm = !self.window_open
             || (self.lamp.on && self.ghost.position.distance_squared(self.lamp.bulb()) < 1.1 * 1.1)
-            || self
-                .ghost
-                .position
-                .distance_squared(self.nook.bed(self.size()))
-                < 0.9 * 0.9;
+            || self.ghost.position.distance_squared(self.sleeping_spot()) < 0.9 * 0.9;
         if shivering || wet_window || puddle {
             self.chill.amount = (self.chill.amount + elapsed).min(CHILL_THRESHOLD);
         } else if warm {

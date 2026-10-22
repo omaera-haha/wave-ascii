@@ -14,10 +14,11 @@ use super::sky::{self, Heavens, Outside, Sky, noise, phase, scramble, weather_co
 use crate::sdf::{coverage, mix, smooth_min, smoothstep};
 use crate::world::cat::{CatPicture, Coat, Pose};
 use crate::world::home::{
-    self, BENCH, BIRDBATH, BUSHES, CHIMNEY, CHIMNEY_HALF, CHIMNEY_TOP, CLOTHESLINE,
-    CLOTHESLINE_HEIGHT, DOOR_HIGH, DOOR_LOW, EAVE, EAVE_DROP, GABLE, GARDEN, GARDEN_HALF,
-    HOUSE_MAX, HOUSE_MIN, LANTERN, LANTERN_HEIGHT, LOT_MAX, LOT_MIN, MAILBOX, PERCH, RIDGE, SILL,
-    SILL_HALF, SWING_HALF_WIDTH, SWING_TOP, TREE, TREE_CROWN, TREE_CROWN_RADIUS,
+    self, BEDROOM_MAX, BEDROOM_MIN, BEDROOM_WINDOW_HIGH, BEDROOM_WINDOW_LOW, BENCH, BIRDBATH,
+    BUSHES, CHIMNEY, CHIMNEY_HALF, CHIMNEY_TOP, CLOTHESLINE, CLOTHESLINE_HEIGHT, DOOR_HIGH,
+    DOOR_LOW, EAVE, EAVE_DROP, GABLE, GARDEN, GARDEN_HALF, HOUSE_MAX, HOUSE_MIN, LANTERN,
+    LANTERN_HEIGHT, LOT_MAX, LOT_MIN, MAILBOX, PERCH, RIDGE, SILL, SILL_HALF, SWING_HALF_WIDTH,
+    SWING_TOP, TREE, TREE_CROWN, TREE_CROWN_RADIUS,
 };
 use crate::world::passerby::{Passerby, Passing};
 use crate::world::{BirdPicture, Occasion, Plant, Season};
@@ -850,17 +851,26 @@ impl<'a> Yard<'a> {
         let surface = match (axis, high) {
             (2, true) => {
                 // The glass front lets the ray in.
-                if point.x > ROOM_MIN.x && point.x < ROOM_MAX.x && point.y < ROOM_MAX.y {
+                let living = point.x > ROOM_MIN.x && point.x < ROOM_MAX.x;
+                let bedroom = point.x > BEDROOM_MIN.x && point.x < BEDROOM_MAX.x;
+                if (living || bedroom) && point.y < ROOM_MAX.y {
                     return None;
                 }
                 Surface::Section
             }
             (2, false) => {
                 let at = Vec2::new(point.x, point.y);
-                let low = super::window::WINDOW_LOW;
-                let top = super::window::WINDOW_HIGH;
+                let (low, top, lift) = if point.x < home::PARTITION {
+                    (BEDROOM_WINDOW_LOW, BEDROOM_WINDOW_HIGH, 0.0)
+                } else {
+                    (
+                        super::window::WINDOW_LOW,
+                        super::window::WINDOW_HIGH,
+                        self.outside.window_lift,
+                    )
+                };
                 if at.cmpgt(low).all() && at.cmplt(top).all() {
-                    match super::window::pane(at, 0.01, self.outside.window_lift) {
+                    match super::window::pane_in(at, 0.01, lift, low, top) {
                         Some(pane) if pane.frame < 0.5 => return None,
                         _ => Surface::Trim,
                     }

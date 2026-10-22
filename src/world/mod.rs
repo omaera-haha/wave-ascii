@@ -1842,7 +1842,7 @@ impl World {
                 )
             }),
             Activity::Explore => self.random_spot(),
-            Activity::Rest => self.nook.bed(self.size()),
+            Activity::Rest => self.sleeping_spot(),
             Activity::Tend => self.tend_target(),
             Activity::Lamp => self.lamp.bulb() + Vec3::new(0.35, -0.15, 0.25),
             Activity::Visit => self.glass_spot(),
@@ -3565,11 +3565,17 @@ impl World {
             target
         };
         let leaving = home::in_house(ghost.position) != home::in_house(target);
+        let goal = target;
         let target = home::waypoint(ghost.position, target);
         let outdoors = !home::in_house(ghost.position);
         let passing =
             |position: Vec3| home::in_doorway(position) && (leaving || !home::indoors(position));
+        let passing_inner = |position: Vec3| {
+            home::in_inner_doorway(position)
+                && (home::area(position) != home::area(goal) || !home::indoors(position))
+        };
         let doorway = passing(ghost.position);
+        let inner = passing_inner(ghost.position);
         let speed = match ghost.plan.activity {
             Activity::Chase => 1.3 * growth::chase_speed(self.life.skills.level(Skill::Catching)),
             Activity::Fetch if self.ball.held => {
@@ -3620,6 +3626,16 @@ impl World {
         if outdoors {
             (low, high) = home::yard_bounds();
             low.y = 0.45 * size;
+        } else if home::area(ghost.position) == home::Area::Bedroom {
+            low = home::BEDROOM_MIN + Vec3::new(0.3, 0.45 * size, 0.3);
+            high = home::BEDROOM_MAX - Vec3::new(0.3, 0.35, 0.3);
+        }
+        if inner {
+            low.x = f32::NEG_INFINITY;
+            high.x = f32::INFINITY;
+            low.z = home::INNER_LOW.x + 0.15;
+            high.z = home::INNER_HIGH.x - 0.15;
+            high.y = home::INNER_HIGH.y - 0.45;
         }
         if doorway {
             low.x = f32::NEG_INFINITY;
@@ -3694,6 +3710,7 @@ impl World {
             .chain(decoration)
             .chain(tower)
             .chain(tidy_stacks.into_iter().flatten())
+            .chain(home::bedroom_obstacles())
             .filter(|_| !outdoors)
         {
             let offset = flat(ghost.position - center);
@@ -3730,7 +3747,13 @@ impl World {
         if reaching {
             minimum.z = ROOM_MIN.z - 0.04;
         }
-        let was_inside = home::in_house(before) && !passing(before);
+        // Through a doorway it keeps in line with it; otherwise it stays
+        // in the room it was in, or out of the walls when outside.
+        let settled = if passing(before) || passing_inner(before) {
+            home::area(ghost.position)
+        } else {
+            home::area(before)
+        };
         if passing(ghost.position) {
             ghost.position.z = ghost
                 .position
@@ -3740,8 +3763,22 @@ impl World {
                 .position
                 .y
                 .clamp(0.38 * size, home::DOOR_HIGH.y - 0.25);
-        } else if was_inside || home::in_house(ghost.position) && passing(before) {
+        } else if passing_inner(ghost.position) {
+            ghost.position.z = ghost
+                .position
+                .z
+                .clamp(home::INNER_LOW.x + 0.1, home::INNER_HIGH.x - 0.1);
+            ghost.position.y = ghost
+                .position
+                .y
+                .clamp(0.38 * size, home::INNER_HIGH.y - 0.25);
+        } else if settled == home::Area::Living {
             ghost.position = ghost.position.clamp(minimum, ROOM_MAX - Vec3::splat(0.12));
+        } else if settled == home::Area::Bedroom {
+            ghost.position = ghost.position.clamp(
+                home::BEDROOM_MIN + Vec3::new(0.12, 0.38 * size, 0.12),
+                home::BEDROOM_MAX - Vec3::splat(0.12),
+            );
         } else if home::in_house(ghost.position) {
             // Outside, it can't drift in through a wall.
             ghost.position.x = before.x;

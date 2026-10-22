@@ -1,7 +1,8 @@
-//! The cottage around the room, and the yard around the cottage.
+//! The cottage and the yard around it.
 //!
-//! The room keeps its box. Walls get thickness, a back window, and a door
-//! in the right wall. Fenced lawn all around: a big tree behind the house,
+//! Two rooms side by side behind a glass front: the living room, with the
+//! door out to the yard in its right wall, and the bedroom on its left,
+//! through an inner doorway. Fenced lawn all around: a big tree behind,
 //! and the side yard on the right with a swing, garden bed, birdbath,
 //! bench, lantern, and mailbox.
 
@@ -13,8 +14,11 @@ use super::{ROOM_MAX, ROOM_MIN, World, flat};
 
 /// Wall and ceiling thickness.
 pub const WALL: f32 = 0.12;
+/// The bedroom, left of the living room across one wall.
+pub const BEDROOM_MIN: Vec3 = Vec3::new(-5.3, 0.0, ROOM_MIN.z);
+pub const BEDROOM_MAX: Vec3 = Vec3::new(ROOM_MIN.x - WALL, ROOM_MAX.y, ROOM_MAX.z);
 /// Outside of the walls. The glass front has no thickness.
-pub const HOUSE_MIN: Vec3 = Vec3::new(ROOM_MIN.x - WALL, 0.0, ROOM_MIN.z - WALL);
+pub const HOUSE_MIN: Vec3 = Vec3::new(BEDROOM_MIN.x - WALL, 0.0, ROOM_MIN.z - WALL);
 pub const HOUSE_MAX: Vec3 = Vec3::new(ROOM_MAX.x + WALL, ROOM_MAX.y + WALL, ROOM_MAX.z);
 
 /// A low gable roof over it all: its ridge runs left to right.
@@ -29,6 +33,26 @@ pub const CHIMNEY: Vec3 = Vec3::new(-1.25, 0.0, -0.78);
 pub const CHIMNEY_HALF: f32 = 0.17;
 pub const CHIMNEY_TOP: f32 = 3.42;
 
+/// The inner doorway between the rooms, (z, y) corners, and where the
+/// ghost lines up on each side of it.
+pub const INNER_LOW: Vec2 = Vec2::new(0.4, 0.0);
+pub const INNER_HIGH: Vec2 = Vec2::new(1.05, 1.8);
+pub const INNER_LIVING: Vec3 = Vec3::new(ROOM_MIN.x + 0.42, 0.95, 0.72);
+pub const INNER_BEDROOM: Vec3 = Vec3::new(BEDROOM_MAX.x - 0.42, 0.95, 0.72);
+/// The middle of the wall between the rooms.
+pub const PARTITION: f32 = ROOM_MIN.x - WALL * 0.5;
+
+/// The bed against the bedroom's back wall: its middle on the floor and
+/// half size, with the pillow at the back.
+pub const BED: Vec3 = Vec3::new(-3.85, 0.0, -0.74);
+pub const BED_HALF: Vec3 = Vec3::new(0.5, 0.21, 0.64);
+pub const NIGHTSTAND: Vec3 = Vec3::new(-4.72, 0.0, -1.15);
+/// A chest of drawers against the bedroom's left wall.
+pub const DRESSER: Vec3 = Vec3::new(-5.02, 0.0, 0.3);
+/// The bedroom's back window, (x, y) corners.
+pub const BEDROOM_WINDOW_LOW: Vec2 = Vec2::new(-4.45, 1.05);
+pub const BEDROOM_WINDOW_HIGH: Vec2 = Vec2::new(-3.25, 1.9);
+
 /// Door in the right wall, (z, y) corners.
 pub const DOOR_LOW: Vec2 = Vec2::new(0.42, 0.0);
 pub const DOOR_HIGH: Vec2 = Vec2::new(1.12, 1.78);
@@ -37,7 +61,7 @@ pub const DOOR_INSIDE: Vec3 = Vec3::new(ROOM_MAX.x - 0.42, 0.95, 0.77);
 pub const DOOR_OUTSIDE: Vec3 = Vec3::new(HOUSE_MAX.x + 0.5, 0.95, 0.77);
 
 /// Fenced lawn, (x, z) corners. The front stays open toward the viewer.
-pub const LOT_MIN: Vec2 = Vec2::new(-6.6, -5.8);
+pub const LOT_MIN: Vec2 = Vec2::new(-9.2, -5.8);
 pub const LOT_MAX: Vec2 = Vec2::new(8.8, 3.4);
 
 /// Big tree behind the house; its crown shows over the roofline and its
@@ -65,10 +89,10 @@ pub const LANTERN_HEIGHT: f32 = 1.25;
 pub const MAILBOX: Vec3 = Vec3::new(8.0, 0.0, 2.95);
 /// Where a snowman stands after a snowfall, and where the ghost sculpts
 /// its snow ghost beside it.
-pub const SNOWMAN: Vec3 = Vec3::new(-2.8, 0.0, 1.7);
-pub const SNOW_GHOST: Vec3 = Vec3::new(-3.65, 0.0, 2.1);
+pub const SNOWMAN: Vec3 = Vec3::new(6.35, 0.0, 2.25);
+pub const SNOW_GHOST: Vec3 = Vec3::new(5.5, 0.0, 2.55);
 /// Clothesline posts in the left yard.
-pub const CLOTHESLINE: [Vec3; 2] = [Vec3::new(-5.6, 0.0, -1.0), Vec3::new(-3.0, 0.0, -2.1)];
+pub const CLOTHESLINE: [Vec3; 2] = [Vec3::new(-8.4, 0.0, -0.6), Vec3::new(-6.2, 0.0, -2.6)];
 pub const CLOTHESLINE_HEIGHT: f32 = 1.55;
 /// Bushes: ground center and radius.
 pub const BUSHES: [(Vec3, f32); 6] = [
@@ -77,7 +101,7 @@ pub const BUSHES: [(Vec3, f32); 6] = [
     (Vec3::new(-4.4, 0.0, -4.7), 0.7),
     (Vec3::new(8.0, 0.0, -4.9), 0.6),
     (Vec3::new(3.0, 0.0, -4.95), 0.55),
-    (Vec3::new(-5.9, 0.0, 2.4), 0.5),
+    (Vec3::new(-8.3, 0.0, 2.4), 0.5),
 ];
 
 /// Places the ghost likes in the yard.
@@ -149,9 +173,41 @@ impl Spot {
     }
 }
 
-/// Inside the room, walls excluded.
+/// Which part of home a point is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Area {
+    Living,
+    Bedroom,
+    Yard,
+}
+
+/// The part of home a point is in; a point inside a wall counts for the
+/// room on its side.
+pub fn area(point: Vec3) -> Area {
+    if !in_house(point) {
+        Area::Yard
+    } else if point.x < PARTITION {
+        Area::Bedroom
+    } else {
+        Area::Living
+    }
+}
+
+/// The inside of a room, walls excluded.
+pub fn room_bounds(area: Area) -> Option<(Vec3, Vec3)> {
+    match area {
+        Area::Living => Some((ROOM_MIN, ROOM_MAX)),
+        Area::Bedroom => Some((BEDROOM_MIN, BEDROOM_MAX)),
+        Area::Yard => None,
+    }
+}
+
+/// Inside one of the rooms, walls excluded.
 pub fn indoors(point: Vec3) -> bool {
-    point.cmpge(ROOM_MIN).all() && point.cmple(ROOM_MAX).all()
+    [Area::Living, Area::Bedroom]
+        .into_iter()
+        .filter_map(room_bounds)
+        .any(|(low, high)| point.cmpge(low).all() && point.cmple(high).all())
 }
 
 /// Inside the cottage's footprint, walls included.
@@ -192,9 +248,6 @@ pub fn near_house(point: Vec3, margin: f32) -> bool {
 /// both on the same side of them, or through the back window, the glass
 /// front, or the door while it stands open.
 pub fn seen_through(eye: Vec3, target: Vec3, door: f32) -> bool {
-    if in_house(eye) == in_house(target) {
-        return true;
-    }
     let along = target - eye;
     let crossing = |axis: usize, plane: f32| -> Option<Vec3> {
         if along[axis].abs() < 1e-6 {
@@ -205,12 +258,26 @@ pub fn seen_through(eye: Vec3, target: Vec3, door: f32) -> bool {
             .contains(&fraction)
             .then(|| eye + along * fraction)
     };
+    let (from, to) = (area(eye), area(target));
+    if from == to {
+        return true;
+    }
+    if from != Area::Yard && to != Area::Yard {
+        return crossing(0, PARTITION).is_some_and(|point| {
+            let at = Vec2::new(point.z, point.y);
+            at.cmpge(INNER_LOW).all() && at.cmple(INNER_HIGH).all()
+        });
+    }
     let window = crossing(2, ROOM_MIN.z).is_some_and(|point| {
         let at = Vec2::new(point.x, point.y);
-        at.cmpge(Vec2::new(-0.75, 1.0)).all() && at.cmple(Vec2::new(0.75, 2.0)).all()
+        (at.cmpge(Vec2::new(-0.75, 1.0)).all() && at.cmple(Vec2::new(0.75, 2.0)).all())
+            || (at.cmpge(BEDROOM_WINDOW_LOW).all() && at.cmple(BEDROOM_WINDOW_HIGH).all())
     });
-    let glass = crossing(2, ROOM_MAX.z)
-        .is_some_and(|point| point.x > ROOM_MIN.x && point.x < ROOM_MAX.x && point.y < ROOM_MAX.y);
+    let glass = crossing(2, ROOM_MAX.z).is_some_and(|point| {
+        point.y < ROOM_MAX.y
+            && (point.x > ROOM_MIN.x && point.x < ROOM_MAX.x
+                || point.x > BEDROOM_MIN.x && point.x < BEDROOM_MAX.x)
+    });
     let doorway = door > 0.3
         && crossing(0, ROOM_MAX.x).is_some_and(|point| {
             let at = Vec2::new(point.z, point.y);
@@ -260,6 +327,17 @@ pub fn waypoint(from: Vec3, to: Vec3) -> Vec3 {
         // Coming down from up high beside the house: down to the door.
         return Vec3::new(from.x, DOOR_OUTSIDE.y, from.z);
     }
+    // Between the rooms, through the inner doorway; out of the bedroom,
+    // through it first.
+    let (here, there) = (area(from), area(to));
+    if here != there && (here == Area::Bedroom || there == Area::Bedroom && here == Area::Living) {
+        let (near, far) = if here == Area::Bedroom {
+            (INNER_BEDROOM, INNER_LIVING)
+        } else {
+            (INNER_LIVING, INNER_BEDROOM)
+        };
+        return through(from, near, far);
+    }
     if inside == in_house(to) {
         return if inside { to } else { around(from, to) };
     }
@@ -278,6 +356,15 @@ pub fn waypoint(from: Vec3, to: Vec3) -> Vec3 {
     } else {
         around(from, near)
     }
+}
+
+/// Crossing a doorway from `near`, on this side, to `far`: line up first,
+/// then cross.
+fn through(from: Vec3, near: Vec3, far: Vec3) -> Vec3 {
+    let aligned = (from.z - near.z).abs() < 0.22 && (from.y - near.y).abs() < 0.45;
+    let onward = (far.x - near.x).signum();
+    let close = (from.x - near.x).abs() < 0.3 || (from.x - near.x) * onward > 0.0;
+    if aligned && close { far } else { near }
 }
 
 /// Out in the yard, the next place on the way to `to` that skirts the
@@ -392,6 +479,24 @@ pub fn in_doorway(point: Vec3) -> bool {
         && point.x < HOUSE_MAX.x + 0.15
 }
 
+/// In the inner doorway between the rooms.
+pub fn in_inner_doorway(point: Vec3) -> bool {
+    point.z > INNER_LOW.x + 0.05
+        && point.z < INNER_HIGH.x - 0.05
+        && point.y < INNER_HIGH.y
+        && point.x > BEDROOM_MAX.x - 0.15
+        && point.x < ROOM_MIN.x + 0.15
+}
+
+/// Bedroom things the ghost steers around: center, radius, top.
+pub fn bedroom_obstacles() -> [(Vec3, f32, f32); 3] {
+    [
+        (BED, 0.7, BED_HALF.y * 2.0 + 0.25),
+        (NIGHTSTAND, 0.24, 0.8),
+        (DRESSER, 0.45, 1.2),
+    ]
+}
+
 /// Yard things the ghost steers around: center, radius, top. The garden
 /// bed is low enough to float over.
 pub fn yard_obstacles() -> [(Vec3, f32, f32); 5] {
@@ -422,11 +527,24 @@ impl World {
         near(self.ghost.position).max(friend)
     }
 
-    /// Where the camera should look: the room, or the ghost out in the yard.
+    /// Where the ghost sleeps: in its bed at night, else on the cushion.
+    pub fn sleeping_spot(&self) -> Vec3 {
+        if self.bedtime() {
+            BED + Vec3::new(0.0, BED_HALF.y * 2.0 + 0.38 * self.size(), -0.18)
+        } else {
+            self.nook.bed(self.size())
+        }
+    }
+
+    /// Where the camera should look: a room, or the ghost out in the yard.
     pub fn view_focus(&self, home: Vec3) -> Vec3 {
         let ghost = self.ghost.position;
-        if in_house(ghost) {
-            return home;
+        match area(ghost) {
+            Area::Living => return home,
+            Area::Bedroom => {
+                return Vec3::new((BEDROOM_MIN.x + BEDROOM_MAX.x) * 0.5 + 0.4, home.y, home.z);
+            }
+            Area::Yard => {}
         }
         // Leaning back toward the house, so it stays in view too.
         Vec3::new(
