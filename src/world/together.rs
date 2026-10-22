@@ -206,6 +206,8 @@ impl World {
             .find(|peer| peer.id == partner)
             .map_or(self.ghost.position, |peer| peer.position);
         let mut plan = Plan::new(Activity::Together, self.time, position, pastime.length());
+        // The anchor keeps the last turn of a chat said, so it starts at none.
+        plan.anchor = Vec3::ZERO;
         plan.with = Some(partner);
         plan.pastime = Some(pastime);
         // The one who asked starts as "it" in tag and speaks first.
@@ -570,6 +572,37 @@ mod tests {
             &event.kind,
             EventKind::Together { what, .. } if *what == pastime
         )));
+    }
+
+    #[test]
+    fn a_chat_opens_with_a_hello_from_the_one_who_asked() {
+        let mut world = pair();
+        let partner = world.with_creature(1, |world| world.ghost.name.clone()).unwrap();
+        world.with_creature(1, |world| world.ghost.plan.done = true);
+        world.look_at_housemates();
+        world.invitations.push(Invitation {
+            from: 0,
+            to: 1,
+            pastime: Pastime::Chat,
+            at: world.time,
+        });
+        // Wherever the partner stands, the opener is said.
+        world.with_creature(1, |world| world.ghost.position.y = 1.9);
+        world.look_at_housemates();
+        world.join(1, Pastime::Chat, true);
+        let mut said = Vec::new();
+        for _ in 0..200 {
+            world.step(0.1);
+            if let Some(line) = &world.ghost.speech
+                && said.last() != Some(&line.text)
+            {
+                said.push(line.text.clone());
+            }
+        }
+        assert!(
+            said.iter().any(|line| line.starts_with(&format!("Hi, {partner}!"))),
+            "{said:?}"
+        );
     }
 
     #[test]

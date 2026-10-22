@@ -249,6 +249,8 @@ pub struct App {
     pub follow: bool,
     /// When the stranger the viewer was last told about came.
     announced_stranger: Option<f64>,
+    /// The symbols rising from each creature's head this frame.
+    puffs: Vec<(u32, Vec<crate::face::emote::Puff>)>,
 }
 
 impl App {
@@ -319,6 +321,7 @@ impl App {
             hover: None,
             follow: false,
             announced_stranger: None,
+            puffs: Vec::new(),
         }
     }
 
@@ -343,6 +346,11 @@ impl App {
         self.live_clock = true;
         (self.world.date, self.world.hour) = local_time();
         self.world.tuck_in();
+        for id in self.world.roster() {
+            if id != self.world.host() {
+                self.world.with_creature(id, World::tuck_in);
+            }
+        }
         self
     }
 
@@ -1312,6 +1320,9 @@ impl App {
         settings.apply(&mut self.config);
         self.mode = Mode::Watching;
         self.mind.reconfigure(&self.config);
+        for (_, mind) in &mut self.minds {
+            mind.reconfigure_beside(&self.config, &self.mind);
+        }
         let saved = match &self.paths {
             Some(paths) => self.config.save(&paths.config),
             None => Ok(()),
@@ -1836,13 +1847,19 @@ impl App {
                         .map_or(Vec3::new(0.35, 0.86, 0.8), |(_, glow)| *glow)
                 },
             };
-            if let Some(figure) = self
-                .world
-                .with_creature(id, |world| portrait::figure(world, view, &handling))
-            {
+            if let Some((figure, puffs)) = self.world.with_creature(id, |world| {
+                (
+                    portrait::figure(world, view, &handling),
+                    crate::face::emote::puffs(world),
+                )
+            }) {
                 figures.push(figure);
+                self.puffs.retain(|(other, _)| *other != id);
+                self.puffs.push((id, puffs));
             }
         }
+        let roster = self.world.roster();
+        self.puffs.retain(|(id, _)| roster.contains(id));
         figures.sort_by_key(|figure| figure.id != host);
         if let Some(stranger) = &self.world.stranger {
             figures.push(portrait::stranger(stranger, self.world.time));
@@ -1862,6 +1879,25 @@ impl App {
     /// The creatures as the last frame showed them.
     pub fn shown(&self) -> &[Figure] {
         &self.shown
+    }
+
+    /// The symbols rising from creature `id`'s head this frame.
+    pub fn puffs(&self, id: u32) -> &[crate::face::emote::Puff] {
+        self.puffs
+            .iter()
+            .find(|(other, _)| *other == id)
+            .map_or(&[], |(_, puffs)| puffs)
+    }
+
+    /// The glow of creature `id`'s mood.
+    pub fn glow(&self, id: u32) -> Vec3 {
+        if id == self.world.host() {
+            return self.aura;
+        }
+        self.glows
+            .iter()
+            .find(|(other, _)| *other == id)
+            .map_or(Vec3::new(0.35, 0.86, 0.8), |(_, glow)| *glow)
     }
 
     pub fn born(&self) -> i64 {
@@ -2020,6 +2056,7 @@ pub fn restore(world: &mut World, save: &Save, now: i64) -> Journal {
 pub fn restore_household(world: &mut World, save: &Save, now: i64) {
     let household = &save.household;
     world.ghost.id = household.id;
+    world.reserve_id(household.id);
     world.ghost.species = household.species;
     world.ghost.genome = household.genome.sanitized(household.species);
     let timezone = jiff::tz::TimeZone::system();

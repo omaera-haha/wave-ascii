@@ -239,6 +239,13 @@ impl Mind {
         }
     }
 
+    /// Starts using `config` as `host`, another creature's mind, just did,
+    /// sharing its background runtime.
+    pub fn reconfigure_beside(&mut self, config: &Config, host: &Mind) {
+        self.runtime = host.runtime.clone();
+        self.reconfigure(config);
+    }
+
     /// Starts using the keys, models, and settings in `config`, for example
     /// after the viewer changes them. Requests already out finish as they
     /// were sent.

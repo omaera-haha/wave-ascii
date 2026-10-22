@@ -397,6 +397,7 @@ pub enum EventKind {
     },
     /// Someone new came to live in the cottage.
     Newcomer {
+        id: u32,
         name: String,
         species: Species,
     },
@@ -700,7 +701,7 @@ impl EventKind {
                 "came to live in the cottage with {}",
                 together::list(names)
             ),
-            Self::Newcomer { name, species } => {
+            Self::Newcomer { name, species, .. } => {
                 format!("{name} the {} came to live with us", species.noun())
             }
             Self::Together { with, what } => what.words(with),
@@ -730,8 +731,6 @@ impl EventKind {
                 | Self::BirdFlewOff { .. }
                 | Self::MothArrived
                 | Self::MothLeft
-                | Self::FriendArrived(_)
-                | Self::FriendLeft(_)
                 | Self::Jostled { .. }
                 | Self::Bloomed
                 | Self::Newcomer { .. }

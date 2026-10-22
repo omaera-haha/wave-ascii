@@ -83,7 +83,7 @@ fn name_tags(app: &App, screen: &mut Canvas, view: &View, scene_rows: usize) {
             .iter()
             .rev()
             .take_while(|event| app.world.time - event.time < 60.0)
-            .any(|event| matches!(&event.kind, EventKind::Newcomer { name, .. } if *name == creature.name));
+            .any(|event| matches!(&event.kind, EventKind::Newcomer { id, .. } if *id == figure.id));
         let shown = app.hover == Some(figure.id)
             || (figure.id == host && app.world.time - app.selected_at < 3.0)
             || fresh;
@@ -332,7 +332,8 @@ fn speech_bubble(
     Some(left + box_width)
 }
 
-// Wordless feelings drift up from the head, beside any speech bubble.
+// Wordless feelings drift up from each head, beside the speech bubble of
+// the one the viewer is with.
 fn emote_puffs(
     app: &App,
     screen: &mut Canvas,
@@ -345,40 +346,46 @@ fn emote_puffs(
     if columns == 0 || scene_rows == 0 {
         return;
     }
-    let Some(figure) = app
-        .shown()
-        .iter()
-        .find(|figure| figure.id == app.world.host())
-    else {
-        return;
-    };
-    let Some(pixel) = crown_cell(figure, view, columns, scene_rows) else {
-        return;
-    };
-    if !(0.0..columns as f32).contains(&pixel.x) || !(0.0..scene_rows as f32).contains(&pixel.y) {
-        return;
-    }
-    let origin = bubble_right.map_or(pixel.x, |right| pixel.x.max(right as f32));
-    for puff in emote::puffs(&app.world) {
-        let column = (origin + puff.offset.x).round();
-        let row = (pixel.y - puff.offset.y).round();
-        if !(0.0..columns as f32).contains(&column) || !(0.0..scene_rows as f32).contains(&row) {
+    let host = app.world.host();
+    for figure in app.shown() {
+        let puffs = app.puffs(figure.id);
+        if puffs.is_empty() {
             continue;
         }
-        let column = column as usize;
-        let row = row as usize;
-        let fade = ((puff.age - 2.0 / 3.0) * 3.0).clamp(0.0, 1.0);
-        let color = puff.emote.color(app.aura()) * (1.0 - fade);
-        let background = screen.get(column, row).and_then(|cell| cell.background);
-        write(
-            screen,
-            column,
-            row,
-            columns,
-            puff.glyph,
-            rgb(color),
-            background,
-        );
+        let Some(pixel) = crown_cell(figure, view, columns, scene_rows) else {
+            continue;
+        };
+        if !(0.0..columns as f32).contains(&pixel.x) || !(0.0..scene_rows as f32).contains(&pixel.y)
+        {
+            continue;
+        }
+        let origin = match bubble_right {
+            Some(right) if figure.id == host => pixel.x.max(right as f32),
+            _ => pixel.x,
+        };
+        let glow = app.glow(figure.id);
+        for puff in puffs {
+            let column = (origin + puff.offset.x).round();
+            let row = (pixel.y - puff.offset.y).round();
+            if !(0.0..columns as f32).contains(&column) || !(0.0..scene_rows as f32).contains(&row)
+            {
+                continue;
+            }
+            let column = column as usize;
+            let row = row as usize;
+            let fade = ((puff.age - 2.0 / 3.0) * 3.0).clamp(0.0, 1.0);
+            let color = puff.emote.color(glow) * (1.0 - fade);
+            let background = screen.get(column, row).and_then(|cell| cell.background);
+            write(
+                screen,
+                column,
+                row,
+                columns,
+                puff.glyph,
+                rgb(color),
+                background,
+            );
+        }
     }
 }
 

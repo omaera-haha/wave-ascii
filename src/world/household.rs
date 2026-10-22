@@ -465,6 +465,15 @@ impl World {
         if self.ghost.id == id {
             return true;
         }
+        if !self.housemates.iter().any(|soul| soul.ghost.id == id) {
+            return false;
+        }
+        // Whatever the household heard but the housemates haven't yet
+        // reaches them before the one in the world changes.
+        let news = std::mem::take(&mut self.news);
+        if !news.is_empty() {
+            self.step_housemates(0.0, &news);
+        }
         let Some(index) = self.housemates.iter().position(|soul| soul.ghost.id == id) else {
             return false;
         };
@@ -503,6 +512,11 @@ impl World {
         self.ghost.fade = 0.0;
     }
 
+    /// Makes sure no newcomer is ever given `id`.
+    pub fn reserve_id(&mut self, id: u32) {
+        self.next_creature = self.next_creature.max(id.saturating_add(1));
+    }
+
     /// A new creature of `species` called `name` comes to live here. It
     /// arrives at the door and comes in to look around. Returns its id, or
     /// `None` when the house is full.
@@ -510,8 +524,11 @@ impl World {
         if self.household_size() >= MOST {
             return None;
         }
-        let id = self.next_creature;
-        self.next_creature += 1;
+        let mut id = self.next_creature;
+        while self.creature(id).is_some() {
+            id += 1;
+        }
+        self.next_creature = id + 1;
         let mut newcomer = World::new(seed, self.hour);
         newcomer.date = self.date;
         newcomer.time = self.time;
@@ -551,7 +568,7 @@ impl World {
             self.say(&welcome);
         }
         let name = name.to_owned();
-        self.record(EventKind::Newcomer { name, species });
+        self.record(EventKind::Newcomer { id, name, species });
         self.look_at_housemates();
         Some(id)
     }
@@ -632,6 +649,8 @@ impl World {
         self.ghost.speech = None;
         self.events
             .retain(|event| !matches!(event.kind, EventKind::Newcomer { .. }));
+        // Founders are home together already, not arriving.
+        self.news.clear();
         self.look_at_housemates();
     }
 
@@ -642,6 +661,10 @@ impl World {
         for id in ids {
             self.with_creature(id, |world| {
                 for kind in news {
+                    // A newcomer knows it has come.
+                    if matches!(kind, EventKind::Newcomer { id, .. } if *id == world.ghost.id) {
+                        continue;
+                    }
                     world.record(kind.clone());
                     if *kind == EventKind::Thunder {
                         world.hear_thunder();
@@ -901,6 +924,52 @@ mod tests {
             assert_eq!(world.ghost.plan.activity, Activity::Rest);
             assert!(world.ghost.speech.is_some());
         });
+    }
+
+    #[test]
+    fn a_newcomer_never_takes_an_id_already_living_here() {
+        let mut world = household();
+        world.select(2);
+        // As after a restore that knew only the housemates' ids.
+        world.next_creature = 1;
+        let id = world.adopt(Species::Frog, "Fred", 1).unwrap();
+        assert!(![0, 1, 2].contains(&id));
+        let mut roster = world.roster();
+        roster.dedup();
+        assert_eq!(roster.len(), 4);
+        let before = world.time;
+        world.step(0.1);
+        assert!((world.time - before - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn nobody_hears_of_its_own_arrival() {
+        let mut world = household();
+        world.step(0.1);
+        for id in world.roster() {
+            world.with_creature(id, |world| {
+                assert!(
+                    world
+                        .events
+                        .iter()
+                        .all(|event| !matches!(event.kind, EventKind::Newcomer { .. }))
+                );
+            });
+        }
+        let id = world.adopt(Species::Frog, "Zuzu", 3).unwrap();
+        world.step(0.1);
+        let heard = |world: &mut World, id: u32| {
+            world
+                .with_creature(id, |world| {
+                    world.events.iter().any(|event| {
+                        matches!(&event.kind, EventKind::Newcomer { name, .. } if name == "Zuzu")
+                    })
+                })
+                .unwrap()
+        };
+        assert!(!heard(&mut world, id));
+        assert!(heard(&mut world, 1));
+        assert!(heard(&mut world, 0));
     }
 
     #[test]

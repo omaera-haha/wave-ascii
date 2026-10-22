@@ -770,7 +770,9 @@ impl World {
     }
 
     pub(super) fn advance_music(&mut self) {
+        // A housemate already playing the box finishes its tune first.
         if self.pending_tune.is_some()
+            && !self.claimed(Activity::Music)
             && self.focus.is_none()
             && self.hunt.is_none()
             && self.ghost.asleep < 0.3
@@ -825,7 +827,13 @@ impl World {
                         self.ghost.plan.arrived = Some(self.time);
                         return Some(POSITION + Vec3::Y * 0.3);
                     }
-                    let tune = self.queued_tune.take().unwrap_or_else(|| built_in(0));
+                    // A tune asked of the one the viewer is with is its to play.
+                    let queued = if self.companion {
+                        None
+                    } else {
+                        self.queued_tune.take()
+                    };
+                    let tune = queued.unwrap_or_else(|| built_in(0));
                     let repeats = if self.random_unit() < 0.3 { 2 } else { 1 };
                     let lullaby = tune.name == "little lullaby";
                     self.start_music(tune, lullaby, repeats);
