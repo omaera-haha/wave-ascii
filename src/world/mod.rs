@@ -1881,7 +1881,9 @@ impl World {
         };
         let mut plan = Plan::new(activity, self.time, target, length);
         plan.cat = activity == Activity::Yard
-            && self.beside_cat().is_some_and(|spot| spot.distance(target) < 1e-4);
+            && self
+                .beside_cat()
+                .is_some_and(|spot| spot.distance(target) < 1e-4);
         if activity == Activity::Explore
             && !self.life.gallery.is_empty()
             && self.random.unit() < 0.04
@@ -3551,9 +3553,8 @@ impl World {
         let leaving = home::in_house(ghost.position) != home::in_house(target);
         let target = home::waypoint(ghost.position, target);
         let outdoors = !home::in_house(ghost.position);
-        let passing = |position: Vec3| {
-            home::in_doorway(position) && (leaving || !home::indoors(position))
-        };
+        let passing =
+            |position: Vec3| home::in_doorway(position) && (leaving || !home::indoors(position));
         let doorway = passing(ghost.position);
         let speed = match ghost.plan.activity {
             Activity::Chase => 1.3 * growth::chase_speed(self.life.skills.level(Skill::Catching)),

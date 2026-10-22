@@ -50,7 +50,10 @@ impl World {
         }
         let mut weights = [
             (Spot::Swing, 1.4),
-            (Spot::Garden, if self.seedlings.is_empty() { 0.4 } else { 1.0 }),
+            (
+                Spot::Garden,
+                if self.seedlings.is_empty() { 0.4 } else { 1.0 },
+            ),
             (Spot::Birdbath, 0.8),
             (Spot::Bench, 0.7),
             (Spot::Lawn, 0.8),
@@ -79,14 +82,12 @@ impl World {
         }
         let size = self.size();
         let target = self.ghost.plan.anchor;
-        Spot::ALL
-            .into_iter()
-            .min_by(|first, second| {
-                first
-                    .position(size)
-                    .distance_squared(target)
-                    .total_cmp(&second.position(size).distance_squared(target))
-            })
+        Spot::ALL.into_iter().min_by(|first, second| {
+            first
+                .position(size)
+                .distance_squared(target)
+                .total_cmp(&second.position(size).distance_squared(target))
+        })
     }
 
     /// Whether the ghost is sitting on the swing, swinging.
@@ -177,7 +178,9 @@ impl World {
         if arrived.is_some() && self.ghost.plan.stayed(self.time) > self.ghost.plan.length {
             self.move_on(None);
         }
-        self.ghost.needs.change(0.0, 0.01 * seconds, 0.008 * seconds);
+        self.ghost
+            .needs
+            .change(0.0, 0.01 * seconds, 0.008 * seconds);
         self.position_of(super::Thing::Cat)
     }
 
@@ -191,9 +194,7 @@ impl World {
         let thought = match (spot, korean) {
             (Spot::Swing, false) => "Wheee! Up to the clouds!",
             (Spot::Swing, true) => "슝— 구름까지 올라가자!",
-            (Spot::Garden, false) if self.seedlings.is_empty() => {
-                "This bed is waiting for seeds."
-            }
+            (Spot::Garden, false) if self.seedlings.is_empty() => "This bed is waiting for seeds.",
             (Spot::Garden, true) if self.seedlings.is_empty() => "씨앗을 기다리는 화단이야.",
             (Spot::Garden, false) => "Growing, growing, little ones.",
             (Spot::Garden, true) => "쑥쑥 자라라, 얘들아.",
@@ -234,7 +235,9 @@ impl World {
 
     /// The swing's angle from hanging straight, in radians.
     pub fn swing_angle(&self) -> f32 {
-        let riding = self.swinging().map_or(0.0, |stayed| (stayed / 3.0).min(1.0));
+        let riding = self
+            .swinging()
+            .map_or(0.0, |stayed| (stayed / 3.0).min(1.0));
         riding * (self.time * 1.9).sin() as f32 * 0.45
     }
 
@@ -292,8 +295,7 @@ impl World {
 
     /// Where the ghost is, in or out, and how the yard looks, for the minds.
     pub fn yard_words(&self) -> String {
-        let place = if home::in_doorway(self.ghost.position)
-            && !home::indoors(self.ghost.position)
+        let place = if home::in_doorway(self.ghost.position) && !home::indoors(self.ghost.position)
         {
             "passing through the door".to_owned()
         } else if home::in_house(self.ghost.position) {
@@ -301,7 +303,10 @@ impl World {
         } else if self.ghost.plan.activity == Activity::Yard && self.ghost.plan.cat {
             "out in the yard, keeping the visiting cat company".to_owned()
         } else {
-            match self.yard_spot().filter(|_| self.ghost.plan.arrived.is_some()) {
+            match self
+                .yard_spot()
+                .filter(|_| self.ghost.plan.arrived.is_some())
+            {
                 Some(spot) => format!("out in the yard, {}", spot.words()),
                 None => "out in the yard".to_owned(),
             }
@@ -314,7 +319,13 @@ impl World {
             "the lawn is green"
         };
         let snowman = if crate::world::passerby::Passerby::Snowman
-            .at(self.meteor_seed, self.time, self.date, self.hour, &self.weather)
+            .at(
+                self.meteor_seed,
+                self.time,
+                self.date,
+                self.hour,
+                &self.weather,
+            )
             .is_some()
         {
             ", and a snowman stands on the lawn"
@@ -351,10 +362,18 @@ fn requested(text: &str) -> Option<Request> {
         let phrase: Vec<&str> = phrase.split_whitespace().collect();
         words.windows(phrase.len()).any(|run| run == phrase)
     };
-    if ["come in", "come inside", "come back in", "go inside", "stay inside"]
-        .iter()
-        .any(|phrase| has(phrase))
-        || ["들어와", "들어가", "안으로"].iter().any(|word| lower.contains(word))
+    if [
+        "come in",
+        "come inside",
+        "come back in",
+        "go inside",
+        "stay inside",
+    ]
+    .iter()
+    .any(|phrase| has(phrase))
+        || ["들어와", "들어가", "안으로"]
+            .iter()
+            .any(|word| lower.contains(word))
     {
         return Some(Request::In);
     }
@@ -367,8 +386,8 @@ fn requested(text: &str) -> Option<Request> {
     {
         return None;
     }
-    let swing = words.iter().any(|word| matches!(*word, "swing" | "swings"))
-        || lower.contains("그네");
+    let swing =
+        words.iter().any(|word| matches!(*word, "swing" | "swings")) || lower.contains("그네");
     if swing {
         return Some(Request::Out(Some(Spot::Swing)));
     }
@@ -384,9 +403,16 @@ fn requested(text: &str) -> Option<Request> {
     ]
     .iter()
     .any(|phrase| has(phrase));
-    let korean = ["마당", "밖에 나가", "밖에서 놀", "나가자", "나가 놀", "산책"]
-        .iter()
-        .any(|word| lower.contains(word));
+    let korean = [
+        "마당",
+        "밖에 나가",
+        "밖에서 놀",
+        "나가자",
+        "나가 놀",
+        "산책",
+    ]
+    .iter()
+    .any(|word| lower.contains(word));
     (english || korean).then_some(Request::Out(None))
 }
 
@@ -440,7 +466,12 @@ mod tests {
 
     #[test]
     fn asking_to_go_out_or_come_in_works_in_both_languages() {
-        for message in ["let's go outside!", "play in the yard", "마당에 나가자", "밖에 나가서 놀자"] {
+        for message in [
+            "let's go outside!",
+            "play in the yard",
+            "마당에 나가자",
+            "밖에 나가서 놀자",
+        ] {
             let mut world = World::new(3, 11.0);
             world.ghost.needs.energy = 1.0;
             let heard = world.hear(message);
@@ -455,7 +486,11 @@ mod tests {
         assert!(world.ghost.plan.done);
         for message in ["don't go outside", "hello", "the window is open"] {
             let mut world = World::new(3, 11.0);
-            assert_ne!(world.hear(message).understanding, Understanding::Outing, "{message}");
+            assert_ne!(
+                world.hear(message).understanding,
+                Understanding::Outing,
+                "{message}"
+            );
         }
         let mut world = World::new(3, 11.0);
         world.weather.storm = true;
@@ -474,11 +509,6 @@ mod tests {
         world.ghost.needs.energy = 1.0;
         assert!(!world.yard_is_open() || !world.bedtime());
     }
-}
-
-#[cfg(test)]
-mod cat_tests {
-    use super::*;
 
     #[test]
     fn an_outing_to_a_settled_cat_sits_beside_it_without_startling_it() {
@@ -503,11 +533,6 @@ mod cat_tests {
             .events
             .iter()
             .any(|event| event.kind == EventKind::CatLeft { startled: true });
-        println!(
-            "stayed {stayed} startled {startled} trust {} rest {:?}",
-            world.life.cat_trust,
-            world.visitors.cat.map(|cat| cat.rest)
-        );
         assert!(!startled);
         assert!(stayed > 20.0);
     }

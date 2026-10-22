@@ -459,7 +459,10 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         if !home::in_house(body.position) {
             glows.push((
                 body.position,
-                body.aura.color * (0.2 + 0.25 * body.aura.brightness) * body.aura.visibility.clamp(0.0, 1.0) * body.opacity,
+                body.aura.color
+                    * (0.2 + 0.25 * body.aura.brightness)
+                    * body.aura.visibility.clamp(0.0, 1.0)
+                    * body.opacity,
                 4.0,
             ));
         }
@@ -477,7 +480,11 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         flag: world.unread_letter().is_some(),
         gust: world.wind.gust(world.time),
         // Puddles linger while the rainbow shines after the rain.
-        wet: scene.outside.rain.max(scene.outside.rainbow * 0.7).clamp(0.0, 1.0),
+        wet: scene
+            .outside
+            .rain
+            .max(scene.outside.rainbow * 0.7)
+            .clamp(0.0, 1.0),
         door: world.door_open(),
         smoke: match world.season() {
             crate::world::Season::Winter => true,
@@ -511,7 +518,15 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
         let direction = scene.view.ray(point);
         let dream = dream.as_ref().filter(|bubble| bubble.contains(point));
         let tile = cull.then(|| tiles.at(point));
-        let color = tracer.trace_from(scene.view.eye, direction, scene.view, 0.0, dream, false, tile);
+        let color = tracer.trace_from(
+            scene.view.eye,
+            direction,
+            scene.view,
+            0.0,
+            dream,
+            false,
+            tile,
+        );
         // A gentle lift of the mid-tones, which glyphs otherwise lose: about
         // the 0.85th power, from square roots, which are quicker.
         let color = color.clamp(Vec3::ZERO, Vec3::ONE);
@@ -577,7 +592,8 @@ impl Tiles {
                     None => (Vec2::splat(-1e9), Vec2::splat(1e9)),
                 };
                 let first = ((low.x - tiles.left) / size).floor().max(0.0) as usize;
-                let last = (((high.x - tiles.left) / size).floor().max(0.0) as usize).min(columns - 1);
+                let last =
+                    (((high.x - tiles.left) / size).floor().max(0.0) as usize).min(columns - 1);
                 let top = ((tiles.top - high.y) / size).floor().max(0.0) as usize;
                 let bottom = (((tiles.top - low.y) / size).floor().max(0.0) as usize).min(rows - 1);
                 if first > last || top > bottom || low.x > half_width || high.y < -1.0 {
@@ -939,7 +955,9 @@ impl Tracer<'_> {
                 * 0.3;
         }
         color += self.yard.sparkles(eye, direction, limit, traveled, spread);
-        color = self.yard.smoke(eye, direction, limit, traveled, spread, color);
+        color = self
+            .yard
+            .smoke(eye, direction, limit, traveled, spread, color);
         let shelter = match (front, room) {
             (None, Some(hit)) => hit.enter,
             _ => 0.0,
@@ -1530,8 +1548,12 @@ mod tests {
             let full = render_with(&scene, grid, false);
             for row in 0..grid.height {
                 for column in 0..grid.width {
-                    let difference = culled.shade(column, row).rgb() - full.shade(column, row).rgb();
-                    assert!(difference.abs().max_element() < 1e-4, "{yaw} {column} {row}");
+                    let difference =
+                        culled.shade(column, row).rgb() - full.shade(column, row).rgb();
+                    assert!(
+                        difference.abs().max_element() < 1e-4,
+                        "{yaw} {column} {row}"
+                    );
                 }
             }
         }
@@ -1946,7 +1968,10 @@ mod bench {
     #[test]
     #[ignore]
     fn bench_frames() {
-        let hour: f32 = std::env::var("BENCH_HOUR").ok().and_then(|hour| hour.parse().ok()).unwrap_or(13.0);
+        let hour: f32 = std::env::var("BENCH_HOUR")
+            .ok()
+            .and_then(|hour| hour.parse().ok())
+            .unwrap_or(13.0);
         let mut world = World::new(1, hour);
         world.date = jiff::civil::Date::constant(2026, 10, 22);
         world.step(0.0);

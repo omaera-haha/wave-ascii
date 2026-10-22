@@ -405,11 +405,13 @@ fn thing(world: &World, thing: Thing) -> String {
         }
         .to_owned(),
         Thing::Cat => world.cat_words(),
-        Thing::Swing => if world.swinging().is_some() {
-            "the swing in the yard, swinging with you on it".to_owned()
-        } else {
-            "the swing set out in the yard".to_owned()
-        },
+        Thing::Swing => {
+            if world.swinging().is_some() {
+                "the swing in the yard, swinging with you on it".to_owned()
+            } else {
+                "the swing set out in the yard".to_owned()
+            }
+        }
     }
 }
 

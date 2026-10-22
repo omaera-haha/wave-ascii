@@ -439,7 +439,12 @@ impl World {
     pub fn tend_description(&self) -> String {
         let plant = self.thirstiest().map_or_else(
             || "the potted plant".to_owned(),
-            |index| format!("the {} in the garden bed", self.seedlings[index].kind.name()),
+            |index| {
+                format!(
+                    "the {} in the garden bed",
+                    self.seedlings[index].kind.name()
+                )
+            },
         );
         let seeds = if self.seed_ready() {
             " A ripe seed is ready to plant out in the garden bed."

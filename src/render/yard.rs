@@ -8,21 +8,20 @@ use glam::{Vec2, Vec3};
 
 use super::View;
 use super::shapes::{
-    Furniture, Material, box_distance, box_span, capsule, ellipsoid, rounded_cylinder,
-    sphere_span,
+    Furniture, Material, box_distance, box_span, capsule, ellipsoid, rounded_cylinder, sphere_span,
 };
 use super::sky::{self, Heavens, Outside, Sky, noise, phase, scramble, weather_color};
 use crate::sdf::{coverage, mix, smooth_min, smoothstep};
+use crate::world::cat::{CatPicture, Coat, Pose};
 use crate::world::home::{
     self, BENCH, BIRDBATH, BUSHES, CHIMNEY, CHIMNEY_HALF, CHIMNEY_TOP, CLOTHESLINE,
     CLOTHESLINE_HEIGHT, DOOR_HIGH, DOOR_LOW, EAVE, EAVE_DROP, GABLE, GARDEN, GARDEN_HALF,
-    HOUSE_MAX, HOUSE_MIN, LANTERN, LANTERN_HEIGHT, LOT_MAX, LOT_MIN, MAILBOX, PERCH, RIDGE,
-    SILL, SILL_HALF, SWING_HALF_WIDTH, SWING_TOP, TREE, TREE_CROWN, TREE_CROWN_RADIUS,
+    HOUSE_MAX, HOUSE_MIN, LANTERN, LANTERN_HEIGHT, LOT_MAX, LOT_MIN, MAILBOX, PERCH, RIDGE, SILL,
+    SILL_HALF, SWING_HALF_WIDTH, SWING_TOP, TREE, TREE_CROWN, TREE_CROWN_RADIUS,
 };
-use crate::world::{ROOM_MAX, ROOM_MIN};
 use crate::world::passerby::{Passerby, Passing};
-use crate::world::cat::{CatPicture, Coat, Pose};
 use crate::world::{BirdPicture, Occasion, Plant, Season};
+use crate::world::{ROOM_MAX, ROOM_MIN};
 
 const LANTERN_LIGHT: Vec3 = Vec3::new(1.0, 0.74, 0.42);
 /// Big plain surfaces are drawn dimmer than the things on them, so the
@@ -112,8 +111,10 @@ impl Piece {
             ),
             Self::Tree => {
                 let crown = TREE_CROWN_RADIUS + 0.75;
-                let low = (TREE_CROWN - Vec3::splat(crown)).min(TREE + Vec3::new(-2.05, -0.05, -0.65));
-                let high = (TREE_CROWN + Vec3::splat(crown)).max(TREE + Vec3::new(1.65, 4.65, 1.35));
+                let low =
+                    (TREE_CROWN - Vec3::splat(crown)).min(TREE + Vec3::new(-2.05, -0.05, -0.65));
+                let high =
+                    (TREE_CROWN + Vec3::splat(crown)).max(TREE + Vec3::new(1.65, 4.65, 1.35));
                 ((low + high) * 0.5, (high - low) * 0.5)
             }
             Self::Swing => (
@@ -189,8 +190,8 @@ impl Piece {
             Self::Mailbox => sphere_span(origin, direction, MAILBOX + Vec3::Y * 0.65, 0.68),
             Self::Clothesline => {
                 let center = (CLOTHESLINE[0] + CLOTHESLINE[1]) * 0.5 + Vec3::Y * 0.85;
-                let half = ((CLOTHESLINE[1] - CLOTHESLINE[0]) * 0.5).abs()
-                    + Vec3::new(0.4, 0.85, 0.4);
+                let half =
+                    ((CLOTHESLINE[1] - CLOTHESLINE[0]) * 0.5).abs() + Vec3::new(0.4, 0.85, 0.4);
                 box_span(origin, direction, center, half)
             }
             Self::Bush(center, radius) => sphere_span(
@@ -336,12 +337,18 @@ impl<'a> Yard<'a> {
         if setting.door > 0.02 {
             pieces.push(Piece::Door(setting.door * 1.35));
         }
-        pieces.extend(BUSHES.iter().map(|&(center, radius)| Piece::Bush(center, radius)));
+        pieces.extend(
+            BUSHES
+                .iter()
+                .map(|&(center, radius)| Piece::Bush(center, radius)),
+        );
         let mut critters = Vec::new();
         for passing in outside.passersby.iter().flatten() {
             match passing.kind {
                 Passerby::Snowman => pieces.push(Piece::Snowman(passing.phase)),
-                Passerby::Squirrel => critters.push(Critter::Squirrel(*passing, squirrel_at(passing))),
+                Passerby::Squirrel => {
+                    critters.push(Critter::Squirrel(*passing, squirrel_at(passing)))
+                }
                 _ => {}
             }
         }
@@ -493,7 +500,8 @@ impl<'a> Yard<'a> {
             let point = origin + direction * distance;
             hit = Some((distance, self.shade(surface, point, normal, direction)));
         }
-        if !cut && let Some((distance, normal, surface)) = self.shell(origin, direction, from, limit)
+        if !cut
+            && let Some((distance, normal, surface)) = self.shell(origin, direction, from, limit)
         {
             limit = distance;
             let point = origin + direction * distance;
@@ -504,7 +512,10 @@ impl<'a> Yard<'a> {
         }
 
         let pieces: &mut dyn Iterator<Item = &Piece> = match cull {
-            Some(cull) => &mut cull.pieces.iter().map(|&index| &self.pieces[usize::from(index)]),
+            Some(cull) => &mut cull
+                .pieces
+                .iter()
+                .map(|&index| &self.pieces[usize::from(index)]),
             None => &mut self.pieces.iter(),
         };
         for piece in pieces {
@@ -661,7 +672,8 @@ impl<'a> Yard<'a> {
                 let cell = cells.floor();
                 let seed = scramble(cell + Vec2::splat(layer as f32 * 7.0));
                 if seed < snow * 0.55 {
-                    let center = Vec2::new(scramble(cell + Vec2::X), scramble(cell + Vec2::Y)) * 0.6 + 0.2;
+                    let center =
+                        Vec2::new(scramble(cell + Vec2::X), scramble(cell + Vec2::Y)) * 0.6 + 0.2;
                     let distance = ((cells - cell - center) * 0.3).length();
                     let flake = coverage(distance - 0.011, pixel * 0.6 + 0.003);
                     color = color.lerp(SNOW * (0.35 + self.ambient.max_element()), flake * 0.85);
@@ -757,9 +769,18 @@ impl<'a> Yard<'a> {
                         let sag = 0.05 * ((index as f32 * 0.5).sin() * 0.5 + 0.5);
                         let bulb = Vec3::new(x, eave.y - sag, eave.z);
                         let twinkle = 0.55
-                            + 0.45 * (phase(self.outside.time, 1.7, TAU) + index as f32 * 2.3).sin();
+                            + 0.45
+                                * (phase(self.outside.time, 1.7, TAU) + index as f32 * 2.3).sin();
                         light += colors[index % colors.len()]
-                            * super::sprite(origin, direction, bulb, limit + 0.1, spread, 0.025, traveled)
+                            * super::sprite(
+                                origin,
+                                direction,
+                                bulb,
+                                limit + 0.1,
+                                spread,
+                                0.025,
+                                traveled,
+                            )
                             * twinkle
                             * (0.35 + 0.65 * night);
                     }
@@ -1021,7 +1042,14 @@ impl<'a> Yard<'a> {
             // Far from the crown, its outer bound will do.
             let bound = crown.length() - (TREE_CROWN_RADIUS + 0.55);
             if bound > 0.3 {
-                return (nearest.0.min(bound), if nearest.0 < bound { Surface::Bark } else { Surface::Foliage });
+                return (
+                    nearest.0.min(bound),
+                    if nearest.0 < bound {
+                        Surface::Bark
+                    } else {
+                        Surface::Foliage
+                    },
+                );
             }
             let mut blob = crown.length() - 1.2;
             for (offset, radius) in [
@@ -1034,8 +1062,9 @@ impl<'a> Yard<'a> {
             ] {
                 blob = smooth_min(blob, (crown - offset).length() - radius, 0.35);
             }
-            let bumps = ((crown.x * 5.3).sin() + (crown.y * 5.9 + 1.3).sin() + (crown.z * 6.1 + 2.1).sin())
-                * 0.045;
+            let bumps =
+                ((crown.x * 5.3).sin() + (crown.y * 5.9 + 1.3).sin() + (crown.z * 6.1 + 2.1).sin())
+                    * 0.045;
             let crown = blob + bumps;
             if crown < nearest.0 {
                 nearest = (crown, Surface::Foliage);
@@ -1116,8 +1145,12 @@ impl<'a> Yard<'a> {
     fn clothesline(&self, point: Vec3) -> (f32, Surface) {
         let [first, second] = CLOTHESLINE;
         let top = Vec3::Y * CLOTHESLINE_HEIGHT;
-        let mut wood = capsule(point, first, first + top, 0.045)
-            .min(capsule(point, second, second + top, 0.045));
+        let mut wood = capsule(point, first, first + top, 0.045).min(capsule(
+            point,
+            second,
+            second + top,
+            0.045,
+        ));
         let line = (second - first).normalize();
         let across = line.cross(Vec3::Y);
         for post in [first, second] {
@@ -1129,8 +1162,12 @@ impl<'a> Yard<'a> {
             ));
         }
         let middle = (first + second) * 0.5 + top - Vec3::Y * 0.12;
-        let rope = capsule(point, first + top, middle, 0.008)
-            .min(capsule(point, middle, second + top, 0.008));
+        let rope = capsule(point, first + top, middle, 0.008).min(capsule(
+            point,
+            middle,
+            second + top,
+            0.008,
+        ));
         let mut nearest = (wood, Surface::Timber);
         if rope < nearest.0 {
             nearest = (rope, Surface::Rope);
@@ -1148,7 +1185,11 @@ impl<'a> Yard<'a> {
             let (sine, cosine) = (tilt + flutter).sin_cos();
             let turned_out = out * cosine - down * sine;
             let turned_down = down * cosine + out * sine;
-            let size = [Vec2::new(0.26, 0.34), Vec2::new(0.17, 0.24), Vec2::new(0.15, 0.2)][index];
+            let size = [
+                Vec2::new(0.26, 0.34),
+                Vec2::new(0.17, 0.24),
+                Vec2::new(0.15, 0.2),
+            ][index];
             let cloth = box_distance(
                 Vec3::new(along, turned_down + size.y, turned_out),
                 Vec3::new(size.x, size.y, 0.008),
@@ -1265,11 +1306,11 @@ impl<'a> Yard<'a> {
         let season = self.outside.season;
         match surface {
             Surface::Bark => {
-                Vec3::new(0.42, 0.31, 0.24) * (0.8 + 0.35 * noise(Vec2::new(point.x + point.z, point.y) * 9.0))
+                Vec3::new(0.42, 0.31, 0.24)
+                    * (0.8 + 0.35 * noise(Vec2::new(point.x + point.z, point.y) * 9.0))
             }
             Surface::Foliage => {
-                let texture = noise(Vec2::new(point.x * 2.7 + point.z, point.y * 2.7))
-                    * 0.6
+                let texture = noise(Vec2::new(point.x * 2.7 + point.z, point.y * 2.7)) * 0.6
                     + noise(Vec2::new(point.x - point.z, point.y) * 8.0) * 0.4;
                 let leaves = match season {
                     Season::Spring => {
@@ -1286,7 +1327,8 @@ impl<'a> Yard<'a> {
                 if season == Season::Spring {
                     let cells = Vec2::new(point.x + point.z * 0.7, point.y) * 9.0;
                     let cell = cells.floor();
-                    let center = Vec2::new(scramble(cell + Vec2::X), scramble(cell + Vec2::Y)) * 0.5 + 0.25;
+                    let center =
+                        Vec2::new(scramble(cell + Vec2::X), scramble(cell + Vec2::Y)) * 0.5 + 0.25;
                     let blossom = coverage((cells - cell - center).length() - 0.28, 0.12)
                         * smoothstep(0.35, 0.6, scramble(cell));
                     leaves.lerp(Vec3::new(1.0, 0.8, 0.88), blossom)
@@ -1305,10 +1347,15 @@ impl<'a> Yard<'a> {
             }
             Surface::Picket | Surface::Trim => Vec3::new(0.93, 0.92, 0.87),
             Surface::Timber => {
-                Vec3::new(0.8, 0.6, 0.42) * (0.85 + 0.25 * noise(Vec2::new(point.x * 3.0, point.y * 40.0 + point.z * 3.0)))
+                Vec3::new(0.8, 0.6, 0.42)
+                    * (0.85
+                        + 0.25 * noise(Vec2::new(point.x * 3.0, point.y * 40.0 + point.z * 3.0)))
             }
             Surface::Soil => Vec3::new(0.42, 0.3, 0.22),
-            Surface::Stone => Vec3::new(0.68, 0.69, 0.7) * (0.9 + 0.15 * noise(Vec2::new(point.x + point.z, point.y) * 11.0)),
+            Surface::Stone => {
+                Vec3::new(0.68, 0.69, 0.7)
+                    * (0.9 + 0.15 * noise(Vec2::new(point.x + point.z, point.y) * 11.0))
+            }
             Surface::Water => Vec3::new(0.3, 0.45, 0.55),
             Surface::Ice => Vec3::new(0.78, 0.88, 0.98),
             Surface::Iron => Vec3::new(0.3, 0.32, 0.36),
@@ -1380,7 +1427,12 @@ impl<'a> Yard<'a> {
             let stripe = ((at.x / 0.75).floor() as i32).rem_euclid(2) as f32;
             albedo *= 1.0 + mix(stripe * 0.07 - 0.035, 0.0, blur);
             // A worn patch under the swing.
-            let worn = 1.0 - smoothstep(0.25, 0.6, (at - Vec2::new(SWING_TOP.x, SWING_TOP.z)).length());
+            let worn = 1.0
+                - smoothstep(
+                    0.25,
+                    0.6,
+                    (at - Vec2::new(SWING_TOP.x, SWING_TOP.z)).length(),
+                );
             albedo = albedo.lerp(Vec3::new(0.5, 0.4, 0.3), worn * 0.6);
             for (center, radius) in STONES {
                 let stone = coverage((at - center).length() - radius, footprint * 0.5 + 0.01);
@@ -1435,21 +1487,69 @@ impl<'a> Yard<'a> {
 /// The tree's limbs from the trunk, start, end, and radius, relative to its
 /// foot; the twigs only show in winter, inside the crown otherwise.
 const BRANCHES: [(Vec3, Vec3, f32); 15] = [
-    (Vec3::new(0.0, 1.05, 0.0), Vec3::new(-1.3, 1.32, 0.85), 0.075),
-    (Vec3::new(0.0, 1.9, 0.0), Vec3::new(-0.95, 3.05, 0.25), 0.075),
+    (
+        Vec3::new(0.0, 1.05, 0.0),
+        Vec3::new(-1.3, 1.32, 0.85),
+        0.075,
+    ),
+    (
+        Vec3::new(0.0, 1.9, 0.0),
+        Vec3::new(-0.95, 3.05, 0.25),
+        0.075,
+    ),
     (Vec3::new(0.0, 2.1, 0.0), Vec3::new(0.85, 3.2, -0.2), 0.07),
     (Vec3::new(0.0, 2.45, 0.0), Vec3::new(0.05, 3.95, 0.1), 0.065),
-    (Vec3::new(0.0, 1.85, 0.0), Vec3::new(0.95, 2.55, 0.55), 0.055),
-    (Vec3::new(-0.95, 3.05, 0.25), Vec3::new(-1.55, 3.55, 0.5), 0.03),
-    (Vec3::new(-0.95, 3.05, 0.25), Vec3::new(-0.8, 3.85, -0.1), 0.03),
-    (Vec3::new(-0.5, 2.45, 0.12), Vec3::new(-1.4, 2.7, -0.35), 0.03),
-    (Vec3::new(0.85, 3.2, -0.2), Vec3::new(1.5, 3.65, -0.45), 0.03),
+    (
+        Vec3::new(0.0, 1.85, 0.0),
+        Vec3::new(0.95, 2.55, 0.55),
+        0.055,
+    ),
+    (
+        Vec3::new(-0.95, 3.05, 0.25),
+        Vec3::new(-1.55, 3.55, 0.5),
+        0.03,
+    ),
+    (
+        Vec3::new(-0.95, 3.05, 0.25),
+        Vec3::new(-0.8, 3.85, -0.1),
+        0.03,
+    ),
+    (
+        Vec3::new(-0.5, 2.45, 0.12),
+        Vec3::new(-1.4, 2.7, -0.35),
+        0.03,
+    ),
+    (
+        Vec3::new(0.85, 3.2, -0.2),
+        Vec3::new(1.5, 3.65, -0.45),
+        0.03,
+    ),
     (Vec3::new(0.85, 3.2, -0.2), Vec3::new(0.7, 4.0, 0.2), 0.03),
-    (Vec3::new(0.45, 2.65, -0.1), Vec3::new(1.35, 2.85, 0.35), 0.028),
-    (Vec3::new(0.05, 3.95, 0.1), Vec3::new(-0.4, 4.45, 0.05), 0.025),
-    (Vec3::new(0.05, 3.95, 0.1), Vec3::new(0.45, 4.4, -0.2), 0.025),
-    (Vec3::new(0.95, 2.55, 0.55), Vec3::new(1.5, 2.95, 1.0), 0.028),
-    (Vec3::new(-0.65, 1.19, 0.42), Vec3::new(-0.95, 1.75, 0.75), 0.03),
+    (
+        Vec3::new(0.45, 2.65, -0.1),
+        Vec3::new(1.35, 2.85, 0.35),
+        0.028,
+    ),
+    (
+        Vec3::new(0.05, 3.95, 0.1),
+        Vec3::new(-0.4, 4.45, 0.05),
+        0.025,
+    ),
+    (
+        Vec3::new(0.05, 3.95, 0.1),
+        Vec3::new(0.45, 4.4, -0.2),
+        0.025,
+    ),
+    (
+        Vec3::new(0.95, 2.55, 0.55),
+        Vec3::new(1.5, 2.95, 1.0),
+        0.028,
+    ),
+    (
+        Vec3::new(-0.65, 1.19, 0.42),
+        Vec3::new(-0.95, 1.75, 0.75),
+        0.03,
+    ),
 ];
 
 /// About where a piece stands, for drawing order.
@@ -1488,7 +1588,9 @@ fn fence(point: Vec3, start: Vec3, end: Vec3) -> (f32, Surface) {
     let along = local.dot(along_axis);
     let across = local.dot(across_axis);
     let spacing = 0.2;
-    let index = (along / spacing).round().clamp(0.0, (length / spacing).floor());
+    let index = (along / spacing)
+        .round()
+        .clamp(0.0, (length / spacing).floor());
     let offset = along - index * spacing;
     let post = index % 12.0 == 0.0;
     let half = if post {
@@ -1556,8 +1658,10 @@ fn lantern(local: Vec3) -> (f32, Surface) {
     );
     let head = local - Vec3::Y * (LANTERN_HEIGHT + 0.1);
     let glass = box_distance(head, Vec3::new(0.075, 0.1, 0.075));
-    let cap = box_distance(head - Vec3::Y * 0.13, Vec3::new(0.11, 0.025, 0.11))
-        .min(box_distance(head + Vec3::Y * 0.11, Vec3::new(0.09, 0.015, 0.09)));
+    let cap = box_distance(head - Vec3::Y * 0.13, Vec3::new(0.11, 0.025, 0.11)).min(box_distance(
+        head + Vec3::Y * 0.11,
+        Vec3::new(0.09, 0.015, 0.09),
+    ));
     let iron = post.min(cap);
     if glass < iron {
         (glass, Surface::Glass)
@@ -1570,9 +1674,15 @@ fn mailbox(local: Vec3, flag: bool) -> (f32, Surface) {
     let post = box_distance(local - Vec3::Y * 0.5, Vec3::new(0.04, 0.5, 0.04));
     let box_shape = box_distance(local - Vec3::Y * 1.08, Vec3::new(0.11, 0.08, 0.2)) - 0.025;
     let flag_shape = if flag {
-        box_distance(local - Vec3::new(0.15, 1.22, -0.1), Vec3::new(0.008, 0.08, 0.025))
+        box_distance(
+            local - Vec3::new(0.15, 1.22, -0.1),
+            Vec3::new(0.008, 0.08, 0.025),
+        )
     } else {
-        box_distance(local - Vec3::new(0.15, 1.09, -0.06), Vec3::new(0.008, 0.025, 0.09))
+        box_distance(
+            local - Vec3::new(0.15, 1.09, -0.06),
+            Vec3::new(0.008, 0.025, 0.09),
+        )
     };
     let mut nearest = (post, Surface::Timber);
     if box_shape < nearest.0 {
@@ -1587,8 +1697,8 @@ fn mailbox(local: Vec3, flag: bool) -> (f32, Surface) {
 fn bush(local: Vec3, radius: f32) -> (f32, Surface) {
     let center = Vec3::Y * radius * 0.55;
     let shape = ellipsoid(local - center, Vec3::new(radius, radius * 0.75, radius));
-    let bumps = ((local.x * 9.0).sin() + (local.y * 8.0 + 1.0).sin() + (local.z * 9.5 + 2.0).sin())
-        * 0.025;
+    let bumps =
+        ((local.x * 9.0).sin() + (local.y * 8.0 + 1.0).sin() + (local.z * 9.5 + 2.0).sin()) * 0.025;
     ((shape + bumps) * 0.85, Surface::Hedge)
 }
 
@@ -1737,7 +1847,10 @@ fn bird_shade(local: Vec2, pixel: f32, bird: BirdPicture, season: Season) -> (f3
         Vec3::new(1.0, 0.58, 0.3)
     };
     let feather = Vec3::new(0.62, 0.5, 0.4).lerp(warm, breast);
-    let eye = coverage(point.distance(head + Vec2::new(0.008, 0.006)) - 0.004, footprint * 0.5);
+    let eye = coverage(
+        point.distance(head + Vec2::new(0.008, 0.006)) - 0.004,
+        footprint * 0.5,
+    );
     (
         coverage(distance, footprint * 0.5),
         feather.lerp(Vec3::splat(0.05), eye),
@@ -1757,8 +1870,18 @@ fn cat_shade(local: Vec2, pixel: f32, cat: &CatPicture) -> (f32, Vec3) {
         ((point - center) / radii).length() * radii.min_element() - radii.min_element()
     };
     let ears = |head: Vec2, size: f32| {
-        line(point, head + Vec2::new(-0.035, 0.04) * size, head + Vec2::new(-0.045, 0.085) * size, 0.017)
-            .min(line(point, head + Vec2::new(0.025, 0.045) * size, head + Vec2::new(0.035, 0.09) * size, 0.017))
+        line(
+            point,
+            head + Vec2::new(-0.035, 0.04) * size,
+            head + Vec2::new(-0.045, 0.085) * size,
+            0.017,
+        )
+        .min(line(
+            point,
+            head + Vec2::new(0.025, 0.045) * size,
+            head + Vec2::new(0.035, 0.09) * size,
+            0.017,
+        ))
     };
     let (distance, head, eyes_open) = match cat.pose {
         Pose::Walking | Pose::Running => {
@@ -1783,7 +1906,12 @@ fn cat_shade(local: Vec2, pixel: f32, cat: &CatPicture) -> (f32, Vec3) {
             }
             let tip = Vec2::new(-0.3, 0.33 + cat.tail * 0.04);
             distance = distance
-                .min(line(point, Vec2::new(-0.15 * stretch, 0.18), Vec2::new(-0.25, 0.24), 0.019))
+                .min(line(
+                    point,
+                    Vec2::new(-0.15 * stretch, 0.18),
+                    Vec2::new(-0.25, 0.24),
+                    0.019,
+                ))
                 .min(line(point, Vec2::new(-0.25, 0.24), tip, 0.017));
             (distance, head, true)
         }
@@ -1794,13 +1922,28 @@ fn cat_shade(local: Vec2, pixel: f32, cat: &CatPicture) -> (f32, Vec3) {
             let mut distance = body
                 .min(point.distance(head) - 0.068)
                 .min(ears(head, 1.0))
-                .min(line(point, Vec2::new(0.07, 0.12), Vec2::new(0.08, 0.0), 0.02));
+                .min(line(
+                    point,
+                    Vec2::new(0.07, 0.12),
+                    Vec2::new(0.08, 0.0),
+                    0.02,
+                ));
             let curl = Vec2::new(0.14, 0.04 + cat.tail * 0.015);
             distance = distance
-                .min(line(point, Vec2::new(-0.1, 0.03), Vec2::new(0.1, 0.02), 0.018))
+                .min(line(
+                    point,
+                    Vec2::new(-0.1, 0.03),
+                    Vec2::new(0.1, 0.02),
+                    0.018,
+                ))
                 .min(line(point, Vec2::new(0.1, 0.02), curl, 0.016));
             if cat.washing {
-                distance = distance.min(line(point, Vec2::new(0.07, 0.15), Vec2::new(0.1, 0.27), 0.02));
+                distance = distance.min(line(
+                    point,
+                    Vec2::new(0.07, 0.15),
+                    Vec2::new(0.1, 0.27),
+                    0.02,
+                ));
             }
             (distance, head, true)
         }
@@ -1810,7 +1953,12 @@ fn cat_shade(local: Vec2, pixel: f32, cat: &CatPicture) -> (f32, Vec3) {
             let distance = loaf
                 .min(point.distance(head) - 0.062)
                 .min(ears(head, 0.75))
-                .min(line(point, Vec2::new(-0.13, 0.03), Vec2::new(0.1, 0.015), 0.022));
+                .min(line(
+                    point,
+                    Vec2::new(-0.13, 0.03),
+                    Vec2::new(0.1, 0.015),
+                    0.022,
+                ));
             (distance, head, false)
         }
     };
@@ -1822,7 +1970,10 @@ fn cat_shade(local: Vec2, pixel: f32, cat: &CatPicture) -> (f32, Vec3) {
     };
     // Tabby stripes, or a calico's patches.
     let marked = match cat.coat {
-        Coat::Calico => (point - Vec2::new(-0.05, 0.2)).length() < 0.09 || point.distance(head) < 0.05 && point.x < head.x,
+        Coat::Calico => {
+            (point - Vec2::new(-0.05, 0.2)).length() < 0.09
+                || point.distance(head) < 0.05 && point.x < head.x
+        }
         _ => ((point.x * 28.0).sin() > 0.55) && point.y > 0.1,
     };
     let mut color = if marked { patch } else { base };
@@ -1830,9 +1981,17 @@ fn cat_shade(local: Vec2, pixel: f32, cat: &CatPicture) -> (f32, Vec3) {
     if eyes_open {
         let open = coverage(point.distance(eye) - 0.012, edge);
         color = color.lerp(Vec3::new(0.6, 0.85, 0.3), open);
-        color = color.lerp(Vec3::splat(0.05), coverage(point.distance(eye + Vec2::X * 0.004) - 0.005, edge));
+        color = color.lerp(
+            Vec3::splat(0.05),
+            coverage(point.distance(eye + Vec2::X * 0.004) - 0.005, edge),
+        );
     } else {
-        let shut = line(point, eye - Vec2::X * 0.014, eye + Vec2::new(0.012, -0.004), 0.003);
+        let shut = line(
+            point,
+            eye - Vec2::X * 0.014,
+            eye + Vec2::new(0.012, -0.004),
+            0.003,
+        );
         color = color.lerp(Vec3::splat(0.1), coverage(shut, edge));
     }
     (coverage(distance, edge), color)
@@ -1848,8 +2007,12 @@ fn squirrel_shade(local: Vec2, pixel: f32, passing: &Passing) -> (f32, Vec3) {
     let tail_point = point - Vec2::new(-0.025, 0.014);
     let tail = (tail_point / Vec2::new(0.014, 0.025)).length() - 1.0;
     let distance = body.min(head).min(tail * 0.014);
-    let eye = coverage(point.distance(Vec2::new(0.025, 0.013)) - 0.0015, footprint * 0.5);
-    let presence = smoothstep(0.0, 0.05, passing.phase) * (1.0 - smoothstep(0.95, 1.0, passing.phase));
+    let eye = coverage(
+        point.distance(Vec2::new(0.025, 0.013)) - 0.0015,
+        footprint * 0.5,
+    );
+    let presence =
+        smoothstep(0.0, 0.05, passing.phase) * (1.0 - smoothstep(0.95, 1.0, passing.phase));
     (
         coverage(distance, footprint * 0.5) * presence,
         Vec3::new(0.78, 0.42, 0.22).lerp(Vec3::splat(0.12), eye),
@@ -1859,8 +2022,8 @@ fn squirrel_shade(local: Vec2, pixel: f32, passing: &Passing) -> (f32, Vec3) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::Camera;
     use crate::frame::Grid;
+    use crate::render::Camera;
 
     fn yard<'a>(outside: &'a Outside, plant: &'a Plant) -> Yard<'a> {
         Yard::new(Setting {
@@ -1896,7 +2059,10 @@ mod tests {
         assert!(((eye + down * distance).y).abs() < 1e-3);
         assert!(color.is_finite() && color.max_element() > 0.05);
         let up = Vec3::new(0.0, 1.0, -1.0).normalize();
-        assert!(yard.trace(eye, up, 0.0, f32::INFINITY, false, 0.0, 0.003).is_none());
+        assert!(
+            yard.trace(eye, up, 0.0, f32::INFINITY, false, 0.0, 0.003)
+                .is_none()
+        );
     }
 
     #[test]
@@ -1916,13 +2082,18 @@ mod tests {
         let outside = Outside::clear(12.0, 0.0);
         let plant = Plant::default();
         let mut yard = yard(&outside, &plant);
-        yard.pieces.extend([Piece::Snowman(0.2), Piece::Door(1.0), Piece::Pumpkin]);
+        yard.pieces
+            .extend([Piece::Snowman(0.2), Piece::Door(1.0), Piece::Pumpkin]);
         for piece in &yard.pieces {
             let (center, half) = piece.bounding_box();
             for step in 0..400 {
                 let angle = step as f32 * 2.399;
                 let origin = center
-                    + Vec3::new(angle.cos() * 9.0, 0.5 + (step % 7) as f32, angle.sin() * 9.0);
+                    + Vec3::new(
+                        angle.cos() * 9.0,
+                        0.5 + (step % 7) as f32,
+                        angle.sin() * 9.0,
+                    );
                 let aim = center
                     + Vec3::new(
                         ((step * 7) % 11) as f32 / 11.0 - 0.5,
@@ -1942,7 +2113,12 @@ mod tests {
 
     #[test]
     fn every_yard_piece_has_finite_distances_and_normals_in_any_weather() {
-        for season in [Season::Spring, Season::Summer, Season::Autumn, Season::Winter] {
+        for season in [
+            Season::Spring,
+            Season::Summer,
+            Season::Autumn,
+            Season::Winter,
+        ] {
             let outside = Outside {
                 season,
                 snow_cover: 1.0,
@@ -1981,4 +2157,3 @@ mod tests {
         }
     }
 }
-

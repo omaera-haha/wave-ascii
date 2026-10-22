@@ -38,8 +38,7 @@ impl Coat {
     }
 
     fn choose(random: &mut Random) -> Self {
-        [Self::Ginger, Self::Gray, Self::Black, Self::Calico]
-            [(random.unit() * 4.0) as usize % 4]
+        [Self::Ginger, Self::Gray, Self::Black, Self::Calico][(random.unit() * 4.0) as usize % 4]
     }
 }
 
@@ -162,14 +161,20 @@ impl Cat {
     }
 
     pub fn picture(&self, time: f64) -> CatPicture {
-        let wave = |speed: f64| ((time * speed).rem_euclid(std::f64::consts::TAU) as f32 + self.seed).sin();
+        let wave = |speed: f64| {
+            ((time * speed).rem_euclid(std::f64::consts::TAU) as f32 + self.seed).sin()
+        };
         let (position, pose, facing) = if let Some((start, from, startled)) = self.departing {
             let away = self.exit(from, startled);
             let speed = if startled { RUN } else { WALK };
             let (position, heading) = along(&away, ((time - start) as f32 * speed).max(0.0));
             (
                 position,
-                if startled { Pose::Running } else { Pose::Walking },
+                if startled {
+                    Pose::Running
+                } else {
+                    Pose::Walking
+                },
                 heading.x.signum(),
             )
         } else {
@@ -255,8 +260,10 @@ impl World {
         let daytime = (8.0..20.0).contains(&self.hour);
         let fair = !matches!(self.weather.sky, Sky::Rain) && !self.weather.storm;
         if self.visitors.cat.is_none() && time >= self.visitors.next_cat {
-            self.visitors.next_cat =
-                time + f64::from(self.visitors.cat_random.range(1800.0, 4200.0) / (1.0 + self.life.cat_trust));
+            self.visitors.next_cat = time
+                + f64::from(
+                    self.visitors.cat_random.range(1800.0, 4200.0) / (1.0 + self.life.cat_trust),
+                );
             if daytime && fair {
                 let coat = *self
                     .life
@@ -340,7 +347,11 @@ impl World {
             return None;
         }
         let rest = cat.rest.position();
-        let gap = if self.life.cat_trust >= 0.5 { 0.55 } else { 0.95 };
+        let gap = if self.life.cat_trust >= 0.5 {
+            0.55
+        } else {
+            0.95
+        };
         let (low, high) = home::yard_bounds();
         let spot = rest + Vec3::new(-gap, 0.0, 0.25);
         Some(Vec3::new(

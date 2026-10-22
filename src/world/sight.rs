@@ -245,7 +245,8 @@ impl World {
             }
             // Walls hide what is on their other side, but for the window,
             // the glass front, and the open door.
-            if thing != Thing::Viewer && !super::home::seen_through(eye, position, self.door_open()) {
+            if thing != Thing::Viewer && !super::home::seen_through(eye, position, self.door_open())
+            {
                 if !matches!(thing, Thing::Mote(_)) {
                     out_of_view.push(thing);
                 }

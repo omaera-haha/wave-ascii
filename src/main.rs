@@ -409,7 +409,10 @@ fn print_frame(options: &Options) -> io::Result<()> {
     }
     // For checking looks: "yaw,pitch,zoom" for the preview's camera.
     if let Ok(camera) = env::var("WAVE_ASCII_CAMERA") {
-        let numbers: Vec<f32> = camera.split(',').filter_map(|part| part.parse().ok()).collect();
+        let numbers: Vec<f32> = camera
+            .split(',')
+            .filter_map(|part| part.parse().ok())
+            .collect();
         if let [yaw, pitch, zoom] = numbers[..] {
             app.camera.yaw = yaw;
             app.camera.pitch = pitch;
@@ -428,8 +431,14 @@ fn print_frame(options: &Options) -> io::Result<()> {
         let mut bytes = format!("P6 {} {} 255\n", picture.width(), picture.height()).into_bytes();
         for row in 0..picture.height() {
             for column in 0..picture.width() {
-                let rgb = picture.shade(column, row).rgb().clamp(Vec3::ZERO, Vec3::ONE);
-                bytes.extend(rgb.to_array().map(|channel| (channel.powf(1.0 / 2.2) * 255.0) as u8));
+                let rgb = picture
+                    .shade(column, row)
+                    .rgb()
+                    .clamp(Vec3::ZERO, Vec3::ONE);
+                bytes.extend(
+                    rgb.to_array()
+                        .map(|channel| (channel.powf(1.0 / 2.2) * 255.0) as u8),
+                );
             }
         }
         return fs::write(path, bytes);

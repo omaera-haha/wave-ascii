@@ -674,7 +674,12 @@ impl Garland {
     }
 }
 
-pub(super) fn box_span(origin: Vec3, direction: Vec3, center: Vec3, half: Vec3) -> Option<(f32, f32)> {
+pub(super) fn box_span(
+    origin: Vec3,
+    direction: Vec3,
+    center: Vec3,
+    half: Vec3,
+) -> Option<(f32, f32)> {
     let mut enter = 0.0f32;
     let mut exit = f32::MAX;
     for axis in 0..3 {
@@ -790,10 +795,25 @@ fn envelope(point: Vec3) -> (f32, Material) {
 // A round can with its spout along +x and a handle arching over the back.
 fn watering_can_distance(point: Vec3) -> (f32, Material) {
     let body = rounded_cylinder(point + Vec3::Y * 0.06, 0.07, 0.12, 0.012);
-    let spout = capsule(point, Vec3::new(0.05, -0.02, 0.0), Vec3::new(0.16, 0.06, 0.0), 0.012);
+    let spout = capsule(
+        point,
+        Vec3::new(0.05, -0.02, 0.0),
+        Vec3::new(0.16, 0.06, 0.0),
+        0.012,
+    );
     let rose = (point - Vec3::new(0.165, 0.065, 0.0)).length() - 0.02;
-    let handle = capsule(point, Vec3::new(-0.06, 0.05, 0.0), Vec3::new(-0.02, 0.1, 0.0), 0.011)
-        .min(capsule(point, Vec3::new(-0.02, 0.1, 0.0), Vec3::new(0.03, 0.065, 0.0), 0.011));
+    let handle = capsule(
+        point,
+        Vec3::new(-0.06, 0.05, 0.0),
+        Vec3::new(-0.02, 0.1, 0.0),
+        0.011,
+    )
+    .min(capsule(
+        point,
+        Vec3::new(-0.02, 0.1, 0.0),
+        Vec3::new(0.03, 0.065, 0.0),
+        0.011,
+    ));
     (body.min(spout).min(rose).min(handle), Material::Tin)
 }
 

@@ -186,9 +186,8 @@ pub fn seen_through(eye: Vec3, target: Vec3, door: f32) -> bool {
         let at = Vec2::new(point.x, point.y);
         at.cmpge(Vec2::new(-0.75, 1.0)).all() && at.cmple(Vec2::new(0.75, 2.0)).all()
     });
-    let glass = crossing(2, ROOM_MAX.z).is_some_and(|point| {
-        point.x > ROOM_MIN.x && point.x < ROOM_MAX.x && point.y < ROOM_MAX.y
-    });
+    let glass = crossing(2, ROOM_MAX.z)
+        .is_some_and(|point| point.x > ROOM_MIN.x && point.x < ROOM_MAX.x && point.y < ROOM_MAX.y);
     let doorway = door > 0.3
         && crossing(0, ROOM_MAX.x).is_some_and(|point| {
             let at = Vec2::new(point.z, point.y);
@@ -277,9 +276,16 @@ impl World {
     /// How far the door stands open: it swings out as the ghost (or its
     /// friend) comes near it.
     pub fn door_open(&self) -> f32 {
-        let middle = Vec3::new(HOUSE_MAX.x - WALL * 0.5, 0.9, (DOOR_LOW.x + DOOR_HIGH.x) * 0.5);
+        let middle = Vec3::new(
+            HOUSE_MAX.x - WALL * 0.5,
+            0.9,
+            (DOOR_LOW.x + DOOR_HIGH.x) * 0.5,
+        );
         let near = |position: Vec3| 1.0 - smoothstep(0.55, 1.05, position.distance(middle));
-        let friend = self.friend.as_ref().map_or(0.0, |friend| near(friend.position));
+        let friend = self
+            .friend
+            .as_ref()
+            .map_or(0.0, |friend| near(friend.position));
         near(self.ghost.position).max(friend)
     }
 
@@ -368,7 +374,10 @@ mod tests {
             let position = spot.position(1.0);
             assert!(on_lot(position), "{spot:?}");
             assert!(!in_house(position), "{spot:?}");
-            assert!(position.cmpge(low).all() && position.cmple(high).all(), "{spot:?}");
+            assert!(
+                position.cmpge(low).all() && position.cmple(high).all(),
+                "{spot:?}"
+            );
         }
     }
 }

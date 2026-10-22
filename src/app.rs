@@ -1174,7 +1174,9 @@ impl App {
         // Out on the lawn, too: the ghost goes out to catch it.
         let lawn = view
             .on_plane(point, 0.0)
-            .filter(|spot| crate::world::home::on_lot(*spot) && !crate::world::home::in_house(*spot))
+            .filter(|spot| {
+                crate::world::home::on_lot(*spot) && !crate::world::home::in_house(*spot)
+            })
             .filter(|_| floor.is_none() && view.on_glass(point).is_none());
         let spot = floor
             .or(lawn)
@@ -1453,50 +1455,50 @@ impl App {
                     }
                 });
         Scene {
-                world,
-                outside: Outside {
-                    hour: world.hour,
-                    rain: world.weather.rain(world.time),
-                    storm: world.weather.storm,
-                    flash: world.weather.flash(world.time),
-                    last_flash: world.weather.last_flash,
-                    rainbow: world.weather.rainbow(world.time),
-                    season: world.season(),
-                    snow: world.weather.snow(world.time),
-                    snow_cover: world.weather.snow_cover,
-                    moon_phase: world.moon_phase(),
-                    fireworks: world.fireworks(),
-                    bird: world
-                        .visitors
-                        .bird
-                        .as_ref()
-                        .map(|bird| bird.picture(world.time)),
-                    cat: world
-                        .visitors
-                        .cat
-                        .as_ref()
-                        .map(|cat| cat.picture(world.time)),
-                    time: world.time,
-                    sill: world.life.sill,
-                    meteor: world
-                        .shooting_star()
-                        .map(|meteor| meteor.streak(world.time)),
-                    constellations: crate::render::sky::StarSegment::from_constellations(
-                        &world.life.constellations,
-                    ),
-                    constellation_base: 0.018,
-                    constellation_glow: world.constellation_glow() * 0.085,
-                    wind: world.wind.sideways(world.time),
-                    window_lift: world.window_lift(),
-                    wind_travel: world.wind.travel,
-                    passersby: world.passersby(),
-                },
-                view,
-                face,
-                aura,
-                pose,
-                friend,
-            }
+            world,
+            outside: Outside {
+                hour: world.hour,
+                rain: world.weather.rain(world.time),
+                storm: world.weather.storm,
+                flash: world.weather.flash(world.time),
+                last_flash: world.weather.last_flash,
+                rainbow: world.weather.rainbow(world.time),
+                season: world.season(),
+                snow: world.weather.snow(world.time),
+                snow_cover: world.weather.snow_cover,
+                moon_phase: world.moon_phase(),
+                fireworks: world.fireworks(),
+                bird: world
+                    .visitors
+                    .bird
+                    .as_ref()
+                    .map(|bird| bird.picture(world.time)),
+                cat: world
+                    .visitors
+                    .cat
+                    .as_ref()
+                    .map(|cat| cat.picture(world.time)),
+                time: world.time,
+                sill: world.life.sill,
+                meteor: world
+                    .shooting_star()
+                    .map(|meteor| meteor.streak(world.time)),
+                constellations: crate::render::sky::StarSegment::from_constellations(
+                    &world.life.constellations,
+                ),
+                constellation_base: 0.018,
+                constellation_glow: world.constellation_glow() * 0.085,
+                wind: world.wind.sideways(world.time),
+                window_lift: world.window_lift(),
+                wind_travel: world.wind.travel,
+                passersby: world.passersby(),
+            },
+            view,
+            face,
+            aura,
+            pose,
+            friend,
+        }
     }
 
     /// The scene as plain pixels, `width` by `height`, for checking how it

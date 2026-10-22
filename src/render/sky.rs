@@ -405,8 +405,11 @@ impl<'a> Heavens<'a> {
                     blur,
                 )
             };
-            let clouds = smoothstep(0.5 - storm * 0.15 - cloud * 0.1, 0.74 - storm * 0.15, clouds)
-                * smoothstep(0.02, 0.12, elevation);
+            let clouds = smoothstep(
+                0.5 - storm * 0.15 - cloud * 0.1,
+                0.74 - storm * 0.15,
+                clouds,
+            ) * smoothstep(0.02, 0.12, elevation);
             color = color.lerp(self.cloud_color, clouds * 0.6);
         }
         color = weather_color(color, cloud) * (1.0 - self.dimming);
@@ -794,7 +797,11 @@ pub fn noise(point: Vec2) -> f32 {
     let weight = fraction * fraction * (Vec2::splat(3.0) - fraction * 2.0);
     mix(
         mix(scramble(cell), scramble(cell + Vec2::X), weight.x),
-        mix(scramble(cell + Vec2::Y), scramble(cell + Vec2::ONE), weight.x),
+        mix(
+            scramble(cell + Vec2::Y),
+            scramble(cell + Vec2::ONE),
+            weight.x,
+        ),
         weight.y,
     )
 }
