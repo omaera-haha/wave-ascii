@@ -392,10 +392,17 @@ fn print_frame(options: &Options) -> io::Result<()> {
             let x = (index as f32 - (count as f32 - 1.0) * 0.5) * 0.62;
             world.with_creature(id, |world| {
                 world.line_up(Vec3::new(x, 1.0, 0.6));
-                // "walk" sends them all off toward the glass.
+                // "walk" sends them all off toward the glass, and "sleep"
+                // puts them to sleep where they stand.
                 if lineup == "walk" {
                     world.ghost.plan.target = Vec3::new(x, 1.0, 1.25);
                     world.ghost.plan.anchor = world.ghost.plan.target;
+                }
+                if lineup == "sleep" {
+                    world.ghost.plan.activity = world::Activity::Rest;
+                    world.ghost.plan.arrived = Some(world.time);
+                    world.ghost.plan.overnight = true;
+                    world.ghost.asleep = 1.0;
                 }
             });
         }

@@ -386,7 +386,12 @@ impl Mind {
             self.apply(answer, world);
         }
 
-        if world.needs_decision() {
+        // Housemates choose on instinct; System One's quick calls are spent
+        // on the one the viewer is with.
+        if world.needs_decision() && world.companion {
+            self.deciding = None;
+            decide(world, None);
+        } else if world.needs_decision() {
             match (&self.jev, self.deciding) {
                 (Some(jev), None) => {
                     let options: Vec<(Activity, String)> = world
@@ -467,6 +472,24 @@ impl Mind {
                     })
                 });
             }
+        }
+    }
+
+    /// The viewer said `text` to the whole household, and this creature,
+    /// not the one they are with, heard it too: System Two may answer.
+    pub fn overhear(&mut self, world: &World, text: &str) {
+        self.remember_speech(world);
+        self.journal.conversation.push(Remark {
+            at: now(),
+            speaker: Speaker::Viewer,
+            text: text.to_owned(),
+        });
+        trim(&mut self.journal.conversation, REMARKS_KEPT);
+        if self.claude.is_some() && world.ghost.asleep < 0.3 {
+            self.heard.push_back(HeardMessage {
+                text: text.to_owned(),
+                story: None,
+            });
         }
     }
 

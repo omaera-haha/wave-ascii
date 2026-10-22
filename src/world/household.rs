@@ -233,6 +233,26 @@ pub fn body_reach(species: Species, size: f32) -> f32 {
     base * size * species.scale()
 }
 
+/// Whether a message is for the whole household, as in "good night,
+/// everyone" or "얘들아 안녕".
+pub fn to_everyone(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    [
+        "everyone",
+        "everybody",
+        "all of you",
+        "you all",
+        "y'all",
+        "guys",
+        "모두",
+        "다들",
+        "얘들아",
+        "여러분",
+    ]
+    .iter()
+    .any(|word| lower.contains(word))
+}
+
 /// Activities that only the creature the viewer is with may take up: they
 /// are played with the viewer, or run things the whole house shares.
 pub fn hosted(activity: Activity) -> bool {
@@ -301,6 +321,36 @@ impl World {
             }
         }
         None
+    }
+
+    /// Words the viewer said to everyone, as a housemate takes them: it
+    /// looks up, says hello back, cheers at praise, comes over when called,
+    /// or heads to bed at a goodnight.
+    pub fn overhear(&mut self, text: &str) {
+        if self.ghost.asleep >= 0.3 {
+            return;
+        }
+        let lower = text.to_lowercase();
+        let korean = self.speaks_korean();
+        let has = |words: &[&str]| words.iter().any(|word| lower.contains(word));
+        self.attend("viewer", 4.0);
+        if has(&["good night", "goodnight", "night night", "잘 자", "잘자", "굿나잇"]) {
+            if self.bedtime() {
+                self.begin(Activity::Rest);
+            }
+            self.say(if korean { "잘 자!" } else { "Good night!" });
+        } else if has(&["hello", "hey", "morning", "안녕", "좋은 아침"])
+            || lower.split_whitespace().any(|word| word.trim_matches(|c: char| !c.is_alphanumeric()) == "hi")
+        {
+            let sound = self.ghost.species.sound();
+            self.say(&format!("{} {sound}", if korean { "안녕!" } else { "Hi!" }));
+            self.hop(1.4);
+        } else if has(&["good job", "well done", "love you", "proud", "잘했어", "사랑해", "최고"]) {
+            self.suggest_mood(Mood::Cheerful, 8.0);
+            self.hop(1.4);
+        } else if has(&["come here", "come over", "이리 와", "이리와", "모여"]) {
+            self.begin(Activity::Visit);
+        }
     }
 
     /// What a save keeps of each housemate.
@@ -836,6 +886,21 @@ mod tests {
         assert_eq!(world.addressed("핍아 이리 와"), Some(2));
         assert_eq!(world.addressed("I like Pip"), None);
         assert_eq!(world.addressed("Pipe dreams"), None);
+    }
+
+    #[test]
+    fn a_goodnight_to_everyone_sends_awake_housemates_to_bed() {
+        assert!(to_everyone("Good night, everyone!"));
+        assert!(to_everyone("얘들아 잘 자"));
+        assert!(!to_everyone("good night Pip"));
+        let mut world = household();
+        world.hour = 22.5;
+        world.with_creature(1, |world| {
+            world.ghost.asleep = 0.0;
+            world.overhear("good night everyone");
+            assert_eq!(world.ghost.plan.activity, Activity::Rest);
+            assert!(world.ghost.speech.is_some());
+        });
     }
 
     #[test]

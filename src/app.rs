@@ -753,6 +753,14 @@ impl App {
                                 self.select(id);
                             }
                             self.mind.hear(&mut self.world, &text);
+                            if crate::world::household::to_everyone(&text) {
+                                for (id, mind) in &mut self.minds {
+                                    self.world.with_creature(*id, |world| {
+                                        world.overhear(&text);
+                                        mind.overhear(world, &text);
+                                    });
+                                }
+                            }
                             // Its own few words answer right away; the
                             // hint about Claude comes once, after them.
                             if !self.mind.can_talk() && !self.hinted_claude {
