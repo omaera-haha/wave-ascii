@@ -1354,6 +1354,8 @@ impl World {
             self.record(EventKind::ViewerLeft);
         }
         if present {
+            // The one the viewer is with grows closer twice as fast.
+            let seconds = if host { seconds } else { seconds * 0.5 };
             if let Some(milestone) = self.life.pass(seconds, true) {
                 self.record(EventKind::Milestone(milestone));
             }
@@ -2310,8 +2312,20 @@ impl World {
     /// path show any changes it has come to recognize in itself.
     pub(crate) fn begin_day(&mut self) {
         let remembered = self.life.milestones.len();
+        // The viewer's routine is the household's, which the one the viewer
+        // is with carries into each new day.
+        let routine = self.companion.then_some((
+            self.life.arrivals,
+            self.life.routine_days,
+            self.life.arrived_hours,
+        ));
         self.life
             .begin_day_with_birth(&self.date.to_string(), self.birthday);
+        if let Some((arrivals, days, hours)) = routine {
+            self.life.arrivals = arrivals;
+            self.life.routine_days = days;
+            self.life.arrived_hours = hours;
+        }
         let milestones: Vec<String> = self.life.milestones[remembered..]
             .iter()
             .map(|milestone| milestone.text.clone())

@@ -23,9 +23,12 @@ use shapes::{Furniture, Material, decoration_light, sphere_span};
 /// World units per unit of the ghost's own space.
 pub const GHOST_SCALE: f32 = 0.45;
 pub const FRIEND_SCALE: f32 = GHOST_SCALE * 0.75;
-/// The point the camera circles and looks at, unless it follows the ghost
+/// The point the camera circles and looks at, unless it follows a creature
 /// out into the yard.
-const TARGET: Vec3 = Vec3::new(0.0, 1.3, 0.0);
+const TARGET: Vec3 = Vec3::new(0.0, 1.1, 0.0);
+/// How close the camera starts: near enough that creatures on the floor
+/// read clearly, with the whole room still in view.
+const ZOOM: f32 = 1.35;
 /// One over the tangent of half the vertical field of view, about 50 degrees.
 const FOCAL: f32 = 2.1;
 const FRAME_COLOR: Vec3 = Vec3::new(0.62, 0.46, 0.32);
@@ -50,8 +53,8 @@ impl Default for Camera {
     fn default() -> Self {
         Self {
             yaw: 0.0,
-            pitch: 0.15,
-            zoom: 1.0,
+            pitch: 0.18,
+            zoom: ZOOM,
             target: TARGET,
         }
     }

@@ -2585,7 +2585,10 @@ mod tests {
             crate::world::visitor::Bird::new(-10.0, 1.0, &mut crate::world::Random::new(2));
         bird.perch = crate::world::Perch::Tree;
         shaken.world.visitors.bird = Some(bird);
-        // The crown shows above the roof from the room's view.
+        // The crown shows above the roof from farther back.
+        shaken.camera.zoom = 1.0;
+        shaken.camera.target = Vec3::new(0.0, 1.3, 0.0);
+        shaken.frame(100, 32);
         let crown = crate::world::home::TREE_CROWN + Vec3::Y * 1.0;
         let (column, row) = cell_of(&shaken, crown);
         click(&mut shaken, column, row);

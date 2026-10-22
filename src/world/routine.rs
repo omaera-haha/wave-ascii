@@ -80,6 +80,15 @@ impl World {
         let waiting = self.ghost.plan.activity == Activity::Wait && !self.ghost.plan.done;
         self.viewer_blush_at = Some(self.time);
         self.record(EventKind::ViewerArrived);
+        // A housemate is glad and comes to say hello; the household's
+        // routine, promises, and mail are kept by the one the viewer is with.
+        if self.companion {
+            if expected {
+                self.ghost.needs.change(0.0, 0.0, 0.1);
+            }
+            self.greet();
+            return;
+        }
         self.deliver_replies(true, 0.0);
         if let Some(milestone) = self.life.arrive(self.hour) {
             self.record(EventKind::Milestone(milestone));
