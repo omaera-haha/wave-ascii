@@ -275,6 +275,7 @@ pub struct Yard<'a> {
     smoke: bool,
     /// Fairy lights along the front eave for the holidays.
     lights: bool,
+    roofless: bool,
 }
 
 /// What the scene tells the yard each frame.
@@ -298,6 +299,8 @@ pub struct Setting<'a> {
     /// The lamp's light spilling out the window and the glass at night.
     pub spill: Vec3,
     pub occasion: Option<Occasion>,
+    /// Lift the roof off, as when looking down into the room from above.
+    pub roofless: bool,
 }
 
 impl<'a> Yard<'a> {
@@ -326,8 +329,10 @@ impl<'a> Yard<'a> {
             Piece::Mailbox,
             Piece::Clothesline,
             Piece::Sill,
-            Piece::Chimney,
         ];
+        if !setting.roofless {
+            pieces.push(Piece::Chimney);
+        }
         if setting.door > 0.02 {
             pieces.push(Piece::Door(setting.door * 1.35));
         }
@@ -428,6 +433,7 @@ impl<'a> Yard<'a> {
                 setting.occasion,
                 Some(Occasion::WinterHolidays | Occasion::NewYear)
             ),
+            roofless: setting.roofless,
         }
     }
 
@@ -479,7 +485,9 @@ impl<'a> Yard<'a> {
             }
         }
 
-        if !cut && let Some((distance, normal, surface)) = self.roof(origin, direction, from, limit)
+        if !cut
+            && !self.roofless
+            && let Some((distance, normal, surface)) = self.roof(origin, direction, from, limit)
         {
             limit = distance;
             let point = origin + direction * distance;
@@ -1871,6 +1879,7 @@ mod tests {
             smoke: true,
             spill: Vec3::splat(0.2),
             occasion: Some(Occasion::Halloween),
+            roofless: false,
         })
     }
 

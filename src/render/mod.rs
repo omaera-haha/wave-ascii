@@ -489,6 +489,9 @@ fn render_with(scene: &Scene, grid: Grid, cull: bool) -> Frame {
             Vec3::ZERO
         },
         occasion: world.occasion(),
+        // Looking down from above the ridge while the ghost is in, the roof
+        // comes off like a dollhouse's.
+        roofless: home::in_house(world.ghost.position) && scene.view.eye.y > home::RIDGE,
     });
     let tiles = Tiles::new(grid, scene.view, &indoor, &yard, &outdoor);
     let tracer = Tracer {
@@ -1428,6 +1431,7 @@ mod tests {
             smoke: false,
             spill: Vec3::ZERO,
             occasion: None,
+            roofless: false,
         })
     }
 

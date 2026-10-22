@@ -407,6 +407,15 @@ fn print_frame(options: &Options) -> io::Result<()> {
             app.world.ghost.plan.cat = false;
         }
     }
+    // For checking looks: "yaw,pitch,zoom" for the preview's camera.
+    if let Ok(camera) = env::var("WAVE_ASCII_CAMERA") {
+        let numbers: Vec<f32> = camera.split(',').filter_map(|part| part.parse().ok()).collect();
+        if let [yaw, pitch, zoom] = numbers[..] {
+            app.camera.yaw = yaw;
+            app.camera.pitch = pitch;
+            app.camera.zoom = zoom;
+        }
+    }
     // Counted in whole steps so long previews don't drift with rounding.
     let time = f64::from(options.time);
     let steps = (time / 0.05 - 1e-9).ceil().max(0.0) as u64;
