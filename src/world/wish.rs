@@ -433,7 +433,7 @@ impl Wish {
                 Passerby::Kite => "I hope the wind brings a kite to my window.",
                 Passerby::Squirrel => "Maybe a squirrel will visit my tree today.",
                 Passerby::Plane => "I hope a plane blinks goodnight to me.",
-                Passerby::Snowman => "Maybe a snowman will keep my hill company.",
+                Passerby::Snowman => "Maybe a snowman will keep my yard company.",
                 Passerby::Lanterns => "I hope lanterns float past my window tonight.",
             },
             Self::BirdGift => "Maybe the bird will bring me a little gift.",

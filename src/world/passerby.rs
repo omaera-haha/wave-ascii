@@ -40,7 +40,7 @@ impl Passerby {
             Self::Kite => "a kite tugging in the wind",
             Self::Squirrel => "a squirrel scurrying in the tree",
             Self::Plane => "a plane's blinking lights high in the sky",
-            Self::Snowman => "a snowman on the snowy hill",
+            Self::Snowman => "a snowman on the snowy lawn",
             Self::Lanterns => "paper lanterns floating into the night",
         }
     }
@@ -72,7 +72,7 @@ impl Passerby {
                 "Who is awake up there?",
             ],
             Self::Snowman => [
-                "The snowman is keeping the hill company.",
+                "The snowman is keeping the yard company.",
                 "Does a snowman feel the cold?",
             ],
             Self::Lanterns => [
