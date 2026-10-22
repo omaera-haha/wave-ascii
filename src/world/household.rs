@@ -230,7 +230,7 @@ pub fn body_reach(species: Species, size: f32) -> f32 {
         Species::Robot | Species::Owl | Species::Penguin => 0.17,
         _ => 0.19,
     };
-    base * size
+    base * size * species.scale()
 }
 
 /// Activities that only the creature the viewer is with may take up: they

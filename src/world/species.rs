@@ -159,8 +159,24 @@ impl Species {
         self.gait() == Gait::Float
     }
 
+    /// How big its body is drawn, next to the others.
+    pub fn scale(self) -> f32 {
+        match self {
+            Self::Fox => 0.86,
+            Self::Dragon => 0.92,
+            Self::Penguin => 1.08,
+            Self::Hedgehog | Self::Frog => 1.1,
+            _ => 1.0,
+        }
+    }
+
     /// How high its middle rides above what it stands on, at full size.
     pub fn stance(self) -> f32 {
+        self.scale() * self.leg()
+    }
+
+    /// The same, in the body's own drawn units.
+    pub fn leg(self) -> f32 {
         match self {
             Self::Ghost | Self::Jelly => 0.38,
             Self::Fox => 0.2,

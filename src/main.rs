@@ -386,11 +386,18 @@ fn print_frame(options: &Options) -> io::Result<()> {
     };
     world.found_household(&species);
     // For checking looks: everyone in a row facing the glass.
-    if env::var_os("WAVE_ASCII_LINEUP").is_some() {
+    if let Ok(lineup) = env::var("WAVE_ASCII_LINEUP") {
         let count = world.household_size();
         for (index, id) in world.roster().into_iter().enumerate() {
             let x = (index as f32 - (count as f32 - 1.0) * 0.5) * 0.62;
-            world.with_creature(id, |world| world.line_up(Vec3::new(x, 1.0, 0.6)));
+            world.with_creature(id, |world| {
+                world.line_up(Vec3::new(x, 1.0, 0.6));
+                // "walk" sends them all off toward the glass.
+                if lineup == "walk" {
+                    world.ghost.plan.target = Vec3::new(x, 1.0, 1.25);
+                    world.ghost.plan.anchor = world.ghost.plan.target;
+                }
+            });
         }
     }
     // For checking looks: set the weather for the preview.

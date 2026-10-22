@@ -491,7 +491,7 @@ impl Model {
             .iter()
             .map(|part| part.bound.0.distance(middle) + part.bound.1)
             .fold(0.0, f32::max);
-        let scale = figure.size.max(0.05);
+        let scale = figure.size.max(0.05) * figure.species.scale();
         let turn = Mat3::from_rotation_y(figure.facing);
         let to_world = |local: Vec3| figure.position + turn * local * scale;
         let stance = figure.species.stance();
@@ -510,8 +510,8 @@ impl Model {
             shine: look.shine,
             glow: figure.glow,
             opacity: figure.opacity.clamp(0.0, 1.0),
-            ground: figure.position - Vec3::Y * stance * scale,
-            reach: crate::world::household::body_reach(figure.species, scale),
+            ground: figure.position - Vec3::Y * stance * figure.size.max(0.05),
+            reach: crate::world::household::body_reach(figure.species, figure.size),
             crown: to_world(look.top),
             light: look.light * figure.opacity.clamp(0.0, 1.0),
         }
