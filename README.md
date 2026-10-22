@@ -2,7 +2,7 @@
 
 a cute little life in your terminal.
 
-A ghost lives in a little cottage drawn as text: a cozy room behind a glass front, and a fenced yard with a big tree, a swing, a garden bed, and a birdbath under a real sky, where the sun and moon cross, clouds drift, and rain and snow fall. It floats out the door to play in the yard and the view follows it. Its days follow your local clock, so it sleeps at night, and its life is saved between runs. With API keys, Jev (TypeSafe) makes its quick choices and Claude gives it thoughts and words; without them it lives on instinct.
+A ghost lives in a little cottage drawn as text: a cozy room behind a glass front, with a clock that keeps your time, and a fenced yard with a big tree, a swing, a garden bed, and a birdbath under a real sky, where the sun and moon cross, clouds drift, and rain and snow fall. It floats out the door to play in the yard, waters its garden, climbs onto the roof to watch the stars, and keeps a visiting neighborhood cat company; the view follows it. Its days follow your local clock, so it sleeps at night, and its life is saved between runs. With API keys, Jev (TypeSafe) makes its quick choices and Claude gives it thoughts and words; without them it lives on instinct.
 
 ## Run
 

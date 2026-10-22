@@ -106,6 +106,8 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         } => glance(0.0, -0.35),
         EventKind::FriendArrived(_) => Expression::Sparkle,
         EventKind::FriendLeft(_) => Expression::Worry,
+        EventKind::CatArrived => Expression::LookAround,
+        EventKind::CatLeft { startled: true } => Expression::Worry,
         EventKind::Tagged { .. } => Expression::Surprise,
         EventKind::PokedFriend | EventKind::PlayedWithFriend(_) => Expression::Smile,
         EventKind::Poked { count: 1 } => Expression::Surprise,
