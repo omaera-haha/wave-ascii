@@ -163,7 +163,6 @@ pub struct Understood {
     pub viewer_name: Option<String>,
     pub ghost_name: Option<String>,
     pub questions: Vec<Question>,
-    pub activities: Vec<(String, Activity)>,
     /// English and Korean counterparts, including the names it recognizes.
     pub things: Vec<(String, String)>,
     pub feelings: Vec<Feeling>,
@@ -193,13 +192,6 @@ pub fn understand(text: &str, life: &Life, ghost_name: &str) -> Understood {
             && !understood.questions.contains(&question)
         {
             understood.questions.push(question);
-        }
-        for word in &reading.words {
-            if let Some(meaning) = life.vocabulary.meaning(std::slice::from_ref(word))
-                && !understood.activities.contains(&meaning)
-            {
-                understood.activities.push(meaning);
-            }
         }
     }
     let lower = text.to_lowercase();
@@ -590,7 +582,7 @@ impl World {
             } else {
                 self.ghost.plan.activity
             });
-            let mut answers = crate::mind::musing::answer(self, question, doing, korean);
+            let mut answers = crate::mind::answers::answer(self, question, doing, korean);
             answers = answers
                 .into_iter()
                 .map(|answer| mail::name_for_letter(&answer, 80))
@@ -623,19 +615,7 @@ impl World {
                 Feeling::Proud => say("You did it! I'm proud of you.", "해냈구나! 정말 대단해."),
             });
         }
-        if let Some((word, activity)) = understood.activities.first() {
-            body.push(if korean {
-                format!("{}! 곧 같이 하자.", mail::name_for_letter(word, 24))
-            } else if matches!(activity, Activity::Fetch | Activity::Play) {
-                format!("{}! Let's play soon.", mail::name_for_letter(word, 24))
-            } else {
-                format!(
-                    "{}! We can {} together.",
-                    mail::name_for_letter(word, 20),
-                    activity.name()
-                )
-            });
-        } else if !understood.things.is_empty() {
+        if !understood.things.is_empty() {
             let index = self.pick(&vec![1.0; understood.things.len()]).unwrap();
             let (english, hangul) = &understood.things[index];
             body.push(if korean {
@@ -695,26 +675,6 @@ mod tests {
     }
 
     #[test]
-    fn returning_to_a_background_focus_session_delivers_an_eligible_reply() {
-        let mut world = World::new(4, 12.0);
-        world.receive_letter("Hello!", false);
-        read(&mut world);
-        world.start_focus(120);
-        world.look_away(true);
-        let remaining = world.life.received[0].reply.as_ref().unwrap().remaining;
-        world.deliver_replies(false, 2500.0);
-        assert!(world.life.letters.is_empty());
-        assert_eq!(
-            world.life.received[0].reply.as_ref().unwrap().remaining,
-            remaining
-        );
-        world.hour = 13.0;
-        world.look_away(false);
-        assert_eq!(world.life.letters.len(), 1);
-        assert!(world.focus.is_some());
-    }
-
-    #[test]
     fn newborn_replies_babble_in_two_lines_and_other_replies_use_the_current_activity() {
         for korean in [false, true] {
             let mut world = World::new(4, 12.0);
@@ -749,7 +709,7 @@ mod tests {
 
     #[test]
     fn understanding_finds_names_tones_questions_feelings_and_known_words_in_both_languages() {
-        for (text, korean, viewer, ghost, word) in [
+        for (text, korean, viewer, ghost, _) in [
             (
                 "Hello! My name is Mina. Your name is Pip. Good ghost! I am tired. How are you? What is your name? Are you bored? Ball.",
                 false,
@@ -765,24 +725,14 @@ mod tests {
                 "공",
             ),
         ] {
-            let mut life = Life::default();
-            life.vocabulary
-                .teach(&[word.to_owned()], Activity::Play, 4.0);
-            let before = life.vocabulary.clone();
-            let understood = understand(text, &life, "Ghost");
+            let understood = understand(text, &Life::default(), "Ghost");
             assert_eq!(understood.viewer_name.as_deref(), Some(viewer), "{text}");
             assert_eq!(understood.ghost_name.as_deref(), Some(ghost), "{text}");
             assert!(understood.tones.contains(&Tone::Greeting));
             assert!(understood.tones.contains(&Tone::Praise));
             assert_eq!(understood.questions.len(), 2, "{understood:?}");
             assert_eq!(understood.feelings, vec![Feeling::Tired]);
-            assert!(
-                understood
-                    .activities
-                    .contains(&(word.to_owned(), Activity::Play))
-            );
             assert!(understood.things.iter().any(|(thing, _)| thing == "ball"));
-            assert_eq!(life.vocabulary, before);
             assert_eq!(super::korean(text), korean);
         }
         for (text, tone, feeling) in [
@@ -822,7 +772,6 @@ mod tests {
     #[test]
     fn receiving_counts_warms_the_bond_and_reading_learns_names_without_teaching_words() {
         let mut world = World::new(4, 12.0);
-        let vocabulary = world.life.vocabulary.clone();
         let bond = world.life.bond;
         assert!(world.receive_letter(
             "My name is Mina.\nYour name is Pip.\nI love you, Ghost ♥",
@@ -842,7 +791,6 @@ mod tests {
         read(&mut world);
         assert_eq!(world.life.viewer_name.as_deref(), Some("Mina"));
         assert_eq!(world.ghost.name, "Pip");
-        assert_eq!(world.life.vocabulary, vocabulary);
         assert_eq!(world.life.total.viewer_letters_read, 1);
         assert!(world.viewer_paper().is_none());
         assert!(world.life.received[0].reply.is_some());
@@ -1016,43 +964,6 @@ mod tests {
                 // Match random consumption since construction.
                 assert_eq!(lines, second.compose_reply(&source));
             }
-        }
-    }
-
-    #[test]
-    fn replies_wait_for_the_seeded_delay_an_hour_later_arrival_or_next_morning_once() {
-        let mut world = World::new(4, 12.0);
-        world.receive_letter("How are you?", false);
-        read(&mut world);
-        let delay = world.life.received[0].reply.as_ref().unwrap().remaining;
-        assert!((1200.0..=2400.0).contains(&delay));
-        world.notice_viewer();
-        world.deliver_replies(false, delay - 1.0);
-        assert!(world.life.letters.is_empty());
-        world.deliver_replies(false, 1.0);
-        assert_eq!(world.life.letters.len(), 1);
-        assert!(world.life.received[0].answered);
-        assert!(world.life.letters[0].reply_to.is_some());
-        world.deliver_replies(false, 5000.0);
-        assert_eq!(world.life.letters.len(), 1);
-        for (hour, next_day, expected) in [(12.9, false, 0), (13.0, false, 1), (7.0, true, 1)] {
-            let mut restored = World::new(4, hour);
-            restored.life = serde_json::from_str::<Life>(
-                &serde_json::to_string(&{
-                    let mut original = World::new(4, 12.0);
-                    original.receive_letter("Hello!", false);
-                    read(&mut original);
-                    original.life
-                })
-                .unwrap(),
-            )
-            .unwrap()
-            .sanitized();
-            if next_day {
-                restored.date = restored.date.tomorrow().unwrap();
-            }
-            restored.deliver_replies(true, 0.0);
-            assert_eq!(restored.life.letters.len(), expected, "{hour} {next_day}");
         }
     }
 

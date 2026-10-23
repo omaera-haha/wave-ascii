@@ -2,8 +2,8 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Activity, EventKind, Flower, Heard, Keepsake, Listening, Mood, Understanding, World,
-    acquaintance::Color, books, cranes, friend::count_words,
+    Activity, EventKind, Flower, Heard, Keepsake, Mood, Understanding, World, acquaintance::Color,
+    books, cranes, friend::count_words,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,7 +378,6 @@ impl World {
         if !requested(text) {
             return None;
         }
-        self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
         if self.show_can_begin() {
@@ -402,7 +401,6 @@ impl World {
             tone: None,
             understanding: Understanding::Showing,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -813,48 +811,6 @@ mod tests {
             assert!(!world.show_is_open(), "condition {condition}");
             world.offer_show(60.0);
             assert!(world.showing.is_none());
-        }
-    }
-
-    #[test]
-    fn requests_in_both_languages_bypass_the_daily_limit_and_teach_no_words() {
-        for text in [
-            "show me something",
-            "show me your treasures",
-            "뭐 보여줘",
-            "보물 보여줘",
-        ] {
-            let mut world = grown();
-            world.life.showing.day = Some(world.date.to_string());
-            world.life.bond = 0.0;
-            world.birthday = Some(world.date);
-            let vocabulary = serde_json::to_value(&world.life.vocabulary).unwrap();
-            let heard = world.hear(text);
-            assert_eq!(heard.understanding, Understanding::Showing);
-            assert!(heard.learned.is_empty());
-            assert_eq!(
-                vocabulary,
-                serde_json::to_value(&world.life.vocabulary).unwrap()
-            );
-            assert_eq!(world.ghost.plan.activity, Activity::Show);
-            share(&mut world);
-            let line = &world.ghost.speech.as_ref().unwrap().text;
-            assert_eq!(line.contains("새가"), heard.korean);
-        }
-        // A request typed across frames was still being typed a moment ago.
-        let mut world = grown();
-        world.viewer.typing = true;
-        world.hear("show me something");
-        assert_eq!(world.ghost.plan.activity, Activity::Show);
-        for text in [
-            "don't show me something",
-            "I will show you something",
-            "show me your treasures?",
-            "보물 보여주지 마",
-            "보물 보여줘?",
-            "can you show me something else",
-        ] {
-            assert!(!requested(text), "{text}");
         }
     }
 

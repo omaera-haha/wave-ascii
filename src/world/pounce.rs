@@ -32,17 +32,6 @@ impl World {
             self.viewer.moved_at = self.time;
         }
         self.viewer.pointer = pointer;
-        // Darting the pointer right after speaking may be what the words
-        // were about.
-        if self.focus.is_none()
-            && !self.puzzle_active()
-            && self.hunt.is_none()
-            && !was_lively
-            && self.viewer.pointer_is_lively()
-        {
-            self.shown(Activity::Pounce);
-        }
-
         if !was_lively
             && self.pounce_is_open()
             && !matches!(self.feeling(), Mood::Sleepy | Mood::Grumpy)

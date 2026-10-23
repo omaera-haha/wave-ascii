@@ -1,7 +1,7 @@
 use jiff::civil::Date;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{Activity, EventKind, Feeling, Heard, Listening, Mood, Tone, Understanding, World};
+use super::{Activity, EventKind, Feeling, Heard, Mood, Tone, Understanding, World};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -531,25 +531,6 @@ pub fn memories(agenda: &[Engagement], today: Date) -> String {
         .join(" ")
 }
 
-pub fn thoughts(world: &World) -> Vec<String> {
-    let viewer = world.life.viewer_name.as_deref().unwrap_or("the viewer");
-    world
-        .life
-        .agenda
-        .iter()
-        .filter_map(|engagement| {
-            let days = engagement.days_from(world.date)?;
-            ((0..=1).contains(&days) && engagement.outcome.is_none()).then(|| {
-                format!(
-                    "I hope {viewer}'s {} goes well {}.",
-                    engagement.errand.name(),
-                    when(days)
-                )
-            })
-        })
-        .collect()
-}
-
 impl World {
     pub fn awaiting_plan_answer(&self) -> bool {
         self.agenda_answer
@@ -562,7 +543,6 @@ impl World {
             tone: None,
             understanding,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -573,7 +553,6 @@ impl World {
     pub(super) fn hear_agenda(&mut self, text: &str, korean: bool) -> Option<Heard> {
         let (errand, day) = planned(text, self.date)?;
         self.begin_day();
-        self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
         let day_text = day.to_string();
@@ -783,7 +762,6 @@ impl World {
             .find(|engagement| engagement.errand == errand && engagement.day == day)?;
         engagement.outcome = Some(outcome);
         self.begin_day();
-        self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
         match outcome {
@@ -1191,13 +1169,10 @@ mod tests {
     #[test]
     fn messages_replace_the_same_plan_keep_flags_and_never_teach_words_or_praise() {
         let mut world = fresh_world();
-        let vocabulary = world.life.vocabulary.clone();
         for text in ["I have an exam tomorrow", "내일 시험 있어"] {
             let heard = world.hear(text);
             assert_eq!(heard.understanding, Understanding::Planned(Errand::Exam));
-            assert!(heard.learned.is_empty());
             assert_eq!(heard.tone, None);
-            assert_eq!(world.life.vocabulary, vocabulary);
         }
         assert_eq!(world.life.agenda.len(), 1);
         assert_eq!(world.life.today.plans_heard, 2);
@@ -1463,7 +1438,6 @@ mod tests {
         ] {
             let mut world = asking();
             let before = world.life.bond;
-            let vocabulary = world.life.vocabulary.clone();
             let heard = world.hear(text);
             assert_eq!(
                 heard.understanding,
@@ -1474,7 +1448,6 @@ mod tests {
                 "{text}"
             );
             assert_eq!(heard.tone, None);
-            assert_eq!(world.life.vocabulary, vocabulary);
             assert!(!world.awaiting_plan_answer());
             match went_well {
                 Some(true) => {
@@ -1612,51 +1585,5 @@ mod tests {
         world.follow_up_feeling();
         assert!(world.asking.is_none());
         assert!(world.feeling_follow_up.is_none());
-    }
-
-    #[test]
-    fn plans_reach_diaries_observations_thoughts_and_dreams_in_words() {
-        let mut world = fresh_world();
-        world.life.viewer_name = Some("Sam".to_owned());
-        world.hear("I have an exam tomorrow");
-        assert!(thoughts(&world).contains(&"I hope Sam's exam goes well tomorrow.".to_owned()));
-        assert!(
-            world
-                .life
-                .today
-                .words()
-                .to_lowercase()
-                .contains("you told me about your exam")
-        );
-        assert!(memories(&world.life.agenda, world.date).contains("exam tomorrow"));
-        let mut world = asking();
-        assert!(memories(&world.life.agenda, world.date).contains("already asked"));
-        world.hear("great");
-        assert!(
-            world
-                .life
-                .today
-                .diary()
-                .to_lowercase()
-                .contains("your exam went well")
-        );
-        assert!(
-            crate::mind::musing::dreams(&world)
-                .iter()
-                .any(|line| line.contains("exam"))
-        );
-        assert!(
-            !memories(&world.life.agenda, world.date)
-                .chars()
-                .any(|character| character.is_ascii_digit())
-        );
-        for days in [0, 1, 2, 7, 9, -1, -3] {
-            let words = EventKind::HeardPlan {
-                errand: Errand::Exam,
-                days,
-            }
-            .words();
-            assert!(!words.chars().any(|character| character.is_ascii_digit()));
-        }
     }
 }

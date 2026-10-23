@@ -154,15 +154,6 @@ impl World {
             .map_or(0.0, |fondness| fondness.warmth)
     }
 
-    /// The housemate it is fondest of, with how fond, once there is one.
-    pub fn best_friend(&self) -> Option<&Fondness> {
-        self.life
-            .fondness
-            .iter()
-            .filter(|fondness| fondness.warmth >= 0.15)
-            .max_by(|first, second| first.warmth.total_cmp(&second.warmth))
-    }
-
     fn choose_pastime(&mut self, partner: &Peer) -> Pastime {
         let night = self.is_night();
         let clear = self.weather.sky == Sky::Clear || self.weather.sky == Sky::Rainbow;

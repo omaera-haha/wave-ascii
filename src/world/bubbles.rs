@@ -1,8 +1,8 @@
 use glam::Vec3;
 
 use super::{
-    Activity, EventKind, Heard, Lamp, Listening, Mood, Nook, ROOM_MAX, ROOM_MIN, World, books,
-    breeze, flat, garden, music,
+    Activity, EventKind, Heard, Lamp, Mood, Nook, ROOM_MAX, ROOM_MIN, World, books, breeze, flat,
+    garden, music,
 };
 
 pub const LIMIT: usize = 16;
@@ -123,7 +123,6 @@ impl World {
         if !requested(text) {
             return None;
         }
-        self.listening = Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
         let continuing = self.ghost.plan.activity == Activity::Bubbles && !self.ghost.plan.done;
         let accepted = continuing || self.bubbles_are_open();
@@ -134,7 +133,6 @@ impl World {
             tone: None,
             understanding: super::Understanding::Bubbles { accepted },
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -456,7 +454,6 @@ mod tests {
                 Understanding::Bubbles { accepted: true }
             );
             assert_eq!(heard.tone, None);
-            assert!(heard.learned.is_empty() && world.life.vocabulary.words.is_empty());
             assert_eq!(world.ghost.plan.activity, Activity::Bubbles);
             let started = world.ghost.plan.started;
             world.time += 0.2;
@@ -519,7 +516,6 @@ mod tests {
             assert_eq!(world.ghost.plan, before);
             assert_eq!(world.ghost.asleep, asleep);
             assert!(!world.options().contains(&Activity::Bubbles));
-            assert!(world.life.vocabulary.words.is_empty());
         }
     }
 

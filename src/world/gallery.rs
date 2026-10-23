@@ -811,7 +811,6 @@ mod tests {
                     ..
                 }
             ));
-            assert!(heard.learned.is_empty());
         }
         assert!(
             world

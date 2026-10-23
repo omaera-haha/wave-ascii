@@ -178,9 +178,7 @@ pub fn reaction(event: &EventKind) -> Option<Expression> {
         EventKind::SawDrawing { .. } | EventKind::Copied(_) => Expression::Smile,
         EventKind::LearnedAboutViewer(_) => Expression::Smile,
         EventKind::LearnedPicture(_) => Expression::Sparkle,
-        EventKind::Puzzled(_) => Expression::Skeptical,
-        EventKind::LearnedWord { .. }
-        | EventKind::LearnedName(_)
+        EventKind::LearnedName(_)
         | EventKind::Named(_)
         | EventKind::ShootingStar
         | EventKind::ForecastCameTrue { .. } => Expression::Sparkle,

@@ -2,7 +2,7 @@ use glam::Vec3;
 use jiff::civil::Date;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{Activity, EventKind, Heard, Listening, Mood, Season, Understanding, World};
+use super::{Activity, EventKind, Heard, Mood, Season, Understanding, World};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Topic {
@@ -723,13 +723,6 @@ impl World {
         {
             return None;
         }
-        let definite_answer = match topic {
-            Topic::Color => color(text).is_some(),
-            Topic::Season => season(text).is_some(),
-            Topic::Birthday => birthday(text).is_some(),
-            _ => answer_text(text)
-                .is_some_and(|answer| answer != text.trim().trim_end_matches(['.', '!'])),
-        };
         // Farewells, greetings, and scolding keep their usual meaning, and a
         // guess in a game on the glass belongs to the game.
         let tone = super::vocabulary::read(text, &self.ghost.name).tone;
@@ -749,12 +742,6 @@ impl World {
                 )
             )
             || unrelated(text)
-            || (!definite_answer
-                && self
-                    .life
-                    .vocabulary
-                    .meaning(&super::vocabulary::tokens(text))
-                    .is_some())
             || super::wardrobe::requested_off(text, self.wearing)
         {
             return None;
@@ -781,7 +768,6 @@ impl World {
                 self.life.viewer.birthday.is_some()
             }
         };
-        self.listening = Listening::default();
         self.wake();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
@@ -812,7 +798,6 @@ impl World {
                 Understanding::Unanswered(topic)
             },
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -1153,62 +1138,6 @@ mod tests {
             restored.ask_viewer();
             assert!(restored.asking.is_some());
         }
-    }
-
-    #[test]
-    fn answers_bypass_vocabulary_and_record_learning_and_both_birthday_milestones_once() {
-        let mut world = visiting(5);
-        let vocabulary = world.life.vocabulary.clone();
-        let bond = world.life.bond;
-        world.asking = Some((Topic::Birthday, world.time + 180.0));
-        let heard = world.hear("March 3rd");
-        assert_eq!(
-            heard.understanding,
-            Understanding::Answered(Topic::Birthday)
-        );
-        assert_eq!(world.life.vocabulary, vocabulary);
-        assert_eq!(world.life.total.learned_about, 1);
-        assert!(world.life.bond > bond);
-        for text in ["You told me about yourself.", "I know your birthday now."] {
-            assert_eq!(
-                world
-                    .life
-                    .milestones
-                    .iter()
-                    .filter(|entry| entry.text == text)
-                    .count(),
-                1
-            );
-        }
-        assert_eq!(
-            world.ghost.speech.as_ref().unwrap().text,
-            "March third! I'll remember."
-        );
-        let event = world
-            .events
-            .iter()
-            .find(|event| matches!(event.kind, EventKind::LearnedAboutViewer(_)))
-            .unwrap();
-        assert_eq!(
-            world.event_words(event),
-            "learned that your birthday is on March third"
-        );
-        assert!(
-            !world
-                .events
-                .iter()
-                .any(|event| world.event_words(event).chars().any(char::is_numeric))
-        );
-        world.hear("March 3rd");
-        assert_eq!(world.life.total.learned_about, 1);
-        assert!(
-            world
-                .life
-                .today
-                .words()
-                .to_lowercase()
-                .contains("learned a little more about you")
-        );
     }
 
     #[test]

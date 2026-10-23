@@ -3,7 +3,7 @@ use std::f32::consts::TAU;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use super::{Activity, EventKind, Heard, Listening, Understanding, World};
+use super::{Activity, EventKind, Heard, Understanding, World};
 
 pub const POSITION: Vec3 = Vec3::new(1.72, 0.0, 0.25);
 pub const RADIUS: f32 = 0.25;
@@ -614,7 +614,6 @@ impl World {
         if tune.is_none() && !lullaby && !own {
             return None;
         }
-        self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
         if own {
@@ -660,7 +659,6 @@ impl World {
                     tone: None,
                     understanding: Understanding::OwnSong,
                     named: false,
-                    learned: Vec::new(),
                     stopped: false,
                     learned_name: None,
                     given_name: None,
@@ -691,7 +689,6 @@ impl World {
                 Understanding::Music { lullaby }
             },
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -1094,7 +1091,6 @@ mod tests {
                 world.queued_tune.as_ref().unwrap().notes,
                 my_song().tune.notes
             );
-            assert!(world.life.vocabulary.known().is_empty());
             assert!(!world.compose_on_arrival);
             world.start_focus(25);
             world.hear(text);
@@ -1298,38 +1294,6 @@ mod tests {
         assert!(world.music.is_none());
         assert!(world.music_notes.is_empty());
         assert_eq!(world.life.total.tunes_played, 1);
-    }
-
-    #[test]
-    fn teaching_replays_and_keeps_one_copy_without_learning_any_words() {
-        let mut world = World::new(3, 12.0);
-        let heard = world.hear("do re mi");
-        assert_eq!(heard.understanding, Understanding::Music { lullaby: false });
-        assert!(heard.learned.is_empty());
-        assert!(world.life.vocabulary.known().is_empty());
-        assert_eq!(world.ghost.plan.activity, Activity::Music);
-        world.ghost.position = LISTEN;
-        world.step(1.5);
-        assert_eq!(
-            world.music.as_ref().unwrap().tune,
-            lesson("do re mi").unwrap()
-        );
-        world.step(8.0);
-        assert!(world.needs_decision());
-        assert_eq!(world.life.total.tunes_played, 1);
-        world.hear("도레미");
-        assert_eq!(world.life.tunes.len(), 1);
-        assert_eq!(world.life.total.tunes_learned, 1);
-        assert_eq!(
-            world
-                .life
-                .milestones
-                .iter()
-                .filter(|entry| entry.text == "You taught me my first tune.")
-                .count(),
-            1
-        );
-        assert!(world.listening.words.is_empty());
     }
 
     #[test]

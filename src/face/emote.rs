@@ -325,10 +325,7 @@ fn reaction(event: &EventKind, bond: f32) -> Option<Emote> {
         EventKind::LearnedAboutViewer(_) => Emote::Heart,
         EventKind::LearnedPicture(_) => Emote::Sparkle,
         EventKind::Copied(_) => Emote::Note,
-        EventKind::Puzzled(_) => Emote::Question,
-        EventKind::LearnedWord { .. } | EventKind::LearnedName(_) | EventKind::Named(_) => {
-            Emote::Sparkle
-        }
+        EventKind::LearnedName(_) | EventKind::Named(_) => Emote::Sparkle,
         EventKind::Heard(_) | EventKind::ViewerArrived if bond >= 0.3 => Emote::Heart,
         EventKind::Heard(_) | EventKind::ViewerArrived => Emote::Alarm,
         EventKind::WishedLuck(_) => Emote::Sparkle,

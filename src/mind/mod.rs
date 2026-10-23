@@ -1,3 +1,4 @@
+pub(crate) mod answers;
 #[allow(dead_code, reason = "a general client, of which the ghost uses a part")]
 pub mod claude;
 mod decision;
@@ -5,13 +6,12 @@ mod instinct;
 #[allow(dead_code, reason = "a general client, of which the ghost uses a part")]
 pub mod jev;
 mod mail;
-pub(crate) mod musing;
 mod observation;
 mod reflection;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio::runtime::Runtime;
 
@@ -24,8 +24,8 @@ use reflection::Reflection;
 
 pub use observation::recent as recent_events;
 
-/// Seconds the ghost waits for System One before deciding on instinct.
-const PATIENCE: f64 = 2.5;
+/// Seconds the ghost waits for System One before going with its own pull.
+const PATIENCE: f64 = 6.0;
 /// Seconds into a run before the first reflection.
 const FIRST_REFLECTION: f64 = 4.0;
 /// How many times less often the ghost reflects while nobody is around.
@@ -34,35 +34,21 @@ const ALONE_FACTOR: f64 = 5.0;
 const MOOD_HOLDS: f32 = 90.0;
 /// Seconds the ghost keeps looking at what a mind turned it to.
 const LOOKS_FOR: f32 = 15.0;
-/// Without System Two, the chance that setting out on something crosses
-/// the ghost's mind, and the seconds between its idle musings and dreams.
-const MUSES_ON_SETTING_OUT: f32 = 0.35;
-const MUSES_EVERY: (f32, f32) = (50.0, 100.0);
-/// A night holds many dreams, but not one every few breaths.
-const DREAMS_EVERY: (f32, f32) = (45.0, 90.0);
-/// Seconds until a thought it had feels fresh again. Until then it comes
-/// back only rarely, and less the more recently it was had.
-const THOUGHT_FRESHENS: f64 = 6.0 * 3600.0;
-/// How fresh the freshest musing that fits must be for the ghost to bother
-/// thinking it; with only lately-had thoughts to hand, it stays quiet.
-const QUIET_BELOW: f32 = 0.4;
-/// Distinct thoughts remembered before those already fresh again are let go.
-const THOUGHTS_REMEMBERED: usize = 512;
-/// Seconds the ghost's own words get before it brings up something new.
-const SPEECH_SETTLES: f64 = 8.0;
-/// Seconds a thought stays before a musing may replace it.
-const THOUGHT_HOLDS: f64 = crate::world::dream::HOLDS;
 const MEMORIES_KEPT: usize = 60;
 /// How much less often a creature thinks things over while the viewer is
 /// with another.
 const COMPANION_FACTOR: f64 = 4.0;
 const REMARKS_KEPT: usize = 40;
+/// Seconds before checking a failing model again, doubling up to the most.
+const RECHECK: (f32, f32) = (5.0, 60.0);
 
 /// How one of the minds is doing, for the status line.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Status {
-    /// There is no key for it, so the ghost goes without.
+    /// There is no key for it.
     Off,
+    /// Its key is being tried.
+    Checking,
     Ready,
     Busy,
     Failed(String),
@@ -86,6 +72,11 @@ enum Answer {
         activity: Result<Option<Activity>, String>,
     },
     Reflected(Result<Option<Reflection>, String>),
+    /// Whether System One, or else System Two, answered a check.
+    Checked {
+        one: bool,
+        result: Result<(), String>,
+    },
     LetterWritten {
         index: usize,
         original: crate::world::mail::Letter,
@@ -100,8 +91,8 @@ struct HeardMessage {
 
 /// The ghost's two minds. System One (Jev) makes the quick choices of what
 /// to do next; System Two (Claude) thinks things over now and then, sets
-/// goals, and talks. Without keys the ghost lives on instinct alone. Requests
-/// run in the background, so the world never waits on them.
+/// goals, and talks. Life goes on only while both answer. Requests run in
+/// the background, so the world never waits on them.
 pub struct Mind {
     /// Shared by every creature's mind.
     runtime: Option<std::sync::Arc<Runtime>>,
@@ -124,14 +115,11 @@ pub struct Mind {
     next_id: u64,
     reflecting: bool,
     last_reflection: Option<f64>,
-    /// When the ghost last mused on its own, when it muses next, and
-    /// whether its musings are dreams.
-    mused_at: f64,
-    /// Its latest thoughts, newest last.
-    /// When it last had each thought.
-    thought_at: HashMap<String, f64>,
-    next_musing: f64,
-    dreaming: bool,
+    /// Checks of the keys still out, failed checks in a row, and when to
+    /// check again.
+    checking: u32,
+    failures: u32,
+    next_check: Option<Instant>,
     /// Messages from the viewer still waiting for a reply.
     heard: VecDeque<HeardMessage>,
     /// The id of the latest message's request routing; answers to earlier
@@ -142,7 +130,6 @@ pub struct Mind {
     /// a newer name.
     renamed: u64,
     reflection_renamed: u64,
-    musing_focus: bool,
     reflecting_for_viewer: bool,
     pending_story: Option<u64>,
     reflecting_story: Option<(u64, bool)>,
@@ -172,15 +159,13 @@ impl Mind {
             next_id: 0,
             reflecting: false,
             last_reflection: None,
-            mused_at: 0.0,
-            thought_at: HashMap::new(),
-            next_musing: f64::from(MUSES_EVERY.0) * 0.4,
-            dreaming: false,
+            checking: 0,
+            failures: 0,
+            next_check: None,
             heard: VecDeque::new(),
             latest_request: 0,
             renamed: 0,
             reflection_renamed: 0,
-            musing_focus: false,
             reflecting_for_viewer: false,
             pending_story: None,
             reflecting_story: None,
@@ -202,16 +187,8 @@ impl Mind {
             claude: self.claude.clone(),
             sender,
             receiver,
-            one: if self.jev.is_some() {
-                Status::Ready
-            } else {
-                Status::Off
-            },
-            two: if self.claude.is_some() {
-                Status::Ready
-            } else {
-                Status::Off
-            },
+            one: self.one.clone(),
+            two: self.two.clone(),
             journal,
             reflect_every: self.reflect_every,
             effort: self.effort,
@@ -221,15 +198,13 @@ impl Mind {
             next_id: 0,
             reflecting: false,
             last_reflection: None,
-            mused_at: 0.0,
-            thought_at: HashMap::new(),
-            next_musing: f64::from(MUSES_EVERY.0) * 0.4,
-            dreaming: false,
+            checking: 0,
+            failures: 0,
+            next_check: None,
             heard: VecDeque::new(),
             latest_request: 0,
             renamed: 0,
             reflection_renamed: 0,
-            musing_focus: false,
             reflecting_for_viewer: false,
             pending_story: None,
             reflecting_story: None,
@@ -283,21 +258,113 @@ impl Mind {
             self.claude = None;
         }
         self.one = if self.jev.is_some() {
-            Status::Ready
+            Status::Checking
         } else {
             Status::Off
         };
         self.two = if self.claude.is_some() {
-            Status::Ready
+            Status::Checking
         } else {
             Status::Off
         };
+        // The keys are tried once something waits on them.
         self.deciding = None;
+        self.checking = 0;
+        self.failures = 0;
+        self.next_check = None;
     }
 
-    /// Whether the ghost can answer in words.
-    pub fn can_talk(&self) -> bool {
-        self.claude.is_some()
+    /// Whether both minds have keys that answer.
+    pub fn alive(&self) -> bool {
+        let working = |status: &Status| matches!(status, Status::Ready | Status::Busy);
+        working(&self.one) && working(&self.two)
+    }
+
+    /// Seconds until a failing model is checked again, if one is waiting.
+    pub fn recheck_in(&self) -> Option<f32> {
+        (self.checking == 0)
+            .then_some(self.next_check?)
+            .map(|at| at.saturating_duration_since(Instant::now()).as_secs_f32())
+    }
+
+    /// While life waits on the minds: takes in what they answer, and tries
+    /// a failing key again once it is time.
+    pub fn wait(&mut self, world: &mut World) {
+        while let Ok(answer) = self.receiver.try_recv() {
+            self.apply(answer, world);
+        }
+        if self.checking == 0
+            && !self.alive()
+            && self.next_check.is_none_or(|at| Instant::now() >= at)
+        {
+            self.check();
+        }
+    }
+
+    /// Takes on another mind's failure, since they share keys, and leaves
+    /// that mind as if it had never failed.
+    pub fn take_failure(&mut self, other: &mut Mind) {
+        for (mine, theirs) in [
+            (&mut self.one, &mut other.one),
+            (&mut self.two, &mut other.two),
+        ] {
+            if matches!(theirs, Status::Failed(_)) {
+                *mine = std::mem::replace(theirs, Status::Ready);
+            }
+        }
+        if !self.alive() && self.next_check.is_none() && self.checking == 0 {
+            self.next_check = Some(Instant::now());
+        }
+    }
+
+    // Asks each model that isn't known to work a tiny question.
+    fn check(&mut self) {
+        if let Some(jev) = self.jev.clone()
+            && !matches!(self.one, Status::Ready | Status::Busy)
+        {
+            self.one = Status::Checking;
+            self.checking += 1;
+            self.spawn(async move {
+                let questions = jev::Questions::new()
+                    .with("greeting", jev::Noul::new("Is this message a greeting?"));
+                let state = serde_json::Value::String("Hello!".to_owned());
+                Answer::Checked {
+                    one: true,
+                    result: jev
+                        .ask(&state, &questions)
+                        .await
+                        .map(|_| ())
+                        .map_err(|error| error.to_string()),
+                }
+            });
+        }
+        if let Some(claude) = self.claude.clone()
+            && !matches!(self.two, Status::Ready | Status::Busy)
+        {
+            self.two = Status::Checking;
+            self.checking += 1;
+            self.spawn(async move {
+                let request = claude::Request {
+                    system: vec![claude::Block::new("Reply with ok set to true.")],
+                    messages: vec![claude::Message::text(claude::Role::User, "Are you there?")],
+                    schema: serde_json::json!({
+                        "type": "object",
+                        "properties": {"ok": {"type": "boolean"}},
+                        "required": ["ok"],
+                        "additionalProperties": false,
+                    }),
+                    max_tokens: 64,
+                    effort: None,
+                };
+                Answer::Checked {
+                    one: false,
+                    result: match claude.structured(&request).await {
+                        Ok(_) => Ok(()),
+                        Err(error) => Err(error.to_string()),
+                    },
+                }
+            });
+        }
     }
 
     pub fn write_letter(&mut self, world: &World) {
@@ -369,36 +436,25 @@ impl Mind {
             self.pending_story = None;
         }
         // Messages queued for System Two go unanswered once it is turned
-        // off, but a story the ghost came to the glass to tell is told
-        // offline instead.
+        // off, and a story it came to the glass to tell goes untold.
         if self.claude.is_none() && !self.heard.is_empty() {
             let story = self
                 .heard
                 .drain(..)
                 .filter_map(|message| message.story)
                 .next_back();
-            if let Some((id, korean)) = story
+            if let Some((id, _)) = story
                 && self.pending_story == Some(id)
-                && world
-                    .telling
-                    .as_ref()
-                    .is_some_and(|telling| telling.lines.is_empty())
             {
-                let lines = musing::story(world, korean);
-                world.tell(lines);
                 self.pending_story = None;
+                world.telling = None;
             }
         }
         while let Ok(answer) = self.receiver.try_recv() {
             self.apply(answer, world);
         }
 
-        // Housemates choose on instinct; System One's quick calls are spent
-        // on the one the viewer is with.
-        if world.needs_decision() && world.companion {
-            self.deciding = None;
-            decide(world, None);
-        } else if world.needs_decision() {
+        if world.needs_decision() {
             match (&self.jev, self.deciding) {
                 (Some(jev), None) => {
                     let options: Vec<(Activity, String)> = world
@@ -429,10 +485,6 @@ impl Mind {
                 (None, _) => decide(world, None),
                 _ => {}
             }
-        }
-
-        if self.claude.is_none() {
-            self.muse(world);
         }
 
         if let Some(claude) = &self.claude
@@ -591,40 +643,6 @@ impl Mind {
                 story: request_story,
             });
         }
-        // Without System One to ask, words heard before and still not
-        // understood make it try something, to see if that's what they mean.
-        let guessed = match heard.understanding {
-            Understanding::Puzzled { again: true, .. }
-                if self.jev.is_none() && !world.puzzle_active() =>
-            {
-                world.guess()
-            }
-            _ => None,
-        };
-        // Without System Two, it answers in the few words of its own.
-        if self.claude.is_none() {
-            if story {
-                let lines = musing::story(world, heard.korean);
-                world.tell(lines);
-                self.pending_story = None;
-            } else {
-                let lines = musing::reply(world, &heard, guessed);
-                if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
-                    world.say(&lines[index]);
-                    if matches!(
-                        heard.understanding,
-                        Understanding::Asked {
-                            question: Question::Away,
-                            ..
-                        }
-                    ) && let Some(away) = &mut world.away
-                    {
-                        away.told = true;
-                    }
-                }
-            }
-            self.remember_speech(world);
-        }
         if heard.given_name.is_some() {
             self.renamed += 1;
         }
@@ -650,184 +668,6 @@ impl Mind {
         }
     }
 
-    // Without System Two, the ghost still thinks to itself now and then: as
-    // it sets out on something, when nothing much happens, and in its
-    // dreams.
-    fn muse(&mut self, world: &mut World) {
-        if world.reading_viewer_letter() {
-            self.mused_at = world.time;
-            return;
-        }
-        // It tells what it did while the viewer was away once nothing else
-        // it says is still showing.
-        let speaking = (world.asking.is_some()
-            || world.awaiting_plan_answer()
-            || world.awaiting_break_reply())
-            || world.telling.is_some()
-            || world
-                .ghost
-                .speech
-                .as_ref()
-                .is_some_and(|line| world.time - line.time < SPEECH_SETTLES);
-        if world.viewer_present()
-            && world.ghost.asleep < 0.3
-            && !speaking
-            && world.away.as_ref().is_some_and(|away| !away.told)
-        {
-            let lines = musing::returned(world, world.speaks_korean());
-            if let Some(index) = world.pick(&vec![1.0; lines.len()]) {
-                world.say(&lines[index]);
-                world.away.as_mut().unwrap().told = true;
-                self.remember_speech(world);
-                return;
-            }
-        }
-        if world.reading.is_some() {
-            self.mused_at = world.time;
-            return;
-        }
-        let since = self.mused_at;
-        self.mused_at = world.time;
-        let asleep = world.ghost.asleep > crate::world::dream::SLEEPING;
-        let focusing = world.focus.is_some();
-        if self.musing_focus != focusing && !asleep {
-            let remaining = (self.next_musing - world.time).max(0.0);
-            self.next_musing = world.time + remaining * if focusing { 3.0 } else { 1.0 / 3.0 };
-        }
-        self.musing_focus = focusing;
-        let (low, high) = if asleep { DREAMS_EVERY } else { MUSES_EVERY };
-        let (low, high) = if world.focus.is_some() && !asleep {
-            (low * 3.0, high * 3.0)
-        } else {
-            (low, high)
-        };
-        if asleep != self.dreaming {
-            self.dreaming = asleep;
-            self.next_musing = world.time + f64::from(low);
-        }
-        let began = world
-            .events
-            .iter()
-            .rev()
-            .take_while(|event| event.time > since)
-            .find_map(|event| match event.kind {
-                EventKind::Began(activity) => Some(activity),
-                _ => None,
-            });
-        let passerby = (!asleep && !focusing)
-            .then(|| {
-                world
-                    .events
-                    .iter()
-                    .rev()
-                    .take_while(|event| event.time > since)
-                    .find_map(|event| match event.kind {
-                        EventKind::SawPasserby(kind) => Some(kind),
-                        _ => None,
-                    })
-            })
-            .flatten();
-        let quirk = (!asleep && !focusing)
-            .then(|| {
-                world
-                    .events
-                    .iter()
-                    .rev()
-                    .take_while(|event| event.time > since)
-                    .find_map(|event| match event.kind {
-                        EventKind::Quirk(kind) => Some(kind),
-                        _ => None,
-                    })
-            })
-            .flatten();
-        let friend_noticed = !asleep
-            && !focusing
-            && world.wearing.is_some()
-            && world
-                .events
-                .iter()
-                .rev()
-                .take_while(|event| event.time > since)
-                .any(|event| matches!(event.kind, EventKind::FriendArrived(_)));
-        // Quirks and a friend's notice always come to mind; passersby, idle
-        // musings, dreams, and setting out only when something fresh fits.
-        let owned = |lines: &[&str]| -> Vec<String> {
-            lines.iter().map(|line| (*line).to_owned()).collect()
-        };
-        let (lines, optional) = if let Some(kind) = quirk {
-            (owned(kind.thoughts()), false)
-        } else if friend_noticed {
-            (owned(&musing::friend_notices_outfit(world)), false)
-        } else if let Some(kind) = passerby {
-            // The same squirrel again needn't be remarked on every time.
-            (owned(&kind.thoughts()), true)
-        } else if world.time >= self.next_musing {
-            self.next_musing = world.time + f64::from(low + (high - low) * world.random_unit());
-            let lines = if asleep {
-                musing::dreams(world)
-            } else {
-                musing::idle(world)
-            };
-            (lines, true)
-        } else if let Some(activity) = began
-            && !asleep
-            && world.random_unit() < MUSES_ON_SETTING_OUT
-        {
-            (owned(&musing::setting_out(world, activity)), true)
-        } else {
-            return;
-        };
-        let thinking = world
-            .ghost
-            .thought
-            .as_ref()
-            .is_some_and(|thought| world.time - thought.time < THOUGHT_HOLDS);
-        if (thinking && !friend_noticed) || lines.is_empty() {
-            return;
-        }
-        // Fresh thoughts first; a line had lately comes back rarely, the
-        // less the more recently it was had.
-        let weights: Vec<f32> = lines
-            .iter()
-            .map(|line| self.freshness(line, world.time))
-            .collect();
-        if optional && weights.iter().all(|weight| *weight < QUIET_BELOW) {
-            return;
-        }
-        // A musing it could leave unsaid waits until its lines feel fresh
-        // again; one it must think picks the least stale.
-        let weights: Vec<f32> = weights
-            .into_iter()
-            .map(|weight| {
-                if optional && weight < QUIET_BELOW {
-                    0.0
-                } else {
-                    weight.max(1e-3)
-                }
-            })
-            .collect();
-        if let Some(index) = world.pick(&weights) {
-            self.thought_at.insert(lines[index].clone(), world.time);
-            if self.thought_at.len() > THOUGHTS_REMEMBERED {
-                let now = world.time;
-                self.thought_at.retain(|_, at| now - *at < THOUGHT_FRESHENS);
-            }
-            let line = musing::named_friend_line(world, &lines[index]);
-            world.think(&line);
-            if asleep {
-                world.dream_of(&line);
-            }
-        }
-    }
-
-    // From 0 for a thought just had to 1 for one not had within the hour,
-    // or never.
-    fn freshness(&self, line: &str, now: f64) -> f32 {
-        self.thought_at.get(line).map_or(1.0, |at| {
-            (((now - at) / THOUGHT_FRESHENS).clamp(0.0, 1.0) as f32).powi(2)
-        })
-    }
-
     fn spawn(&self, task: impl Future<Output = Answer> + Send + 'static) {
         if let Some(runtime) = &self.runtime {
             let sender = self.sender.clone();
@@ -839,6 +679,26 @@ impl Mind {
 
     fn apply(&mut self, answer: Answer, world: &mut World) {
         match answer {
+            Answer::Checked { one, result } => {
+                self.checking = self.checking.saturating_sub(1);
+                let status = if one { &mut self.one } else { &mut self.two };
+                match result {
+                    Ok(()) => {
+                        *status = Status::Ready;
+                        if self.alive() {
+                            self.failures = 0;
+                            self.next_check = None;
+                        }
+                    }
+                    Err(message) => {
+                        *status = Status::Failed(message);
+                        self.failures += 1;
+                        let wait =
+                            (RECHECK.0 * 2_f32.powi(self.failures as i32 - 1)).min(RECHECK.1);
+                        self.next_check = Some(Instant::now() + Duration::from_secs_f32(wait));
+                    }
+                }
+            }
             Answer::LetterWritten {
                 index,
                 original,
@@ -846,11 +706,7 @@ impl Mind {
             } => {
                 if let Ok(Some(lines)) = lines
                     && crate::world::mail::Letter::valid_lines(&lines)
-                    && if original.lines.len() == 2 {
-                        lines.len() == 2
-                    } else {
-                        lines.len() >= 3
-                    }
+                    && lines.len() >= original.lines.len().min(3)
                     && let Some(letter) = world.life.letters.get_mut(index)
                     && !letter.read
                     && *letter == original
@@ -899,7 +755,7 @@ impl Mind {
             } => self.one = Status::Failed(message),
             Answer::Reflected(result) => {
                 self.reflecting = false;
-                if let Some((id, korean)) = self.reflecting_story.take() {
+                if let Some((id, _)) = self.reflecting_story.take() {
                     let waiting = self.pending_story == Some(id)
                         && world
                             .telling
@@ -912,9 +768,11 @@ impl Mind {
                             .ok()
                             .and_then(|reflection| reflection.as_ref())
                             .map(|reflection| reflection::story_lines(&reflection.say))
-                            .filter(|lines| !lines.is_empty())
-                            .unwrap_or_else(|| musing::story(world, korean));
-                        world.tell(lines);
+                            .filter(|lines| !lines.is_empty());
+                        match lines {
+                            Some(lines) => world.tell(lines),
+                            None => world.telling = None,
+                        }
                     }
                     match result {
                         Ok(reflection) => {
@@ -949,6 +807,9 @@ impl Mind {
     fn take_in(&mut self, reflection: Reflection, world: &mut World) {
         if !reflection.thought.is_empty() {
             world.think(&reflection.thought);
+            if world.ghost.asleep > crate::world::dream::SLEEPING {
+                world.dream_of(&reflection.thought);
+            }
         }
         if world.asking.is_none()
             && !world.awaiting_plan_answer()
@@ -1102,25 +963,6 @@ pub fn now() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn promises_bypass_jev_but_still_queue_a_claude_reflection() {
-        let config = Config {
-            anthropic_api_key: Some("test-key".to_owned()),
-            ..Config::default()
-        };
-        let mut mind = Mind::new(&config, Journal::default(), false);
-        let mut world = World::new(3, 12.0);
-        let heard = world.hear("see you tomorrow");
-        assert!(!routes_to_jev(&heard));
-        mind.hear(&mut world, "I'll be away for two weeks");
-        assert_eq!(mind.heard.len(), 1);
-        assert_eq!(
-            mind.heard.front().unwrap().text,
-            "I'll be away for two weeks"
-        );
-        assert_eq!(world.life.vocabulary, crate::world::Vocabulary::default());
-    }
-
     fn offline_letter() -> crate::world::mail::Letter {
         crate::world::mail::Letter {
             day: "2026-06-21".to_owned(),
@@ -1223,33 +1065,6 @@ mod tests {
             &mut world,
         );
         assert_eq!(world.life.letters[0], newer);
-    }
-
-    #[test]
-    fn a_letter_waiting_reaches_observations_and_offline_thoughts() {
-        let mut world = World::new(1, 12.0);
-        world.life.letters.push(offline_letter());
-        assert!(
-            observation::observe(&world)["letter"]
-                .as_str()
-                .unwrap()
-                .contains("waits unread")
-        );
-        assert!(
-            musing::idle(&world)
-                .iter()
-                .any(|line| line == "I hope they find my letter.")
-        );
-        world.read_letter(0);
-        assert_eq!(
-            observation::observe(&world)["letter"],
-            "no unread letter waiting"
-        );
-        assert!(
-            !musing::idle(&world)
-                .iter()
-                .any(|line| line == "I hope they find my letter.")
-        );
     }
 
     #[test]
@@ -1392,156 +1207,7 @@ mod tests {
         assert!(world.telling.as_ref().unwrap().lines.is_empty());
         mind.reflecting_story = Some((9, false));
         mind.apply(super::Answer::Reflected(Ok(None)), &mut world);
-        assert!(!world.telling.as_ref().unwrap().lines.is_empty());
-    }
-
-    #[test]
-    fn creations_reach_questions_observations_reflections_and_named_offline_memories() {
-        use crate::world::{
-            Nature, Random, Season,
-            creation::compose_book,
-            music::{Composition, Tune, compose},
-        };
-        let mut world = World::new(7, 12.0);
-        let notes = compose(
-            &mut Random::new(9),
-            crate::world::Mood::Cheerful,
-            Nature::default(),
-        );
-        world.life.compositions.push(Composition {
-            tune: Tune {
-                name: "Rain Song".to_owned(),
-                notes,
-            },
-            title: "Rain Song".to_owned(),
-            korean_title: "비의 노래".to_owned(),
-            day: world.date.to_string(),
-        });
-        let mut book = compose_book(
-            &mut Random::new(4),
-            &world.life,
-            Season::Summer,
-            world.date.to_string(),
-        );
-        book.pages = std::mem::take(&mut book.outline);
-        book.finished = true;
-        let title = book.title.0.clone();
-        world.life.written.push(book);
-        let observation = observation::observe(&world);
-        assert_eq!(observation["room"]["own_songs"], "Rain Song");
-        assert!(
-            observation["room"]["own_books"]
-                .as_str()
-                .unwrap()
-                .contains(&title)
-        );
-        let request = reflection::request(&observation, &[], &world.life, &[], None, None, None);
-        let prompt = request
-            .system
-            .iter()
-            .map(|block| block.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-        assert!(prompt.contains("Rain Song") && prompt.contains(&title));
-        for pool in [musing::idle(&world), musing::dreams(&world)] {
-            let named: Vec<_> = pool
-                .iter()
-                .map(|line| musing::named_friend_line(&world, line))
-                .collect();
-            assert!(named.iter().any(|line| line.contains("Rain Song")));
-            assert!(named.iter().any(|line| line.contains(&title)));
-        }
-        for (question, expected) in [
-            ("what songs do you know?", "Rain Song"),
-            ("무슨 노래 알아?", "비의 노래"),
-            ("what's your favorite book?", title.as_str()),
-        ] {
-            let heard = world.hear(question);
-            assert!(!routes_to_jev(&heard));
-            assert!(
-                musing::reply(&world, &heard, None)
-                    .iter()
-                    .any(|line| line.contains(expected)),
-                "{question}"
-            );
-        }
-        let mut mind = offline();
-        mind.hear(&mut world, "sing me your song");
-        assert!(world.ghost.speech.as_ref().unwrap().text.starts_with('♪'));
-        assert!(
-            mind.journal
-                .conversation
-                .last()
-                .unwrap()
-                .text
-                .starts_with('♪')
-        );
-        mind.hear(&mut world, "read me your book");
-        assert!(world.telling.is_some());
-        assert!(mind.pending_story.is_none());
-    }
-
-    #[test]
-    fn music_lessons_and_lullabies_bypass_jev_and_reply_in_the_viewers_language() {
-        for (text, reply) in [
-            ("do re mi", "I'll play it back!"),
-            ("도레미", "따라 쳐 볼게!"),
-        ] {
-            let mut world = World::new(12, 12.0);
-            let heard = world.hear(text);
-            assert!(!routes_to_jev(&heard));
-            assert!(
-                musing::reply(&world, &heard, None)
-                    .iter()
-                    .any(|line| line == reply)
-            );
-            let observation = observation::observe(&world);
-            assert!(
-                observation["room"]["learned_tunes"]
-                    .as_str()
-                    .unwrap()
-                    .contains("do-re-mi")
-            );
-            assert!(
-                musing::dreams(&world)
-                    .iter()
-                    .any(|line| line.contains("tune"))
-            );
-        }
-        let mut world = World::new(13, 12.0);
-        for text in ["play a lullaby", "자장가 들려줘"] {
-            assert!(!routes_to_jev(&world.hear(text)));
-            assert!(world.music.as_ref().unwrap().lullaby);
-        }
-    }
-
-    #[test]
-    fn music_questions_answer_from_the_box_and_its_known_tunes() {
-        use crate::world::Question;
-        let mut world = World::new(14, 12.0);
-        world.hear("do re mi");
-        for (text, question) in [
-            ("do you like music?", Question::Music),
-            ("음악 좋아해?", Question::Music),
-            ("what songs do you know?", Question::Songs),
-            ("무슨 노래 알아?", Question::Songs),
-        ] {
-            let heard = world.hear(text);
-            assert!(
-                matches!(heard.understanding, Understanding::Asked { question: asked, .. } if asked == question)
-            );
-            assert!(!routes_to_jev(&heard));
-            let replies = musing::reply(&world, &heard, None);
-            assert!(!replies.is_empty());
-            if question == Question::Songs {
-                assert!(replies.iter().any(|line| line.contains("do-re-mi")));
-            }
-            assert!(world.life.vocabulary.known().is_empty());
-        }
-        assert_eq!(
-            crate::world::dream::DreamPicture::from_line("a tune of golden notes", None),
-            crate::world::dream::DreamPicture::Note
-        );
+        assert!(world.telling.is_none());
     }
 
     use super::*;
@@ -1563,31 +1229,6 @@ mod tests {
             world.quirk.map(|spell| spell.kind),
             Some(crate::world::Quirk::Yawn)
         );
-    }
-
-    #[test]
-    fn wardrobe_requests_stay_in_code_and_friend_arrivals_notice_an_outfit() {
-        let mut world = World::new(1, 12.0);
-        world.wearing = Some(crate::world::Accessory::WitchHat);
-        for message in [
-            "take off your hat",
-            "모자 벗어",
-            "what are you wearing?",
-            "뭐 입었어?",
-            "그거 뭐야?",
-        ] {
-            assert!(!routes_to_jev(&world.hear(message)));
-        }
-        let mut mind = Mind::new(&Config::default(), Journal::default(), true);
-        world.wearing = Some(crate::world::Accessory::Scarf { color: 0 });
-        world.time = 1.0;
-        world.think("Already thinking.");
-        world.events.push(crate::world::Event {
-            time: world.time,
-            kind: EventKind::FriendArrived("Pip".into()),
-        });
-        mind.muse(&mut world);
-        assert!(world.ghost.thought.as_ref().unwrap().text.contains("scarf"));
     }
 
     #[test]
@@ -1617,85 +1258,18 @@ mod tests {
     }
 
     #[test]
-    fn focus_requests_bypass_jev_and_reply_offline_in_the_viewers_language() {
+    fn focus_requests_bypass_jev_and_start_a_session() {
         let config = Config {
             typesafe_api_key: Some("test-key".to_owned()),
             jev_base_url: Some("http://127.0.0.1:9".to_owned()),
             ..Config::default()
         };
-        for (text, reply) in [
-            ("focus 40", "Let's do it. I'll be right here."),
-            ("40분 집중", "좋아, 옆에 있을게."),
-        ] {
+        for text in ["focus 40", "40분 집중"] {
             let mut mind = Mind::new(&config, Journal::default(), false);
             let mut world = World::new(3, 12.0);
             assert!(!routes_to_jev(&World::new(3, 12.0).hear(text)));
             mind.hear(&mut world, text);
-            assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
             assert_eq!(world.focus.as_ref().unwrap().length, 2400);
-        }
-    }
-
-    #[test]
-    fn focus_slows_idle_musings_and_quietly_holds_timer_reflections() {
-        let mut mind = offline();
-        let mut world = World::new(1, 12.0);
-        world.start_focus(25);
-        mind.next_musing = 100.0;
-        mind.muse(&mut world);
-        assert_eq!(mind.next_musing, 300.0);
-        world.time = 301.0;
-        mind.muse(&mut world);
-        assert!(mind.next_musing >= world.time + f64::from(MUSES_EVERY.0 * 3.0));
-        let config = Config {
-            anthropic_api_key: Some("test-key".to_owned()),
-            claude_base_url: Some("http://127.0.0.1:9".to_owned()),
-            ..Config::default()
-        };
-        let mut mind = Mind::new(&config, Journal::default(), false);
-        mind.think(&mut world);
-        assert!(!mind.reflecting);
-        assert!(mind.last_reflection.is_none());
-        mind.apply(
-            Answer::Reflected(Ok(Some(Reflection {
-                say: "Hello!".to_owned(),
-                ..Reflection::default()
-            }))),
-            &mut world,
-        );
-        assert!(world.ghost.speech.is_none());
-        mind.hear(&mut world, "hi");
-        mind.think(&mut world);
-        assert!(mind.reflecting);
-        assert!(mind.reflecting_for_viewer);
-    }
-
-    #[test]
-    fn feelings_bypass_jev_reply_in_the_viewers_language_and_still_reach_reflection() {
-        for text in [
-            "I'm tired",
-            "I'm Stressed",
-            "I'm so happy!",
-            "오늘 너무 힘들었어",
-            "나는 뿌듯해",
-        ] {
-            let mut world = World::new(3, 12.0);
-            let heard = world.hear(text);
-            assert!(!routes_to_jev(&heard));
-            let mut world = World::new(3, 12.0);
-            let mut mind = offline();
-            mind.hear(&mut world, text);
-            let reply = &world.ghost.speech.as_ref().unwrap().text;
-            assert!(musing::reply(&world, &heard, None).contains(reply));
-            assert_eq!(world.life.today.praises, 0);
-            assert_eq!(world.life.total.feelings_heard, 1);
-            let config = Config {
-                anthropic_api_key: Some("test-key".to_owned()),
-                ..Config::default()
-            };
-            let mut mind = Mind::new(&config, Journal::default(), false);
-            mind.hear(&mut World::new(3, 12.0), text);
-            assert_eq!(mind.heard.front().unwrap().text, text);
         }
     }
 
@@ -1853,60 +1427,6 @@ mod tests {
         Mind::new(&Config::default(), Journal::default(), true)
     }
 
-    #[test]
-    fn dreams_avoid_lines_it_had_lately_while_others_fit() {
-        let mut mind = offline();
-        let mut world = World::new(3, 2.0);
-        world.ghost.asleep = 1.0;
-        let pool = musing::dreams(&world).len();
-        let rounds = pool.min(16);
-        assert!(rounds >= 3, "{pool}");
-        let mut thoughts = Vec::new();
-        for _ in 0..rounds {
-            world.time += 1.0;
-            world.ghost.thought = None;
-            mind.dreaming = true;
-            mind.next_musing = world.time;
-            mind.muse(&mut world);
-            thoughts.push(world.ghost.thought.as_ref().unwrap().text.clone());
-        }
-        let mut distinct = thoughts.clone();
-        distinct.sort();
-        distinct.dedup();
-        assert_eq!(distinct.len(), thoughts.len(), "{thoughts:?}");
-    }
-
-    #[test]
-    fn with_only_lately_had_musings_to_hand_the_ghost_stays_quiet_until_they_freshen() {
-        let mut mind = offline();
-        let mut world = World::new(3, 2.0);
-        world.ghost.asleep = 1.0;
-        let pool = musing::dreams(&world);
-        for line in &pool {
-            mind.thought_at.insert(line.clone(), world.time);
-        }
-        world.time += 60.0;
-        mind.dreaming = true;
-        mind.next_musing = world.time;
-        mind.muse(&mut world);
-        assert!(world.ghost.thought.is_none());
-        // An hour later they are fresh again.
-        world.time += THOUGHT_FRESHENS;
-        mind.next_musing = world.time;
-        mind.muse(&mut world);
-        let thought = &world.ghost.thought.as_ref().unwrap().text;
-        assert!(
-            pool.iter()
-                .any(|line| musing::named_friend_line(&world, line) == *thought),
-            "{thought}"
-        );
-        assert_eq!(mind.freshness("never thought", world.time), 1.0);
-        let had = &pool[0];
-        mind.thought_at.insert(had.clone(), world.time);
-        assert_eq!(mind.freshness(had, world.time), 0.0);
-        assert!((mind.freshness(had, world.time + THOUGHT_FRESHENS / 2.0) - 0.25).abs() < 1e-6);
-    }
-
     fn waiting_for_story(text: &str) -> (Mind, World) {
         let mut mind = offline();
         mind.claude = Some(Claude::new("test-key", "test-model").unwrap());
@@ -1953,7 +1473,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_declined_and_empty_story_reflections_fall_back_in_the_asked_language() {
+    fn failed_declined_and_empty_story_reflections_end_the_telling() {
         for result in [
             Err("unavailable".to_owned()),
             Ok(None),
@@ -1961,13 +1481,7 @@ mod tests {
         ] {
             let (mut mind, mut world) = waiting_for_story("이야기 들려줘");
             mind.apply(Answer::Reflected(result), &mut world);
-            let lines = &world.telling.as_ref().unwrap().lines;
-            assert!((3..=5).contains(&lines.len()));
-            assert!(
-                lines
-                    .iter()
-                    .all(|line| line.chars().any(|letter| ('가'..='힣').contains(&letter)))
-            );
+            assert!(world.telling.is_none());
             assert!(mind.pending_story.is_none());
         }
     }
@@ -1993,7 +1507,7 @@ mod tests {
         assert!(world.telling.as_ref().unwrap().lines.is_empty());
         mind.reflecting_story = mind.heard.pop_front().unwrap().story;
         mind.apply(Answer::Reflected(Err("unavailable".to_owned())), &mut world);
-        assert!(!world.telling.as_ref().unwrap().lines.is_empty());
+        assert!(world.telling.is_none());
     }
 
     #[test]
@@ -2007,20 +1521,11 @@ mod tests {
         assert_eq!(world.telling, telling);
         assert!(mind.heard.is_empty());
         mind.hear(&mut world, "what's your name?");
-        assert!(
-            world
-                .ghost
-                .speech
-                .as_ref()
-                .unwrap()
-                .text
-                .contains(&world.ghost.name)
-        );
         assert_eq!(world.telling, telling);
     }
 
     #[test]
-    fn a_story_queued_for_claude_is_told_offline_once_claude_is_turned_off() {
+    fn a_story_queued_for_claude_goes_untold_once_claude_is_turned_off() {
         let mut mind = offline();
         mind.claude = Some(Claude::new("test-key", "test-model").unwrap());
         let mut world = World::new(3, 12.0);
@@ -2030,97 +1535,7 @@ mod tests {
         mind.claude = None;
         mind.think(&mut world);
         assert!(mind.heard.is_empty());
-        assert!((3..=5).contains(&world.telling.as_ref().unwrap().lines.len()));
-    }
-
-    #[test]
-    fn the_return_line_waits_for_a_story_and_fresh_words_to_finish() {
-        let mut mind = offline();
-        let mut world = World::new(3, 12.0);
-        world.notice_viewer();
-        let mut away = crate::world::away::story(
-            "2026-06-21T12:00:00".parse().unwrap(),
-            "2026-06-21T16:00:00".parse().unwrap(),
-            1,
-            &world.life,
-            None,
-        );
-        away.happenings = vec![crate::world::away::Happening::Waited];
-        world.away = Some(away);
-        world.tell(vec!["Once.".to_owned(), "Twice.".to_owned()]);
-        world.step(0.1);
-        mind.think(&mut world);
-        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Once.");
-        world.telling = None;
-        world.step(1.0);
-        mind.think(&mut world);
-        assert_eq!(world.ghost.speech.as_ref().unwrap().text, "Once.");
-        assert!(!world.away.as_ref().unwrap().told);
-        world.step(SPEECH_SETTLES as f32);
-        mind.think(&mut world);
-        assert!(world.away.as_ref().unwrap().told);
-    }
-
-    #[test]
-    fn a_return_story_is_spoken_once_in_the_viewers_language_after_presence() {
-        for korean in [false, true] {
-            let mut mind = offline();
-            let mut world = World::new(3, 12.0);
-            world.life.korean = if korean { 1.0 } else { 0.0 };
-            let mut away = crate::world::away::story(
-                "2026-06-21T12:00:00".parse().unwrap(),
-                "2026-06-21T16:00:00".parse().unwrap(),
-                1,
-                &world.life,
-                None,
-            );
-            away.happenings = vec![crate::world::away::Happening::Waited];
-            world.away = Some(away);
-            mind.think(&mut world);
-            assert!(world.ghost.speech.is_none());
-            world.notice_viewer();
-            mind.think(&mut world);
-            assert!(world.away.as_ref().unwrap().told);
-            let said = world.ghost.speech.as_ref().unwrap().text.clone();
-            assert_eq!(
-                said.chars()
-                    .any(|character| ('가'..='힣').contains(&character)),
-                korean
-            );
-            assert_eq!(mind.journal.conversation.len(), 1);
-            world.ghost.speech = None;
-            world.step(0.1);
-            mind.think(&mut world);
-            assert!(world.ghost.speech.is_none());
-            assert_eq!(mind.journal.conversation.len(), 1);
-            mind.hear(
-                &mut world,
-                if korean {
-                    "뭐 하고 있었어?"
-                } else {
-                    "What did you do while I was away?"
-                },
-            );
-            let said = &world.ghost.speech.as_ref().unwrap().text;
-            assert!(if korean {
-                said.contains("유리")
-            } else {
-                said.contains("glass")
-            });
-            assert!(world.life.vocabulary.words.is_empty());
-        }
-    }
-
-    #[test]
-    fn without_keys_both_minds_are_off_and_the_ghost_lives_on_instinct() {
-        let mut mind = offline();
-        let mut world = World::new(3, 12.0);
-        assert_eq!((&mind.one, &mind.two), (&Status::Off, &Status::Off));
-        assert!(!mind.can_talk());
-        world.ghost.plan.done = true;
-        mind.think(&mut world);
-        assert!(!world.needs_decision());
-        assert!(mind.runtime.is_none());
+        assert!(world.telling.is_none());
     }
 
     #[test]
@@ -2292,106 +1707,6 @@ mod tests {
     }
 
     #[test]
-    fn offline_sightings_bring_a_thought_and_focus_keeps_it_quiet() {
-        for focusing in [false, true] {
-            for kind in crate::world::Passerby::ALL {
-                let mut mind = offline();
-                let mut world = World::new(7, 12.0);
-                world.time = 10.0;
-                if focusing {
-                    world.start_focus(25);
-                }
-                world.events.clear();
-                world.events.push(crate::world::Event {
-                    time: world.time,
-                    kind: EventKind::SawPasserby(kind),
-                });
-                mind.next_musing = f64::INFINITY;
-                mind.muse(&mut world);
-                if focusing {
-                    assert!(world.ghost.thought.is_none());
-                } else {
-                    assert!(
-                        kind.thoughts()
-                            .contains(&world.ghost.thought.as_ref().unwrap().text.as_str())
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn without_system_two_the_ghost_muses_and_dreams_on_its_own() {
-        let mut mind = offline();
-        let mut world = World::new(3, 12.0);
-        world.ghost.needs.energy = 1.0;
-        for _ in 0..(150 * 20) {
-            world.step(0.05);
-            mind.think(&mut world);
-        }
-        let mused = world.ghost.thought.clone().unwrap();
-        assert!(!mused.text.starts_with('…'), "{}", mused.text);
-
-        world.ghost.needs.energy = 0.2;
-        world.begin(Activity::Rest);
-        for _ in 0..(60 * 20) {
-            world.step(0.05);
-            mind.think(&mut world);
-        }
-        assert!(world.ghost.asleep > 0.9);
-        let dream = world.ghost.thought.clone().unwrap();
-        assert!(dream.text.starts_with('…'), "{}", dream.text);
-        assert!(dream.time > mused.time);
-    }
-
-    #[test]
-    fn a_dream_musing_starts_a_picture_with_its_thought_but_held_thoughts_defer_it() {
-        let mut mind = offline();
-        let mut world = World::new(3, 23.0);
-        world.tuck_in();
-        mind.dreaming = true;
-        mind.next_musing = 0.0;
-        world.think("Still thinking.");
-        mind.muse(&mut world);
-        assert!(world.dream.is_none());
-        world.ghost.thought = None;
-        mind.next_musing = world.time;
-        mind.muse(&mut world);
-        let dream = world.dream.unwrap();
-        let thought = world.ghost.thought.as_ref().unwrap();
-        assert_eq!(dream.started, thought.time);
-        assert_eq!(
-            dream.picture,
-            crate::world::dream::DreamPicture::from_line(&thought.text, None)
-        );
-        world.poke();
-        assert!(world.dream.is_none());
-        world.ghost.thought = None;
-        mind.next_musing = world.time;
-        mind.muse(&mut world);
-        assert!(world.dream.is_none());
-    }
-
-    #[test]
-    fn without_system_one_a_repeated_new_word_makes_the_ghost_try_something() {
-        let mut mind = offline();
-        let mut world = World::new(3, 12.0);
-        world.notice_viewer();
-        mind.hear(&mut world, "wiggle");
-        assert_eq!(world.ghost.plan.activity, Activity::Visit);
-        mind.hear(&mut world, "wiggle");
-        assert!(!matches!(
-            world.ghost.plan.activity,
-            Activity::Visit | Activity::Float
-        ));
-        let said = &world.ghost.speech.as_ref().unwrap().text;
-        assert!(
-            ["Like this?", "Is this “wiggle”?", "Wiggle… this?"].contains(&said.as_str()),
-            "{said}"
-        );
-    }
-
-    #[test]
     fn hearing_the_viewer_is_written_in_the_journal() {
         let mut mind = offline();
         let mut world = World::new(3, 12.0);
@@ -2399,12 +1714,6 @@ mod tests {
         let conversation = &mind.journal.conversation;
         assert_eq!(conversation[0].text, "hello");
         assert_eq!(conversation[0].speaker, Speaker::Viewer);
-        // Without System Two, it answers a greeting in its own few words.
-        assert_eq!(conversation[1].speaker, Speaker::Ghost);
-        assert_eq!(
-            world.ghost.speech.as_ref().map(|line| &line.text),
-            Some(&conversation[1].text)
-        );
         assert_eq!(world.ghost.plan.activity, Activity::Visit);
     }
 
@@ -2422,113 +1731,12 @@ mod tests {
             );
         }
     }
-    #[test]
-    fn caring_for_a_cold_stays_in_code_and_the_minds_remember_the_care() {
-        for (message, reply) in [
-            ("get well", "Thank you… that helps."),
-            ("빨리 나아", "고마워… 좀 나아."),
-        ] {
-            let mut world = World::new(2, 12.0);
-            world.life.cold = Some(crate::world::cold::Cold {
-                day: world.date.to_string(),
-                hour: 12.0,
-                severity: 0.5,
-                care: Vec::new(),
-                remaining: 80_000.0,
-            });
-            assert!(!routes_to_jev(&world.hear(message)));
-            world.life.cold.as_mut().unwrap().care.clear();
-            let mut mind = offline();
-            mind.hear(&mut world, message);
-            assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
-            assert_eq!(mind.journal.conversation.last().unwrap().text, reply);
-            assert!(
-                observation::observe(&world)["you"]["health"]
-                    .as_str()
-                    .unwrap()
-                    .contains("said kind words")
-            );
-            assert!(world.life.vocabulary.known().is_empty());
-        }
-    }
 }
 
 #[cfg(test)]
 mod acquaintance_tests {
     use super::*;
-    use crate::world::acquaintance::{Birthday, Color, Topic};
-
-    #[test]
-    fn viewer_answers_stay_in_code_and_keep_the_worlds_reply() {
-        for (text, expected) in [
-            ("blue", "Blue! I'll remember."),
-            ("파랑", "파란색! 기억할게."),
-            ("blurble", "Hmm, I'll ask again another day."),
-        ] {
-            let mut world = World::new(6, 12.0);
-            world.asking = Some((Topic::Color, world.time + 180.0));
-            let heard = world.hear(text);
-            assert!(!routes_to_jev(&heard));
-            assert_eq!(
-                musing::reply(&world, &heard, None),
-                vec![expected.to_owned()]
-            );
-            let mut world = World::new(6, 12.0);
-            world.asking = Some((Topic::Color, world.time + 180.0));
-            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
-            mind.hear(&mut world, text);
-            assert_eq!(world.ghost.speech.as_ref().unwrap().text, expected);
-            assert!(mind.heard.is_empty());
-        }
-    }
-
-    #[test]
-    fn viewer_memory_questions_are_answered_in_both_languages() {
-        for (text, topic, korean) in [
-            ("what's my favorite color?", Topic::Color, false),
-            ("내가 좋아하는 색이 뭐야?", Topic::Color, true),
-            ("do you know my birthday?", Topic::Birthday, false),
-            ("when is my birthday?", Topic::Birthday, false),
-            ("내 생일 언제야?", Topic::Birthday, true),
-            ("what's my favorite season?", Topic::Season, false),
-            ("what's my favorite animal?", Topic::Animal, false),
-            ("what's my favorite food?", Topic::Food, false),
-        ] {
-            let mut world = World::new(6, 12.0);
-            let heard = world.hear(text);
-            assert!(
-                matches!(heard.understanding, Understanding::Asked { question: Question::Viewer(asked), .. } if asked == topic),
-                "{text}"
-            );
-            assert!(!routes_to_jev(&heard));
-            let reply = musing::reply(&world, &heard, None);
-            assert_eq!(
-                reply,
-                vec![
-                    if korean {
-                        "아직 말 안 해 줬어!"
-                    } else {
-                        "You haven't told me yet!"
-                    }
-                    .to_owned()
-                ]
-            );
-            world.life.viewer.color = Some(Color::Blue);
-            world.life.viewer.birthday = Some(Birthday { month: 3, day: 3 });
-            world.life.viewer.season = Some(crate::world::Season::Spring);
-            world.life.viewer.animal = Some("cats".to_owned());
-            world.life.viewer.food = Some("kimchi".to_owned());
-            let reply = musing::reply(&world, &heard, None).join(" ");
-            assert!(
-                reply.contains(&world.life.viewer.answer(topic, korean).unwrap())
-                    || reply.contains("Blue")
-                    || reply.contains("Spring")
-                    || reply.contains("Cats")
-                    || reply.contains("Kimchi")
-            );
-            assert!(!reply.chars().any(char::is_numeric));
-        }
-    }
+    use crate::world::acquaintance::{Birthday, Color};
 
     #[test]
     fn viewer_facts_reach_observations_and_reflections_without_losing_presence() {
@@ -2570,63 +1778,6 @@ mod acquaintance_tests {
     }
 
     #[test]
-    fn offline_thoughts_and_dreams_recall_the_viewers_animal_and_food_as_written() {
-        let mut world = World::new(6, 12.0);
-        world.life.viewer.animal = Some("고양이".to_owned());
-        world.life.viewer.food = Some("kimchi".to_owned());
-        for pool in [musing::idle(&world), musing::dreams(&world)] {
-            let lines = pool
-                .iter()
-                .map(|line| musing::named_friend_line(&world, line))
-                .collect::<Vec<_>>()
-                .join(" ");
-            assert!(lines.contains("고양이"));
-            assert!(lines.contains("kimchi"));
-            assert!(!lines.contains("{animal}") && !lines.contains("{food}"));
-        }
-    }
-
-    #[test]
-    fn plans_bypass_jev_keep_the_direct_reply_and_reach_reflection_memories() {
-        for text in ["I have an exam tomorrow", "내일 시험 있어"] {
-            let mut world = World::new(3, 12.0);
-            let heard = world.hear(text);
-            assert!(!routes_to_jev(&heard));
-            assert!(musing::reply(&world, &heard, None).is_empty());
-            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
-            mind.hear(&mut world, text);
-            assert_eq!(world.life.agenda.len(), 1);
-            assert!(world.ghost.speech.is_some());
-            let observation = observation::observe(&world);
-            let plans = observation["viewer_plans"].as_str().unwrap();
-            assert!(plans.contains("exam tomorrow"));
-            let request =
-                reflection::request(&observation, &[], &world.life, &[], Some(text), None, None);
-            assert!(
-                request
-                    .system
-                    .iter()
-                    .any(|block| block.text.contains(plans))
-            );
-            let config = Config {
-                anthropic_api_key: Some("test-key".to_owned()),
-                ..Config::default()
-            };
-            let mut mind = Mind::new(&config, Journal::default(), false);
-            mind.hear(&mut world, text);
-            assert_eq!(mind.heard.front().unwrap().text, text);
-            let answer = Heard {
-                understanding: Understanding::PlanAnswered {
-                    errand: crate::world::agenda::Errand::Exam,
-                    went_well: Some(true),
-                },
-                ..heard
-            };
-            assert!(!routes_to_jev(&answer));
-        }
-    }
-
-    #[test]
     fn treasure_hints_keep_the_worlds_acknowledgement_and_never_route_to_jev() {
         let mut world = World::new(1, 12.0);
         world.start_hiding().unwrap();
@@ -2640,179 +1791,5 @@ mod acquaintance_tests {
             "따뜻해? 이쪽이구나!"
         );
         assert_eq!(world.ghost.plan.activity, Activity::Seek);
-    }
-
-    #[test]
-    fn break_replies_keep_the_worlds_response_and_never_route_to_jev_or_learn_words() {
-        for (message, agreed) in [
-            ("okay", true),
-            ("좋아", true),
-            ("not now", false),
-            ("나중에", false),
-        ] {
-            let mut world = World::new(7, 12.0);
-            for _ in 0..4 {
-                world.start_focus(5);
-                world.time += 300.0;
-                world.notice_viewer();
-                world.end_focus();
-            }
-            world.time += 6.0;
-            world.step(0.1);
-            let vocabulary = world.life.vocabulary.clone();
-            let heard = world.hear(message);
-            assert_eq!(heard.understanding, Understanding::BreakReply { agreed });
-            assert!(!routes_to_jev(&heard));
-            assert!(musing::reply(&world, &heard, None).is_empty());
-            assert_eq!(world.life.vocabulary, vocabulary);
-        }
-    }
-
-    #[test]
-    fn bubble_requests_bypass_jev_and_reply_in_the_viewers_language_even_while_busy() {
-        for (message, reply, later) in [
-            (
-                "blow bubbles",
-                "Catch the bubbles!",
-                "I'll blow some bubbles later.",
-            ),
-            (
-                "비눗방울 불어줘",
-                "비눗방울 잡아 봐!",
-                "비눗방울은 나중에 불게.",
-            ),
-        ] {
-            for asleep in [false, true] {
-                let mut world = World::new(7, 12.0);
-                if asleep {
-                    world.tuck_in();
-                    world.ghost.asleep = 1.0;
-                }
-                let heard = world.hear(message);
-                assert!(!routes_to_jev(&heard));
-                assert_eq!(
-                    musing::reply(&world, &heard, None),
-                    vec![if asleep { later } else { reply }]
-                );
-                let mut mind = Mind::new(&Config::default(), Journal::default(), true);
-                mind.hear(&mut world, message);
-                assert_eq!(
-                    world.ghost.speech.as_ref().unwrap().text,
-                    if asleep { later } else { reply }
-                );
-                assert!(world.life.vocabulary.words.is_empty());
-                if asleep {
-                    assert_eq!(world.ghost.asleep, 1.0);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn gallery_pictures_reach_questions_observations_reflections_and_offline_memories() {
-        let mut world = World::new(1, 12.0);
-        world.life.gallery = serde_json::from_str(r#"[{"kind":"ViewerDrawing","name":"heart","korean":"하트","day":"2026-06-21","strokes":[[[-0.5,0.0],[0.0,0.5],[0.5,0.0]]]}]"#).unwrap();
-        let observed = observation::observe(&world);
-        assert!(
-            observed["room"]["gallery"]
-                .as_str()
-                .unwrap()
-                .contains("viewer's heart")
-        );
-        let request = reflection::request(&observed, &[], &world.life, &[], None, None, None);
-        assert!(
-            request
-                .system
-                .iter()
-                .any(|block| block.text.contains("newest picture pinned")
-                    && block.text.contains("heart"))
-        );
-        for pool in [musing::idle(&world), musing::dreams(&world)] {
-            assert!(
-                pool.iter()
-                    .any(|line| musing::named_friend_line(&world, line).contains("heart"))
-            );
-        }
-        for (message, name) in [
-            ("what's on your wall?", "heart"),
-            ("벽에 뭐 붙였어?", "하트"),
-        ] {
-            let vocabulary = world.life.vocabulary.clone();
-            let heard = world.hear(message);
-            let replies = musing::reply(&world, &heard, None);
-            assert!(replies.iter().any(|line| line.contains(name)));
-            assert_eq!(world.life.vocabulary, vocabulary);
-        }
-        let empty = instinct::weigh(&World::new(1, 12.0), &[Activity::Float, Activity::Pin]);
-        assert_eq!(
-            empty
-                .iter()
-                .find(|(activity, _)| *activity == Activity::Pin)
-                .unwrap()
-                .1,
-            0.0
-        );
-    }
-
-    #[test]
-    fn recall_and_time_questions_bypass_jev_and_teach_no_vocabulary() {
-        let mut world = World::new(7, 15.0);
-        for message in [
-            "what did we do yesterday?",
-            "어제 뭐했어?",
-            "what did you do today?",
-            "오늘 뭐 했어?",
-            "what time is it?",
-            "몇 시야?",
-            "what's the date?",
-            "무슨 요일이야?",
-        ] {
-            let vocabulary = world.life.vocabulary.clone();
-            let heard = world.hear(message);
-            assert!(matches!(heard.understanding, Understanding::Asked { .. }));
-            assert!(!routes_to_jev(&heard), "{message}");
-            assert_eq!(world.life.vocabulary, vocabulary);
-        }
-    }
-
-    #[test]
-    fn show_requests_bypass_jev_and_keep_the_worlds_reply_without_learning_words() {
-        for (message, reply) in [
-            (
-                "show me something",
-                "I'll bring one of my treasures. Just a moment!",
-            ),
-            ("보물 보여줘", "내 보물 하나 보여줄게. 잠깐만!"),
-        ] {
-            let mut world = World::new(7, 12.0);
-            world.life.keepsakes.push(crate::world::Keepsake::Acorn);
-            let heard = world.hear(message);
-            assert!(!routes_to_jev(&heard));
-            assert_eq!(musing::reply(&world, &heard, None), vec![reply]);
-            world.begin(Activity::Float);
-            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
-            mind.hear(&mut world, message);
-            assert!(world.life.vocabulary.words.is_empty());
-            assert_eq!(world.ghost.plan.activity, Activity::Show);
-            assert_eq!(world.ghost.speech.as_ref().unwrap().text, reply);
-        }
-    }
-
-    #[test]
-    fn tidy_requests_bypass_jev_and_keep_the_direct_reply_in_both_languages() {
-        for message in ["tidy up", "clean up your room", "정리하자", "방 치워"] {
-            let mut world = World::new(7, 12.0);
-            let heard = world.hear(message);
-            assert_eq!(heard.understanding, Understanding::Tidying);
-            assert!(!routes_to_jev(&heard));
-            let expected = world.ghost.speech.as_ref().unwrap().text.clone();
-            assert_eq!(musing::reply(&world, &heard, None), vec![expected.clone()]);
-            let mut world = World::new(7, 12.0);
-            let mut mind = Mind::new(&Config::default(), Journal::default(), true);
-            mind.hear(&mut world, message);
-            assert_eq!(world.ghost.speech.as_ref().unwrap().text, expected);
-            assert_eq!(world.ghost.plan.activity, Activity::Tidy);
-            assert!(world.life.vocabulary.words.is_empty());
-        }
     }
 }

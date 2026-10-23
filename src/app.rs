@@ -19,9 +19,6 @@ use crate::terminal::{Input, Key, Mouse, MouseAction};
 use crate::ui;
 use crate::world::{Ball, Mood, Nature, Needs, ROOM_MAX, ROOM_MIN, World};
 
-/// Seconds after the ghost first answers in its own words that the viewer
-/// hears a Claude key would let it talk.
-const HINT_AFTER: f64 = 6.0;
 // Radians per arrow key press, and per cell dragged.
 const TURN: f32 = 0.12;
 const DRAG_TURN: f32 = 0.03;
@@ -218,10 +215,8 @@ pub struct App {
     /// The aura's color, eased toward the color of the ghost's mood.
     aura: Vec3,
     last_save: f64,
-    /// Whether the viewer has been told, this run, that a Claude key lets
-    /// the ghost talk, and when to tell them.
-    hinted_claude: bool,
-    hint_claude_at: Option<f64>,
+    /// Whether life waits until both minds answer, as it does when live.
+    needs_minds: bool,
     /// The last watching frame's scene and words, before its status bar.
     postcard: Option<Postcard>,
     /// Seconds until the picture the ghost is posing for is taken.
@@ -308,8 +303,7 @@ impl App {
             stroke_side: 0.0,
             aura,
             last_save: 0.0,
-            hinted_claude: false,
-            hint_claude_at: None,
+            needs_minds: false,
             postcard: None,
             posing: None,
             focused: true,
@@ -352,6 +346,11 @@ impl App {
             .ok()
             .map(|timestamp| timestamp.to_zoned(jiff::tz::TimeZone::system()).date());
         self.live_clock = true;
+        self.needs_minds = true;
+        // Without both keys there is nothing to wait for yet: ask for them.
+        if [&self.mind.one, &self.mind.two].contains(&&crate::mind::Status::Off) {
+            self.mode = Mode::Settings;
+        }
         (self.world.date, self.world.hour) = local_time();
         self.world.tuck_in();
         for id in self.world.roster() {
@@ -362,8 +361,24 @@ impl App {
         self
     }
 
+    /// Whether life is held still until both minds answer.
+    pub fn waiting_for_minds(&self) -> bool {
+        self.needs_minds && !self.mind.alive()
+    }
+
     /// Moves the world and the mind forward by `seconds`.
     pub fn advance(&mut self, seconds: f32) {
+        // The household lives only while both minds answer; a failed call
+        // by any of them holds everything still until a check gets through.
+        if self.needs_minds {
+            for (_, mind) in &mut self.minds {
+                self.mind.take_failure(mind);
+            }
+            if !self.mind.alive() {
+                self.mind.wait(&mut self.world);
+                return;
+            }
+        }
         if self.paths.is_some() {
             self.album.observe(&self.world);
             self.album.elapse(seconds);
@@ -443,13 +458,6 @@ impl App {
         self.world.share_anniversary();
         if self.paths.is_some() {
             self.album.observe(&self.world);
-        }
-        if self
-            .hint_claude_at
-            .is_some_and(|time| self.world.time >= time)
-        {
-            self.hint_claude_at = None;
-            self.post("It talks in a few words of its own. With a Claude key (press k), it can really talk.");
         }
         let ease = 1.0 - (-1.5 * seconds).exp();
         let mut color = mood_color(self.world.ghost.mood);
@@ -903,12 +911,6 @@ impl App {
                                     });
                                 }
                             }
-                            // Its own few words answer right away; the
-                            // hint about Claude comes once, after them.
-                            if !self.mind.can_talk() && !self.hinted_claude {
-                                self.hinted_claude = true;
-                                self.hint_claude_at = Some(self.world.time + HINT_AFTER);
-                            }
                         }
                     }
                     Key::Escape => self.mode = Mode::Watching,
@@ -1153,6 +1155,35 @@ impl App {
     }
 
     fn command(&mut self, key: Key) -> Response {
+        // While life waits on the minds, only keys, help, the view, and
+        // quitting do anything.
+        if self.waiting_for_minds()
+            && !matches!(
+                key,
+                Key::Character(
+                    'k' | 'q'
+                        | '?'
+                        | 'h'
+                        | 'm'
+                        | 'c'
+                        | 'r'
+                        | 'a'
+                        | 'd'
+                        | 'w'
+                        | 's'
+                        | '+'
+                        | '='
+                        | '-'
+                        | '_'
+                ) | Key::Escape
+                    | Key::Left
+                    | Key::Right
+                    | Key::Up
+                    | Key::Down
+            )
+        {
+            return Response::Continue;
+        }
         match key {
             Key::Tab | Key::Character(']') => self.select_next(true),
             Key::BackTab | Key::Character('[') => self.select_next(false),
@@ -1482,7 +1513,7 @@ impl App {
             Ok(()) => format!(
                 "Saved. Claude {} ({}), effort {}, cache {}. Jev {} ({}).",
                 self.config.claude_model,
-                on(self.mind.can_talk()),
+                on(self.mind.two != crate::mind::Status::Off),
                 effort_name(self.config.claude_effort),
                 cache_name(self.config.cache),
                 self.config.jev_model,
@@ -1499,6 +1530,14 @@ impl App {
     /// drops in a light mote.
     pub fn mouse(&mut self, mouse: Mouse) -> Response {
         if !self.wants_mouse() {
+            return Response::Continue;
+        }
+        if self.waiting_for_minds()
+            && !matches!(
+                mouse.action,
+                MouseAction::ScrollUp | MouseAction::ScrollDown
+            )
+        {
             return Response::Continue;
         }
         self.world.notice_viewer();
@@ -2218,6 +2257,35 @@ mod tests {
     /// Prints what a household does over a simulated afternoon and night,
     /// for watching how they live together.
     #[test]
+    fn talking_sends_the_message_to_the_ghost() {
+        let mut app = app();
+        app.input(Input::Key(Key::Enter));
+        assert_eq!(app.mode, Mode::Talking);
+        type_text(&mut app, "go play");
+        app.input(Input::Key(Key::Enter));
+        assert_eq!(app.mode, Mode::Watching);
+        assert!(matches!(
+            app.world.events.iter().rev().find(|event| matches!(event.kind, EventKind::Heard(_))),
+            Some(event) if event.kind == EventKind::Heard("go play".into())
+        ));
+    }
+
+    #[test]
+    fn a_live_household_holds_still_until_both_minds_answer() {
+        let mut app = app();
+        app.needs_minds = true;
+        let time = app.world.time;
+        app.advance(1.0);
+        assert!(app.waiting_for_minds());
+        assert_eq!(app.world.time, time);
+        // Nothing but the keys, help, the view, and quitting works.
+        app.input(Input::Key(Key::Character('t')));
+        assert_eq!(app.mode, Mode::Watching);
+        app.input(Input::Key(Key::Character('k')));
+        assert_eq!(app.mode, Mode::Settings);
+    }
+
+    #[test]
     #[ignore]
     fn watch_a_household() {
         use crate::world::{EventKind, Species};
@@ -2896,7 +2964,7 @@ mod tests {
 
     #[test]
     fn a_full_moon_evening_brings_a_visiting_friend() {
-        let mut app = (1..=6)
+        let mut app = (1..=24)
             .map(|seed| {
                 let mut world = World::new(seed, 20.0);
                 world.date = jiff::civil::Date::constant(2026, 9, 27);
@@ -2966,31 +3034,6 @@ mod tests {
         line.insert("more");
         assert_eq!(line.text().chars().count(), LINE_LIMIT);
         assert_eq!(line.cursor(), LINE_LIMIT);
-    }
-
-    #[test]
-    fn talking_sends_the_message_to_the_ghost() {
-        let mut app = app();
-        app.input(Input::Key(Key::Enter));
-        assert_eq!(app.mode, Mode::Talking);
-        type_text(&mut app, "go play");
-        app.input(Input::Key(Key::Enter));
-        assert_eq!(app.mode, Mode::Watching);
-        assert!(matches!(
-            app.world.events.iter().rev().find(|event| matches!(event.kind, EventKind::Heard(_))),
-            Some(event) if event.kind == EventKind::Heard("go play".into())
-        ));
-        // Its own words come first; the hint about Claude follows once.
-        assert!(app.world.ghost.speech.is_some());
-        assert_eq!(app.notice(), None);
-        app.advance(HINT_AFTER as f32 + 0.1);
-        assert!(app.notice().unwrap().contains("Claude key"));
-        app.input(Input::Key(Key::Enter));
-        type_text(&mut app, "hello again");
-        app.input(Input::Key(Key::Enter));
-        app.advance(10.0);
-        app.advance(HINT_AFTER as f32 + 0.1);
-        assert_eq!(app.notice(), None);
     }
 
     #[test]

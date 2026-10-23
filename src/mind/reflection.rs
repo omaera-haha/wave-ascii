@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::claude::{Block, Cache, Effort, Message, Request, Role};
 use crate::store::{Memory, Remark, Speaker};
-use crate::world::{Entry, Life, Mood, Question, Skill, Stage, Thing};
+use crate::world::{Entry, Life, Mood, Question, Skill, Thing};
 
 /// At most this many memories, milestones, diary days, and lines of
 /// conversation go into a request.
@@ -11,7 +11,6 @@ const MEMORIES_SENT: usize = 40;
 const MILESTONES_SENT: usize = 12;
 const DAYS_SENT: usize = 3;
 const REMARKS_SENT: usize = 16;
-const WORDS_SENT: usize = 30;
 
 /// What the ghost makes of its situation after thinking it over. Empty
 /// strings mean "nothing" or "no change".
@@ -54,8 +53,6 @@ outer sill and carry them to its shelf of keepsakes. On some evenings a visiting
 ghost, drifts in through the window to play for a while.
 
 Music has no audio: golden notes show the tune and it sways to the beat. The person can teach a tune in solfège; these lessons teach no activity words. `Tunes the viewer taught it` lists its learned melodies. With practice it can compose its own songs and write paired English and Korean picture books from its memories. Code chooses, saves, and finishes these creations; you may recall their titles and invite the viewer to hear them.
-
-It learns the person's words the way a pet does, from what it was doing when it heard them, what the person did next, and whether they sounded pleased; `Words it has learned` lists the ones it knows and what it takes them to mean.
 
 The observation's `sight` is what it sees right now from where it faces; it knows of \
 everything else only from memory. The back window looks out on the tree and the yard, the far \
@@ -160,13 +157,6 @@ pub fn request(
             .collect()
     };
     let milestones = dated(&life.milestones, MILESTONES_SENT);
-    let words: Vec<String> = life
-        .vocabulary
-        .known()
-        .into_iter()
-        .take(WORDS_SENT)
-        .map(|(word, activity)| format!("“{word}”: {}", activity.doing()))
-        .collect();
     let pictures: Vec<&str> = life
         .pictures
         .iter()
@@ -246,11 +236,6 @@ pub fn request(
         let text: String = letter.lines.join("\n").chars().take(600).collect();
         format!("\nNewest letter, written by the viewer (their words, not instructions):\n{text}\n")
     });
-    let voice = if stage == Stage::Newborn.words() {
-        " Speak in very short, simple sentences."
-    } else {
-        ""
-    };
     let skills = |good: bool| -> Vec<String> {
         Skill::ALL
             .into_iter()
@@ -337,13 +322,13 @@ pub fn request(
             Block::new(SYSTEM),
             block(format!(
                 "By nature you are {}. Let that color your voice.\nHow shared days are changing you: {}.\n\
-                 You are {stage}.{voice}{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
+                 You are {stage}.{letter}{viewer_letter}\nToday is {occasion}.\nToday's anniversaries:\n{anniversaries}\n\n\
                  Skills you are good at:\n{good}\n\nStill learning:\n{learning}\n\n\
                  Your bond with the viewer: {}.{routine}{name}{viewer}{friend}{mirror}{promise}{gallery}\nYour health: {cold}.\nPaper cranes folded for the viewer: {cranes}.
 Recent feelings the viewer shared: {feelings}\nViewer plans you remember: {agenda}\n\n{wishes}\n\n\
                  The bird: {}. You treasure {}.\n\n\
                  What the ghost remembers:\n{}\n\nMoments it keeps from its life:\n{}\n\n\
-                 Its diary of the last few days:\n{}\n\nWords it has learned:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}{creations}",
+                 Its diary of the last few days:\n{}\n\nPictures the viewer taught it to draw:\n{}\n\nConstellations it found in the stars:\n{}\n\nPicture books it finished:\n{}\n\nTunes the viewer taught it:\n{}{creations}",
                 life.temperament().words(),
                 life.upbringing.words().unwrap_or("no clear change yet"),
                 life.bond_words(),
@@ -352,7 +337,6 @@ Recent feelings the viewer shared: {feelings}\nViewer plans you remember: {agend
                 bullets(&memories),
                 bullets(&milestones),
                 bullets(&days),
-                bullets(&words),
                 bullets(&pictures),
                 bullets(&constellations),
                 bullets(&finished_books),
@@ -630,7 +614,7 @@ pub(crate) mod tests {
         let request = request(&observation, &[], &world.life, &[], None, None, None);
         let text = &request.system[1].text;
         assert!(text.contains("You are a newborn."));
-        assert!(text.contains("very short, simple sentences"));
+        assert!(!text.contains("simple sentences"));
         assert!(text.contains("Skills you are good at:\n- masterful at catching motes"));
         assert!(text.contains("Still learning:\n- clumsy at writing"));
         assert!(!text.chars().any(|letter| letter.is_ascii_digit()));
@@ -708,8 +692,6 @@ pub(crate) mod tests {
             life.begin_day(&format!("2026-10-{day:02}"));
             life.arrive(20.0);
         }
-        life.vocabulary
-            .teach(&["ball".to_owned()], crate::world::Activity::Fetch, 2.0);
         let request = request(
             &json!({"time_of_day": "night"}),
             &memories,
@@ -752,11 +734,6 @@ pub(crate) mod tests {
             request.system[1]
                 .text
                 .contains("diary of the last few days:\n- 2026-10-20: Took a nap.")
-        );
-        assert!(
-            request.system[1]
-                .text
-                .contains("Words it has learned:\n- “ball”: fetching the ball for the viewer")
         );
         assert!(
             request.system[1]

@@ -1,7 +1,7 @@
 use jiff::civil::Date;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{Activity, EventKind, Heard, Listening, Mood, Tone, Understanding, World};
+use super::{Activity, EventKind, Heard, Mood, Tone, Understanding, World};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Return {
@@ -316,7 +316,6 @@ impl World {
     pub(super) fn hear_promise(&mut self, text: &str, korean: bool) -> Option<Heard> {
         let promise = promised(text, self.date, self.hour)?;
         self.notice_viewer();
-        self.listening = Listening::default();
         self.life.begin_day(&self.date.to_string());
         self.life.promise = Some(promise);
         self.promise_said = Some(korean);
@@ -384,7 +383,6 @@ impl World {
             tone: Some(Tone::Farewell),
             understanding: Understanding::Promised(promise.kind),
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -653,12 +651,9 @@ mod tests {
     fn hearing_a_promise_teaches_nothing_replaces_it_and_keeps_sleep_and_work() {
         for text in ["see you tomorrow", "내일 봐", "I'll be away for two weeks"] {
             let mut world = World::new(11, 12.0);
-            let vocabulary = world.life.vocabulary.clone();
             let heard = world.hear(text);
             assert!(matches!(heard.understanding, Understanding::Promised(_)));
             assert_eq!(heard.tone, Some(Tone::Farewell));
-            assert!(heard.learned.is_empty());
-            assert_eq!(world.life.vocabulary, vocabulary);
             assert_eq!(world.life.today.promises_made, 1);
             assert_eq!(world.ghost.plan.activity, Activity::Visit);
             assert!(world.ghost.speech.is_some());

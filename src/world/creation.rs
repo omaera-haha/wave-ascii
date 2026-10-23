@@ -900,7 +900,6 @@ pub(super) mod tests {
                 ),
                 "{request}"
             );
-            assert!(heard.learned.is_empty());
             assert_eq!(world.telling.as_ref().unwrap().book, Some(LIBRARY.len()));
             world.step(0.1);
             assert_eq!(world.life.written[0].page, 1);

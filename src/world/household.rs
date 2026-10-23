@@ -11,8 +11,8 @@ use glam::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Accessory, Activity, Dream, Event, EventKind, Ghost, Life, Listening, Mood, Occasion, Passerby,
-    Plan, Wish, World, books, cold, garden, growth, mirror, quirks, species::Species, wardrobe,
+    Accessory, Activity, Dream, Event, EventKind, Ghost, Life, Mood, Occasion, Passerby, Plan,
+    Wish, World, books, cold, garden, growth, mirror, quirks, species::Species, wardrobe,
 };
 
 /// At most this many creatures live in the cottage.
@@ -54,7 +54,6 @@ personal! {
     anniversary_said: Option<String>,
     landmark_greeted: Option<String>,
     alone: f64,
-    vocabulary: super::Vocabulary,
     skills: super::Skills,
     pictures: Vec<super::LearnedPicture>,
     #[serde(deserialize_with = "super::wardrobe::deserialize_accessory")]
@@ -131,7 +130,6 @@ soul! {
     absent_since: Option<f64>,
     storm_woke: Option<f64>,
     pointer_interrupted_at: Option<f64>,
-    listening: Listening,
     push: Vec3,
     drowsy_until: f64,
     morning_at: Option<f64>,

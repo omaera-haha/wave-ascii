@@ -458,7 +458,6 @@ impl World {
             block.velocity += along * 0.85 + Vec3::Y * 0.18;
             block.spin += Vec3::Y.cross(along) * 3.0;
         }
-        self.shown(Activity::Build);
     }
 
     pub(super) fn drop_block(&mut self) {

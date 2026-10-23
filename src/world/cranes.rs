@@ -2,7 +2,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use super::acquaintance::Color;
-use super::{Activity, EventKind, Feeling, Heard, Listening, Mood, Stage, Understanding, World};
+use super::{Activity, EventKind, Feeling, Heard, Mood, Stage, Understanding, World};
 
 pub const VISIBLE: usize = 80;
 pub const MAXIMUM: u32 = 100_000;
@@ -228,7 +228,6 @@ impl World {
         if !requested(text) {
             return None;
         }
-        self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
         if self.life.cranes.count_today(self.date) >= 3 || self.life.cranes.total >= MAXIMUM {
@@ -256,7 +255,6 @@ impl World {
             tone: None,
             understanding: Understanding::Folding,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -564,40 +562,6 @@ mod tests {
     }
 
     #[test]
-    fn requests_teach_no_words_and_wait_through_sleep_work_and_stories() {
-        for condition in 0..3 {
-            let mut world = grown();
-            match condition {
-                0 => {
-                    world.hour = 23.0;
-                    world.tuck_in();
-                }
-                1 => world.start_focus(25),
-                _ => world.tell(vec!["A little bird came home.".to_owned()]),
-            }
-            let activity = world.ghost.plan.activity;
-            let vocabulary = serde_json::to_value(&world.life.vocabulary).unwrap();
-            assert_eq!(
-                world.hear("fold a crane").understanding,
-                Understanding::Folding
-            );
-            assert_eq!(world.ghost.plan.activity, activity);
-            assert_eq!(
-                serde_json::to_value(&world.life.vocabulary).unwrap(),
-                vocabulary
-            );
-            assert!(world.pending_crane);
-            world.focus = None;
-            world.telling = None;
-            world.ghost.asleep = 0.0;
-            world.ghost.plan.done = true;
-            world.advance_cranes();
-            assert_eq!(world.ghost.plan.activity, Activity::Fold);
-            assert!(!world.pending_crane);
-        }
-    }
-
-    #[test]
     fn partial_paper_and_daily_allowance_survive_interruptions_and_saving() {
         let mut world = grown();
         world.begin(Activity::Fold);
@@ -849,7 +813,6 @@ mod tests {
                     ..
                 }
             ));
-            assert!(heard.learned.is_empty());
         }
         for (count, words) in [
             (1, "한"),

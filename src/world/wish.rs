@@ -422,68 +422,6 @@ impl Wish {
         Some(format!("{name} wishes you'd {action} ({})", self.hint()?))
     }
 
-    pub fn hope(&self) -> &'static str {
-        match self {
-            Self::Rainbow => "I hope I see a rainbow soon.",
-            Self::Snow => "I hope snowflakes come to my window soon.",
-            Self::ShootingStar => "I hope a shooting star crosses my window.",
-            Self::Constellation => "Maybe tonight I'll find a picture in the stars.",
-            Self::Passerby(kind) => match kind {
-                Passerby::Geese => "I hope geese cross my window today.",
-                Passerby::Balloon => "Maybe a balloon will drift over my hills today.",
-                Passerby::Kite => "I hope the wind brings a kite to my window.",
-                Passerby::Squirrel => "Maybe a squirrel will visit my tree today.",
-                Passerby::Plane => "I hope a plane blinks goodnight to me.",
-                Passerby::Snowman => "Maybe a snowman will keep my yard company.",
-                Passerby::Lanterns => "I hope lanterns float past my window tonight.",
-            },
-            Self::BirdGift => "Maybe the bird will bring me a little gift.",
-            Self::Flower => "I hope a flower opens in my garden soon.",
-            Self::Friend { .. } => "I hope my ghost friend comes back soon.",
-            Self::Tower { .. } => "I hope my next tower reaches a little higher.",
-            Self::ViewerName => "I hope I learn their name soon.",
-            Self::GivenName => "Maybe they'll choose a name for me.",
-            Self::Game => "I hope we play noughts and crosses today.",
-            Self::WordGame => "Maybe we'll play a word game today.",
-            Self::Drawing => "Maybe today someone will draw me something.",
-            Self::Petting => "I hope a gentle hand comes to the glass.",
-            Self::Fetch => "I hope we play fetch today.",
-            Self::Story => "I hope they'll ask me for a story.",
-            Self::Company => "Maybe we can work side by side today.",
-            Self::Breeze => "I hope we feel the breeze together soon.",
-            Self::Book { .. } => "I want to find out how my book ends.",
-            Self::Tune => "Maybe someone will teach me a new tune.",
-            Self::AboutYou => "I wonder what their favorite things are.",
-        }
-    }
-
-    pub fn dream(&self) -> &'static str {
-        match self {
-            Self::Rainbow => "…a rainbow comes right up to my window…",
-            Self::Snow => "…snowflakes dance just for me…",
-            Self::ShootingStar | Self::Constellation => {
-                "…a star comes down to hear my little hope…"
-            }
-            Self::Passerby(kind) => kind.dream(),
-            Self::BirdGift => "…the bird brings me a gift wrapped in moonlight…",
-            Self::Flower => "…my garden opens a flower as big as the moon…",
-            Self::Friend { .. } => "…my ghost friend comes back and stays until morning…",
-            Self::Tower { .. } => "…my tower grows one block closer to the stars…",
-            Self::ViewerName | Self::GivenName => "…a name written in letters of light…",
-            Self::Game => "…we play noughts and crosses among the clouds…",
-            Self::WordGame => "…every word we guess becomes a little star…",
-            Self::Drawing => "…you draw a picture and it steps through the glass…",
-            Self::Petting => "…your gentle hand makes my heart glow…",
-            Self::Fetch => "…I bring the moon back like a ball…",
-            Self::Story => "…my story carries us through a forest of stars…",
-            Self::Company => "…we work side by side until the moon smiles…",
-            Self::Breeze => "…the breeze carries us both over the hills…",
-            Self::Book { .. } => "…the last page of my book opens into a meadow…",
-            Self::Tune => "…a tune of golden notes I've never heard before…",
-            Self::AboutYou => "…you tell me your favorite things and they bloom like flowers…",
-        }
-    }
-
     pub(super) fn joy(&self, world: &World) -> String {
         if !self.with_viewer() {
             let delight = match self {

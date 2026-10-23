@@ -43,30 +43,6 @@ impl Accessory {
         }
     }
 
-    pub fn thoughts(self) -> [&'static str; 2] {
-        match self {
-            Self::Flower(_) => [
-                "I grew this flower myself.",
-                "A little garden beside my face.",
-            ],
-            Self::Scarf { .. } => ["This scarf is so cozy.", "A warm stitch for a cold day."],
-            Self::PartyHat => ["A little paper celebration!", "My hat feels like a party."],
-            Self::WitchHat => ["A tiny witch, that's me.", "My hat is ready for Halloween."],
-            Self::Feather => [
-                "The bird's gift goes everywhere with me.",
-                "A feather tickles my cheek.",
-            ],
-            Self::LuckyPouch => [
-                "A little pouch for good luck.",
-                "May this new year be kind.",
-            ],
-            Self::Holly => [
-                "A little green for the holidays.",
-                "My holly has such bright berries.",
-            ],
-        }
-    }
-
     pub fn hat(self) -> bool {
         matches!(self, Self::PartyHat | Self::WitchHat)
     }
@@ -375,14 +351,12 @@ impl World {
         if !requested_off(text, self.wearing) {
             return None;
         }
-        self.listening = super::Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
         self.take_off();
         Some(Heard {
             tone: None,
             understanding: Understanding::Undressing,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -876,7 +850,6 @@ mod tests {
                     ..
                 }
             ));
-            assert!(heard.learned.is_empty());
         }
         for text in ["take off your hat", "모자 벗어"] {
             let mut world = prepared(1);
@@ -884,8 +857,6 @@ mod tests {
             let heard = world.hear(text);
             assert_eq!(heard.understanding, Understanding::Undressing);
             assert!(world.wearing.is_none());
-            assert!(heard.learned.is_empty());
-            assert!(world.life.vocabulary.known().is_empty());
             world.step(1.0);
             assert!(world.wearing.is_none());
         }

@@ -580,7 +580,6 @@ mod tests {
             );
             assert_eq!(world.ghost.plan.activity, Activity::Air);
             assert_eq!(world.ghost.plan.window, Some(open));
-            assert!(world.life.vocabulary.words.is_empty());
             world.hour = 23.0;
             world.tuck_in();
             let before = world.ghost.plan.clone();

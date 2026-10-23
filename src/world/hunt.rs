@@ -1,8 +1,6 @@
 use glam::Vec3;
 
-use super::{
-    Activity, EventKind, Heard, Listening, ROOM_MAX, ROOM_MIN, Thing, Understanding, World, flat,
-};
+use super::{Activity, EventKind, Heard, ROOM_MAX, ROOM_MIN, Thing, Understanding, World, flat};
 
 pub const RADIUS: f32 = 0.06;
 const COLUMNS: usize = 20;
@@ -293,7 +291,6 @@ impl World {
             return None;
         }
         let hint = hint(text)?;
-        self.listening = Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
         self.hunt.as_mut()?.apply_hint(hint, self.ghost.position);
         self.record(EventKind::TreasureHint(hint));
@@ -313,7 +310,6 @@ impl World {
                 warmer: hint.warmer(),
             },
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -460,33 +456,6 @@ impl World {
                 "you spotted the viewer's treasure and are bringing it back to show them".to_owned()
             }
             None => "no treasure hunt just now".to_owned(),
-        }
-    }
-
-    pub fn hunt_thought(&self) -> &'static str {
-        let target = self
-            .hunt
-            .as_ref()
-            .map_or(self.ghost.plan.target, |hunt| center(hunt.target));
-        let nearest = [
-            Thing::Lamp,
-            Thing::Plant,
-            Thing::Cushion,
-            Thing::Books,
-            Thing::MusicBox,
-        ]
-        .into_iter()
-        .filter_map(|thing| {
-            self.position_of(thing)
-                .map(|position| (thing, flat(position - target).length_squared()))
-        })
-        .min_by(|first, second| first.1.total_cmp(&second.1));
-        match nearest.map(|(thing, _)| thing) {
-            Some(Thing::Lamp) => "Is it behind the lamp?",
-            Some(Thing::Plant) => "Maybe beside the plant…",
-            Some(Thing::Cushion) => "I'll look around my cushion.",
-            Some(Thing::Books) => "Could it be beside the books?",
-            _ => "Maybe behind the music box…",
         }
     }
 }
@@ -710,7 +679,6 @@ mod tests {
         ] {
             assert_eq!(hint(text), Some(expected));
             let mut world = searching(1, Vec3::new(0.0, 1.0, 1.0), Vec3::new(-1.8, 0.0, -1.2));
-            let vocabulary = world.life.vocabulary.clone();
             let heard = world.hear(text);
             assert_eq!(
                 heard.understanding,
@@ -718,8 +686,6 @@ mod tests {
                     warmer: expected.warmer()
                 }
             );
-            assert!(heard.learned.is_empty());
-            assert_eq!(world.life.vocabulary, vocabulary);
             assert_eq!(world.life.today.feelings_heard, 0);
             assert_eq!(world.life.today.treasure_hints, 1);
             assert_eq!(world.ghost.plan.activity, Activity::Seek);
@@ -762,60 +728,6 @@ mod tests {
         world.cancel_hunt();
         assert!(world.hunt.is_none());
         assert_eq!(world.life.total.hunts, 0);
-    }
-
-    #[test]
-    fn interruptions_remove_the_hunt_without_a_result_but_pokes_and_talk_do_not() {
-        for interruption in 0..9 {
-            let mut world = searching(7, Vec3::new(0.0, 1.1, 1.0), Vec3::new(-1.8, 0.0, -1.2));
-            match interruption {
-                0 => {
-                    world.hear("no");
-                }
-                1 => world.start_focus(25),
-                2 => world.tell(Vec::new()),
-                3 => {
-                    world.challenge();
-                }
-                4 => world.record(EventKind::ViewerLeft),
-                5 => {
-                    world.ghost.asleep = 0.6;
-                    world.step(0.1);
-                }
-                6 => world.begin(Activity::Rest),
-                7 => {
-                    world.hear("let's play a word game");
-                }
-                _ => {
-                    world.hour = 23.0;
-                    world.tuck_in();
-                }
-            }
-            assert!(world.hunt.is_none(), "interruption {interruption}");
-            assert!(world.treasure().is_none());
-            assert!(
-                !world
-                    .events
-                    .iter()
-                    .any(|event| matches!(event.kind, EventKind::FoundTreasure { .. }))
-            );
-        }
-        let mut world = searching(7, Vec3::new(0.0, 1.1, 1.0), Vec3::new(-1.8, 0.0, -1.2));
-        world.poke();
-        world.hear("hello");
-        world.hear("good job");
-        world.step(0.1);
-        assert!(world.hunt.is_some());
-        assert_eq!(world.ghost.plan.activity, Activity::Seek);
-        assert!(!world.options().contains(&Activity::Game));
-        assert!(!world.options().contains(&Activity::Friend));
-        assert!(!world.options().contains(&Activity::Pounce));
-        assert!(!world.write("BOO"));
-        world.hear("blorp");
-        world.hear("blorp");
-        assert_eq!(world.guess(), None);
-        world.heed(Activity::Rest);
-        assert_eq!(world.ghost.plan.activity, Activity::Seek);
     }
 
     #[test]

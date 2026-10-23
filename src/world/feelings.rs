@@ -3,8 +3,7 @@ use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Activity, EventKind, Heard, Listening, Mood, Picture, Sketch, Tone, Understanding, World,
-    vocabulary,
+    Activity, EventKind, Heard, Mood, Picture, Sketch, Tone, Understanding, World, vocabulary,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -380,7 +379,6 @@ impl World {
             tone: None,
             understanding,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -410,7 +408,6 @@ impl World {
             if !negative
                 && (feeling.is_some() || matches!(tone, Some(Tone::Praise | Tone::Greeting)))
             {
-                self.listening = Listening::default();
                 self.notice_viewer();
                 self.begin_day();
                 self.record(EventKind::Heard(text.to_owned()));
@@ -436,7 +433,6 @@ impl World {
 
     fn receive_feeling(&mut self, text: &str, feeling: Feeling, korean: bool) -> Heard {
         self.begin_day();
-        self.listening = Listening::default();
         self.notice_viewer();
         self.record(EventKind::Heard(text.to_owned()));
         self.care_for_feeling(feeling, korean || self.speaks_korean());
@@ -755,119 +751,10 @@ pub fn memories(notes: &[FeelingNote], day: &str) -> String {
         .join(" ")
 }
 
-pub fn replies(world: &World, feeling: Feeling, korean: bool) -> Vec<String> {
-    let pairs: &[(&str, &str)] = match feeling {
-        Feeling::Tired => &[
-            ("You can slow down here.", "여기서는 천천히 쉬어도 돼."),
-            ("I'll keep you quiet company.", "조용히 곁에 있을게."),
-            ("A little rest with me?", "나랑 잠깐 쉴래?"),
-        ],
-        Feeling::Sad => &[
-            ("That sounds hard. I'm here.", "힘들었겠다. 내가 여기 있어."),
-            ("A little heart for you.", "널 위한 작은 하트야."),
-            (
-                "You don't have to smile for me.",
-                "내 앞에서는 억지로 웃지 않아도 돼.",
-            ),
-        ],
-        Feeling::Lonely => &[
-            ("I'm here with you.", "내가 곁에 있어."),
-            (
-                "There's room beside my glass.",
-                "내 유리창 옆에 네 자리가 있어.",
-            ),
-            ("We can sit together.", "같이 앉아 있자."),
-        ],
-        Feeling::Stressed => &[
-            ("One slow breath with me?", "나랑 천천히 숨 쉴래?"),
-            ("We can take a quiet moment.", "잠깐 조용히 쉬자."),
-            (
-                "I'll stay close. Breathe slowly.",
-                "곁에 있을게. 천천히 숨 쉬자.",
-            ),
-        ],
-        Feeling::Angry => &[
-            ("That sounds frustrating.", "정말 답답했겠다."),
-            (
-                "I'll sit with you while it settles.",
-                "마음이 가라앉을 때까지 곁에 있을게.",
-            ),
-            ("Let's breathe for a little while.", "잠깐 같이 숨 쉬자."),
-        ],
-        Feeling::Unwell => &[
-            ("Rest well, okay?", "푹 쉬어, 알겠지?"),
-            ("I'll keep things quiet here.", "여기는 조용히 해 둘게."),
-            ("A soft little light for you.", "널 위해 작은 빛을 켜 둘게."),
-        ],
-        Feeling::Bored => &[
-            ("We could play something!", "우리 뭐 하고 놀까!"),
-            ("Want a little game?", "작은 놀이 하나 할래?"),
-            ("I have a few tiny ideas.", "재밌는 생각이 몇 개 있어."),
-        ],
-        Feeling::Happy => &[
-            ("Your happiness makes me glow!", "네가 행복하니 나도 빛나!"),
-            ("I'm happy with you!", "나도 같이 행복해!"),
-            ("A happy day for us!", "우리에게 행복한 날이야!"),
-        ],
-        Feeling::Proud => &[
-            ("You did it! I knew you could!", "해냈구나! 대단해!"),
-            ("Look at you! I'm cheering!", "정말 멋져! 응원하고 있어!"),
-            ("That deserves a little twirl!", "축하하는 춤을 춰야겠어!"),
-        ],
-    };
-    let mut lines: Vec<String> = pairs
-        .iter()
-        .map(|(english, hangul)| if korean { *hangul } else { *english }.to_owned())
-        .collect();
-    let nature = world.life.temperament();
-    let extra = if nature.tender >= 0.65 {
-        if feeling.negative() {
-            Some((
-                "You matter to me. I'll stay.",
-                "너는 내게 소중해. 곁에 있을게.",
-            ))
-        } else {
-            Some((
-                "I'm so glad you shared this with me.",
-                "나와 나눠 줘서 정말 기뻐.",
-            ))
-        }
-    } else if nature.shy >= 0.65 {
-        Some(if feeling.negative() {
-            (
-                "If you'd like… I'll sit nearby.",
-                "괜찮다면… 옆에 앉아 있을게.",
-            )
-        } else {
-            ("A tiny cheer… just for you.", "널 위해… 조그맣게 응원할게.")
-        })
-    } else if nature.playful >= 0.65 {
-        Some(
-            if matches!(feeling, Feeling::Happy | Feeling::Proud | Feeling::Bored) {
-                (
-                    "My whole little room is cheering!",
-                    "내 작은 방도 같이 응원해!",
-                )
-            } else {
-                (
-                    "Your little friend is on your side.",
-                    "네 작은 친구는 네 편이야.",
-                )
-            },
-        )
-    } else {
-        None
-    };
-    if let Some((english, hangul)) = extra {
-        lines.push(if korean { hangul } else { english }.to_owned());
-    }
-    lines
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{Life, Nature};
+    use crate::world::Life;
 
     #[test]
     fn first_person_english_statements_recognize_feelings_without_a_model() {
@@ -1092,16 +979,12 @@ mod tests {
         for phrase in ["I'm sad", "I'm happy!", "오늘 너무 힘들었어"] {
             let mut world = World::new(1, 12.0);
             world.hear("spin");
-            let words = world.life.vocabulary.clone();
             let heard = world.hear(phrase);
             assert_eq!(
                 heard.understanding,
                 Understanding::Felt(felt(phrase).unwrap())
             );
             assert_eq!(heard.tone, None);
-            assert!(heard.learned.is_empty());
-            assert_eq!(world.life.vocabulary, words);
-            assert_eq!(world.listening, Listening::default());
             let heard_at = world
                 .events
                 .iter()
@@ -1453,7 +1336,6 @@ mod tests {
             let heard = world.hear(answer);
             assert_eq!(heard.understanding, Understanding::FeltBetter, "{answer}");
             assert_eq!(world.life.today.felt_better, 1);
-            assert!(world.life.vocabulary.known().is_empty());
             world.follow_up_feeling();
             assert!(world.feeling_follow_up.is_none());
             let mut restored = World::new(1, 12.0);
@@ -1568,34 +1450,5 @@ mod tests {
         assert_eq!(world.recent_negative_feeling(1800.0), Some(Feeling::Tired));
         world.hour = 2.0;
         assert_eq!(world.recent_negative_feeling(3600.0), None);
-    }
-
-    #[test]
-    fn replies_follow_language_and_nature_and_memories_use_words_instead_of_dates() {
-        let mut world = settled("I'm sad");
-        for nature in [
-            Nature {
-                tender: 1.0,
-                ..Nature::default()
-            },
-            Nature {
-                shy: 1.0,
-                ..Nature::default()
-            },
-            Nature {
-                playful: 1.0,
-                ..Nature::default()
-            },
-        ] {
-            world.life.nature = Some(nature);
-            assert!(replies(&world, Feeling::Sad, false).len() >= 4);
-            assert!(replies(&world, Feeling::Sad, true).iter().all(|line| {
-                line.chars()
-                    .any(|character| ('가'..='힣').contains(&character))
-            }));
-        }
-        let words = memories(&world.life.feelings, "2026-06-22");
-        assert!(words.contains("sad yesterday"));
-        assert!(!words.chars().any(char::is_numeric));
     }
 }

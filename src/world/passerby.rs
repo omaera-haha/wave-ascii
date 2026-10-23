@@ -49,51 +49,6 @@ impl Passerby {
         matches!(self, Self::Balloon | Self::Lanterns)
     }
 
-    pub fn thoughts(self) -> [&'static str; 2] {
-        match self {
-            Self::Geese => [
-                "Geese! Where are they all going?",
-                "I can almost hear those wings.",
-            ],
-            Self::Balloon => [
-                "A balloon, like a slow sun.",
-                "Is someone up there looking down?",
-            ],
-            Self::Kite => [
-                "That kite wants to fly away.",
-                "The wind is playing with a kite.",
-            ],
-            Self::Squirrel => [
-                "A squirrel! Such a busy tail.",
-                "What did it hide in that tree?",
-            ],
-            Self::Plane => [
-                "Those plane lights are going somewhere far away.",
-                "Who is awake up there?",
-            ],
-            Self::Snowman => [
-                "The snowman is keeping the yard company.",
-                "Does a snowman feel the cold?",
-            ],
-            Self::Lanterns => [
-                "The lanterns are carrying little wishes.",
-                "Look how gently those lanterns climb.",
-            ],
-        }
-    }
-
-    pub fn dream(self) -> &'static str {
-        match self {
-            Self::Geese => "…geese make room for me among their wings…",
-            Self::Balloon => "…a balloon carries my little room over the hills…",
-            Self::Kite => "…a kite pulls me gently through the clouds…",
-            Self::Squirrel => "…a squirrel hides tiny moons in the tree…",
-            Self::Plane => "…a plane blinks goodnight to every star…",
-            Self::Snowman => "…a snowman comes inside for a cool little nap…",
-            Self::Lanterns => "…lanterns lift our wishes into the moonlight…",
-        }
-    }
-
     /// Stateless, including the shared limit of two things outside at once.
     pub fn at(
         self,

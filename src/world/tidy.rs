@@ -1,7 +1,7 @@
 use glam::Vec3;
 
 use super::{
-    ARRIVED, Activity, Ball, EventKind, Heard, Listening, Mood, Understanding, World,
+    ARRIVED, Activity, Ball, EventKind, Heard, Mood, Understanding, World,
     blocks::{EDGE, place_neatly},
     flat,
 };
@@ -172,7 +172,6 @@ impl World {
         if !requested(text) {
             return None;
         }
-        self.listening = Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
         let continuing = self.ghost.plan.activity == Activity::Tidy && !self.ghost.plan.done;
         if continuing {
@@ -199,7 +198,6 @@ impl World {
             tone: None,
             understanding: Understanding::Tidying,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -619,12 +617,9 @@ mod tests {
             "방 치워",
         ] {
             let mut world = messy(12.0);
-            let vocabulary = world.life.vocabulary.clone();
             let heard = world.hear(message);
             assert_eq!(heard.understanding, Understanding::Tidying, "{message}");
             assert!(heard.tone.is_none());
-            assert!(heard.learned.is_empty());
-            assert_eq!(world.life.vocabulary, vocabulary);
             assert_eq!(world.ghost.plan.activity, Activity::Tidy);
             finish(&mut world);
             assert!(world.life.tidied_day.is_none());

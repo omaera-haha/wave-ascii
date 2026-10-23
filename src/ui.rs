@@ -1,5 +1,5 @@
 use glam::{Vec2, Vec3};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
 
 use crate::app::{App, Mode, mood_color};
 use crate::canvas::{Canvas, Cell};
@@ -138,8 +138,48 @@ pub fn draw(app: &mut App, screen: &mut Canvas, scene_rows: usize) {
         Mode::Album => album_panel(app, screen),
         Mode::Letter | Mode::Writing => letter_panel(app, screen),
         Mode::Adopt => adopt_panel(app, screen),
-        Mode::Watching | Mode::Talking => {}
+        Mode::Watching | Mode::Talking => {
+            if app.waiting_for_minds() {
+                minds_panel(app, screen);
+            }
+        }
     }
+}
+
+/// What life is waiting on: each mind's key, and whether it answers.
+fn minds_panel(app: &App, screen: &mut Canvas) {
+    let mind = &app.mind;
+    let room = screen.columns().saturating_sub(30).clamp(12, 48);
+    let state = |status: &Status| -> (String, Rgb) {
+        let (mark, color) = status_mark(status);
+        let words = match status {
+            Status::Off => "no key yet".to_owned(),
+            Status::Checking => "checking…".to_owned(),
+            Status::Ready | Status::Busy => "answering".to_owned(),
+            Status::Failed(message) => {
+                let message: String = message.chars().take(room).collect();
+                match mind.recheck_in() {
+                    Some(seconds) => format!("{message} (again in {}s)", seconds.ceil() as u32),
+                    None => message,
+                }
+            }
+        };
+        (format!("{mark} {words}"), color)
+    };
+    let (two, two_color) = state(&mind.two);
+    let (one, one_color) = state(&mind.one);
+    let lines = [
+        (
+            "The household lives while both minds answer.".to_owned(),
+            TEXT,
+        ),
+        (String::new(), TEXT),
+        (format!("Claude  thoughts, words  {two}"), two_color),
+        (format!("Jev     quick choices    {one}"), one_color),
+        (String::new(), TEXT),
+        ("k  keys and models     q  quit".to_owned(), DIM),
+    ];
+    panel(screen, "Waiting for their minds", &lines);
 }
 
 /// Writes `text` from `column` on `row`, stopping before column `end`.
@@ -725,6 +765,7 @@ fn meter_color(level: f32) -> Rgb {
 fn status_mark(status: &Status) -> (String, Rgb) {
     match status {
         Status::Off => ("○".to_owned(), DIM),
+        Status::Checking => ("◌".to_owned(), ACCENT),
         Status::Ready => ("●".to_owned(), GOOD),
         Status::Busy => ("◐".to_owned(), ACCENT),
         Status::Failed(_) => ("✕".to_owned(), BAD),
@@ -1217,7 +1258,7 @@ fn help_panel(screen: &mut Canvas) {
 fn help_lines(rows: usize) -> Vec<&'static str> {
     let introduction = [
         "A household lives here. Jev chooses; Claude gives thoughts and words.",
-        "Without keys (k), instinct guides them. Speak Korean to hear Korean.",
+        "Both keys (k) bring them to life. Speak Korean to hear Korean.",
     ];
     let keys = [
         "Tab, [ ]   turn to another      click one     turn to it, or poke",
@@ -1663,35 +1704,6 @@ pub fn album_panel(app: &App, screen: &mut Canvas) {
 
 /// The life panel's lines for a screen of `columns` by `rows`. Sections that
 /// don't fit are left out, the least needed first.
-// The viewer's words the ghost knows, the most heard first, as many as fit
-// a line of the life panel.
-fn known_words(life: &crate::world::Life, columns: usize) -> String {
-    let known = life.vocabulary.known();
-    if known.is_empty() {
-        return "none of your words yet".to_owned();
-    }
-    let room = columns.saturating_sub(24).clamp(16, 52);
-    let mut line = String::new();
-    for (shown, (word, _)) in known.iter().enumerate() {
-        let more = format!(" and {} more", known.len() - shown);
-        let next = if line.is_empty() {
-            format!("“{word}”")
-        } else {
-            format!("{line}, “{word}”")
-        };
-        let rest = if shown + 1 < known.len() {
-            more.len()
-        } else {
-            0
-        };
-        if !line.is_empty() && UnicodeWidthStr::width(next.as_str()) + rest > room {
-            return line + &more;
-        }
-        line = next;
-    }
-    line
-}
-
 fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
     let life = &app.world.life;
     let ghost = &app.world.ghost;
@@ -1755,7 +1767,6 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
             ),
             TEXT,
         ),
-        (format!("Knows     {}", known_words(life, columns)), TEXT),
     ];
     if header.len() < rows.saturating_sub(2) {
         header.push((
@@ -1943,12 +1954,7 @@ fn life_lines(app: &App, columns: usize, rows: usize) -> Vec<(String, Rgb)> {
         ("plant watered", total.waterings, "flowers", total.blooms),
         ("naps", total.naps, "nights slept", total.nights),
         ("messages from you", total.heard, "pokes", total.pokes),
-        (
-            "strokes from you",
-            total.pets,
-            "words learned",
-            total.learned,
-        ),
+        ("strokes from you", total.pets, "kind words", total.praises),
         (
             "storms sat out",
             total.storms,

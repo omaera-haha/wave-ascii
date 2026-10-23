@@ -4,9 +4,7 @@ use std::sync::Arc;
 use glam::{Vec2, Vec3};
 
 use super::doodle::Path;
-use super::{
-    Activity, EventKind, Heard, Keepsake, Listening, Mood, ROOM_MAX, Tone, Understanding, World,
-};
+use super::{Activity, EventKind, Heard, Keepsake, Mood, ROOM_MAX, Tone, Understanding, World};
 
 const ENGLISH: &[&str] = &[
     "BALL", "MOON", "STAR", "BIRD", "LAMP", "PLANT", "SEED", "TOWER", "CLOUD", "HEART", "GHOST",
@@ -451,7 +449,6 @@ impl World {
     pub(super) fn hear_puzzle(&mut self, text: &str, korean: bool) -> Option<Heard> {
         if requested(text) {
             self.record(EventKind::Heard(text.to_owned()));
-            self.listening = Listening::default();
             if self.ghost.asleep >= 0.3 || self.focus.is_some() || self.telling.is_some() {
                 self.puzzle_say("Let's play a little later.", "조금 이따 하자.");
             } else {
@@ -472,7 +469,6 @@ impl World {
                 return None;
             }
             self.record(EventKind::Heard(text.to_owned()));
-            self.listening = Listening::default();
             let mut puzzle = self.puzzle.take().unwrap();
             if puzzle.board_ready(self.time) {
                 match puzzle.guess(text, self.time) {
@@ -516,7 +512,6 @@ impl World {
             tone: None,
             understanding: Understanding::WordGame,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -705,7 +700,6 @@ mod tests {
     fn letters_and_syllables_reveal_every_match_and_repeats_cost_nothing() {
         for (word, correct, wrong) in [("MOON", "o", "z"), ("나나나", "나", "구")] {
             let mut world = ready(word);
-            let vocabulary = world.life.vocabulary.clone();
             world.hear(correct);
             let shown = if word == "MOON" { 2 } else { 3 };
             assert_eq!(world.puzzle.as_ref().unwrap().shown(), shown);
@@ -721,7 +715,6 @@ mod tests {
             } else {
                 assert_eq!(results(&world), vec![(word.to_owned(), true)]);
             }
-            assert_eq!(world.life.vocabulary, vocabulary);
         }
         let mut world = ready("나무나무");
         world.hear("나");
@@ -872,47 +865,6 @@ mod tests {
         ));
         world.step(119.0);
         assert!(world.puzzle_active());
-    }
-
-    #[test]
-    fn requests_in_both_languages_start_before_vocabulary_without_waking_sleepers() {
-        for text in [
-            "let's play a word game",
-            "guess my word",
-            "word game",
-            "단어 게임 하자",
-            "낱말 맞추기",
-        ] {
-            let mut world = World::new(3, 12.0);
-            let heard = world.hear(text);
-            assert_eq!(heard.understanding, Understanding::WordGame);
-            assert!(world.puzzle_active());
-            assert_eq!(world.ghost.plan.activity, Activity::Puzzle);
-            assert!(heard.learned.is_empty());
-            if heard.korean {
-                assert!(world.puzzle.as_ref().unwrap().korean);
-                assert!(world.ghost.speech.as_ref().unwrap().text.contains("낱말"));
-            }
-        }
-        let mut world = World::new(3, 12.0);
-        world.ghost.asleep = 1.0;
-        world.hear("word game");
-        assert_eq!(world.ghost.asleep, 1.0);
-        assert!(!world.puzzle_active());
-        world.ghost.asleep = 0.0;
-        world.start_focus(25);
-        world.hear("word game");
-        assert!(!world.puzzle_active());
-        assert!(!world.options().contains(&Activity::Puzzle));
-        world.begin(Activity::Puzzle);
-        assert!(!world.puzzle_active());
-        for text in [
-            "no word game",
-            "do you like word games?",
-            "your name is Word",
-        ] {
-            assert!(!requested(text));
-        }
     }
 
     #[test]

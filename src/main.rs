@@ -52,11 +52,11 @@ a room behind a glass front, a bedroom, and a fenced yard with a tree, a
 swing, and a garden bed under a real sky. They chase light motes, play
 fetch, stack toy blocks, tend the plants, read, swing in the yard, play tag
 and chat with each other, nap in a heap, and watch you. Over days each one
-grows up, grows close to you and to its housemates, learns your words, and
-keeps a diary. Jev (TypeSafe's System One model) makes their quick choices
-and Claude gives them thoughts and words; without API keys they live on
-instinct. Press k in the app to add keys, or set ANTHROPIC_API_KEY and
-TYPESAFE_API_KEY.
+grows up, grows close to you and to its housemates, and keeps a diary. Jev
+(TypeSafe's System One model) makes their quick choices and Claude gives
+them thoughts and words. Life needs both: the household holds still until
+both keys answer. Press k in the app to add keys, or set ANTHROPIC_API_KEY
+and TYPESAFE_API_KEY.
 
 Their lives are saved between runs in ~/.local/share/wave-ascii/life.json,
 and the settings, keys included, in ~/.config/wave-ascii/config.json.
@@ -67,7 +67,6 @@ Options:
                                  auto follows NO_COLOR and COLORTERM, and is
                                  plain when output is piped
   --fps N                        frames per second (default 60)
-  --offline                      don't call any model, even with keys
   --time SECONDS                 when piped: how long the world runs before
                                  the frame is printed (default 0)
   --hour HOUR                    when piped: the hour of day (default 12)
@@ -119,7 +118,6 @@ struct Options {
     style: Style,
     color: Option<ColorMode>,
     frames_per_second: f64,
-    offline: bool,
     time: f32,
     hour: f32,
     date: jiff::civil::Date,
@@ -166,7 +164,6 @@ fn parse_options() -> io::Result<Option<Options>> {
         style: Style::Braille,
         color: None,
         frames_per_second: 60.0,
-        offline: false,
         time: 0.0,
         hour: 12.0,
         date: jiff::civil::Date::constant(2026, 6, 21),
@@ -231,7 +228,6 @@ fn parse_options() -> io::Result<Option<Options>> {
                     invalid_input(error.to_string().replace("--date", "--born"))
                 })?)
             }
-            "--offline" => options.offline = true,
             "--peek" => options.peek = true,
             "--album-html" => options.album_html = Some(PathBuf::from(value()?)),
             "--force" => options.force = true,
@@ -304,7 +300,7 @@ fn run() -> io::Result<()> {
             (Journal::default(), now)
         }
     };
-    let mind = Mind::new(&config, journal, options.offline);
+    let mind = Mind::new(&config, journal, false);
     let color = options.color.unwrap_or_else(ColorMode::detect);
     let mut app = App::new(world, mind, config, options.style, color).live(paths, born);
     if let Some(save) = &save {

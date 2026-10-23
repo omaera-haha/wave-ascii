@@ -207,39 +207,6 @@ impl World {
         };
         Some((arrived + f64::from(slot) * 4.0, expression))
     }
-
-    pub fn mirror_thoughts(&self) -> Vec<&'static str> {
-        if self.life.mirror.recognizes_self() {
-            let mut lines = vec![
-                "That's my own little glow.",
-                "I can make such funny faces.",
-                "A twirl, just for me.",
-            ];
-            if let Some(accessory) = self.wearing {
-                lines.push(match accessory {
-                    super::Accessory::Scarf { .. } => "This scarf suits me.",
-                    super::Accessory::PartyHat | super::Accessory::WitchHat => {
-                        "My hat looks good on me."
-                    }
-                    super::Accessory::Flower(_) => "My flower looks lovely there.",
-                    _ => "That suits me rather well.",
-                });
-            }
-            lines
-        } else if self.life.mirror.sessions >= 2 {
-            vec![
-                "It copies everything I do…",
-                "If I bob, it bobs too.",
-                "It waves when I wave!",
-            ]
-        } else {
-            vec![
-                "Hello? Who are you?",
-                "Are you new here too?",
-                "Does it live behind the wall?",
-            ]
-        }
-    }
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use super::friend::count_words;
 use super::writing::{count, particle};
 use super::{
     Activity, EventKind, GREETS_FROM, Keepsake, LearnedPicture, Nature, Occasion, Outcome,
-    Upbringing, Vocabulary,
+    Upbringing,
 };
 
 /// Days of the diary kept.
@@ -50,33 +50,9 @@ const HOURS_MARKED: [(f64, &str, &str); 3] = [
         "백 시간을 같이 보냈어.",
     ),
 ];
-/// Numbers of the viewer's words it knows that the ghost marks, after the
-/// first.
-const WORDS_MARKED: [(usize, &str, &str); 4] = [
-    (
-        10,
-        "I know ten of your words now.",
-        "네 말 열 개를 알게 됐어.",
-    ),
-    (
-        25,
-        "I know twenty-five of your words now.",
-        "네 말 스물다섯 개를 알게 됐어.",
-    ),
-    (
-        50,
-        "I know fifty of your words now.",
-        "네 말 쉰 개를 알게 됐어.",
-    ),
-    (
-        100,
-        "I know a hundred of your words now.",
-        "네 말 백 개를 알게 됐어.",
-    ),
-];
 /// Deeds a diary entry keeps, the ones that stood out most.
 const DIARY_DEEDS: usize = 6;
-/// Words learned in a day that the diary names.
+/// Written words and names a day's tally keeps.
 const WORDS_NAMED: usize = 4;
 /// Light motes eaten that the ghost marks, after the first.
 const MOTES_MARKED: [(u32, &str, &str); 4] = [
@@ -200,10 +176,6 @@ pub struct Tally {
     pub praises: u32,
     /// Times the viewer told it no.
     pub scolds: u32,
-    /// Times it worked out what one of the viewer's words means.
-    pub learned: u32,
-    /// The first few words it worked out, kept for the diary.
-    pub words: Vec<String>,
     pub pokes: u32,
     /// Times the viewer stroked it.
     pub pets: u32,
@@ -681,12 +653,6 @@ impl Tally {
             EventKind::Heard(_) => self.heard = self.heard.saturating_add(1),
             EventKind::Scolded => self.scolds = self.scolds.saturating_add(1),
             EventKind::Praised => self.praises = self.praises.saturating_add(1),
-            EventKind::LearnedWord { word, .. } => {
-                self.learned = self.learned.saturating_add(1);
-                if self.words.len() < WORDS_NAMED && !self.words.contains(word) {
-                    self.words.push(word.clone());
-                }
-            }
             EventKind::Poked { .. } => self.pokes = self.pokes.saturating_add(1),
             EventKind::Petted => self.pets = self.pets.saturating_add(1),
             EventKind::Kept(gift) => {
@@ -1668,17 +1634,6 @@ impl Tally {
                 "눈이 오기 전에 냄새를 맡았어".to_owned(),
             ));
         }
-        if !self.words.is_empty() {
-            let quoted: Vec<String> = self.words.iter().map(|word| format!("“{word}”")).collect();
-            deeds.push((
-                Salience::Special,
-                match quoted.as_slice() {
-                    [word] => format!("learned what {word} means"),
-                    words => format!("learned what {} mean", listed(words)),
-                },
-                format!("{}의 뜻을 배웠어", quoted.join(", ")),
-            ));
-        }
         if self.passersby > 0 {
             if self.passerby_kinds.is_empty() {
                 deeds.push((
@@ -2137,7 +2092,6 @@ pub struct Life {
     #[serde(default, deserialize_with = "super::promise::deserialize")]
     pub promise: Option<super::promise::Promise>,
     /// The viewer's words it has picked up, and what it thinks they mean.
-    pub vocabulary: Vocabulary,
     /// How safe the bird feels with the ghost, from wary to trusting.
     #[serde(default)]
     pub bird_trust: f32,
@@ -2484,7 +2438,7 @@ impl Life {
             EventKind::SawDrawing { name: Some(name) } if name == "heart" => 0.005,
             EventKind::LearnedPicture(_) => 0.005,
             EventKind::Heard(_) => 0.015,
-            EventKind::Praised | EventKind::LearnedWord { .. } | EventKind::LearnedName(_) => 0.005,
+            EventKind::Praised | EventKind::LearnedName(_) => 0.005,
             EventKind::Named(_) => 0.01,
             EventKind::Comforted(_) => 0.006,
             EventKind::FeltBetter => 0.004,
@@ -3162,7 +3116,6 @@ impl Life {
         } else {
             0.0
         };
-        self.vocabulary = self.vocabulary.sanitized();
         self.routine_days = if self.routine_days.is_finite() {
             self.routine_days.clamp(0.0, 11.0)
         } else {
@@ -3581,28 +3534,6 @@ impl Life {
                 "You talked to me for the first time.".to_owned(),
                 "네가 처음으로 내게 말을 걸어 줬어.".to_owned(),
             ),
-            EventKind::LearnedWord { word, .. } if total.learned == 1 => (
-                format!("Learned my first word from you: “{word}”."),
-                format!(
-                    "네게 ‘{word}’{} 첫 낱말을 배웠어.",
-                    particle(word, "이라는", "라는")
-                ),
-            ),
-            EventKind::LearnedWord { .. } => {
-                let known = self.vocabulary.known().len();
-                // Several words can be learned at once, so a mark passed
-                // without being kept is kept now.
-                let (_, english, korean) = WORDS_MARKED
-                    .into_iter()
-                    .filter(|(count, _, _)| *count <= known)
-                    .find(|(_, text, _)| {
-                        !self
-                            .milestones
-                            .iter()
-                            .any(|milestone| milestone.text == *text)
-                    })?;
-                (english.to_owned(), korean.to_owned())
-            }
             EventKind::PlanWentWell(errand) if total.plans_went_well == 1 => (
                 format!("You told me your {} went well.", errand.name()),
                 format!(
@@ -4833,37 +4764,6 @@ mod tests {
     }
 
     #[test]
-    fn learning_several_words_at_once_still_marks_ten_words() {
-        let mut life = Life::default();
-        let words: Vec<String> = [
-            "ball", "dance", "nap", "water", "lamp", "hide", "draw", "spin", "look",
-        ]
-        .map(str::to_owned)
-        .to_vec();
-        for word in &words {
-            let learned = life
-                .vocabulary
-                .teach(std::slice::from_ref(word), Activity::Play, 2.0);
-            for word in learned {
-                life.note(&EventKind::LearnedWord {
-                    word,
-                    activity: Activity::Play,
-                });
-            }
-        }
-        assert_eq!(life.vocabulary.known().len(), 9);
-        let pair = ["kick".to_owned(), "roll".to_owned()];
-        let mut marked = Vec::new();
-        for word in life.vocabulary.teach(&pair, Activity::Play, 2.0) {
-            marked.extend(life.note(&EventKind::LearnedWord {
-                word,
-                activity: Activity::Play,
-            }));
-        }
-        assert_eq!(marked, ["I know ten of your words now."]);
-    }
-
-    #[test]
     fn the_first_of_each_special_day_is_a_milestone() {
         let mut life = Life::default();
         let halloween = EventKind::Celebrated(Occasion::Halloween);
@@ -5289,7 +5189,6 @@ mod tests {
                 "일주일 전 오늘, 네 이름이 Mina라는 걸 알게 됐어".to_owned(),
             );
             tally.temperament_changes = vec!["I'm not so shy anymore.".to_owned()];
-            tally.words = vec!["fetch".to_owned()];
             tally.written_words = vec!["MINA".to_owned()];
             tally.viewer_names = vec!["Mina".to_owned()];
             tally.friend_name = Some("Pell".to_owned());
@@ -5504,182 +5403,6 @@ mod tests {
         assert_eq!(life.diary[0].in_language(true), "조용한 하루였어.");
     }
 
-    #[test]
-    fn firsts_landmarks_growth_skills_and_upbringing_keep_korean_beside_english_events() {
-        use crate::world::{Feeling, Skill, Wish, World};
-        let mut life = Life::default();
-        life.begin("2026-10-20");
-        let events = [
-            EventKind::AteMote,
-            EventKind::NudgedBall,
-            EventKind::Fetched,
-            EventKind::Pounced,
-            EventKind::Built { height: 5 },
-            EventKind::Danced,
-            EventKind::Found,
-            EventKind::Doodled("star"),
-            EventKind::Wrote {
-                text: "HI".to_owned(),
-                mirrored: false,
-                watched: false,
-            },
-            EventKind::Petted,
-            EventKind::Heard("hello".to_owned()),
-            EventKind::GotLetter,
-            EventKind::LearnedName("Mina".to_owned()),
-            EventKind::Named("Pip".to_owned()),
-            EventKind::LearnedPicture("star".to_owned()),
-            EventKind::LearnedWord {
-                word: "fetch".to_owned(),
-                activity: Activity::Fetch,
-            },
-            EventKind::Composed("My Tune".to_owned()),
-            EventKind::SangMySong("My Tune".to_owned()),
-            EventKind::WroteBook("My Book".to_owned()),
-            EventKind::WroteLetter,
-            EventKind::ToldStory,
-            EventKind::Comforted(Feeling::Sad),
-            EventKind::WishGranted(Wish::Rainbow),
-            EventKind::FoldedCrane { count: 1 },
-            EventKind::FoldedCrane { count: 10 },
-            EventKind::FoldedCrane { count: 50 },
-            EventKind::FoldedCrane { count: 100 },
-            EventKind::FoldedCrane { count: 500 },
-            EventKind::FoldedCrane { count: 1000 },
-            EventKind::FoundConstellation("Little Heart".to_owned()),
-            EventKind::FinishedBook("Book".to_owned()),
-            EventKind::LearnedTune("Tune".to_owned()),
-            EventKind::LullabySleep,
-            EventKind::Planted(crate::world::Flower::Daisy),
-            EventKind::Sprouted(crate::world::Flower::Daisy),
-            EventKind::Flowered(crate::world::Flower::Daisy),
-            EventKind::Kept(Keepsake::Acorn),
-            EventKind::Bloomed,
-            EventKind::Morning,
-            EventKind::Noticed("the rainbow".to_owned()),
-            EventKind::Noticed("a bird at the window".to_owned()),
-            EventKind::Noticed("a moth at the lamp".to_owned()),
-            EventKind::ShootingStar,
-            EventKind::ForecastCameTrue { snow: false },
-            EventKind::ForecastCameTrue { snow: true },
-            EventKind::StormStarted,
-            EventKind::SnowStarted,
-            EventKind::MetReflection,
-            EventKind::RecognizedSelf,
-            EventKind::PlanWentWell(crate::world::agenda::Errand::Exam),
-            EventKind::FoundTreasure {
-                seconds: 10,
-                hints: 0,
-                gave_up: false,
-            },
-            EventKind::TookBreak,
-            EventKind::BlewBubbles {
-                blown: 4,
-                popped_by_viewer: 1,
-            },
-            EventKind::Pinned {
-                kind: crate::world::gallery::Kind::ViewerDrawing,
-                name: "heart".to_owned(),
-            },
-            EventKind::Photographed { posed: false },
-            EventKind::ShowedThing(crate::world::show::Kind::Crane),
-            EventKind::Tidied {
-                blocks: 3,
-                ball: true,
-            },
-            EventKind::CaughtCold,
-            EventKind::Recovered { cared: true },
-            EventKind::Celebrated(Occasion::HundredDays),
-        ];
-        for event in events {
-            let english = life.note(&event).unwrap();
-            let entry = life
-                .milestones
-                .iter()
-                .find(|entry| entry.text == english)
-                .unwrap();
-            assert!(
-                entry.korean.as_ref().is_some_and(|text| !text.is_empty()),
-                "{english}"
-            );
-            assert!(
-                !english
-                    .chars()
-                    .any(|letter| ('가'..='힣').contains(&letter))
-            );
-        }
-        life.pass(3600.0, true);
-        life.watch_bird(100_000.0);
-        life.friend = Some(crate::world::Companion {
-            name: "Wren".to_owned(),
-            ..Default::default()
-        });
-        for _ in 0..10 {
-            life.note(&EventKind::FriendArrived("Wren".to_owned()));
-            life.note(&EventKind::WishGranted(Wish::Rainbow));
-            life.note(&EventKind::FocusEnded {
-                minutes: 120,
-                completed: true,
-            });
-        }
-        for passerby in crate::world::Passerby::ALL {
-            life.note(&EventKind::SawPasserby(passerby));
-        }
-        for promise in [
-            crate::world::promise::Return::Later,
-            crate::world::promise::Return::Week,
-        ] {
-            life.note(&EventKind::PromiseKept(promise));
-        }
-        life.note(&EventKind::LearnedAboutViewer(
-            crate::world::acquaintance::Topic::Birthday,
-        ));
-        life.upbringing.drift = [0.15; 5];
-        life.begin_day("2026-10-21");
-        assert!(
-            life.milestones
-                .iter()
-                .any(|entry| entry.text.contains("playful"))
-        );
-        let mut world = World::new(7, 12.0);
-        world.birthday = Some(world.date.checked_add(jiff::Span::new().days(-40)).unwrap());
-        world.mark_growth();
-        for skill in Skill::ALL {
-            world
-                .life
-                .reach(skill.milestone().to_owned(), skill.milestone_korean());
-        }
-        for entry in life.milestones.iter().chain(&world.life.milestones) {
-            assert!(
-                entry.korean.as_ref().is_some_and(|text| !text.is_empty()),
-                "{}",
-                entry.text
-            );
-            assert!(
-                !entry.in_language(true).contains(": "),
-                "{}",
-                entry.in_language(true)
-            );
-        }
-        for korean in CLOSER
-            .iter()
-            .map(|(_, _, korean)| korean)
-            .chain(HOURS_MARKED.iter().map(|(_, _, korean)| korean))
-            .chain(WORDS_MARKED.iter().map(|(_, _, korean)| korean))
-            .chain(MOTES_MARKED.iter().map(|(_, _, korean)| korean))
-        {
-            assert!(!korean.contains(": "), "{korean}");
-        }
-        let count = life.milestones.len();
-        assert!(
-            life.reach(
-                "I came into being in my little house.".to_owned(),
-                "다른 한국어".to_owned()
-            )
-            .is_none()
-        );
-        assert_eq!(life.milestones.len(), count);
-    }
     #[test]
     fn creation_and_constellation_milestones_use_saved_korean_titles() {
         use crate::world::{

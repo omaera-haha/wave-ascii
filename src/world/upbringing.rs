@@ -57,7 +57,6 @@ pub fn influences(tally: &Tally) -> [f32; 5] {
         tally.constellations,
         tally.drawings_seen,
         tally.pictures_learned,
-        tally.learned,
         tally.learned_about,
         tally.word_games,
     ]
@@ -139,28 +138,6 @@ const CHANGES: [[&str; 2]; 5] = [
     ["becoming livelier", "becoming sleepier"],
     ["becoming more independent", "growing gentler"],
 ];
-const THOUGHTS: [[&str; 2]; 5] = [
-    [
-        "Quiet games suit me more than they used to.",
-        "I think I like games more than I used to.",
-    ],
-    [
-        "My little world feels more familiar now.",
-        "I wonder about more things than I used to.",
-    ],
-    [
-        "It feels easier to come close now.",
-        "I think I'm a little shyer than I was.",
-    ],
-    [
-        "I have more bounce than I used to.",
-        "I like a little more sleep these days.",
-    ],
-    [
-        "I'm learning to enjoy my own company.",
-        "I think caring comes a little easier now.",
-    ],
-];
 
 const KOREAN_MILESTONES: [[&str; 2]; 5] = [
     [
@@ -216,11 +193,6 @@ impl Upbringing {
     pub fn words(&self) -> Option<&'static str> {
         self.strongest()
             .map(|(index, direction)| CHANGES[index][direction])
-    }
-
-    pub fn thought(&self) -> Option<&'static str> {
-        self.strongest()
-            .map(|(index, direction)| THOUGHTS[index][direction])
     }
 
     fn apply(&mut self, day: Date, birthday: Option<Date>, influences: [f32; 5]) {
@@ -345,7 +317,6 @@ mod tests {
             "constellations",
             "drawings_seen",
             "pictures_learned",
-            "learned",
             "learned_about",
             "mirror_visits",
             "pets",
@@ -362,7 +333,7 @@ mod tests {
             let tally: Tally = serde_json::from_value(value).unwrap();
             let index = match field {
                 "games" | "fetches" | "pounces" | "finds" | "toppled" | "word_games" => 0,
-                "pages" | "constellations" | "drawings_seen" | "pictures_learned" | "learned"
+                "pages" | "constellations" | "drawings_seen" | "pictures_learned"
                 | "learned_about" | "mirror_visits" => 1,
                 _ => 4,
             };
@@ -720,31 +691,5 @@ mod tests {
         assert_eq!(life.today.wishes_granted, 2);
         assert_eq!(life.today.viewer_wishes_granted, 1);
         assert_eq!(life.total.viewer_wishes_granted, 1);
-    }
-
-    #[test]
-    fn strongest_changes_are_described_in_words_after_the_notice_threshold() {
-        let mut upbringing = Upbringing {
-            drift: [0.05; 5],
-            ..Upbringing::default()
-        };
-        assert_eq!(upbringing.words(), None);
-        assert_eq!(upbringing.thought(), None);
-        upbringing.drift[2] = -0.06;
-        assert_eq!(upbringing.words(), Some("becoming less shy"));
-        assert!(upbringing.thought().is_some());
-        for index in 0..5 {
-            for drift in [-0.12, 0.12] {
-                upbringing.drift = [0.0; 5];
-                upbringing.drift[index] = drift;
-                assert!(
-                    !upbringing
-                        .words()
-                        .unwrap()
-                        .chars()
-                        .any(|letter| letter.is_ascii_digit())
-                );
-            }
-        }
     }
 }

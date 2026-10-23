@@ -1,9 +1,7 @@
 use jiff::civil::{Date, DateTime};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{
-    Activity, EventKind, Heard, Life, Listening, Mood, Quirk, Sky, WINDOW_CENTER, World, flat,
-};
+use super::{Activity, EventKind, Heard, Life, Mood, Quirk, Sky, WINDOW_CENTER, World, flat};
 
 const CHILL_THRESHOLD: f32 = 18.0;
 const CATCH_CHANCE: f32 = 0.008;
@@ -340,7 +338,6 @@ impl World {
         if !kind_words(text, sneezed) {
             return None;
         }
-        self.listening = Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
         if !self.receive_cold_care(Care::Words, Some(korean))
             && self.ghost.asleep < 0.3
@@ -356,7 +353,6 @@ impl World {
             tone: None,
             understanding: super::Understanding::Cared,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -588,8 +584,6 @@ mod tests {
             world.life.korean = 1.0;
             let heard = world.hear(text);
             assert_eq!(heard.understanding, Understanding::Cared, "{text}");
-            assert!(heard.learned.is_empty());
-            assert!(world.life.vocabulary.known().is_empty());
             assert_eq!(world.life.total.care_received, 1);
             assert_eq!(
                 world.ghost.speech.as_ref().unwrap().text,

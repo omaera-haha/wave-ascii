@@ -230,8 +230,6 @@ mod tests {
             assert_eq!(heard.understanding, Understanding::Focusing { minutes });
             assert_eq!(world.focus.as_ref().unwrap().length, minutes * 60);
             assert_eq!(world.ghost.plan.activity, Activity::Company);
-            assert!(world.life.vocabulary.known().is_empty());
-            assert_eq!(world.listening, super::super::Listening::default());
         }
         for text in [
             "can you focus?",

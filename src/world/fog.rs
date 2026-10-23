@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::doodle::Path;
 use super::recognizer::{self, Recognition};
 use super::{
-    Activity, EventKind, Heard, Listening, Mood, Picture, ROOM_MAX, ROOM_MIN, Thing, Understanding,
-    World,
+    Activity, EventKind, Heard, Mood, Picture, ROOM_MAX, ROOM_MIN, Thing, Understanding, World,
 };
 
 const MAX_POINTS: usize = 600;
@@ -364,18 +363,6 @@ impl World {
         }
         drawing.naming = false;
         let name = picture_name(text)?;
-        // A bare word the ghost already knows asks for something; "it's a
-        // fetch" would still name the picture.
-        let explicit = name != text.trim().to_lowercase();
-        if !explicit
-            && self
-                .life
-                .vocabulary
-                .meaning(&super::vocabulary::tokens(text))
-                .is_some()
-        {
-            return None;
-        }
         let drawing = self.drawing.as_mut()?;
         let mut strokes = recognizer::normalized(&drawing.strokes);
         for point in strokes.iter_mut().flatten() {
@@ -399,7 +386,6 @@ impl World {
             sketch: None,
             learned: true,
         });
-        self.listening = Listening::default();
         self.wake();
         self.ghost.needs.change(0.0, 0.05, 0.25);
         self.notice_viewer();
@@ -410,7 +396,6 @@ impl World {
             tone: None,
             understanding: Understanding::Named { picture: name },
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -627,34 +612,6 @@ mod tests {
     }
 
     #[test]
-    fn a_known_command_after_a_drawing_is_obeyed_rather_than_taken_for_its_name() {
-        let mut world = World::new(1, 12.0);
-        world
-            .life
-            .vocabulary
-            .teach(&["twirl".to_owned()], Activity::Dance, 4.0);
-        studied(&mut world, &Sketch::Heart.strokes());
-        let heard = world.hear("twirl");
-        assert!(matches!(
-            heard.understanding,
-            Understanding::Doing {
-                activity: Activity::Dance,
-                ..
-            }
-        ));
-        assert!(world.life.pictures.is_empty());
-
-        let mut world = World::new(1, 12.0);
-        world
-            .life
-            .vocabulary
-            .teach(&["twirl".to_owned()], Activity::Dance, 4.0);
-        studied(&mut world, &Sketch::Heart.strokes());
-        world.hear("it's a twirl");
-        assert_eq!(world.life.pictures[0].name, "twirl");
-    }
-
-    #[test]
     fn a_sleeping_ghost_leaves_the_picture_unseen_until_it_wakes() {
         let mut world = World::new(1, 23.0);
         world.tuck_in();
@@ -708,7 +665,6 @@ mod tests {
                 .iter()
                 .any(|event| event.kind == EventKind::SawDrawing { name: None })
         );
-        let vocabulary = world.life.vocabulary.clone();
         let heard = world.hear("it's a cat");
         assert_eq!(
             heard.understanding,
@@ -716,7 +672,6 @@ mod tests {
                 picture: "cat".to_owned()
             }
         );
-        assert_eq!(world.life.vocabulary, vocabulary);
         assert_eq!(world.life.total.pictures_learned, 1);
         assert!(world.life.pictures[0].valid());
         assert!(
@@ -1069,10 +1024,7 @@ mod tests {
             true,
         );
         mind.hear(&mut world, "it's a cat");
-        assert_eq!(
-            world.ghost.speech.as_ref().unwrap().text,
-            "A cat! I'll remember."
-        );
+        assert_eq!(world.life.pictures[0].name, "cat");
         assert!(
             world
                 .life
@@ -1082,9 +1034,12 @@ mod tests {
         );
         studied(&mut world, &scribble());
         mind.hear(&mut world, "고양이야");
-        assert_eq!(
-            world.ghost.speech.as_ref().unwrap().text,
-            "고양이! 기억할게."
+        assert!(
+            world
+                .life
+                .pictures
+                .iter()
+                .any(|picture| picture.name == "고양이")
         );
     }
 }

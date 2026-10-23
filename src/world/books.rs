@@ -1250,8 +1250,6 @@ mod tests {
                 matches!(heard.understanding, Understanding::Asked { question: asked, .. } if asked == question),
                 "{text}"
             );
-            assert!(heard.learned.is_empty());
-            assert!(world.life.vocabulary.known().is_empty());
             if question == Question::ReadAloud {
                 assert!(world.telling.as_ref().unwrap().book.is_some());
             }

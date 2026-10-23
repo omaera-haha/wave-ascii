@@ -317,7 +317,6 @@ impl World {
         let game = self.game.as_mut().unwrap();
         game.turn = Mark::Cross;
         game.first = Mark::Cross;
-        self.shown(Activity::Game);
         true
     }
 

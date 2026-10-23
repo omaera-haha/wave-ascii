@@ -4,7 +4,7 @@
 use glam::Vec3;
 
 use super::home::{self, Spot};
-use super::{Activity, EventKind, Heard, Listening, Season, Sky, Understanding, World, meteor};
+use super::{Activity, EventKind, Heard, Season, Sky, Understanding, World, meteor};
 
 /// Seconds it stays at a spot once there.
 const DWELL: (f32, f32) = (14.0, 26.0);
@@ -298,7 +298,6 @@ impl World {
     /// to come back in.
     pub(super) fn hear_outing(&mut self, text: &str, korean: bool) -> Option<Heard> {
         let request = requested(text)?;
-        self.listening = Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
         let outside = !home::in_house(self.ghost.position);
         let lines = match request {
@@ -317,7 +316,6 @@ impl World {
             tone: None,
             understanding: Understanding::Outing,
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,

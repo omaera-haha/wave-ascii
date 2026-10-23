@@ -42,22 +42,6 @@ impl Quirk {
         }
     }
 
-    pub fn thoughts(self) -> &'static [&'static str] {
-        match self {
-            Self::Hiccups => &["Hic! …excuse me.", "My whole body keeps jumping."],
-            Self::Sneeze => &["Achoo! Something tickles.", "Even I get a tickly nose."],
-            Self::Yawn => &["Haaah… so sleepy.", "That yawn caught me too."],
-            Self::Shiver => &[
-                "Brr. The lamp looks warm.",
-                "Perhaps I should shut the window.",
-            ],
-            Self::Sigh => &[
-                "Aah… that feels nice.",
-                "A little softer, a little lighter.",
-            ],
-        }
-    }
-
     pub fn diary(self, count: u32) -> String {
         let deed = if self == Self::Hiccups {
             "had the hiccups"
@@ -899,8 +883,6 @@ mod tests {
             let before = world.quirk_leaning(Activity::Rest);
             let heard = world.hear(message);
             assert_eq!(heard.understanding, Understanding::Yawning);
-            assert!(world.life.vocabulary.known().is_empty());
-            assert!(heard.learned.is_empty());
             let at = world.quirk_triggers.yawn_at.unwrap();
             assert!((0.7..=2.5).contains(&at));
             world.time = at;

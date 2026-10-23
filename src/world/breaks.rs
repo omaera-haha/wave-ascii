@@ -1,6 +1,6 @@
 use jiff::civil::Date;
 
-use super::{Activity, EventKind, Heard, Life, Listening, Mood, Understanding, World};
+use super::{Activity, EventKind, Heard, Life, Mood, Understanding, World};
 
 const STRETCH_AFTER: f64 = 120.0 * 60.0;
 const SESSION_GAP: f64 = 15.0 * 60.0;
@@ -294,7 +294,6 @@ impl World {
             return None;
         }
         let agreed = reply(text)?;
-        self.listening = Listening::default();
         self.record(EventKind::Heard(text.to_owned()));
         if agreed {
             if self.ghost.asleep < 0.3 {
@@ -318,7 +317,6 @@ impl World {
             tone: None,
             understanding: Understanding::BreakReply { agreed },
             named: false,
-            learned: Vec::new(),
             stopped: false,
             learned_name: None,
             given_name: None,
@@ -461,23 +459,6 @@ impl World {
             ));
         }
         words
-    }
-
-    pub fn rhythm_thoughts(&self) -> Vec<String> {
-        let mut thoughts = Vec::new();
-        if self.viewer_present() {
-            let name = self.life.viewer_name.as_deref().unwrap_or("They");
-            if self.rhythm.focus_streak >= 3 {
-                thoughts.push(format!(
-                    "{name} {} been working so hard.",
-                    if name == "They" { "have" } else { "has" }
-                ));
-            }
-            if late(self.hour) {
-                thoughts.push(format!("It's late. {name} should sleep."));
-            }
-        }
-        thoughts
     }
 }
 
@@ -697,7 +678,6 @@ mod tests {
         ] {
             let mut world = sitting();
             world.suggest_break(false);
-            let vocabulary = world.life.vocabulary.clone();
             let agreed = reply(text).unwrap();
             let heard = world.hear(text);
             assert_eq!(
@@ -706,11 +686,8 @@ mod tests {
                 "{text}"
             );
             assert_eq!(heard.tone, None);
-            assert!(heard.learned.is_empty());
-            assert_eq!(world.life.vocabulary, vocabulary, "{text}");
             assert_eq!(world.life.total.praises, 0);
             assert_eq!(world.life.total.scolds, 0);
-            assert_eq!(world.listening, Listening::default());
             if !agreed {
                 assert_eq!(world.rhythm.next_stretch_at, world.time + 3.0 * 3600.0);
                 world.time += 3.0 * 3600.0 - 0.1;
@@ -823,12 +800,10 @@ mod tests {
             world.notice_viewer();
             world.hear("hello");
             world.time += 1.0;
-            let vocabulary = world.life.vocabulary.clone();
             let heard = world.hear(goodnight);
             assert_eq!(heard.tone, Some(Tone::Farewell));
             assert_eq!(world.ghost.plan.activity, Activity::Rest);
             assert_eq!(world.life.total.goodnights_together, 1);
-            assert_eq!(world.life.vocabulary, vocabulary);
             world.time += 1.0;
             world.hear(goodnight);
             assert_eq!(world.life.total.goodnights_together, 1);
@@ -927,58 +902,6 @@ mod tests {
         assert_eq!(clean.total.breaks_taken, 100_000_000);
         assert_eq!(clean.total.late_nights, 100_000_000);
         assert_eq!(clean.total.goodnights_together, 100_000_000);
-    }
-
-    #[test]
-    fn care_events_warm_the_bond_and_reach_the_diary_in_words() {
-        let mut world = present();
-        let before = world.life.bond;
-        for event in [
-            EventKind::SuggestedBreak { long: false },
-            EventKind::TookBreak,
-            EventKind::NoticedLateNight,
-            EventKind::SaidGoodnightTogether,
-        ] {
-            assert!(
-                !event
-                    .words()
-                    .chars()
-                    .any(|character| character.is_ascii_digit())
-            );
-            world.record(event);
-        }
-        assert!(world.life.bond > before);
-        assert_eq!(world.life.total.breaks_taken, 1);
-        assert_eq!(world.life.today.breaks_suggested, 1);
-        let diary = world.life.today.words().to_lowercase();
-        for phrase in [
-            "you took a break when i asked",
-            "you stayed up very late",
-            "we said goodnight together late at night",
-        ] {
-            assert!(diary.contains(phrase), "{diary}");
-        }
-        world.rhythm.focus_streak = 3;
-        world.life.viewer_name = Some("Sam".to_owned());
-        world.hour = 1.0;
-        assert!(
-            world
-                .rhythm_words()
-                .iter()
-                .any(|words| words.contains("three focus sessions"))
-        );
-        assert!(
-            world
-                .rhythm_thoughts()
-                .iter()
-                .any(|thought| thought == "Sam has been working so hard.")
-        );
-        assert!(
-            world
-                .rhythm_thoughts()
-                .iter()
-                .any(|thought| thought == "It's late. Sam should sleep.")
-        );
     }
 
     #[test]
